@@ -1,0 +1,303 @@
+# Manzil — Implementation Notes
+
+| | |
+|---|---|
+| **Version** | 2.0 |
+| **Status** | Living — churns freely, no ceremony required. **v2.0 is the implementation-start baseline**: further changes should come from code reality, not further pre-code polishing |
+| **Sibling** | `DESIGN.md` (intent + contracts; wins all conflicts about *what* and *why*) |
+| **Repo location** | `/IMPLEMENTATION.md` |
+
+**Division of authority:** DESIGN.md owns intent, requirements, and cross-component contracts. This document owns *current mechanics* — how things are actually built right now. Code and docstrings win on exact interfaces; this doc points at modules rather than duplicating signatures once they exist. If this doc and DESIGN.md disagree, stop and flag it (CLAUDE.md rule) — do not silently pick a side. Update protocol here is deliberately lightweight: edit in place, add a line to the [Changelog](#9-changelog). No decision-log ceremony; that lives in DESIGN.md §20 for *design* changes only.
+
+**Status labels.** Every section below carries one, so nobody — human or agent — has to guess how binding a given detail is:
+
+- **Settled** — follow as written. Changing it takes a changelog entry (and a DESIGN §20 entry if it touches intent).
+- **Proposal** — seeds the first implementation, then *follows the code*. Divergence here is expected and is not a doc/code conflict; update the doc to match reality without ceremony.
+- **Interim / Conditional** — deliberately temporary or outcome-dependent, with the removal point or gating condition named inline.
+
+---
+
+## Table of Contents
+
+1. [Environment and Setup](#1-environment-and-setup)
+2. [Coding Conventions](#2-coding-conventions)
+3. [Core Interfaces](#3-core-interfaces)
+4. [Prompt Management](#4-prompt-management)
+5. [Testing and Fixtures](#5-testing-and-fixtures)
+6. [Observability](#6-observability)
+7. [Phase Work Plans](#7-phase-work-plans)
+8. [Runbooks](#8-runbooks)
+9. [Changelog](#9-changelog)
+
+---
+
+## 1. Environment and Setup
+
+*Status: settled.*
+
+### Prerequisites
+`uv` ≥ 0.5 · Node 20 + `pnpm` · Supabase CLI · Playwright (`uv run playwright install chromium` after worker sync).
+
+### Bootstrap (once)
+```bash
+uv init --bare                              # root pyproject
+# add [tool.uv.workspace] members = ["shared","api","worker"] to root pyproject.toml
+uv init --lib shared && uv init --app api && uv init --app worker
+# in api/ and worker/ pyproject: dependencies += ["manzil-shared"]
+#   [tool.uv.sources] manzil-shared = { workspace = true }
+uv sync
+pnpm create vite frontend --template react-ts
+supabase init && supabase start             # local stack
+ln -s CLAUDE.md AGENTS.md
+```
+
+### Environment variables (`infra/.env.example`)
+
+| Var | Used by | Notes |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | worker | |
+| `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` / `LANGFUSE_HOST` | worker | cloud free tier; wired before first LLM call (NFR6). The API makes no LLM calls and gets no Langfuse keys |
+| `DATABASE_URL` | worker, api | direct Postgres (worker uses service-level access) |
+| `SUPABASE_URL` / `SUPABASE_ANON_KEY` | frontend, api | anon key is RLS-safe by design |
+| `SUPABASE_SERVICE_ROLE_KEY` | worker only | never in api or frontend env |
+| `GOOGLE_MAPS_API_KEY` | worker | Phase 3 |
+| `MANZIL_MODE` | worker | `workflow` (default) \| `agents` |
+| `MANZIL_LLM_MODE` | worker, tests | `live` \| `record` \| `replay` (see §5) |
+
+### Daily loop
+```bash
+supabase db reset                            # migrations + generated seed
+uv run manzil ingest <url>                   # Phase 0 entry point
+#   (`manzil` is a [project.scripts] entry in worker/pyproject.toml → manzil_worker.cli:app)
+uv run --package manzil-shared pytest shared/tests  # engine goldens
+uv run --package manzil-worker pytest worker/tests  # stages vs fixtures (replay mode)
+uv run ruff check --fix . && uv run ruff format .
+```
+
+---
+
+## 2. Coding Conventions
+
+*Status: settled — except the exception taxonomy below, which is a proposal (its names and granularity will follow what the runner actually needs).*
+
+**Python.** 3.12, `ruff` for lint+format (line length 100), full type hints — `mypy --strict` on `shared/` (the engine must be airtight), standard on the rest. Worker is async end-to-end; no blocking I/O outside `asyncio.to_thread`. Logging via `structlog`, never `print`; every log line in the worker carries `job_id` and `stage`.
+
+**Import direction (enforced by convention now, `ruff` isort sections + a lint script later):** `shared` imports nothing from `api`/`worker`. `api` and `worker` import `shared`. `worker/.../agents/` imports the truth layer and runner contracts; **nothing outside `agents/` imports from `agents/`**. Only `worker/.../llm/` imports provider SDKs.
+
+**Exception taxonomy** (in `shared/errors.py` — stages raise these, the runner maps them to job outcomes):
+`StageRetryable` (backoff + retry) · `StageFatal` (job → failed) · `FetchBlocked` / `FetchShell` (tier escalation signals) · `ExtractionInvalid` (one corrective retry, then fatal) · `AgentBudgetExceeded` (agents mode; stage decides fallback) · `CheckpointRaised(prompt)` (runner persists → `waiting_user`).
+
+**Database access (the gap a developer hits in week one of Phase 1):** no ORM. The **worker** connects directly via `asyncpg` with the service role — plain SQL, Pydantic mapping at the boundary, `FOR UPDATE SKIP LOCKED` and the scheduler queries are hand-written and tested. The **API** performs user-context mutations through `supabase-py` with the caller's access token, so PostgREST evaluates RLS with the real JWT — the API never simulates permissions it can hand to the database. The narrow exception: API operations that legitimately need the service role (accepting an invite writes `hunt_members` before membership exists) go through an explicitly named `privileged.py` module — small on purpose, so privileged surface is greppable. **Frontend** reads table data straight from Supabase (RLS-guarded selects, per DESIGN §5.1) and mutates only via the API.
+
+**CI (GitHub Actions):** four jobs on every PR — `ruff check` + `ruff format --check`; `mypy --strict` on `shared/`; `pytest` for all packages with `MANZIL_LLM_MODE=replay` (a replay miss fails the build — CI cannot spend tokens); frontend `eslint` + `vitest` from Phase 1. Branching: trunk-based, short-lived branches named by task ID (`p0-7-llm-seam`); merge = green CI, no other ceremony solo.
+
+**Frontend** (fills in at Phase 1): TS strict; server state exclusively via TanStack Query keyed by table+hunt; no `useEffect` data fetching; Mantine components only (no bespoke CSS until something forces it). Component tests with `vitest` + Testing Library for anything with logic (score cell states, rubric widgets from `value_schema`); no snapshot tests.
+
+---
+
+## 3. Core Interfaces
+
+*Status: proposal — every interface in this section.* Reviewed during the v1.1 critique and **deliberately left unhardened**: pinning `RunState` fields or client signatures before code exists would invert the authority order (code owns exact interfaces) and manufacture doc/code conflicts out of ordinary iteration. The critique's job was removing ambiguity a developer *must* resolve to proceed; these are ambiguities the code is supposed to resolve. When the real interfaces stabilize (expect: end of Phase 0), update this section to match them and note it in the changelog — or replace the bodies with pointers to the modules.
+
+### RunState (`worker/src/manzil_worker/state.py`)
+```python
+class RunState(BaseModel):
+    job_id: UUID
+    job_type: JobType                     # ingest | refresh | rescore | investigate
+    mode: Literal["workflow", "agents"] = "workflow"
+    url: str
+    hunt_listing_id: UUID | None = None   # None in Phase 0 CLI runs
+    plan: PlanManifest | None = None      # §10.4 contract shape
+    cursor: int = 0                       # index into the stage list
+    property_id: UUID | None = None
+    sources: list[SourceState] = []       # url, tier_used, outcome, cleaned_path, hash
+    extractions: dict[str, list[FieldExtraction]] = {}   # criterion_key -> per-source
+    reconciled: dict[str, FieldExtraction] = {}
+    floor_plans: list[FloorPlanIn] = []
+    checkpoint: CheckpointPrompt | None = None           # §10.10 contract shape
+    cost_usd: Decimal = Decimal("0")
+```
+`FieldExtraction = {value, confidence, evidence_quote, source_id, model, prompt_version}`.
+
+### Stage protocol and runner (`runner.py`)
+```python
+Stage = Callable[[RunState, StageCtx], Awaitable[RunState]]
+# StageCtx: db, llm, fetcher, clock, tracer — injected, so tests fake them wholesale
+```
+Runner behavior (DESIGN §10.2): persist state → advance cursor → heartbeat `locked_at`; on `CheckpointRaised` persist prompt and park as `waiting_user`; on `StageRetryable` retry with backoff per the tunables table.
+
+### LLM client seam (`llm/client.py`)
+```python
+async def call_structured(stage: str, schema: type[T], content: str | list[Block]) -> T: ...
+async def call_agent(stage: str, task: str, tools: list[Tool], max_turns: int = 8) -> AgentResult: ...
+async def call_vision(stage: str, schema: type[T], images: list[ImageRef]) -> T: ...
+```
+The seam resolves model + prompt from `llm/config.py` by `stage`, applies `cache_control` per §4, emits the Langfuse trace, tallies cost onto the active `RunState`, and honors `MANZIL_LLM_MODE` (record/replay, §5). Nothing else imports the SDK.
+
+### Tunables (`shared/config.py` — single home, no magic numbers in stage code)
+
+The single-home rule itself is **settled**; every *value* in this table is a starting point expected to be tuned against Phase 0 reality (tune freely, changelog-note the change).
+
+| Name | Initial value | Where used |
+|---|---|---|
+| `EVIDENCE_FUZZY_THRESHOLD` | 85 (rapidfuzz partial_ratio) | VERIFY check 1 |
+| `RENT_AGREE_PCT` / `SQFT_AGREE_PCT` | 3% / 5% | RECONCILE rung 2 |
+| `PLAUSIBILITY_COLD_START_N` | 8 listings per metro | VERIFY check 3 |
+| `STAGE_RETRIES` / backoff | 3, `10s · 2^attempt` jittered | runner |
+| `JOB_ORPHAN_AFTER` | 5 min without heartbeat | queue reclaim |
+| `AGENT_MAX_TURNS` | 8 | P3 loops |
+| `CHECKPOINT_TIMEOUT` | 24 h | scheduler sweep |
+| `MAX_IMAGES` / `IMAGE_MAX_DIM` | 8 / 1024 px | VISION |
+| `FETCH_MIN_BODY_BYTES` | 5 000 | outcome classifier |
+
+---
+
+## 4. Prompt Management
+
+*Status: settled.*
+
+Prompts live as markdown files in `worker/src/manzil_worker/llm/prompts/{stage}.md` with a tiny front-matter header (`id`, `version`, `cacheable_prefix_marker`). The client loads by stage, splits at the marker — everything above it is the stable prefix sent with `cache_control` (schema text, rules, few-shots); everything below is per-call. `prompt_version` is recorded on every extraction row and every Langfuse trace, which is what makes the §8 prompt-change runbook enforceable. Prompt files are code: reviewed in PRs, never edited in place without a version bump.
+
+---
+
+## 5. Testing and Fixtures
+
+*Status: settled.*
+
+**Corpus layout** — one directory per saved listing page:
+```
+worker/tests/fixtures/corpus/{domain}--{slug}/
+    raw.html        # as saved from the browser
+    cleaned.txt     # produced by the cleaner (regenerate when cleaner changes)
+    meta.json       # url, saved_at, is_official, notes
+```
+**Bench** — `fixtures/bench/manifest.md` lists the ~20 chosen slugs and why; `fixtures/bench/labels/{slug}.json` holds hand-labeled ground truth for gate-bearing criteria + rent/fees (DESIGN §19 Phase 0).
+
+**Record/replay** — `MANZIL_LLM_MODE=record` runs live and writes each call's request-hash → response to `fixtures/recorded/`. The hash covers `(stage, model_id, prompt_version, sha256(content))` — deliberately *not* the raw request object, so SDK upgrades and parameter reordering don't invalidate the cache, while any change that could alter model output does; `replay` (the CI default) serves from disk and **fails on any miss** — CI can never silently call a live model. Golden tests in `shared/tests/golden/` assert exact score breakdowns per the §9.3 contract; a change to the engine that alters any golden requires updating the golden *in the same PR with an explanation*.
+
+---
+
+## 6. Observability
+
+*Status: settled.*
+
+Langfuse initialized inside the client seam only. Trace naming: `{job_type}/{stage}`, session = `job_id`; metadata on every span: `mode`, `model`, `prompt_version`, `listing_slug` (bench) and token/cost figures. The eval harness reads its numbers *from Langfuse traces*, not from ad-hoc accounting — one source of truth for spend and latency in both modes.
+
+---
+
+## 7. Phase Work Plans
+
+*Status: Phase 0 table settled · Phase 1–3 tables provisional (revise on entry) · ⚠ items conditional on named gates.*
+
+Granularity: each item ≈ one focused agent session, scoped to the DESIGN sections cited. Detail is deep for Phase 0 and deliberately coarse afterward — later phases get expanded here on entry, when reality has voted.
+
+### Phase 0 (detailed)
+
+| # | Task | DESIGN refs | Done when |
+|---|---|---|---|
+| P0-1 | Monorepo scaffold per §6 + CI (ruff, pytest-replay) | §6 | `uv sync` green; CI runs |
+| P0-2 | `shared/`: domain models + catalog seed (15 criteria) + seed.sql generator | §3, §8.2 | catalog round-trips: python → SQL → loaded |
+| P0-3 | Scoring engine + golden tests | §9.3, §9.4 | goldens cover gates, unknowns, bonus, clamp, multi-plan groups |
+| P0-4 | Migration 0001: global tables + enums | §8.1–8.2 | `supabase db reset` clean |
+| P0-5 | HTML cleaner (trafilatura + fee-table preservation) | §7 | cleaned.txt regenerated for full corpus; spot-check 5 |
+| P0-6 | Fetch tiers 1–2 + outcome classifier + adapter registry | §10.7 | classifier fixture tests pass on corpus; census CSV emitted |
+| P0-7 | LLM client seam + Langfuse + record/replay | §11.1, NFR6, §6 here | one traced call visible in Langfuse; replay test green |
+| P0-8 | Dynamic extraction schema + VALIDATE + EXTRACT stages | §10.2 P1, §10.3, §8.2 | non-listing corpus page rejected by VALIDATE; extraction of 3 listing pages validates against schema |
+| P0-9 | VERIFY stage (checks 1–3 code, check 4 call) | §10.5 | seeded-error fixtures caught; injection fixture demoted |
+| P0-10 | RunState + runner + CLI `manzil ingest <url>` | §10.1–10.2 | end-to-end score breakdown prints for a live URL |
+| P0-11 🧍 | Bench labeling (hand) + label loader — zero code dependencies, start alongside P0-1 | §19 | 20 labels committed |
+| P0-12 | Eval harness (L0): workflow mode vs labels | FR11 | accuracy/tokens/latency report generated |
+| P0-13 | Model bench across Haiku / 2.5 Flash-Lite / 2.5 Flash | §11.2 | per-stage model choices written to `llm/config.py` |
+| P0-14 | Close the gates: census verdict + model decisions → DESIGN §20 | §19 | two decision-log entries merged |
+
+These tables are written from DESIGN contracts, so the *breakdown* is stable — but items marked ⚠ depend on Phase 0/1 outcomes (census verdict, model choices, in-process-worker experience). **Entering a phase means revising its table first**, not obeying it blindly; that review replaces the old "expand on entry" rule.
+
+**Sequencing:** row order is the default dependency order, not a mandate — tasks without a data dependency parallelize freely (frontend and API rows in Phase 1 are two independent tracks after P1-4). Human-only tasks are marked 🧍 and should start immediately regardless of position, since they block nothing and nothing blocks them.
+
+### Phase 1 — replace the spreadsheet (single user)
+
+| # | Task | DESIGN refs | Done when |
+|---|---|---|---|
+| P1-1 | Migration 0002: per-hunt tables + remaining enums + indexes (latest-extraction partial index, jobs claim index) + **dev-seed script** (demo hunt, 3 listings from Phase 0 corpus extractions) | §8.1–8.2 | `db reset` clean; schema matches §8.2 field-for-field; frontend tasks have data on day one |
+| P1-2 | Queue mechanics: claim, heartbeat, orphan reclaim, cancel-between-stages | §8.2, §10.1 | kill -9 mid-job → job resumes from `current_stage` within 5 min |
+| P1-3 | Worker loop as FastAPI lifespan task (budget option per §5) with clean-shutdown drain | §5 | jobs process while API serves; deploy doesn't lose work |
+| P1-4 | API skeleton: JWT middleware (supabase-py token passthrough), error envelope, health | §5.1, §2 here | authed request round-trips; RLS sees real JWT |
+| P1-5 | Hunts CRUD + rubric GET/PUT (validate options vs `value_schema`, bump version, enqueue hunt-level rescore) | §5.1, §9.2 | invalid option rejected with field-level error; rescore job lands |
+| P1-6 | Rescore job type: fan-out over listings, per-plan scores, breakdown persisted | §9.3–9.4 | rubric edit re-scores 3 seeded listings; breakdowns match goldens |
+| P1-7 | Listings + jobs endpoints: POST URL → listing + ingest job; cancel/retry; checkpoint answer | §5.1 | CLI path and API path produce identical job rows |
+| P1-8 | Overrides + fee-checklist endpoints (append-only, attribution) | §9.5–9.6 | override displays over extraction; original retrievable |
+| P1-9 | Frontend shell: Mantine app frame, Supabase auth, routes, hunt switcher, Query client | §13.1 | login → create hunt → land on empty Overview |
+| P1-10 | Overview table: unit-group rows, score cell (color scale, multi-score indicator, stale + auto-resolved badges), range columns, `hide score < N` filter | §9.4, §13.2 | seeded multi-plan property renders one row per group with indicator |
+| P1-11 | Detail panel Drawer: criterion breakdown + evidence quotes, override controls, fee checklist, floor plans + per-group pin, sources + fetched-at | §13.2 | pin switches group score; override badge + provenance visible |
+| P1-12 | Rubric builder: Stepper wizard, widgets generated from `value_schema`, gate toggles + set-score, unknown-delta row, bonus derivation | §9.2, §13.2 | wizard output passes the same validation as the API path |
+| P1-13 | Tasks Active tab — **polling via Query `refetchInterval` (~3 s) as the Phase 1 interim; swapped to Realtime in P2-4** | §13.2 | stage progress visible; cancel works |
+| P1-14 | Exit review: migrate the real hunt, retire the spreadsheet; revise Phase 2 table | §19 | a week of real use without opening Excel |
+
+### Phase 2 — collaboration
+
+| # | Task | DESIGN refs | Done when |
+|---|---|---|---|
+| P2-1 | RLS policies for every per-hunt table per the permissions matrix; global tables client-read-only; **backfill `hunt_members` owner rows for pre-RLS hunts in the same migration** (the Phase 1 user has hunts but no membership row — flipping RLS without the backfill locks them out of their own data) | §4.2, §8.3 | policies deployed; Phase 1 hunts still fully accessible; privileged surface still only `privileged.py` |
+| P2-2 | Permission integration tests: every forbidden (role, action) pair attempted against real RLS | §4.2, §6 (DESIGN) | full matrix red/green; this is the phase exit gate |
+| P2-3 | Invites: create (email via Supabase Auth invite, or copy-link token), accept endpoint, role granting, expiry/revocation | §9.1 | second account joins via both paths; curator grant works |
+| P2-4 | Realtime: per-hunt channels on the §13.3 tables → Query invalidation; delete P1-13 polling | §13.3 | two browsers see a score change < 2 s apart; no polling remains |
+| P2-5 | Comments (soft-delete), per-user ratings, color assignment + settings UI | §8.2, §13 | rating dots render in member colors |
+| P2-6 | Tasks History tab: run list w/ filters, expanded `Timeline` from job_events, checkpoint Q&A incl. auto-resolutions, per-run cost | FR10, §13.2 | a Phase 0-era job renders fully from its events |
+| P2-7 | Member management: roles, removal, owner transfer, danger zone | §4.2, §9.1 | owner transfer leaves exactly one owner (constraint-tested) |
+| P2-8 | Curator end-to-end: overrides/fees/checkpoints on others' listings allowed; job management on others' denied | §4.2 | verified by P2-2 suite + manual pass |
+| P2-9 | Exit: partner active in the real hunt; revise Phase 3 table | §19 | both members using it in anger |
+
+### Phase 3 — full agent system
+
+| # | Task | DESIGN refs | Done when |
+|---|---|---|---|
+| P3-1 | Worker split to separate paid Render service; Playwright in image; in-process loop removed | §5 | API memory flat while a browser job runs |
+| P3-2 | Planner v1, **scoped to ingest manifests** (cache/TTL-aware refresh planning completes in P3-12, which builds the inputs it reads) | §10.4 | ingest of a known property plans skip-refetch correctly |
+| P3-3 | Maps tools + forever-cache: geocode, Places, Routes (pulled ahead of its consumers — DEDUPE and ENRICH both read geocode) | §10.9, §12 | cached second geocode is $0 and instant |
+| P3-4 | DEDUPE full: geocode + name similarity, gray-zone `resolve_dedupe` checkpoint, `split_property` admin op | §8.2, §10.3 | seeded near-duplicate pair → checkpoint; split restores cleanly |
+| P3-5 | DISCOVER: provider web-search tool, same-property judgment, official-site preference; source cap logic ("third only on disagreement") | §10.2 P3, §10.3, §15 | finds official site for ≥70% of bench complexes |
+| P3-6 | Multi-source fan-out: FETCH per source, EXTRACT/VERIFY per source, RECONCILE ladder + `resolution_rule` + `disputed` handling | §10.6 | conflicting fixture pair resolves per ladder; rule recorded |
+| P3-7 | Images: download, WebP, ≤10 cap → VISION with versioned reference set; skip-on-unchanged-hashes | §10.8, §14 | two runs, no image change → zero vision spend |
+| P3-8 | ENRICH remainder: grocery + commute criteria live; reviews summary + safety synthesis (low-confidence framing) | §10.3, §10.9, R8 | safety renders with confidence labeling, not as fact |
+| P3-9 | Utility baselines job + all-in composition (conservative default, tagged components, "fees unverified" badge) | §9.5 | winter-weighted estimate visible and overrideable |
+| P3-10 | Custom criteria: authoring flow w/ routing classification + confirm, CUSTOM_MATCH dispatch | §9.2, §10.9 | commute-to-address criterion authored → scored end-to-end |
+| P3-11 | Checkpoints complete: `waiting_user` UI w/ screenshot, 24 h sweep via scheduler tick, auto-resolve badge + reopen/re-score | §10.10, §5 | ignored checkpoint auto-resolves at 24 h; late answer re-scores |
+| P3-12 | Refresh: TTL classes, content-hash gating, field-scoped partial refresh, batch-API routing; **planner refresh-mode completes here** | §14, §11.3, §10.4 | unchanged-page refresh costs a fetch + hash compare only |
+| P3-13 | Compare view + mobile bottom-sheet polish | §13 | 3-listing compare usable on a phone |
+| P3-14 ⚠ | Tier-3 adapters — **only if the Phase 0 census gate opened**, scoped to the specific hostile domains it named | §10.7, §19 | census-named domains fetch successfully, or task deleted |
+
+Learning track L1–L4 interleaves per DESIGN §19 gating; L-tasks get their own table here when L1 unlocks (after Phase 0 exit), not before.
+
+---
+
+## 8. Runbooks
+
+*Status: settled.*
+
+**Add a catalog criterion:** edit `shared/catalog.py` → regenerate `supabase/seed.sql` → `supabase db reset` → extraction schema picks it up automatically → add golden covering it → if gate-eligible, add a bench label field.
+
+**Change a prompt or model:** bump `version` in the prompt front-matter (or model pin in `llm/config.py`) → run the bench in replay-invalidating mode (`record` against bench set) → compare report to previous → commit prompt + recorded fixtures + report together. No eyeball-only prompt merges (DESIGN §6).
+
+**Record new fixtures:** save page HTML into a new corpus dir → run cleaner → `MANZIL_LLM_MODE=record uv run --package worker pytest -k <slug>`.
+
+**Manually requeue an orphaned job:** `update jobs set state='queued', locked_by=null, locked_at=null where id=… and state='running';` — safe at any stage boundary by construction.
+
+**Apply migrations to hosted Supabase (Phase 1+):** `supabase link` once, `supabase db push`; never edit applied migrations, always add.
+
+**Catalog changes on hosted DB:** `supabase/seed.sql` is local-reset-only. When `shared/catalog.py` changes after Phase 1, the generator also emits an idempotent upsert migration (`NNNN_catalog_sync.sql`) — catalog rows reach production the same way schema does, and drift between code seed and hosted rows is structurally impossible.
+
+**Deploy (Phase 1+):** frontend — CF Pages auto-builds from `main` (`pnpm build`, output `frontend/dist`). API/worker — Render blueprint in `infra/render.yaml`, deploy-on-push from `main`; env vars set in Render dashboard, never committed. Worker deploys are safe mid-job by construction (orphan reclaim resumes at `current_stage`); still, prefer deploying when the Tasks view is idle.
+
+---
+
+## 9. Changelog
+
+Ascending chronological (matching DESIGN §20's convention); same-day entries ordered by version.
+
+| Version | Date | Change |
+|---|---|---|
+| 1.0 | 2026-07-03 | Created at Phase 0 kickoff: environment, conventions, interface proposals, prompt/fixture/observability mechanics, Phase 0 work plan (14 tasks), runbooks. |
+| 1.1 | 2026-07-03 | Phases 1–3 broken into task tables (14/9/14) with ⚠ marks on outcome-dependent items; "expand on entry" → "revise on entry". Critique fixes: DB-access strategy (asyncpg worker / supabase-py API / `privileged.py` exception), CI + branching defined, Langfuse removed from API env, record/replay hash keying specified, `manzil` script entry noted, catalog-sync migration + deploy runbooks added, frontend test convention added, P1-13 polling interim made explicit. |
+| 1.2 | 2026-07-03 | Status taxonomy (settled / proposal / interim-conditional) with per-section labels; §3 records interfaces reviewed and deliberately left as proposals with graduation at end of Phase 0; tunables split — home settled, values are starting points. |
+| 2.0 | 2026-07-03 | **Implementation-start baseline.** Phase-process critique: sequencing rules added (row order = default dependency order; 🧍 = human-only, start immediately); VALIDATE stage given an owner (P0-8); bench labeling marked parallel (P0-11); dev-seed script added (P1-1); RLS owner-membership backfill added (P2-1 — the lockout trap); Phase 3 reordered so geocode precedes its consumers (maps → DEDUPE → DISCOVER) and planner honestly split into ingest-scope (P3-2) + refresh-scope (P3-12). Changelog reordered ascending. |
+| 2.1 | 2026-07-04 | P0-1/P0-2 landed: workspace member names are the DESIGN §6 dist names (`manzil-shared`/`manzil-api`/`manzil-worker`), so `uv run --package` takes those (commands here and in AGENTS.md updated). `supabase/seed.sql` regenerated via `uv run --package manzil-shared python -m manzil_shared.catalog` (add-a-criterion runbook). Frontend Vite scaffold deferred (pnpm not installed); CI is three jobs until the Phase 1 frontend job. |
