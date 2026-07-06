@@ -389,6 +389,30 @@ class ScoreBreakdown(BaseModel):
     gates: list[GateFiring] = Field(default_factory=list)
     criteria: list[BreakdownCriterion] = Field(default_factory=list)
 
+    def to_contract(self) -> dict[str, Any]:
+        """Serialize to the exact pinned §9.3 JSON shape: `matched` is present even
+        when null; `unknown` appears only when true. This is what `scores.breakdown`
+        persists and what golden tests assert against."""
+        criteria: list[dict[str, Any]] = []
+        for c in self.criteria:
+            entry: dict[str, Any] = {
+                "key": c.key,
+                "value": c.value,
+                "matched": c.matched.model_dump(mode="json") if c.matched else None,
+                "delta": c.delta,
+            }
+            if c.unknown:
+                entry["unknown"] = True
+            criteria.append(entry)
+        return {
+            "base": self.base,
+            "total": self.total,
+            "rubric_version": self.rubric_version,
+            "clamped": self.clamped,
+            "gates": [g.model_dump(mode="json") for g in self.gates],
+            "criteria": criteria,
+        }
+
 
 class Score(BaseModel):
     hunt_listing_id: UUID
