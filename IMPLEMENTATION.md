@@ -149,6 +149,9 @@ The single-home rule itself is **settled**; every *value* in this table is a sta
 | `CHECKPOINT_TIMEOUT` | 24 h | scheduler sweep |
 | `MAX_IMAGES` / `IMAGE_MAX_DIM` | 8 / 1024 px | VISION |
 | `FETCH_MIN_BODY_BYTES` | 5 000 | outcome classifier |
+| `CLEANED_TEXT_MIN_CHARS` | 800 | outcome classifier (positive-content floor) |
+| `SHELL_SCRIPT_RATIO` | 0.7 | outcome classifier (JS-shell signature) |
+| `TIER2_MIN_DELAY_SECONDS` | 3.0 | tier-2 per-domain politeness |
 
 ---
 
@@ -301,3 +304,4 @@ Ascending chronological (matching DESIGN §20's convention); same-day entries or
 | 1.2 | 2026-07-03 | Status taxonomy (settled / proposal / interim-conditional) with per-section labels; §3 records interfaces reviewed and deliberately left as proposals with graduation at end of Phase 0; tunables split — home settled, values are starting points. |
 | 2.0 | 2026-07-03 | **Implementation-start baseline.** Phase-process critique: sequencing rules added (row order = default dependency order; 🧍 = human-only, start immediately); VALIDATE stage given an owner (P0-8); bench labeling marked parallel (P0-11); dev-seed script added (P1-1); RLS owner-membership backfill added (P2-1 — the lockout trap); Phase 3 reordered so geocode precedes its consumers (maps → DEDUPE → DISCOVER) and planner honestly split into ingest-scope (P3-2) + refresh-scope (P3-12). Changelog reordered ascending. |
 | 2.0.1 | 2026-07-04 | P0-2 catalog count 15 → 19, tracking DESIGN v2.0's seed-set additions (parking, cooling, dishwasher, min_lease_months). |
+| 2.0.2 | 2026-07-05 | P0-5/P0-6 landed: three classifier/fetch tunables added (`CLEANED_TEXT_MIN_CHARS` 800, `SHELL_SCRIPT_RATIO` 0.7, `TIER2_MIN_DELAY_SECONDS` 3.0). CLI grew corpus/census tooling: `manzil save-page` (fetch via ladder → corpus fixture), `manzil clean-corpus` (cleaner-change runbook), `manzil census` (emits `docs/hostile-domain-census.csv` from `infra/census_urls.txt`). First census run recorded: rent.com/apartmentguide/apartmentlist tier-1 ok; zumper/padmapper/hotpads need tier 2; apartments.com/zillow/realtor/trulia/forrent hostile at tier 2 — feeds the P0-14 gate. |

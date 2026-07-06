@@ -33,3 +33,11 @@ IMAGE_MAX_DIM = 1024
 
 # Fetch outcome classifier — body-size floor (bytes)
 FETCH_MIN_BODY_BYTES = 5_000
+
+# Fetch outcome classifier — cleaned-text floor (chars) for the positive-content
+# check, and the script-to-body ratio above which a page is a JS shell
+CLEANED_TEXT_MIN_CHARS = 800
+SHELL_SCRIPT_RATIO = 0.7
+
+# Tier-2 (browser) politeness: minimum seconds between fetches to one domain
+TIER2_MIN_DELAY_SECONDS = 3.0
