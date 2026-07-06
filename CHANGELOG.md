@@ -7,6 +7,44 @@ repo itself.
 
 ## Unreleased — Phase 0
 
+### 2026-07-05 — P0-6: fetch tiers 1-2 + outcome classifier + adapter registry + census
+
+- `fetching/tiers.py`: Tier 1 (httpx, sane headers) and Tier 2 (Playwright
+  Chromium, realistic fingerprint, per-domain politeness delay, opportunistic
+  screenshot); tier 3 stays gated behind the census verdict.
+- `fetching/classifier.py`: §10.7 layered outcome classification
+  (success/shell/blocked/not_listing/error) — HTTP signals, challenge
+  fingerprints and cookies, JS-shell script-ratio signature, size floors,
+  JSON-LD short-circuit, currency/bed-bath/address positive tokens.
+- `fetching/registry.py` + `ladder.py`: per-domain adapter registry
+  (`InMemoryRegistry` + asyncpg `PostgresRegistry` over migration 0001's
+  table); ladder climbs once per domain and self-tunes — second fetch of a
+  shell domain starts straight at tier 2 (test-pinned).
+- `fetching/census.py` + `manzil census`: probes `infra/census_urls.txt`,
+  emits `docs/hostile-domain-census.csv`. **First live census run committed:**
+  rent.com, apartmentguide.com, apartmentlist.com tier-1 ok; zumper,
+  padmapper, hotpads tier-2 ok; apartments.com, zillow, realtor.com,
+  trulia, forrent.com hostile at tier 2 (P0-14 gate input).
+- Tests: 12 classifier cases over committed synthetic fixture pages
+  (fixtures/pages/), ladder escalation + registry self-tuning, plus a corpus
+  sweep asserting every saved real page classifies success.
+
+### 2026-07-05 — P0-5: HTML cleaner + corpus tooling
+
+- `fetching/cleaner.py`: trafilatura primary (tables + recall favored),
+  readability-lxml fallback, and the fee-table preserver — tables mentioning
+  fees/deposits/pet charges are re-rendered as `cell | cell` lines and
+  appended under a `[FEE TABLES]` marker only when the extractor dropped them
+  (no duplication). Output carries a sha256 content hash (the §14 hash-gating
+  input).
+- `fetching/corpus.py` + CLI: `manzil save-page <url> <slug>` (fetch through
+  the ladder → corpus fixture dir with raw.html/cleaned.txt/meta.json) and
+  `manzil clean-corpus` (the cleaner-change runbook step).
+- Corpus seeded with 3 real Detroit listings from rent.com (~535 KB raw →
+  ~4.7 KB cleaned, >100x reduction; beds/baths/sqft/fee language verified
+  present). New tunables: `CLEANED_TEXT_MIN_CHARS`, `SHELL_SCRIPT_RATIO`,
+  `TIER2_MIN_DELAY_SECONDS`.
+
 ### 2026-07-05 — P0-4: migration 0001 — global tables + enums
 
 - `supabase/migrations/20260705000000_global_tables.sql`: the eight §8.2
