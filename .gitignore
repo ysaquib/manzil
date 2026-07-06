@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Env / secrets — only .env.example is committed
+.env
+.env.*
+!.env.example
+!infra/.env.example
+
+# Node (Phase 1+)
+node_modules/
+frontend/dist/
+
+# Supabase local state
+supabase/.branches/
+supabase/.temp/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
