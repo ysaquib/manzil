@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| **Version** | 2.0 |
+| **Version** | 2.1 |
 | **Status** | Living document — this is the source of truth during implementation |
 | **Supersedes** | `apartment-hunt-dashboard-design.md` draft v0.4 |
 | **Owner** | Yusuf |
@@ -136,7 +136,7 @@ Precise terms. Code, schema, API routes, and UI copy must use these consistently
 | **Unit Group** | The derived grouping of a Property's floor plans by (beds, baths). One table row per unit group. Not a stored entity. |
 | **Criterion** | One scoreable dimension (e.g., in-unit laundry). Predefined criteria live in the `criteria_catalog`; hunts may add custom criteria. |
 | **Rubric** | A hunt's enabled criteria with their options, point deltas, unknown-deltas, and gate flags. Versioned per hunt. |
-| **Gate** | A dealbreaker (option-level: if matched, score is SET) or non-negotiable (criterion-level: if no acceptable option matched, score is SET). |
+| **Gate** | A dealbreaker (option-level: if matched, score is SET) or non-negotiable (criterion-level: if no acceptable option matched, score is SET). An option is *acceptable* when its `delta ≥ 0` and it is not itself a dealbreaker option; an unknown value never satisfies a non-negotiable — missing data cannot pass a gate. |
 | **Extraction** | One agent-derived fact: (property, criterion) → value + confidence + evidence + source + model + timestamp. |
 | **Override** | A per-listing human-supplied value that displays instead of an extraction without destroying it. |
 | **Job** | One pipeline run (ingest / refresh / rescore) for a listing. The `jobs` table is simultaneously the queue, the state store, and the task-history record. |
@@ -323,6 +323,8 @@ Postgres via Supabase migrations (`supabase/migrations/`). All timestamps UTC `t
 
 `hunt_role`: owner | curator | member · `job_type`: ingest | refresh | rescore | investigate · `job_state`: queued | running | waiting_user | done | failed | cancelled · `confidence`: high | medium | low | not_found · `fetch_outcome`: success | shell | blocked | not_listing | error · `value_state`: extracted | manual | estimated | unknown
 
+Each enum type is created by the first migration whose tables need it (0001 creates `confidence` and `fetch_outcome`; the rest ship with the per-hunt/pipeline tables in 0002). Catalog vocabulary columns (`category`, `domain`, `requires_tool`, `refresh_class`) are deliberately **text + check constraints**, not enum types: their vocabularies live in `shared/models.py`, and adding a catalog category must never require a migration.
+
 ### 8.2 Tables
 
 Global (shared across hunts):
@@ -424,15 +426,17 @@ Custom criteria: name → description → automatic routing classification (`req
 
 Pure, deterministic, LLM-free, lives in `shared/`: `score(rubric, effective_values, floor_plan) → {total, breakdown}`.
 
-1. *Effective value* per criterion: override ▸ else latest extraction ▸ else unknown. Low-confidence values are treated as unknown when the hunt's confidence threshold says so.
-2. *Gate pass:* evaluate all non-negotiables and dealbreakers first. Any firing → `total = min(set_scores fired)`, breakdown records the gates, stop. (Min: multiple gates must not average up.)
-3. *Delta pass:* start at 10; apply first-matching option's delta per enabled criterion; unknown → `unknown_delta`.
+1. *Effective value* per criterion: override ▸ else latest extraction ▸ else unknown. Low-confidence values are treated as unknown when the hunt's confidence threshold says so. Floor-plan fields overlay property-level values for plan-scoped criteria (`beds`, `baths`, `sqft`, `security_deposit`, `availability_date`); `sqft` takes the conservative end of a range (`sqft_min` when present) — the tool never makes a unit look better than its worst case.
+2. *Gate pass:* evaluate all non-negotiables and dealbreakers first. Any firing → `total = min(set_scores fired)`, breakdown records the gates, stop. (Min: multiple gates must not average up.) A dealbreaker fires when the first-matching option carries a `dealbreaker_set_score`; a non-negotiable fires unless the value is known and its first-matching option is acceptable per the [§3 Gate definition](#3-glossary-and-domain-model).
+3. *Delta pass:* start at 10; apply first-matching option's delta per enabled criterion; a known value matching no option contributes 0; unknown → `unknown_delta`.
 4. Clamp to [0, 15] (bonuses may exceed 10).
+
+Match semantics (settled with the engine, P0-3): `range` is inclusive on both ends; `lt`/`gt`/`range` compare numbers with numbers or strings with strings (ISO dates order correctly as strings); object values such as `management_reviews` `{rating, summary}` compare on their `rating` field; type mismatches never raise — they simply don't match.
 
 The `breakdown` persisted with every score is a contract between the engine, its golden tests, and the detail-panel UI — its shape is fixed here:
 
 ```json
-{ "base": 10, "total": 8.5, "rubric_version": 4, "clamped": false,
+{ "base": 10, "total": 9.5, "rubric_version": 4, "clamped": false,
   "gates": [],
   "criteria": [
     { "key": "beds", "value": 2,
@@ -839,6 +843,7 @@ Chronological. Dates before 2026-07-01 are reconstructed from the drafting sessi
 | 2026-07-03 | v1.8: phase-executability audit closed five design-level gaps — seed criteria enumeration (§8.2), scheduler ownership via worker tick (§5), queue heartbeat + 5-min orphan reclaim (§8.2), invites via Supabase Auth email (§9.1), bench ground-truth labeling + hardcoded Phase 0 rubric (§19) | The criteria list had silently died in the draft→v1 rewrite; the rest were "scheduled by whom?" holes a developer would hit within days | §5, §8.2, §9.1, §19 |
 | 2026-07-03 | v1.9: IMPLEMENTATION.md v1.0 created at Phase 0 kickoff, per the deferred-until-code plan; DESIGN.md sheds nothing — the sibling adds mechanics (interfaces, tunables, prompt/fixture systems, work plans, runbooks) rather than absorbing design | Three-layer authority now live: DESIGN (intent) > IMPLEMENTATION (mechanics) > code (interfaces) | §1, §6 |
 | 2026-07-04 | v2.0 (implementation-start baseline, matching IMPLEMENTATION.md v2.0): seed-set review added parking, cooling, dishwasher, min_lease_months — the climate/logistics blind spot — and documented four deliberate exclusions (base rent, year_built, amenities catch-all, floor level/commute) with rationale | Day-one catalog additions cost schema tokens; month-two additions cost a corpus re-extraction pass — the bar is "plausibly ever scoreable" | §8.2 |
+| 2026-07-05 | v2.1: engine + schema semantics settled by P0-3/P0-4 implementation. (a) Non-negotiable "acceptable option" defined: `delta ≥ 0` and not a dealbreaker option; unknown values fire the gate. (b) Floor-plan overlay for plan-scoped criteria with conservative `sqft_min`. (c) Match semantics: inclusive `range`; `lt`/`gt`/`range` on numbers or ISO-date strings; object values compare on `rating`; unmatched known values contribute 0; type mismatches never raise. (d) Migration granularity: enums created by the first migration needing them; catalog vocabulary columns are text + check, not enum types; `extractions.criterion_key` has no FK (custom keys aren't catalog rows) and `extractions.hunt_id` gains its FK in 0002. Also fixed the §9.3 example's arithmetic (total 8.5 → 9.5) | A gate that missing data can satisfy is no gate; conservative plan values enforce the never-look-cheaper principle; enum types would put catalog vocabulary behind migrations for zero safety gain | §3, §8.1, §9.3 |
 
 ---
 

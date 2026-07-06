@@ -7,6 +7,38 @@ repo itself.
 
 ## Unreleased — Phase 0
 
+### 2026-07-05 — P0-4: migration 0001 — global tables + enums
+
+- `supabase/migrations/20260705000000_global_tables.sql`: the eight §8.2
+  global tables (criteria_catalog, properties, property_sources, floor_plans,
+  extractions, property_images, utility_baselines, fetch_adapter_registry)
+  with basic FK indexes, plus the two enums they use (`confidence`,
+  `fetch_outcome`) — remaining enums ship with migration 0002 (P1-1).
+- Deliberate choices: catalog category/domain/requires_tool/refresh_class are
+  text + check (adding a category must not take a migration); extractions is
+  append-only with no FK on `criterion_key` (custom keys aren't catalog rows)
+  and `hunt_id` unconstrained until hunts exists in 0002; `property_sources.url`
+  unique.
+- Verified: `supabase db reset` clean — migration applies, seed loads, all 19
+  catalog rows queryable with intact jsonb (closing P0-2's "loaded" leg for real).
+
+### 2026-07-05 — P0-3: scoring engine + golden tests
+
+- `manzil_shared.scoring.engine`: pure `score(rubric, effective_values,
+  floor_plan) -> ScoreBreakdown` per §9.3 — gate pass (min of fired
+  set-scores, criteria empty), delta pass (first match wins, unknown ->
+  unknown_delta), clamp [0, 15]. Plus `select_display_score` (§9.4: best plan
+  unless pinned) and `ScoreBreakdown.to_contract()` emitting the exact pinned
+  §9.3 JSON shape.
+- Semantics settled in code (proposal status, flagged for DESIGN):
+  a non-negotiable is satisfied only by a known value whose first-matching
+  option has delta >= 0 and is not a dealbreaker option; object values compare
+  on `"rating"`; lt/gt/range work on numbers and ISO-date strings; plan
+  overlay uses conservative `sqft_min`.
+- 14 golden tests in `shared/tests/golden/test_engine.py` covering gates,
+  unknowns, bonus, clamp (both ends), first-match-wins, disabled criteria,
+  object values, inclusive ranges, and multi-plan groups with pin override.
+
 ### 2026-07-05 — P0-2 follow-up: catalog 15 → 19 criteria (DESIGN v2.0)
 
 - Added the four seed-set criteria from DESIGN v2.0 §8.2 (the climate/logistics
