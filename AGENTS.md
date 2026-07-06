@@ -24,7 +24,7 @@ Agentic apartment-hunting dashboard. Monorepo: `frontend/` (React + Vite + Manti
 - Langfuse tracing on EVERY LLM call, both modes, from the first call (NFR6). An untraced call is a bug.
 
 ## Pinned data contracts (do not reshape)
-Catalog entry (§8.2) · rubric option (§8.2) · score breakdown (§9.3) · plan manifest (§10.4) · checkpoint prompt (§10.10).
+Catalog entry (§8.2) · hunt settings (§8.2) · rubric option (§8.2) · score breakdown (§9.3) · plan manifest (§10.4) · checkpoint prompt (§10.10).
 
 ## Testing
 - Scoring engine: golden tests in `shared/` asserting exact breakdowns.

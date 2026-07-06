@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| **Version** | 2.1 |
+| **Version** | 2.3 |
 | **Status** | Living document — this is the source of truth during implementation |
 | **Supersedes** | `apartment-hunt-dashboard-design.md` draft v0.4 |
 | **Owner** | Yusuf |
@@ -143,6 +143,7 @@ Precise terms. Code, schema, API routes, and UI copy must use these consistently
 | **Stage** | One step of the pipeline state machine (PLAN, VALIDATE, …). Stages are idempotent and resumable. |
 | **Checkpoint** | A pipeline pause (`WAITING_USER`) presenting a structured question to the submitter, a Curator, or the Owner. Typed by `kind`: `confirm_value`, `resolve_dedupe`, `resolve_dispute`. Auto-resumes with a declared default after 24h. There is no separate "needs review" state — human review *is* a checkpoint. |
 | **Adapter Registry** | Per-domain record of which fetch tier a site requires and its settings. |
+| **Source Policy** | A per-submission constraint on cross-checking (defaulted from hunt settings): whether DISCOVER runs at all and how high the fetch ladder may climb for *discovered sibling sources*. One of `trust_link`, `tier_1`, `tiers_1_2`, `tiers_1_2_3` (default), `tier_1_plus_official`. Never constrains the submitted URL itself ([§10.7](#107-fetching-subsystem)). |
 | **Baseline** | A cached metro-level median/peak utility cost used when a utility is not included in rent. |
 
 Ownership chain: `Hunt → hunt_listings → Property → (sources, floor_plans, extractions, images)`. Global facts flow left-to-right; per-hunt opinion (scores, overrides, comments) never leaves the Listing.
@@ -155,7 +156,7 @@ Ownership chain: `Hunt → hunt_listings → Property → (sources, floor_plans,
 
 - **FR1 — Hunts:** create/rename/archive; a Property may appear in multiple Hunts; extracted data is shared globally, everything opinionated is per-hunt.
 - **FR2 — Rubric:** guided builder, skippable but required before first submission. Owner-edited, member-viewable (read-only rubric page). Toggle catalog criteria, edit deltas, per-criterion unknown-delta, custom criteria, dealbreakers, non-negotiables. Edits bump `rubric_version` and trigger a free re-score of all listings.
-- **FR3 — Ingestion:** submit URL → pipeline per [§10](#10-agent-pipeline). Progress visible live; jobs cancellable by their submitter or the Owner.
+- **FR3 — Ingestion:** submit URL → pipeline per [§10](#10-agent-pipeline). Each submission carries a **Source Policy** ([§10.7](#107-fetching-subsystem)) — defaulting to full cross-check — controlling whether sibling sources are discovered and how high the fetch ladder may climb for them. Progress visible live; jobs cancellable by their submitter or the Owner.
 - **FR4 — Utilities intelligence:** determine included utilities; estimate excluded ones from winter-weighted metro baselines; compose all-in monthly cost with actual/estimated/unknown tagging ([§9.5](#95-utilities-and-all-in-monthly-cost)).
 - **FR5 — Table and detail:** sortable/filterable table, one row per Unit Group, detail panel (slide-up sheet on mobile) with full breakdown, evidence, images, floor plans, sources, comments, ratings.
 - **FR6 — Collaboration:** email + link invites, per-user colors, realtime sync, comments, ratings.
@@ -175,6 +176,7 @@ Enforced via Supabase RLS at the database layer, mirrored by API checks. Never f
 | Action | Owner | Curator | Member |
 |---|---|---|---|
 | Edit rubric | yes | — | — |
+| Edit hunt settings ([§8.2](#82-tables)) | yes | — | — |
 | View rubric | yes | yes | yes |
 | Add listing / submit URL | yes | yes | yes |
 | Manage (cancel/retry/reorder) **own** jobs | yes | yes | yes |
@@ -223,10 +225,10 @@ REST, resource-oriented, versioned under `/v1`. The contract is intentionally bo
 
 | Resource | Routes | Notes |
 |---|---|---|
-| Hunts | CRUD `/hunts`, `/hunts/{id}` | archive = PATCH status |
+| Hunts | CRUD `/hunts`, `/hunts/{id}` | archive = PATCH status; `settings` edits (Owner-only) validated against the [§8.2](#82-tables) settings contract, with the per-key edit effects specified there (rescore / location refresh / nothing) |
 | Members / invites | `/hunts/{id}/members`, `/hunts/{id}/invites`, `POST /invites/{token}/accept` | role changes Owner-only |
 | Rubric | `GET/PUT /hunts/{id}/rubric` | PUT validates against `value_schema`, bumps version, enqueues rescore |
-| Listings | `POST /hunts/{id}/listings` (body: URL) → creates listing + ingest job; `GET`, `DELETE` | |
+| Listings | `POST /hunts/{id}/listings` (body: URL + optional `source_policy`, defaulted from hunt settings) → creates listing + ingest job; `GET`, `DELETE` | Source Policy per [§10.7](#107-fetching-subsystem) |
 | Overrides / fees / comments / ratings | nested under `/listings/{id}/…` | permissions per [§4.2](#42-roles-and-permissions) |
 | Jobs | `GET /hunts/{id}/jobs?state=…`, `POST /jobs/{id}/cancel|retry`, `POST /jobs/{id}/checkpoint` (answer) | reads also served by Realtime |
 | Refresh | `POST /listings/{id}/refresh`, `POST /hunts/{id}/refresh` (optional `fields`) | inserts refresh jobs |
@@ -369,7 +371,7 @@ The v1 seed set (`refresh_class` values map to the TTL table in [§14](#14-cachi
 | cooling | unit | enum: central, window_units, none | — | listing_details |
 | dishwasher | unit | bool | — | listing_details |
 | min_lease_months | policy | int (shortest offered term) | — | pricing |
-| grocery_proximity | location | number (minutes, walking or driving per hunt setting) | maps | location |
+| grocery_proximity | location | number (minutes, walking or driving per the hunt's `proximity_mode` setting) | maps | location |
 | management_reviews | reputation | number 1–5 + summary text | maps (Places reviews) | reviews |
 | location_safety | location | enum low/med/high, low-confidence by design (R8) | web_search | reviews |
 
@@ -381,10 +383,21 @@ The §9.5 utility/fee fields (`utilities_included`, `mandatory_fees`, `pet_costs
 
 Per hunt:
 
-- **hunts** — `id, name, owner_id, domain (rent | buy, v1 supports rent only), rubric_version int, settings jsonb, archived_at`.
+- **hunts** — `id, name, owner_id, domain (rent | buy, v1 supports rent only), rubric_version int, settings jsonb, archived_at`. `settings` is the **hunt settings object** — Owner-edited ([§4.2](#42-roles-and-permissions)), API-validated, with every key defaulted so an empty object is always valid. Its shape is pinned here because the API (validation), the engine/composer (scoring inputs), the planner (source policy), and the frontend (settings panel) all read it:
+
+```json
+{ "default_source_policy": "tiers_1_2_3",
+  "cost_estimate_mode": "conservative",
+  "min_confidence": "medium",
+  "proximity_mode": "driving" }
+```
+
+  Key semantics, each owned by the section cited: `default_source_policy` — seeds the per-submission Source Policy selector ([§10.7](#107-fetching-subsystem)); editing it affects **future submissions only** — existing listings keep their persisted per-listing policy. `cost_estimate_mode` (`conservative | median`) — which baseline figure estimated utility components use in the all-in composition ([§9.5](#95-utilities-and-all-in-monthly-cost)). `min_confidence` (`low | medium | high`) — extractions below this confidence score as unknown ([§9.3](#93-scoring-engine)); default `medium`, so low-confidence values can never silently satisfy a gate. `proximity_mode` (`walking | driving`) — travel mode for location-proximity criteria such as `grocery_proximity`.
+
+  Edit effects follow from what each key feeds: `cost_estimate_mode` and `min_confidence` are **scoring inputs**, so editing them takes the exact rubric-mutation path ([§9.2](#92-rubric-system)) — bump `rubric_version`, enqueue the free hunt-level rescore; `rubric_version` is honestly "the version of how points are computed," and these settings are part of that. `proximity_mode` changes what ENRICH computes, so editing it enqueues a field-scoped refresh of location-class criteria ([§14](#14-caching-and-refresh-strategy)) — cheap Maps calls, no LLM. `default_source_policy` triggers nothing.
 - **hunt_members** — `hunt_id, user_id, role hunt_role, color`. Every per-hunt RLS policy keys off this table.
 - **invites** — `hunt_id, email nullable, token, role_granted, created_by, expires_at, accepted_by`.
-- **hunt_listings** — `hunt_id, property_id, added_by, status (active | archived), pins jsonb, created_at`. `pins` maps a Unit Group key (`"{beds}-{baths}"`) to a `floor_plan_id` — a pin is **per unit group**, not per listing, because one listing typically holds several groups.
+- **hunt_listings** — `hunt_id, property_id, added_by, status (active | archived), source_policy text, pins jsonb, created_at`. `source_policy` is the Source Policy chosen at submission ([§10.7](#107-fetching-subsystem)) — text + check constraint, defaulted from `hunts.settings.default_source_policy`; refresh jobs read it so a trusted-link listing never silently grows sibling sources. `pins` maps a Unit Group key (`"{beds}-{baths}"`) to a `floor_plan_id` — a pin is **per unit group**, not per listing, because one listing typically holds several groups.
 - **rubric_criteria** — `hunt_id, catalog_key nullable, custom_def jsonb nullable, enabled, options jsonb, unknown_delta numeric, non_negotiable jsonb nullable, is_bonus bool (derived), position`. Option shape (one of two places code snippets are warranted — this object is load-bearing):
 
 ```json
@@ -418,7 +431,7 @@ Hunt creation makes the creator Owner and opens the rubric wizard (skippable; fi
 
 ### 9.2 Rubric System
 
-The catalog defines what *can* be scored; the rubric defines what *is* scored and how. Validation: every option `match` must satisfy the criterion's `value_schema` (backend-enforced; frontend renders widgets from the same schema — one schema, two validators, zero drift). Options are ordered; first match wins; overlapping matches produce a save-time warning. `is_bonus` is derived: all deltas ≥ 0. Any rubric mutation bumps `hunts.rubric_version` and enqueues **one hunt-level `rescore` job** that fans out over the hunt's listings internally — atomic per rubric version, no LLM, effectively free.
+The catalog defines what *can* be scored; the rubric defines what *is* scored and how. Validation: every option `match` must satisfy the criterion's `value_schema` (backend-enforced; frontend renders widgets from the same schema — one schema, two validators, zero drift). Options are ordered; first match wins; overlapping matches produce a save-time warning. `is_bonus` is derived: all deltas ≥ 0. Any rubric mutation bumps `hunts.rubric_version` and enqueues **one hunt-level `rescore` job** that fans out over the hunt's listings internally — atomic per rubric version, no LLM, effectively free. Scoring-affecting hunt-settings edits (`cost_estimate_mode`, `min_confidence` — [§8.2](#82-tables)) take this same path: same version bump, same rescore job.
 
 Custom criteria: name → description → automatic routing classification (`requires_tool`) via one cheap LLM call → **user confirms the routing with one click** → options defined like any catalog criterion. Misroutes are caught at authoring time, not ingestion time.
 
@@ -426,7 +439,7 @@ Custom criteria: name → description → automatic routing classification (`req
 
 Pure, deterministic, LLM-free, lives in `shared/`: `score(rubric, effective_values, floor_plan) → {total, breakdown}`.
 
-1. *Effective value* per criterion: override ▸ else latest extraction ▸ else unknown. Low-confidence values are treated as unknown when the hunt's confidence threshold says so. Floor-plan fields overlay property-level values for plan-scoped criteria (`beds`, `baths`, `sqft`, `security_deposit`, `availability_date`); `sqft` takes the conservative end of a range (`sqft_min` when present) — the tool never makes a unit look better than its worst case.
+1. *Effective value* per criterion: override ▸ else latest extraction ▸ else unknown. Extractions below the hunt's `min_confidence` setting ([§8.2](#82-tables)) are treated as unknown. Floor-plan fields overlay property-level values for plan-scoped criteria (`beds`, `baths`, `sqft`, `security_deposit`, `availability_date`); `sqft` takes the conservative end of a range (`sqft_min` when present) — the tool never makes a unit look better than its worst case.
 2. *Gate pass:* evaluate all non-negotiables and dealbreakers first. Any firing → `total = min(set_scores fired)`, breakdown records the gates, stop. (Min: multiple gates must not average up.) A dealbreaker fires when the first-matching option carries a `dealbreaker_set_score`; a non-negotiable fires unless the value is known and its first-matching option is acceptable per the [§3 Gate definition](#3-glossary-and-domain-model).
 3. *Delta pass:* start at 10; apply first-matching option's delta per enabled criterion; a known value matching no option contributes 0; unknown → `unknown_delta`.
 4. Clamp to [0, 15] (bonuses may exceed 10).
@@ -462,7 +475,7 @@ The criterion that matters most gets its own machinery.
 
 *Estimation fallback:* non-included utilities draw from `utility_baselines` — metro-level (zip-level rejected: more calls for precision a leasing-office quote overrides anyway), 120-day TTL (self-healing, not churn-driven), populated by one scheduled LLM+search pass per metro over utility-rate sources. `monthly_high` is the winter-weighted peak month — a Midwest January, not an annual average. Electric heat uses the electric-heat winter figure; unknown heating takes the worse of the two and flags it.
 
-*Composition:* `all_in = rent + mandatory_fees + pet_monthly + Σ(estimated non-included utilities)`, every component tagged `actual | estimated | unknown`. **Defaults to conservative** (`monthly_high` for all estimated components): the tool must never make an apartment look cheaper than the worst realistic month. Hunt-level toggle can relax to median. Fully unknown utilities → the criterion's `unknown_delta`, never a fabricated number, plus a "fees unverified" badge.
+*Composition:* `all_in = rent + mandatory_fees + pet_monthly + Σ(estimated non-included utilities)`, every component tagged `actual | estimated | unknown`. **Defaults to conservative** (`monthly_high` for all estimated components): the tool must never make an apartment look cheaper than the worst realistic month. The hunt's `cost_estimate_mode` setting ([§8.2](#82-tables)) can relax to median. Fully unknown utilities → the criterion's `unknown_delta`, never a fabricated number, plus a "fees unverified" badge.
 
 *Fees checklist:* standard fee slots (admin, water/sewer billing, valet trash, parking, pet rent, insurance program) with states extracted / manual / unknown. Any permitted user ([§4.2](#42-roles-and-permissions)) fills slots after a leasing-office call; manual entries carry a person-pencil icon + attribution on hover — unmistakable from agent-sourced values. Unknown slots keep contributing unknown, so an unfilled checklist never silently improves a score.
 
@@ -542,7 +555,7 @@ The Phase 0 CLI and the Phase 1+ queue worker are two entry points calling the s
 | PLAN | Build run manifest: stages to run, sources to (re)fetch, cache/TTL decisions, cost estimate | tiny LLM assist; mostly deterministic | Manifest persisted as `jobs.plan`. A manifest builder, **not** an open-ended agent — that restraint is deliberate ([§20](#20-decision-log)) |
 | VALIDATE | Is this a rental listing page? | small | Heuristics first, LLM to confirm |
 | DEDUPE | Name+address → geocode → match `properties` | small | <100 m AND name-similar → merge; gray zone → checkpoint |
-| DISCOVER | Find official site + up to 2 sibling sources | judgment-tier | Third source fetched only if first two disagree ([§15](#15-cost-model-and-optimization)) |
+| DISCOVER | Find official site + up to 2 sibling sources | judgment-tier | Third source fetched only if first two disagree ([§15](#15-cost-model-and-optimization)); skipped entirely under `trust_link`, tier-capped by the run's Source Policy ([§10.7](#107-fetching-subsystem)) |
 | FETCH | Tier ladder per adapter registry | none | [§10.7](#107-fetching-subsystem) |
 | EXTRACT | Full-catalog structured extraction from cleaned text | workhorse | Schema generated from `criteria_catalog`; every field = value + confidence + evidence_quote |
 | VERIFY | Per-source audit | workhorse | [§10.5](#105-verification-agent) |
@@ -558,6 +571,7 @@ Deterministic-first: TTL lookups, hash checks, refresh-scope resolution, and ada
 
 ```json
 { "job_type": "refresh", "trigger": "ttl:rent_expired",
+  "source_policy": "tiers_1_2_3",
   "sources": [
     { "source_id": "…", "action": "fetch", "tier": 1 },
     { "source_id": "…", "action": "skip", "why": "hash_fresh" } ],
@@ -591,6 +605,20 @@ The winning rule is stored on the extraction (`resolution_rule`).
 - **Tier 1 — httpx:** plain HTTP with sane headers. Covers most official complex sites; DISCOVER deliberately prioritizes finding these.
 - **Tier 2 — Playwright:** realistic-fingerprint headless browser for JS-rendered but unprotected pages. Slow, polite, per-domain rate-limited. Captures the opportunistic screenshot (already rendering — the photo is free).
 - **Tier 3 — managed unblocker/actor:** Bright Data / Apify / Firecrawl / ScrapingBee for hostile aggregators. Fallback, never default: per-request cost + third-party dependency for the ~80% of fetches that don't need it. Within Tier 3, Apify's maintained aggregator actors return structured JSON and can bypass FETCH+EXTRACT entirely for those domains (their schema mapped onto ours, then normal VERIFY/RECONCILE). **Deferred pending the Phase 0 hostile-domain test** ([§19](#19-implementation-phases)) — build only if the aggregators actually matter for SE Michigan inventory.
+
+**Source Policy (cross-check control).** Every submission carries a Source Policy governing how aggressively the pipeline corroborates the submitted link against other sites. The default is full cross-check — the behavior described everywhere else in this document. The options:
+
+| Policy | DISCOVER | Sibling-source tier cap |
+|---|---|---|
+| `trust_link` | skipped | — (no siblings; single-source run) |
+| `tier_1` | runs | siblings limited to Tier 1 domains |
+| `tiers_1_2` | runs | siblings limited to Tiers 1–2 |
+| `tiers_1_2_3` **(default)** | runs | no cap — current full behavior |
+| `tier_1_plus_official` | runs | sibling aggregators limited to Tier 1; the official complex site fetched at whatever tier it requires |
+
+Semantics, precisely: the policy constrains **discovered sibling sources only — never the submitted URL**, which is always fetched at its registry-required tier (the user brought it; refusing it would make the submission meaningless). "Tier" here is the domain's required fetch tier per the adapter registry — a cost/hostility cap, not a source-quality ranking. A sibling whose domain requires a tier above the cap is not fetched-and-escalated; it is skipped at plan time and recorded in the manifest (`"action": "skip", "why": "policy_tier_cap"`). A sibling that unexpectedly classifies `shell`/`blocked` at the cap is likewise skipped rather than escalated, and the registry still records the outcome so the ladder's self-tuning is unaffected. The §15 source-count discipline (third source only on disagreement) applies *beneath* the cap — policy is an upper bound, not a fetch mandate.
+
+The policy is selected at submit time (FR3), defaulting from `hunts.settings.default_source_policy` (itself defaulting to `tiers_1_2_3`), persisted on the listing (`hunt_listings.source_policy`) so refresh jobs honor the same constraint, and recorded in the plan manifest ([§10.4](#104-planner)). Under `trust_link` the run is single-source: RECONCILE degrades trivially (one candidate per criterion, `resolution_rule: single_source`), and the listing carries a permanent **"single source — not cross-checked"** badge in the table and detail panel, because the cross-source outvoting that backs R3/R4 is absent by the user's explicit choice ([§16](#16-security-and-privacy)). VERIFY and the deterministic truth layer are untouched in every policy — Source Policy narrows *which pages feed the pipeline*, never *what counts as correct*.
 
 **Tier-detection heuristics (fetch outcome classification).** Every fetch is classified `success | shell | blocked | not_listing | error` by layered checks, cheapest first. *HTTP-layer signals:* status 403/429/503, challenge headers and cookies (Cloudflare `cf-chl`/`cf_clearance` flows, PerimeterX `_px` cookies), redirects to captcha paths. *Negative body signals:* rendered text under a size floor (~5 KB), known challenge fingerprints ("Pardon Our Interruption", "Verify you are human", "Enable JavaScript and cookies to continue", `cf-challenge` markup), or a body that is nearly all script tags (the JS-shell signature). *Positive content signals:* cleaned text above a length threshold **and** at least one of — a currency amount pattern, bed/bath tokens, or an address fragment; JSON-LD `schema.org` blocks (`ApartmentComplex`, `RealEstateListing`, `Offer`) are a strong positive that also short-circuits doubt. Routing: `shell` → escalate one tier; `blocked` → escalate and record in the registry; `not_listing` → the VALIDATE verdict (surface to user); `success` → clean, hash, proceed. Outcomes update `fetch_adapter_registry` so the ladder self-tunes: a previously easy domain that starts failing simply resumes climbing from the next tier.
 
@@ -680,15 +708,16 @@ Alternatives explicitly evaluated per Yusuf's request — indicative list pricin
 /h/:huntId/rubric       Rubric (wizard for Owner; read-only for others)
 /h/:huntId/tasks        Tasks — Active | History tabs
 /h/:huntId/compare      2–4 listing side-by-side
-/h/:huntId/settings     Members, roles, invites, colors, danger zone (Owner)
+/h/:huntId/settings     Members, roles, invites, colors, hunt settings (§8.2 — Owner-edited,
+                        member-viewable), danger zone (Owner)
 /invite/:token          Invite acceptance (auth-gated)
 ```
 
 ### 13.2 Key Views (Mantine mapping)
 
-**Overview table** (`mantine-react-table` or Mantine Table + TanStack): score cell with color scale + stacked-layers multi-score indicator + auto-resolved clock badge + stale badge; columns for name, unit group, rent range, sqft range, all-in cost (estimated portion visually distinct, e.g. `$1,845 (~$210 est.)`), top enabled criteria, rating dots per member color, comment count. Filters include `hide score < N`.
+**Overview table** (`mantine-react-table` or Mantine Table + TanStack): score cell with color scale + stacked-layers multi-score indicator + auto-resolved clock badge + stale badge + single-source badge for `trust_link` listings ([§10.7](#107-fetching-subsystem)); columns for name, unit group, rent range, sqft range, all-in cost (estimated portion visually distinct, e.g. `$1,845 (~$210 est.)`), top enabled criteria, rating dots per member color, comment count. Filters include `hide score < N`. The submit-URL control carries a Source Policy `Select` preset to the hunt default — visible but not in the way, since the default is right for most submissions.
 
-**Detail panel** — `Drawer` on desktop, bottom `Drawer`/sheet on mobile: criterion breakdown with evidence quotes and override controls, `Image` gallery with vision assessments, floor plans with pin control, sources with `last_fetched_at`, fee checklist, comments, score history across rubric versions, any open/auto-resolved checkpoints for this listing, and an **Investigate** action (FR12) that enqueues an `investigate` job and renders the returned brief when complete.
+**Detail panel** — `Drawer` on desktop, bottom `Drawer`/sheet on mobile: criterion breakdown with evidence quotes and override controls, `Image` gallery with vision assessments, floor plans with pin control, sources with `last_fetched_at` plus the listing's Source Policy (changeable here — relaxing it enqueues a refresh that discovers the newly allowed sources), fee checklist, comments, score history across rubric versions, any open/auto-resolved checkpoints for this listing, and an **Investigate** action (FR12) that enqueues an `investigate` job and renders the returned brief when complete.
 
 **Tasks** — Active tab: live job cards (Realtime on `jobs`/`job_events`) with stage progress, checkpoint prompts rendered inline (screenshot beside the buttons when available), cancel/retry per permissions. **History tab (FR10):** every past run, filterable by listing/member/outcome; expanding a run shows the plan manifest, `Timeline` of stage events, checkpoint Q&A including auto-resolutions, errors, and actual cost.
 
@@ -738,7 +767,7 @@ Fixed monthly: Cloudflare Pages $0 · Supabase $0 (cleaned-text caching + image 
 ## 16. Security and Privacy
 
 - **RLS is the boundary.** Every per-hunt table policy joins through `hunt_members`; global fact tables are client-read-only. API mutations run under the user JWT; only the worker holds the service role.
-- **Prompt injection via scraped pages** (untrusted input into prompts): extraction agents have *zero tool access* — worst-case injection is a bad value, not an action; VERIFY's evidence audit rejects values without genuine page evidence; plausibility bands catch absurd numbers; the fields most worth lying about (rent, fees) are exactly the cross-source-reconciled ones. Reduces injection from "compromise" to "one bad field that other sources outvote."
+- **Prompt injection via scraped pages** (untrusted input into prompts): extraction agents have *zero tool access* — worst-case injection is a bad value, not an action; VERIFY's evidence audit rejects values without genuine page evidence; plausibility bands catch absurd numbers; the fields most worth lying about (rent, fees) are exactly the cross-source-reconciled ones. Reduces injection from "compromise" to "one bad field that other sources outvote." A `trust_link` Source Policy ([§10.7](#107-fetching-subsystem)) removes the outvoting layer by explicit user choice; the zero-tool, evidence-audit, and plausibility controls still apply in full, and the permanent single-source badge keeps the reduced assurance visible.
 - **Invite tokens:** random, expiring, single-role, revocable; accepting requires an authenticated session.
 - **Secrets:** all API keys server-side only (Render env); the frontend holds nothing but the Supabase anon key, which RLS renders safe.
 - **PII posture:** the system stores members' emails, names/colors, comments, and searched addresses (commute targets). No listing-agent PII is extracted or stored. Screenshots and cleaned text may embed page content — 30-day screenshot retention bounds this.
@@ -844,6 +873,8 @@ Chronological. Dates before 2026-07-01 are reconstructed from the drafting sessi
 | 2026-07-03 | v1.9: IMPLEMENTATION.md v1.0 created at Phase 0 kickoff, per the deferred-until-code plan; DESIGN.md sheds nothing — the sibling adds mechanics (interfaces, tunables, prompt/fixture systems, work plans, runbooks) rather than absorbing design | Three-layer authority now live: DESIGN (intent) > IMPLEMENTATION (mechanics) > code (interfaces) | §1, §6 |
 | 2026-07-04 | v2.0 (implementation-start baseline, matching IMPLEMENTATION.md v2.0): seed-set review added parking, cooling, dishwasher, min_lease_months — the climate/logistics blind spot — and documented four deliberate exclusions (base rent, year_built, amenities catch-all, floor level/commute) with rationale | Day-one catalog additions cost schema tokens; month-two additions cost a corpus re-extraction pass — the bar is "plausibly ever scoreable" | §8.2 |
 | 2026-07-05 | v2.1: engine + schema semantics settled by P0-3/P0-4 implementation. (a) Non-negotiable "acceptable option" defined: `delta ≥ 0` and not a dealbreaker option; unknown values fire the gate. (b) Floor-plan overlay for plan-scoped criteria with conservative `sqft_min`. (c) Match semantics: inclusive `range`; `lt`/`gt`/`range` on numbers or ISO-date strings; object values compare on `rating`; unmatched known values contribute 0; type mismatches never raise. (d) Migration granularity: enums created by the first migration needing them; catalog vocabulary columns are text + check, not enum types; `extractions.criterion_key` has no FK (custom keys aren't catalog rows) and `extractions.hunt_id` gains its FK in 0002. Also fixed the §9.3 example's arithmetic (total 8.5 → 9.5) | A gate that missing data can satisfy is no gate; conservative plan values enforce the never-look-cheaper principle; enum types would put catalog vocabulary behind migrations for zero safety gain | §3, §8.1, §9.3 |
+| 2026-07-06 | v2.2: **Source Policy** added — per-submission cross-check control (`trust_link` \| `tier_1` \| `tiers_1_2` \| `tiers_1_2_3` default \| `tier_1_plus_official`), defaulted from hunt settings, persisted on `hunt_listings`, recorded in the plan manifest. Constrains discovered sibling sources only (the submitted URL is always fetched at its required tier); over-cap siblings are skipped at plan time, never escalated; `trust_link` runs single-source with a permanent badge and a documented R3/R4 posture change. The deterministic truth layer is untouched under every policy | User control over the cost/latency/assurance trade per link; a trusted official-site link shouldn't force aggregator scraping, and the choice must stay visible exactly where it weakens the trust story | §3, §4.1, §5.1, §8.2, §10.3, §10.4, §10.7, §13.2, §16 |
+| 2026-07-06 | v2.3: **hunt settings contract pinned** (§8.2) — the four settings the design already implied, gathered into one Owner-edited, API-validated object: `default_source_policy` (§10.7), `cost_estimate_mode` (§9.5), `min_confidence` (§9.3, default `medium`), `proximity_mode` (§8.2 catalog). Edit effects specified per key: scoring inputs (`cost_estimate_mode`, `min_confidence`) reuse the rubric-mutation path — version bump + free rescore; `proximity_mode` triggers a field-scoped location refresh; `default_source_policy` affects future submissions only. "Edit hunt settings" added to the §4.2 matrix (Owner-only); settings panel added to the §13.1 settings route. No speculative settings added — every key is read by machinery already in the design | Four subsystems read this object, so its shape is design, not implementation (the v1.3 pinning standard); routing scoring-affecting edits through `rubric_version` keeps score provenance honest — a stored breakdown is fully explained by its version | §4.2, §5.1, §8.2, §9.2, §9.3, §9.5, §13.1, §20 |
 
 ---
 

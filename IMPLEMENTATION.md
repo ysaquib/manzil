@@ -106,6 +106,7 @@ class RunState(BaseModel):
     job_type: JobType                     # ingest | refresh | rescore | investigate
     mode: Literal["workflow", "agents"] = "workflow"
     url: str
+    source_policy: SourcePolicy = "tiers_1_2_3"   # §10.7; read by PLAN + DISCOVER
     hunt_listing_id: UUID | None = None   # None in Phase 0 CLI runs
     plan: PlanManifest | None = None      # §10.4 contract shape
     cursor: int = 0                       # index into the stage list
@@ -225,9 +226,9 @@ These tables are written from DESIGN contracts, so the *breakdown* is stable —
 | P1-2 | Queue mechanics: claim, heartbeat, orphan reclaim, cancel-between-stages | §8.2, §10.1 | kill -9 mid-job → job resumes from `current_stage` within 5 min |
 | P1-3 | Worker loop as FastAPI lifespan task (budget option per §5) with clean-shutdown drain | §5 | jobs process while API serves; deploy doesn't lose work |
 | P1-4 | API skeleton: JWT middleware (supabase-py token passthrough), error envelope, health | §5.1, §2 here | authed request round-trips; RLS sees real JWT |
-| P1-5 | Hunts CRUD + rubric GET/PUT (validate options vs `value_schema`, bump version, enqueue hunt-level rescore) | §5.1, §9.2 | invalid option rejected with field-level error; rescore job lands |
+| P1-5 | Hunts CRUD + rubric GET/PUT (validate options vs `value_schema`, bump version, enqueue hunt-level rescore) + hunt-settings PATCH (validate vs §8.2 contract; scoring-affecting keys reuse the bump-and-rescore path; every key defaulted) | §5.1, §8.2, §9.2 | invalid option/setting rejected with field-level error; rescore job lands; `min_confidence` flip rescores seeded listings |
 | P1-6 | Rescore job type: fan-out over listings, per-plan scores, breakdown persisted | §9.3–9.4 | rubric edit re-scores 3 seeded listings; breakdowns match goldens |
-| P1-7 | Listings + jobs endpoints: POST URL → listing + ingest job; cancel/retry; checkpoint answer | §5.1 | CLI path and API path produce identical job rows |
+| P1-7 | Listings + jobs endpoints: POST URL (+ optional `source_policy`, defaulted from hunt settings) → listing + ingest job; cancel/retry; checkpoint answer | §5.1, §10.7 | CLI path and API path produce identical job rows; policy persisted on the listing (inert until DISCOVER exists in P3-5) |
 | P1-8 | Overrides + fee-checklist endpoints (append-only, attribution) | §9.5–9.6 | override displays over extraction; original retrievable |
 | P1-9 | Frontend shell: Mantine app frame, Supabase auth, routes, hunt switcher, Query client | §13.1 | login → create hunt → land on empty Overview |
 | P1-10 | Overview table: unit-group rows, score cell (color scale, multi-score indicator, stale + auto-resolved badges), range columns, `hide score < N` filter | §9.4, §13.2 | seeded multi-plan property renders one row per group with indicator |
@@ -246,7 +247,7 @@ These tables are written from DESIGN contracts, so the *breakdown* is stable —
 | P2-4 | Realtime: per-hunt channels on the §13.3 tables → Query invalidation; delete P1-13 polling | §13.3 | two browsers see a score change < 2 s apart; no polling remains |
 | P2-5 | Comments (soft-delete), per-user ratings, color assignment + settings UI | §8.2, §13 | rating dots render in member colors |
 | P2-6 | Tasks History tab: run list w/ filters, expanded `Timeline` from job_events, checkpoint Q&A incl. auto-resolutions, per-run cost | FR10, §13.2 | a Phase 0-era job renders fully from its events |
-| P2-7 | Member management: roles, removal, owner transfer, danger zone | §4.2, §9.1 | owner transfer leaves exactly one owner (constraint-tested) |
+| P2-7 | Member management: roles, removal, owner transfer, danger zone; hunt-settings panel (Owner-edited, member-viewable — §8.2 keys with plain-language labels) | §4.2, §8.2, §9.1 | owner transfer leaves exactly one owner (constraint-tested); settings edit round-trips through the P1-5 PATCH |
 | P2-8 | Curator end-to-end: overrides/fees/checkpoints on others' listings allowed; job management on others' denied | §4.2 | verified by P2-2 suite + manual pass |
 | P2-9 | Exit: partner active in the real hunt; revise Phase 3 table | §19 | both members using it in anger |
 
@@ -258,11 +259,11 @@ These tables are written from DESIGN contracts, so the *breakdown* is stable —
 | P3-2 | Planner v1, **scoped to ingest manifests** (cache/TTL-aware refresh planning completes in P3-12, which builds the inputs it reads) | §10.4 | ingest of a known property plans skip-refetch correctly |
 | P3-3 | Maps tools + forever-cache: geocode, Places, Routes (pulled ahead of its consumers — DEDUPE and ENRICH both read geocode) | §10.9, §12 | cached second geocode is $0 and instant |
 | P3-4 | DEDUPE full: geocode + name similarity, gray-zone `resolve_dedupe` checkpoint, `split_property` admin op | §8.2, §10.3 | seeded near-duplicate pair → checkpoint; split restores cleanly |
-| P3-5 | DISCOVER: provider web-search tool, same-property judgment, official-site preference; source cap logic ("third only on disagreement") | §10.2 P3, §10.3, §15 | finds official site for ≥70% of bench complexes |
+| P3-5 | DISCOVER: provider web-search tool, same-property judgment, official-site preference; source cap logic ("third only on disagreement"); Source Policy enforcement — skip stage under `trust_link`, plan-time tier caps on siblings (`skip: policy_tier_cap`), `tier_1_plus_official` carve-out; policy `Select` on the submit control + single-source badge | §10.2 P3, §10.3, §10.7, §15 | finds official site for ≥70% of bench complexes; `trust_link` run produces zero DISCOVER events; over-cap sibling recorded as skipped in the manifest |
 | P3-6 | Multi-source fan-out: FETCH per source, EXTRACT/VERIFY per source, RECONCILE ladder + `resolution_rule` + `disputed` handling | §10.6 | conflicting fixture pair resolves per ladder; rule recorded |
 | P3-7 | Images: download, WebP, ≤10 cap → VISION with versioned reference set; skip-on-unchanged-hashes | §10.8, §14 | two runs, no image change → zero vision spend |
-| P3-8 | ENRICH remainder: grocery + commute criteria live; reviews summary + safety synthesis (low-confidence framing) | §10.3, §10.9, R8 | safety renders with confidence labeling, not as fact |
-| P3-9 | Utility baselines job + all-in composition (conservative default, tagged components, "fees unverified" badge) | §9.5 | winter-weighted estimate visible and overrideable |
+| P3-8 | ENRICH remainder: grocery + commute criteria live (honoring `settings.proximity_mode`; edit → field-scoped location refresh); reviews summary + safety synthesis (low-confidence framing) | §8.2, §10.3, §10.9, R8 | safety renders with confidence labeling, not as fact; proximity-mode flip re-enriches without LLM spend |
+| P3-9 | Utility baselines job + all-in composition (conservative default via `settings.cost_estimate_mode`, tagged components, "fees unverified" badge) | §8.2, §9.5 | winter-weighted estimate visible and overrideable; mode flip to median rescores without refetch |
 | P3-10 | Custom criteria: authoring flow w/ routing classification + confirm, CUSTOM_MATCH dispatch | §9.2, §10.9 | commute-to-address criterion authored → scored end-to-end |
 | P3-11 | Checkpoints complete: `waiting_user` UI w/ screenshot, 24 h sweep via scheduler tick, auto-resolve badge + reopen/re-score | §10.10, §5 | ignored checkpoint auto-resolves at 24 h; late answer re-scores |
 | P3-12 | Refresh: TTL classes, content-hash gating, field-scoped partial refresh, batch-API routing; **planner refresh-mode completes here** | §14, §11.3, §10.4 | unchanged-page refresh costs a fetch + hash compare only |
@@ -278,6 +279,8 @@ Learning track L1–L4 interleaves per DESIGN §19 gating; L-tasks get their own
 *Status: settled.*
 
 **Add a catalog criterion:** edit `shared/catalog.py` → regenerate `supabase/seed.sql` → `supabase db reset` → extraction schema picks it up automatically → add golden covering it → if gate-eligible, add a bench label field.
+
+**Modify an existing criterion:** *widening* (new enum value, relaxed bound) — edit `catalog.py`, regenerate (+ `catalog_sync` migration post-Phase 1), update the golden; history and rubrics stay valid. *Narrowing* (removed value, tightened bound) — (1) impact-query nonconforming extractions and affected rubric options first; (2) define the value mapping; (3) one migration: upsert schema → **append** superseding extraction rows with the mapped values (`resolution_rule='schema_migration'`; never rewrite append-only history) → rewrite affected rubric options → bump touched hunts' `rubric_version` → enqueue their rescores; (4) re-run the bench (schema changes are output-affecting); (5) DESIGN §20 entry, mandatory. *Type changes* — never in place: retire the old key (disable in rubrics, keep history), add a new key. Post-Phase 1 deploy order for any of these: `supabase db push` **before** rolling services — old-worker/new-DB skew is benign, the reverse is not.
 
 **Change a prompt or model:** bump `version` in the prompt front-matter (or model pin in `llm/config.py`) → run the bench in replay-invalidating mode (`record` against bench set) → compare report to previous → commit prompt + recorded fixtures + report together. No eyeball-only prompt merges (DESIGN §6).
 
@@ -305,3 +308,5 @@ Ascending chronological (matching DESIGN §20's convention); same-day entries or
 | 2.0 | 2026-07-03 | **Implementation-start baseline.** Phase-process critique: sequencing rules added (row order = default dependency order; 🧍 = human-only, start immediately); VALIDATE stage given an owner (P0-8); bench labeling marked parallel (P0-11); dev-seed script added (P1-1); RLS owner-membership backfill added (P2-1 — the lockout trap); Phase 3 reordered so geocode precedes its consumers (maps → DEDUPE → DISCOVER) and planner honestly split into ingest-scope (P3-2) + refresh-scope (P3-12). Changelog reordered ascending. |
 | 2.0.1 | 2026-07-04 | P0-2 catalog count 15 → 19, tracking DESIGN v2.0's seed-set additions (parking, cooling, dishwasher, min_lease_months). |
 | 2.0.2 | 2026-07-05 | P0-5/P0-6 landed: three classifier/fetch tunables added (`CLEANED_TEXT_MIN_CHARS` 800, `SHELL_SCRIPT_RATIO` 0.7, `TIER2_MIN_DELAY_SECONDS` 3.0). CLI grew corpus/census tooling: `manzil save-page` (fetch via ladder → corpus fixture), `manzil clean-corpus` (cleaner-change runbook), `manzil census` (emits `docs/hostile-domain-census.csv` from `infra/census_urls.txt`). First census run recorded: rent.com/apartmentguide/apartmentlist tier-1 ok; zumper/padmapper/hotpads need tier 2; apartments.com/zillow/realtor/trulia/forrent hostile at tier 2 — feeds the P0-14 gate. |
+| 2.0.3 | 2026-07-06 | Tracking DESIGN v2.2 (Source Policy): `source_policy` field added to the RunState proposal; P1-7 accepts + persists the policy (inert until DISCOVER exists); P3-5 owns enforcement (skip under `trust_link`, plan-time tier caps, `tier_1_plus_official` carve-out) plus the submit-control `Select` and single-source badge. |
+| 2.0.4 | 2026-07-06 | Tracking DESIGN v2.3 (hunt settings contract): P1-5 grows the settings PATCH (contract validation, scoring-affecting keys reuse bump-and-rescore); P2-7 grows the hunt-settings panel; P3-8 honors `proximity_mode` (edit → field-scoped location refresh); P3-9 reads `cost_estimate_mode`. |
