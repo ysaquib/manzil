@@ -61,40 +61,96 @@ supabase start                 # local Postgres/Auth/Storage/Realtime stack
 
 ## Commands
 
-### CLI
+### The daily loop
+
+The four commands you run constantly, in the order you usually run them:
 
 ```bash
-uv run manzil --help
-uv run manzil ingest <url>     # ingest a listing URL, print the score breakdown (lands in P0-10)
+supabase db reset          # rebuild local DB: migrations + generated catalog seed
+uv run pytest              # full suite: goldens, catalog round-trip, cleaner, classifier, ladder
+uv run ruff check --fix . && uv run ruff format .
+uv run mypy                # --strict on shared/ (the engine must be airtight)
 ```
+
+If all four are green, CI will be green — they are exactly the three CI jobs.
+
+### Worker CLI (`manzil`)
+
+`uv run manzil --help` lists everything. What exists today and when to reach for it:
+
+| Command | What it does | Use it when |
+|---|---|---|
+| `manzil ingest <url>` | Full pipeline: fetch → extract → verify → score, printing the breakdown | The Phase 0 endgame — **stub until P0-10** |
+| `manzil save-page <url> <slug>` | Fetches through the tier ladder and saves a corpus fixture dir (`raw.html`, `cleaned.txt`, `meta.json`) | Growing the fixture corpus toward 50+ pages, and capturing bench listings for hand-labeling (P0-11) |
+| `manzil clean-corpus` | Re-runs the cleaner over every corpus page, rewriting each `cleaned.txt` | **After any change to `cleaner.py`** — cleaned text is derived data and must never go stale (runbook, IMPLEMENTATION §8) |
+| `manzil census` | Probes every URL in `infra/census_urls.txt` through the tier ladder, writes `docs/hostile-domain-census.csv` | When a new listing domain enters the picture, or to refresh the Tier-3 decision-gate data (P0-14) |
+
+Useful flags:
+
+```bash
+uv run manzil save-page <url> <slug> --official          # mark the source as the complex's own site
+uv run manzil save-page <url> <slug> --notes "why saved" # provenance for meta.json
+uv run manzil save-page <url> <slug> --no-tier2          # forbid browser escalation (fast, httpx only)
+uv run manzil census --no-tier2                          # tier-1-only probe (no Playwright needed)
+uv run manzil census my-urls.txt --out /tmp/census.csv   # custom input list / output path
+```
+
+Tier 2 needs the Playwright browser once per machine: `uv run playwright install chromium`.
 
 ### Tests
 
 ```bash
-uv run pytest                                       # everything
-uv run --package manzil-shared pytest shared/tests  # engine goldens + catalog round-trip
-uv run --package manzil-worker pytest worker/tests  # stages vs fixtures (replay mode)
-uv run --package manzil-api    pytest api/tests
-
-MANZIL_LLM_MODE=replay uv run pytest                # CI mode: replay misses fail, no live LLM calls
-MANZIL_LLM_MODE=record uv run --package manzil-worker pytest -k <slug>   # re-record fixtures (spends tokens)
+uv run pytest                                       # everything (shared + api + worker)
+uv run --package manzil-shared pytest shared/tests  # engine goldens + catalog round-trip only
+uv run --package manzil-worker pytest worker/tests  # cleaner, classifier, ladder, fixtures
+uv run pytest -k classifier                         # one area, by keyword
 ```
+
+LLM call modes (`MANZIL_LLM_MODE`, live from P0-7 onward):
+
+| Mode | Behavior | Use it when |
+|---|---|---|
+| `live` | Real API calls | Local dev against a real model (default) |
+| `record` | Real calls, responses saved to `fixtures/recorded/` | Adding a fixture, or after a prompt/model version bump (re-record the bench) |
+| `replay` | Serves from disk, **fails on any miss** | CI always; locally to prove a change is LLM-neutral |
+
+```bash
+MANZIL_LLM_MODE=replay uv run pytest                                     # what CI runs — zero tokens
+MANZIL_LLM_MODE=record uv run --package manzil-worker pytest -k <slug>   # re-record one fixture (spends tokens)
+```
+
+Golden-test rule: if an engine change alters any golden in `shared/tests/golden/`, update the golden **in the same commit** with an explanation — that's the audit trail for scoring behavior.
 
 ### Lint, format, types
 
 ```bash
 uv run ruff check --fix . && uv run ruff format .   # lint + format (line length 100)
+uv run ruff format --check .                        # check-only, what CI runs
 uv run mypy                                         # --strict on shared/ (configured in root pyproject)
 ```
 
 ### Database and catalog
 
 ```bash
-supabase db reset                                            # apply migrations + generated seed
+supabase start                                                   # bring up the local stack (Docker)
+supabase stop                                                    # tear it down
+supabase db reset                                                # reapply migrations + seed (destructive, local only)
 uv run --package manzil-shared python -m manzil_shared.catalog   # regenerate supabase/seed.sql from catalog.py
+docker exec -it supabase_db_manzil psql -U postgres              # poke the DB directly
 ```
 
-To add a catalog criterion: edit `shared/src/manzil_shared/catalog.py` → regenerate seed → `supabase db reset` → add a golden test. Full runbooks (prompt changes, fixture recording, orphaned-job requeue, deploys) in IMPLEMENTATION §8.
+`supabase/seed.sql` is generated — never edit it by hand; the drift-guard test fails if it's stale. Migrations are append-only: never edit an applied migration, always add a new one.
+
+### When X changes, run Y
+
+| You changed… | Then run… |
+|---|---|
+| `shared/catalog.py` (add/edit a criterion) | regenerate seed → `supabase db reset` → add a golden covering it → if gate-eligible, add a bench label field |
+| `fetching/cleaner.py` | `uv run manzil clean-corpus` → spot-check a few `cleaned.txt` → commit the regenerated corpus |
+| `scoring/engine.py` | `uv run pytest shared/tests/golden` — any altered golden gets updated + explained in the same commit |
+| Classifier heuristics | `uv run pytest -k "classifier or ladder"` — synthetic pages + real corpus sweep |
+| A prompt or model pin (from P0-7) | bump the version → `MANZIL_LLM_MODE=record` against the bench set → compare the report — no eyeball-only merges |
+| Migration files | `supabase db reset` must come back clean |
 
 ### Frontend (Phase 1+)
 
