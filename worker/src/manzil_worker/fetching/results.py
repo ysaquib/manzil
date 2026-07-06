@@ -1,0 +1,31 @@
+"""Fetch and cleaning result shapes shared across the fetching subsystem."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+
+from pydantic import BaseModel, Field
+
+
+class FetchResult(BaseModel):
+    """One fetch attempt at one tier. `status_code` 0 means the request itself
+    failed (`error` holds why); header keys are lowercased."""
+
+    url: str
+    final_url: str
+    status_code: int
+    headers: dict[str, str] = Field(default_factory=dict)
+    body: str = ""
+    tier: int
+    fetched_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    error: str | None = None
+    screenshot: bytes | None = None
+
+
+class CleanedPage(BaseModel):
+    """Cleaner output: normalized text (fee tables preserved) + its content hash."""
+
+    text: str
+    text_hash: str
+    fee_tables_found: int = 0
+    used_fallback: bool = False
