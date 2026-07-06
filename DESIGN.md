@@ -1,10 +1,10 @@
 # Manzil — Design Document
 
-> **Codename:** Manzil (منزل — dwelling; in classical usage also a stage of a journey). ([§21](#21-open-questions)).
+> **Codename:** Manzil (منزل — dwelling; in classical usage also a stage of a journey). Whether it doubles as the public product name is an open question ([§21](#21-open-questions)).
 
 | | |
 |---|---|
-| **Version** | 1.8 |
+| **Version** | 2.0 |
 | **Status** | Living document — this is the source of truth during implementation |
 | **Supersedes** | `apartment-hunt-dashboard-design.md` draft v0.4 |
 | **Owner** | Yusuf |
@@ -85,7 +85,7 @@ This document describes the design intent, architecture, and business logic of M
 
 **Reading paths** (read §3 first in every case): implementing the schema → §8, §9; the scoring engine → §3, §9.3, §9.4; a pipeline stage → §10.1, that stage's subsection, §11.3; the frontend → §4.2, §13, §8.2 (the tables you subscribe to); anything cost-sensitive → §15 before writing a prompt.
 
-**Update protocol:** material design changes append an entry to the [Decision Log](#20-decision-log) (date, decision, rationale, sections touched) and update the affected sections in place. Never let the log and the body disagree; the body wins for "what is," the log wins for "why it changed."
+**Update protocol:** material design changes append an entry to the [Decision Log](#20-decision-log) (date, decision, rationale, sections touched) and update the affected sections in place. Never let the log and the body disagree; the body wins for "what is," the log wins for "why it changed." Implementation mechanics — interfaces, tunables, work plans, runbooks — live in the sibling `IMPLEMENTATION.md`, which churns freely without this ceremony; the authority order is DESIGN (intent) > IMPLEMENTATION (mechanics) > code (exact interfaces).
 
 ---
 
@@ -243,7 +243,8 @@ Reads that the table renders continuously (listings, scores) go straight from th
 
 ```
 manzil/
-├── DESIGN.md                    # this document
+├── DESIGN.md                    # this document — intent, contracts, decisions
+├── IMPLEMENTATION.md            # current mechanics — interfaces, tunables, work plans, runbooks
 ├── CLAUDE.md                    # agent instructions (AGENTS.md symlinks to it)
 ├── pyproject.toml               # uv workspace root: members = shared, api, worker
 ├── uv.lock                      # single lockfile, root only
@@ -362,11 +363,17 @@ The v1 seed set (`refresh_class` values map to the TTL table in [§14](#14-cachi
 | availability_date | availability | date | — | pricing |
 | kitchen_quality | condition | int 1–5 (anchored, [§10.8](#108-vision)) | vision | images |
 | flooring_quality | condition | int 1–5 (anchored) | vision | images |
+| parking | unit | enum: garage, carport, dedicated_lot, street_only, none | — | listing_details |
+| cooling | unit | enum: central, window_units, none | — | listing_details |
+| dishwasher | unit | bool | — | listing_details |
+| min_lease_months | policy | int (shortest offered term) | — | pricing |
 | grocery_proximity | location | number (minutes, walking or driving per hunt setting) | maps | location |
 | management_reviews | reputation | number 1–5 + summary text | maps (Places reviews) | reviews |
 | location_safety | location | enum low/med/high, low-confidence by design (R8) | web_search | reviews |
 
-The §9.5 utility/fee fields (`utilities_included`, `mandatory_fees`, `pet_costs`, `heating_type`) are extraction fields feeding the `all_in_monthly` composition, not standalone criteria. Floor level and commute-to-address are the canonical *custom* criteria examples, deliberately not seeded.
+The §9.5 utility/fee fields (`utilities_included`, `mandatory_fees`, `pet_costs`, `heating_type`) are extraction fields feeding the `all_in_monthly` composition, not standalone criteria.
+
+**Deliberately absent** (documented so they aren't "helpfully" added later without revisiting the reasoning): **base rent** — owned by `floor_plans` and scored through `all_in_monthly`; a separate rent criterion would double-count the number the composition already weighs. **year_built / last-renovated** — a weak proxy for what vision measures directly (a 1990 building with a 2024 kitchen scores as its kitchen, not its birth year); add later via the re-extraction runbook if a real need appears. **Amenities catch-all** (gym, pool, clubhouse…) — an unscoreable grab-bag as one criterion; any specific amenity someone cares about is exactly what custom criteria exist for. **Floor level** and **commute-to-address** — the canonical custom-criteria examples, per §9.2.
 - **utility_baselines** — `metro, beds_bucket, utility, monthly_high, monthly_median, sources jsonb, refreshed_at`. Metro-level; 120-day TTL; `monthly_high` is the winter-weighted peak-month figure ([§9.5](#95-utilities-and-all-in-monthly-cost)).
 - **fetch_adapter_registry** — `site_domain, required_tier, adapter_config jsonb, last_success_tier, last_outcome, updated_at` ([§10.7](#107-fetching-subsystem)).
 
@@ -824,12 +831,14 @@ Chronological. Dates before 2026-07-01 are reconstructed from the drafting sessi
 | 2026-07-01 | v1.1 critique pass: NEEDS_REVIEW consolidated into typed checkpoints; pins scoped per unit group; custom-criterion extractions hunt-scoped via nullable `hunt_id`; extractions declared append-only; rescore is one hunt-level job; API conventions (§5.1) and testing strategy (§6) added | Ambiguity a human glosses over is ambiguity an agent implements wrong | §3, §5.1, §6, §8.2, §9.2, §9.4, §10 |
 | 2026-07-02 | v1.2: §10.2 Implementation Patterns added — every stage mapped to one of four patterns (forced-schema call, deterministic code, bounded tool loop, vision call); tool registry + per-stage allow-lists; persist-before-advance runner; client seam made explicit | Demystify "agent" so implementation (human or LLM) never builds a loop where a call belongs | §10.2 |
 | 2026-07-02 | v1.3: three data-contract shapes pinned — catalog entry (§8.2), score breakdown (§9.3), plan manifest (§10.4) | Shapes shared across subsystems are design, not implementation; prose invites divergent inventions. Procedural snippets remain excluded | §8.2, §9.3, §10.4 |
-| 2026-07-03 | v1.4: `domain` enum added to hunts + catalog; buy-domain support specified in backlog with its true costs (incl. inverted anti-bot posture); `shared/` declared domain-blind | Three cheap columns now vs. a painful migration later; everything else is deliberate YAGNI (R10) | §8.2, §18 |
 | 2026-07-03 | Python packaging corrected to a uv workspace: single root lockfile/venv, not per-package lockfiles | Workspace members share resolution; `shared` imports stay consistent across api/worker | §6 |
+| 2026-07-03 | v1.4: `domain` enum added to hunts + catalog; buy-domain support specified in backlog with its true costs (incl. inverted anti-bot posture); `shared/` declared domain-blind | Three cheap columns now vs. a painful migration later; everything else is deliberate YAGNI (R10) | §8.2, §18 |
 | 2026-07-03 | v1.5: project codename set to **Manzil** (منزل); concrete folder structure with package naming (`manzil_shared`, `manzil_worker`) added to §6; decision log reordered chronologically with full dates | Codename decided at Phase 0 kickoff; prefix makes future rename mechanical | header, §6, §20 |
+| 2026-07-03 | v1.6: Manzil declared a dual-purpose learning project. Agents mode added behind `--mode` flag (§10.11): orchestrator–workers, extractor+critic, LangGraph graph + Postgres checkpointer, triage routing, investigator crew (FR12). Shared deterministic truth layer is invariant across modes. Langfuse tracing day one (NFR6); dual-mode eval harness (FR11); Learning Track with hard gating added to §19; R11 registered | Critical path stays boring; ambition lives where failure is survivable; every learning claim settled by evals, not faith | §2.5, §4, §6, §7, §10.2, §10.11, §15, §17, §19 |
 | 2026-07-03 | v1.7: subsection links restored to Table of Contents | They were never there to begin with — omission caught during review | §TOC |
 | 2026-07-03 | v1.8: phase-executability audit closed five design-level gaps — seed criteria enumeration (§8.2), scheduler ownership via worker tick (§5), queue heartbeat + 5-min orphan reclaim (§8.2), invites via Supabase Auth email (§9.1), bench ground-truth labeling + hardcoded Phase 0 rubric (§19) | The criteria list had silently died in the draft→v1 rewrite; the rest were "scheduled by whom?" holes a developer would hit within days | §5, §8.2, §9.1, §19 |
-| 2026-07-03 | v1.6: Manzil declared a dual-purpose learning project. Agents mode added behind `--mode` flag (§10.11): orchestrator–workers, extractor+critic, LangGraph graph + Postgres checkpointer, triage routing, investigator crew (FR12). Shared deterministic truth layer is invariant across modes. Langfuse tracing day one (NFR6); dual-mode eval harness (FR11); Learning Track with hard gating added to §19; R11 registered | Critical path stays boring; ambition lives where failure is survivable; every learning claim settled by evals, not faith | §2.5, §4, §6, §7, §10.2, §10.11, §15, §17, §19 |
+| 2026-07-03 | v1.9: IMPLEMENTATION.md v1.0 created at Phase 0 kickoff, per the deferred-until-code plan; DESIGN.md sheds nothing — the sibling adds mechanics (interfaces, tunables, prompt/fixture systems, work plans, runbooks) rather than absorbing design | Three-layer authority now live: DESIGN (intent) > IMPLEMENTATION (mechanics) > code (interfaces) | §1, §6 |
+| 2026-07-04 | v2.0 (implementation-start baseline, matching IMPLEMENTATION.md v2.0): seed-set review added parking, cooling, dishwasher, min_lease_months — the climate/logistics blind spot — and documented four deliberate exclusions (base rent, year_built, amenities catch-all, floor level/commute) with rationale | Day-one catalog additions cost schema tokens; month-two additions cost a corpus re-extraction pass — the bar is "plausibly ever scoreable" | §8.2 |
 
 ---
 

@@ -17,7 +17,7 @@
 
 ---
 
-## Table of Contents
+## Contents
 
 1. [Environment and Setup](#1-environment-and-setup)
 2. [Coding Conventions](#2-coding-conventions)
@@ -67,10 +67,10 @@ ln -s CLAUDE.md AGENTS.md
 ### Daily loop
 ```bash
 supabase db reset                            # migrations + generated seed
-uv run manzil ingest <url>                   # Phase 0 entry point
+uv run --package worker manzil ingest <url>  # Phase 0 entry point
 #   (`manzil` is a [project.scripts] entry in worker/pyproject.toml → manzil_worker.cli:app)
-uv run --package manzil-shared pytest shared/tests  # engine goldens
-uv run --package manzil-worker pytest worker/tests  # stages vs fixtures (replay mode)
+uv run --package shared pytest               # engine goldens
+uv run --package worker pytest               # stages vs fixtures (replay mode)
 uv run ruff check --fix . && uv run ruff format .
 ```
 
@@ -196,7 +196,7 @@ Granularity: each item ≈ one focused agent session, scoped to the DESIGN secti
 | # | Task | DESIGN refs | Done when |
 |---|---|---|---|
 | P0-1 | Monorepo scaffold per §6 + CI (ruff, pytest-replay) | §6 | `uv sync` green; CI runs |
-| P0-2 | `shared/`: domain models + catalog seed (15 criteria) + seed.sql generator | §3, §8.2 | catalog round-trips: python → SQL → loaded |
+| P0-2 | `shared/`: domain models + catalog seed (19 criteria per DESIGN §8.2) + seed.sql generator | §3, §8.2 | catalog round-trips: python → SQL → loaded |
 | P0-3 | Scoring engine + golden tests | §9.3, §9.4 | goldens cover gates, unknowns, bonus, clamp, multi-plan groups |
 | P0-4 | Migration 0001: global tables + enums | §8.1–8.2 | `supabase db reset` clean |
 | P0-5 | HTML cleaner (trafilatura + fee-table preservation) | §7 | cleaned.txt regenerated for full corpus; spot-check 5 |
@@ -300,4 +300,4 @@ Ascending chronological (matching DESIGN §20's convention); same-day entries or
 | 1.1 | 2026-07-03 | Phases 1–3 broken into task tables (14/9/14) with ⚠ marks on outcome-dependent items; "expand on entry" → "revise on entry". Critique fixes: DB-access strategy (asyncpg worker / supabase-py API / `privileged.py` exception), CI + branching defined, Langfuse removed from API env, record/replay hash keying specified, `manzil` script entry noted, catalog-sync migration + deploy runbooks added, frontend test convention added, P1-13 polling interim made explicit. |
 | 1.2 | 2026-07-03 | Status taxonomy (settled / proposal / interim-conditional) with per-section labels; §3 records interfaces reviewed and deliberately left as proposals with graduation at end of Phase 0; tunables split — home settled, values are starting points. |
 | 2.0 | 2026-07-03 | **Implementation-start baseline.** Phase-process critique: sequencing rules added (row order = default dependency order; 🧍 = human-only, start immediately); VALIDATE stage given an owner (P0-8); bench labeling marked parallel (P0-11); dev-seed script added (P1-1); RLS owner-membership backfill added (P2-1 — the lockout trap); Phase 3 reordered so geocode precedes its consumers (maps → DEDUPE → DISCOVER) and planner honestly split into ingest-scope (P3-2) + refresh-scope (P3-12). Changelog reordered ascending. |
-| 2.1 | 2026-07-04 | P0-1/P0-2 landed: workspace member names are the DESIGN §6 dist names (`manzil-shared`/`manzil-api`/`manzil-worker`), so `uv run --package` takes those (commands here and in AGENTS.md updated). `supabase/seed.sql` regenerated via `uv run --package manzil-shared python -m manzil_shared.catalog` (add-a-criterion runbook). Frontend Vite scaffold deferred (pnpm not installed); CI is three jobs until the Phase 1 frontend job. |
+| 2.0.1 | 2026-07-04 | P0-2 catalog count 15 → 19, tracking DESIGN v2.0's seed-set additions (parking, cooling, dishwasher, min_lease_months). |
