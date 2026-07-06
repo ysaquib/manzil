@@ -1,0 +1,18 @@
+[project]
+name = "manzil-api"
+version = "0.1.0"
+description = "Manzil API service (FastAPI). Near-empty until Phase 1."
+authors = [
+    { name = "Yusuf Saquib", email = "contact@yusufsaquib.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "manzil-shared",
+]
+
+[tool.uv.sources]
+manzil-shared = { workspace = true }
+
+[build-system]
+requires = ["uv_build>=0.11.13,<0.12.0"]
+build-backend = "uv_build"
