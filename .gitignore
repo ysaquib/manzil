@@ -27,3 +27,6 @@ supabase/.temp/
 .DS_Store
 .idea/
 .vscode/
+
+# Phase 0 run persistence (worker/src/manzil_worker/persistence.py)
+.manzil/
