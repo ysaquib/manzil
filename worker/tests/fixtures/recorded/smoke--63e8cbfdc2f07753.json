@@ -1,0 +1,15 @@
+{
+  "cache_read_tokens": 0,
+  "cache_write_tokens": 140,
+  "content_sha256": "5aab9e7f50bc186192e0e7b9f224a8b6fab8235b8fd4969e0766ae89c53b2ec1",
+  "input_tokens": 180,
+  "model": "claude-haiku-4-5-20251001",
+  "output": {
+    "echo": "manzil-smoke-p0-7",
+    "model_family": "haiku"
+  },
+  "output_tokens": 25,
+  "prompt_version": 1,
+  "recorded_at": "2026-07-06T19:17:07.328167+00:00",
+  "stage": "smoke"
+}
