@@ -14,6 +14,14 @@ SQFT_AGREE_PCT = 5.0
 # VERIFY check 3 — plausibility bands cold start (listings per metro)
 PLAUSIBILITY_COLD_START_N = 8
 
+# VERIFY check 3 — static sanity bounds used until a metro's self-derived
+# bands exist (Phase 0 is always cold start; DESIGN §10.5)
+RENT_PLAUSIBLE_MIN = 400.0
+RENT_PLAUSIBLE_MAX = 10_000.0
+SQFT_PER_BED_MIN = 250
+SQFT_PER_BED_MAX = 2_500
+DEPOSIT_MAX_RENT_MULTIPLIER = 2.0
+
 # Runner retry policy: STAGE_RETRIES attempts, 10s * 2^attempt jittered
 STAGE_RETRIES = 3
 STAGE_BACKOFF_BASE_SECONDS = 10
