@@ -13,13 +13,14 @@ tallies cost onto the active tally (RunState wires in at P0-10), and honors
               is not a model call, so it is not traced — CI has no keys and
               spends no tokens.
 
-Structured output is forced tool use: one tool whose input schema is the
-Pydantic model's JSON schema, `tool_choice` pinned to it — the model cannot
-answer in prose.
+All live calls route through OpenRouter's OpenAI-compatible API. Structured
+output is forced tool use: one tool whose input schema is the Pydantic model's
+JSON schema, `tool_choice` pinned to it — the model cannot answer in prose.
 """
 
 from __future__ import annotations
 
+import json
 import os
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -32,7 +33,7 @@ from manzil_worker.llm.config import (
     cost_usd,
     max_tokens_for_stage,
     model_for_stage,
-    provider_for_model,
+    openrouter_provider_order,
 )
 from manzil_worker.llm.prompt_loader import Prompt, load_prompt
 from manzil_worker.llm.recording import (
@@ -48,6 +49,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 STRUCTURED_TOOL_NAME = "emit_result"
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 
 class SeamConfigError(RuntimeError):
@@ -146,6 +148,7 @@ class ProviderResponse:
     output_tokens: int
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
+    reported_cost_usd: float | None = None  # OpenRouter usage.cost cross-check
 
 
 @dataclass(frozen=True)
@@ -168,31 +171,35 @@ def _require_langfuse_configured() -> None:
 
 def _langfuse() -> Any:
     # Provider SDK imports stay lazy and inside this module: replay-mode test
-    # runs (CI) never touch either SDK's import-time machinery.
+    # runs (CI) never touch the SDK's import-time machinery.
     from langfuse import Langfuse
 
     return Langfuse(host=os.environ.get("LANGFUSE_HOST", "https://us.cloud.langfuse.com"))
 
 
+def _usage_int(details: Any, field: str) -> int:
+    if details is None:
+        return 0
+    if isinstance(details, dict):
+        return int(details.get(field) or 0)
+    return int(getattr(details, field, 0) or 0)
+
+
 async def _live_call(plan: _CallPlan, schema: type[BaseModel]) -> ProviderResponse:
-    """Dispatch to the provider adapter by model ID. Everything above this
-    call (tracing, record/replay, cost tally) is provider-blind, so a new
-    provider = one adapter + price entries in config.py."""
-    if provider_for_model(plan.model) == "google":
-        return await _live_call_google(plan, schema)
-    return await _live_call_anthropic(plan, schema)
+    """One real OpenRouter call: cached prefix + per-call system, forced tool."""
+    return await _live_call_openrouter(plan, schema)
 
 
-async def _live_call_anthropic(plan: _CallPlan, schema: type[BaseModel]) -> ProviderResponse:
-    """One real Anthropic call: cached prefix + per-call system, forced tool."""
-    from anthropic import AsyncAnthropic
+async def _live_call_openrouter(plan: _CallPlan, schema: type[BaseModel]) -> ProviderResponse:
+    from openai import AsyncOpenAI
 
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        raise SeamConfigError("ANTHROPIC_API_KEY unset — cannot make a live call")
+    if not os.environ.get("OPENROUTER_API_KEY"):
+        raise SeamConfigError("OPENROUTER_API_KEY unset — cannot make a live call")
 
-    system: list[dict[str, Any]] = []
+    messages: list[dict[str, Any]] = []
+    system_parts: list[dict[str, Any]] = []
     if plan.prompt.cacheable_prefix:
-        system.append(
+        system_parts.append(
             {
                 "type": "text",
                 "text": plan.prompt.cacheable_prefix,
@@ -200,99 +207,67 @@ async def _live_call_anthropic(plan: _CallPlan, schema: type[BaseModel]) -> Prov
             }
         )
     if plan.prompt.per_call:
-        system.append({"type": "text", "text": plan.prompt.per_call})
+        system_parts.append({"type": "text", "text": plan.prompt.per_call})
+    if system_parts:
+        messages.append({"role": "system", "content": system_parts})
+    messages.append({"role": "user", "content": plan.content})
 
-    client = AsyncAnthropic()
-    response = await client.messages.create(
+    client = AsyncOpenAI(
+        api_key=os.environ["OPENROUTER_API_KEY"],
+        base_url=OPENROUTER_BASE_URL,
+    )
+    response = await client.chat.completions.create(
         model=plan.model,
         max_tokens=max_tokens_for_stage(plan.stage),
         temperature=0.0,
-        system=system,  # type: ignore[arg-type]
-        messages=[{"role": "user", "content": plan.content}],
+        messages=messages,  # type: ignore[arg-type]
         tools=[
             {
-                "name": STRUCTURED_TOOL_NAME,
-                "description": "Emit the structured result. Always call this tool.",
-                "input_schema": schema.model_json_schema(),
+                "type": "function",
+                "function": {
+                    "name": STRUCTURED_TOOL_NAME,
+                    "description": "Emit the structured result. Always call this tool.",
+                    "parameters": schema.model_json_schema(),
+                },
             }
         ],
-        tool_choice={"type": "tool", "name": STRUCTURED_TOOL_NAME},
+        tool_choice={
+            "type": "function",
+            "function": {"name": STRUCTURED_TOOL_NAME},
+        },
+        extra_body={
+            "provider": {
+                "order": openrouter_provider_order(plan.model),
+                "allow_fallbacks": False,
+            },
+        },
     )
-    tool_blocks = [b for b in response.content if b.type == "tool_use"]
-    if not tool_blocks:
+
+    message = response.choices[0].message
+    if not message.tool_calls:
         raise SeamConfigError(
-            f"stage {plan.stage!r}: model returned no tool_use block despite forced tool_choice"
+            f"stage {plan.stage!r}: model returned no tool_calls despite forced tool_choice"
         )
+    output = json.loads(message.tool_calls[0].function.arguments)
+
     usage = response.usage
-    return ProviderResponse(
-        output=dict(tool_blocks[0].input),  # type: ignore[arg-type]
-        input_tokens=usage.input_tokens,
-        output_tokens=usage.output_tokens,
-        cache_read_tokens=usage.cache_read_input_tokens or 0,
-        cache_write_tokens=usage.cache_creation_input_tokens or 0,
-    )
+    if usage is None:
+        raise SeamConfigError(f"stage {plan.stage!r}: OpenRouter response missing usage")
 
+    details = getattr(usage, "prompt_tokens_details", None)
+    cached = _usage_int(details, "cached_tokens")
+    cache_write = _usage_int(details, "cache_write_tokens")
+    prompt_tokens = usage.prompt_tokens or 0
+    uncached = max(0, prompt_tokens - cached - cache_write)
+    reported_cost = getattr(usage, "cost", None)
 
-async def _live_call_google(plan: _CallPlan, schema: type[BaseModel]) -> ProviderResponse:
-    """One real Gemini call: structured output via response_schema (their
-    forced-schema equivalent), JSON mime type, temperature 0. Gemini caches
-    prompts implicitly — no cache_control markers; the cached-read discount
-    shows up in usage_metadata and CACHE_READ_MULTIPLIERS prices it."""
-    import json
-
-    from google import genai
-    from google.genai import types as genai_types
-
-    if not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")):
-        raise SeamConfigError("GEMINI_API_KEY (or GOOGLE_API_KEY) unset — cannot make a live call")
-
-    system = "\n\n".join(p for p in (plan.prompt.cacheable_prefix, plan.prompt.per_call) if p)
-    config = genai_types.GenerateContentConfig(
-        system_instruction=system or None,
-        temperature=0.0,
-        max_output_tokens=max_tokens_for_stage(plan.stage),
-        response_mime_type="application/json",
-        response_schema=schema,
-        # 2.5 Flash thinks by default; extraction is deterministic fact-pulling
-        # and the §11.2 bench prices assume non-thinking output.
-        thinking_config=(
-            genai_types.ThinkingConfig(thinking_budget=0)
-            if plan.model.startswith("gemini-2.5-flash")
-            else None
-        ),
-    )
-    client = genai.Client()
-    response = await client.aio.models.generate_content(
-        model=plan.model, contents=plan.content, config=config
-    )
-
-    parsed = response.parsed
-    if isinstance(parsed, BaseModel):
-        output = parsed.model_dump(mode="json")
-    elif isinstance(parsed, dict):
-        output = parsed
-    elif response.text:
-        output = json.loads(response.text)
-    else:
-        finish = response.candidates[0].finish_reason if response.candidates else None
-        raise SeamConfigError(
-            f"stage {plan.stage!r}: Gemini returned no parseable structured output "
-            f"(finish_reason={finish})"
-        )
-
-    um = response.usage_metadata
-    cached = (um.cached_content_token_count or 0) if um else 0
-    prompt_tokens = (um.prompt_token_count or 0) if um else 0
-    out_tokens = ((um.candidates_token_count or 0) + (um.thoughts_token_count or 0)) if um else 0
     return ProviderResponse(
         output=output,
-        # normalize to the seam convention: input_tokens = uncached input only
-        # (Gemini's prompt_token_count includes cached tokens; Anthropic's
-        # input_tokens excludes them)
-        input_tokens=prompt_tokens - cached,
-        output_tokens=out_tokens,
+        input_tokens=uncached,
+        output_tokens=usage.completion_tokens or 0,
         cache_read_tokens=cached,
-        cache_write_tokens=0,
+        cache_write_tokens=cache_write,
+        reported_cost_usd=float(reported_cost) if reported_cost is not None else None,
     )
 
 
@@ -305,6 +280,13 @@ async def _traced_live_call(plan: _CallPlan, schema: type[BaseModel]) -> Provide
     from langfuse import Langfuse, propagate_attributes
 
     lf: Langfuse = _langfuse()
+    metadata: dict[str, Any] = {
+        "mode": ctx.mode,
+        "model": plan.model,
+        "prompt_version": plan.prompt.version,
+        "listing_slug": ctx.listing_slug,
+        "llm_mode": llm_mode(),
+    }
     # v4 SDK: trace-level attributes (name, session) propagate via context, not
     # the removed v3 `update_current_trace`.
     with (
@@ -314,16 +296,14 @@ async def _traced_live_call(plan: _CallPlan, schema: type[BaseModel]) -> Provide
             model=plan.model,
             input=plan.content,
             as_type="generation",
-            metadata={
-                "mode": ctx.mode,
-                "model": plan.model,
-                "prompt_version": plan.prompt.version,
-                "listing_slug": ctx.listing_slug,
-                "llm_mode": llm_mode(),
-            },
+            metadata=metadata,
         ) as generation,
     ):
         response = await _live_call(plan, schema)
+        if response.reported_cost_usd is not None:
+            generation.update(
+                metadata={**metadata, "openrouter_cost_usd": response.reported_cost_usd}
+            )
         generation.update(
             output=response.output,
             usage_details={
