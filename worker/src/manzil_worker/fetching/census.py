@@ -21,6 +21,7 @@ CSV_FIELDS = [
     "url",
     "tier1_outcome",
     "tier2_outcome",
+    "tier3_outcome",
     "required_tier",
     "verdict",
 ]
@@ -35,11 +36,13 @@ def read_url_file(path: Path) -> list[str]:
     return urls
 
 
-def _verdict(required_tier: int, final_outcome: FetchOutcome) -> str:
+def _verdict(settled_tier: int, final_outcome: FetchOutcome, top_tier: int) -> str:
     if final_outcome is FetchOutcome.SUCCESS:
-        return f"tier{required_tier}_ok"
+        return f"tier{settled_tier}_ok"
     if final_outcome in (FetchOutcome.SHELL, FetchOutcome.BLOCKED):
-        return "hostile_needs_tier3"
+        # Blocked with tier 3 on the ladder = even the unblocker failed;
+        # blocked without it = the pre-tier-3 verdict, still open.
+        return "hostile_unfetchable" if top_tier >= 3 else "hostile_needs_tier3"
     return final_outcome.value
 
 
@@ -50,14 +53,14 @@ async def run_census(urls: list[str], fetchers: dict[int, Fetcher], out_path: Pa
         ladder = await fetch_with_ladder(url, registry, fetchers)
         by_tier = dict(ladder.attempts)
         settled_tier = ladder.attempts[-1][0]
+        outcomes = {f"tier{t}_outcome": by_tier[t].value if t in by_tier else "" for t in (1, 2, 3)}
         rows.append(
             {
                 "site_domain": site_domain(url),
                 "url": url,
-                "tier1_outcome": by_tier.get(1, FetchOutcome.ERROR).value if 1 in by_tier else "",
-                "tier2_outcome": by_tier.get(2).value if 2 in by_tier else "",  # type: ignore[union-attr]
+                **outcomes,
                 "required_tier": str(settled_tier),
-                "verdict": _verdict(settled_tier, ladder.outcome),
+                "verdict": _verdict(settled_tier, ladder.outcome, max(fetchers)),
             }
         )
 

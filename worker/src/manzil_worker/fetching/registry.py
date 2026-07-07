@@ -14,7 +14,7 @@ import asyncpg
 from manzil_shared.models import FetchOutcome
 
 MIN_TIER = 1
-MAX_TIER = 2  # tier 3 deferred behind the Phase 0 census gate (§19)
+MAX_TIER = 3  # tier 3 = managed unblocker (§10.7, §20 2026-07-07), free plan only
 
 
 class AdapterRegistry(Protocol):

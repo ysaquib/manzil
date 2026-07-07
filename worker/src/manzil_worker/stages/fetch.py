@@ -14,6 +14,7 @@ from manzil_shared.errors import StageFatal, StageRetryable
 from manzil_shared.models import FetchOutcome
 
 from manzil_worker.fetching.ladder import fetch_with_ladder
+from manzil_worker.fetching.slug_hint import search_hint
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.state import RunState, SourceState
 
@@ -46,8 +47,17 @@ async def fetch_stage(state: RunState, ctx: StageCtx) -> RunState:
     if ladder.outcome is FetchOutcome.ERROR:
         raise StageRetryable(f"fetch error for {state.url} (status {ladder.result.status_code})")
     if ladder.outcome not in _PROCEED:
-        raise StageFatal(
+        message = (
             f"source unfetchable: {ladder.outcome.value} at tier {ladder.result.tier} "
             f"(attempts: {[(t, o.value) for t, o in ladder.attempts]})"
         )
+        # §20 2026-07-07 stopgap: the URL slug usually names the property —
+        # hand the human the search that DISCOVER (P3-5) will one day run.
+        hint = search_hint(state.url)
+        if hint:
+            message += (
+                f'; property identity from the URL: try searching "{hint}" on a '
+                "fetchable source (e.g. rent.com, apartmentguide.com) and resubmit"
+            )
+        raise StageFatal(message)
     return state

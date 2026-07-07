@@ -102,9 +102,14 @@ def test_ingest_of_a_blocked_page_fails_at_fetch(tmp_path: Path) -> None:
     body = (PAGES / "blocked_cloudflare.html").read_text()
     llm = FakeLLM({})
     state = asyncio.run(
-        run_job(make_state("https://hostile.test/apt"), make_ctx(body, llm, tmp_path))
+        run_job(
+            make_state("https://hostile.test/park-west-detroit-mi/xk1234"),
+            make_ctx(body, llm, tmp_path),
+        )
     )
 
     assert state.status is JobState.FAILED
     assert state.error is not None and "unfetchable: blocked" in state.error
+    # §20 2026-07-07 stopgap: the failure hands the human the sibling search.
+    assert 'try searching "apartment complex name city state"' in state.error
     assert llm.calls == []

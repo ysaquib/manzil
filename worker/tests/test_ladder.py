@@ -63,5 +63,5 @@ def test_error_and_not_listing_do_not_escalate() -> None:
     assert next_required_tier(1, FetchOutcome.ERROR) == 1
     assert next_required_tier(1, FetchOutcome.NOT_LISTING) == 1
     assert next_required_tier(1, FetchOutcome.SHELL) == 2
-    assert next_required_tier(2, FetchOutcome.BLOCKED) == 2  # capped: tier 3 is gated
+    assert next_required_tier(2, FetchOutcome.BLOCKED) == 3  # tier 3 on the ladder (§20 2026-07-07)
     assert next_required_tier(2, FetchOutcome.SUCCESS) == 2
