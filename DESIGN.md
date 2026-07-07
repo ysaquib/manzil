@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| **Version** | 2.3 |
+| **Version** | 2.4 |
 | **Status** | Living document — this is the source of truth during implementation |
 | **Supersedes** | `apartment-hunt-dashboard-design.md` draft v0.4 |
 | **Owner** | Yusuf |
@@ -490,8 +490,8 @@ Overrides display over extractions with a badge; the original value, its evidenc
 ### 10.1 Job Lifecycle
 
 ```
-RECEIVED → PLAN → VALIDATE → DEDUPE → DISCOVER → FETCH
-        → EXTRACT (×source) → VERIFY (×source) → RECONCILE
+RECEIVED → PLAN → VALIDATE_URL → DEDUPE → DISCOVER → FETCH
+        → VALIDATE → EXTRACT (×source) → VERIFY (×source) → RECONCILE
         → VISION → ENRICH (maps · reviews · safety · utilities)
         → CUSTOM_MATCH → SCORE
         → DONE | FAILED | CANCELLED
@@ -509,7 +509,7 @@ Failure semantics: stage retries with backoff (`attempts`); a dead source is ski
 | Pattern | What it is | Stages |
 |---|---|---|
 | **P1 — Forced-schema call** | One LLM call whose output shape is compelled | VALIDATE, EXTRACT, CUSTOM_MATCH (text), VERIFY check 4, RECONCILE equivalence |
-| **P2 — Deterministic code (+ optional tiny call)** | Plain Python; a model appears only for one narrow judgment | PLAN, VERIFY checks 1–3, RECONCILE ladder, SCORE (no LLM at all) |
+| **P2 — Deterministic code (+ optional tiny call)** | Plain Python; a model appears only for one narrow judgment | PLAN, VALIDATE_URL, VERIFY checks 1–3, RECONCILE ladder, SCORE (no LLM at all) |
 | **P3 — Bounded tool loop** | Model iteratively calls tools until it answers or hits a turn cap | DISCOVER; location-type custom criteria in ENRICH — **nothing else** |
 | **P4 — Vision call** | P1 with images as input content blocks | VISION |
 
@@ -553,7 +553,8 @@ The Phase 0 CLI and the Phase 1+ queue worker are two entry points calling the s
 | Stage | Purpose | Model | Notes |
 |---|---|---|---|
 | PLAN | Build run manifest: stages to run, sources to (re)fetch, cache/TTL decisions, cost estimate | tiny LLM assist; mostly deterministic | Manifest persisted as `jobs.plan`. A manifest builder, **not** an open-ended agent — that restraint is deliberate ([§20](#20-decision-log)) |
-| VALIDATE | Is this a rental listing page? | small | Heuristics first, LLM to confirm |
+| VALIDATE_URL | Is the submitted URL worth fetching at all? | none | Deterministic (v2.4): scheme, public host (private/loopback refused — §16), not a binary; normalizes the URL (whitespace/fragments) before anything else sees it |
+| VALIDATE | Is this a rental listing page? | small | Runs on the **fetched, cleaned text** of the submitted source — after FETCH (v2.4). Heuristics first (no listing signal → rejected at zero LLM spend), LLM to confirm |
 | DEDUPE | Name+address → geocode → match `properties` | small | <100 m AND name-similar → merge; gray zone → checkpoint |
 | DISCOVER | Find official site + up to 2 sibling sources | judgment-tier | Third source fetched only if first two disagree ([§15](#15-cost-model-and-optimization)); skipped entirely under `trust_link`, tier-capped by the run's Source Policy ([§10.7](#107-fetching-subsystem)) |
 | FETCH | Tier ladder per adapter registry | none | [§10.7](#107-fetching-subsystem) |
@@ -811,7 +812,7 @@ Explicitly **not** in scope until pulled in deliberately (coding agents: do not 
 ## 19. Implementation Phases
 
 **Phase 0 — Prove the pipeline (CLI, no UI, no auth).**
-Monorepo scaffold; `shared/` domain models + catalog seed + scoring engine with tests; migrations; CLI `ingest <url>` running VALIDATE → FETCH(T1/T2) → EXTRACT → VERIFY → SCORE against a hardcoded rubric, printing the breakdown. Run against ~20 real listings, **hand-labeled first**: ground-truth values for every gate-bearing criterion (and rent/fees) per bench listing, stored as `fixtures/bench/labels/` — accuracy metrics are meaningless without them, and labeling ~20 listings is an evening. The hardcoded Phase 0 rubric is Yusuf's real criteria (2 br, in-unit laundry, balcony, cats allowed, all-in < $2,000 conservative), checked in as a fixture. Also: **Langfuse tracing wired from the first LLM call** (NFR6), the **eval harness skeleton** (FR11 — it doubles as the bench runner), the **model bench** ([§11.2](#112-model-roles-and-candidates)), and the **hostile-domain census** (which target-market sources demand Tier 3?).
+Monorepo scaffold; `shared/` domain models + catalog seed + scoring engine with tests; migrations; CLI `ingest <url>` running VALIDATE_URL → FETCH(T1/T2) → VALIDATE → EXTRACT → VERIFY → SCORE against a hardcoded rubric, printing the breakdown. Run against ~20 real listings, **hand-labeled first**: ground-truth values for every gate-bearing criterion (and rent/fees) per bench listing, stored as `fixtures/bench/labels/` — accuracy metrics are meaningless without them, and labeling ~20 listings is an evening. The hardcoded Phase 0 rubric is Yusuf's real criteria (2 br, in-unit laundry, balcony, cats allowed, all-in < $2,000 conservative), checked in as a fixture. Also: **Langfuse tracing wired from the first LLM call** (NFR6), the **eval harness skeleton** (FR11 — it doubles as the bench runner), the **model bench** ([§11.2](#112-model-roles-and-candidates)), and the **hostile-domain census** (which target-market sources demand Tier 3?).
 *Exit criteria:* extraction verification pass-rate acceptable on gate-bearing criteria; fetch tier requirements known per relevant domain; per-stage model choices settled; per-listing cost measured. **Decision gate:** prioritize, defer, or drop Tier-3/Apify work based on the census.
 
 **Phase 1 — Replace the spreadsheet (single user).**
@@ -875,6 +876,7 @@ Chronological. Dates before 2026-07-01 are reconstructed from the drafting sessi
 | 2026-07-05 | v2.1: engine + schema semantics settled by P0-3/P0-4 implementation. (a) Non-negotiable "acceptable option" defined: `delta ≥ 0` and not a dealbreaker option; unknown values fire the gate. (b) Floor-plan overlay for plan-scoped criteria with conservative `sqft_min`. (c) Match semantics: inclusive `range`; `lt`/`gt`/`range` on numbers or ISO-date strings; object values compare on `rating`; unmatched known values contribute 0; type mismatches never raise. (d) Migration granularity: enums created by the first migration needing them; catalog vocabulary columns are text + check, not enum types; `extractions.criterion_key` has no FK (custom keys aren't catalog rows) and `extractions.hunt_id` gains its FK in 0002. Also fixed the §9.3 example's arithmetic (total 8.5 → 9.5) | A gate that missing data can satisfy is no gate; conservative plan values enforce the never-look-cheaper principle; enum types would put catalog vocabulary behind migrations for zero safety gain | §3, §8.1, §9.3 |
 | 2026-07-06 | v2.2: **Source Policy** added — per-submission cross-check control (`trust_link` \| `tier_1` \| `tiers_1_2` \| `tiers_1_2_3` default \| `tier_1_plus_official`), defaulted from hunt settings, persisted on `hunt_listings`, recorded in the plan manifest. Constrains discovered sibling sources only (the submitted URL is always fetched at its required tier); over-cap siblings are skipped at plan time, never escalated; `trust_link` runs single-source with a permanent badge and a documented R3/R4 posture change. The deterministic truth layer is untouched under every policy | User control over the cost/latency/assurance trade per link; a trusted official-site link shouldn't force aggregator scraping, and the choice must stay visible exactly where it weakens the trust story | §3, §4.1, §5.1, §8.2, §10.3, §10.4, §10.7, §13.2, §16 |
 | 2026-07-06 | v2.3: **hunt settings contract pinned** (§8.2) — the four settings the design already implied, gathered into one Owner-edited, API-validated object: `default_source_policy` (§10.7), `cost_estimate_mode` (§9.5), `min_confidence` (§9.3, default `medium`), `proximity_mode` (§8.2 catalog). Edit effects specified per key: scoring inputs (`cost_estimate_mode`, `min_confidence`) reuse the rubric-mutation path — version bump + free rescore; `proximity_mode` triggers a field-scoped location refresh; `default_source_policy` affects future submissions only. "Edit hunt settings" added to the §4.2 matrix (Owner-only); settings panel added to the §13.1 settings route. No speculative settings added — every key is read by machinery already in the design | Four subsystems read this object, so its shape is design, not implementation (the v1.3 pinning standard); routing scoring-affecting edits through `rubric_version` keeps score provenance honest — a stored breakdown is fully explained by its version | §4.2, §5.1, §8.2, §9.2, §9.3, §9.5, §13.1, §20 |
+| 2026-07-06 | v2.4: **VALIDATE split in two**, resolving the ordering conflict P0-8/10 implementation surfaced (the old diagram put VALIDATE before FETCH, but "is this a rental listing page?" needs fetched content). **VALIDATE_URL** — deterministic P2, pre-fetch, in the old diagram position: scheme + public host (private/loopback refused, an SSRF guard per §16) + not-a-binary, and the single place URL normalization (whitespace, fragments) happens. **VALIDATE** — the content judgment (heuristics first, LLM confirm), now explicitly after FETCH of the submitted source. Phase 0 spine order pinned: VALIDATE_URL → FETCH → VALIDATE → EXTRACT → VERIFY → SCORE | A URL-shaped sanity check costs nothing and belongs before any fetch; a content judgment cannot precede the content — splitting the stage lets both truths hold instead of picking one | §10.1, §10.2, §10.3, §16, §19 |
 
 ---
 
