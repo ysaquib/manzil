@@ -45,7 +45,8 @@ uv init --bare                              # root pyproject
 uv init --lib shared && uv init --app api && uv init --app worker
 # in api/ and worker/ pyproject: dependencies += ["manzil-shared"]
 #   [tool.uv.sources] manzil-shared = { workspace = true }
-uv sync
+uv sync --all-packages   # plain `uv sync` installs only the root package's deps
+
 pnpm create vite frontend --template react-ts
 supabase init && supabase start             # local stack
 ln -s CLAUDE.md AGENTS.md
@@ -56,13 +57,18 @@ ln -s CLAUDE.md AGENTS.md
 | Var | Used by | Notes |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | worker | |
+| `GEMINI_API_KEY` | worker | only for `gemini-*` models (P0-13 bench candidates); `GOOGLE_API_KEY` also honored |
 | `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` / `LANGFUSE_HOST` | worker | cloud free tier; wired before first LLM call (NFR6). The API makes no LLM calls and gets no Langfuse keys |
 | `DATABASE_URL` | worker, api | direct Postgres (worker uses service-level access) |
 | `SUPABASE_URL` / `SUPABASE_ANON_KEY` | frontend, api | anon key is RLS-safe by design |
 | `SUPABASE_SERVICE_ROLE_KEY` | worker only | never in api or frontend env |
+| `MANZIL_TIER3_PROVIDER` | worker | `brightdata` (default) \| `scrapingbee` — tier-3 unblocker adapter (§10.7, free plans only) |
+| `BRIGHTDATA_API_KEY` / `BRIGHTDATA_ZONE` | worker | Bright Data Web Unlocker; zone defaults to `web_unlocker1`. No key = tier 3 off the ladder |
+| `SCRAPINGBEE_API_KEY` | worker | only when `MANZIL_TIER3_PROVIDER=scrapingbee` |
 | `GOOGLE_MAPS_API_KEY` | worker | Phase 3 |
 | `MANZIL_MODE` | worker | `workflow` (default) \| `agents` |
 | `MANZIL_LLM_MODE` | worker, tests | `live` \| `record` \| `replay` (see §5) |
+| `MANZIL_MODEL_<STAGE>` | worker, bench | per-stage model-pin override for bench/dev runs (e.g. `MANZIL_MODEL_EXTRACT=gemini-2.5-flash-lite`); must be priced in `llm/config.py` |
 
 ### Daily loop
 ```bash
@@ -156,6 +162,7 @@ The single-home rule itself is **settled**; every *value* in this table is a sta
 | `CLEANED_TEXT_MIN_CHARS` | 800 | outcome classifier (positive-content floor) |
 | `SHELL_SCRIPT_RATIO` | 0.7 | outcome classifier (JS-shell signature) |
 | `TIER2_MIN_DELAY_SECONDS` | 3.0 | tier-2 per-domain politeness |
+| `TIER3_TIMEOUT_SECONDS` | 90.0 | unblocker request timeout (vendor solves challenges server-side) |
 
 ---
 
@@ -317,3 +324,6 @@ Ascending chronological (matching DESIGN §20's convention); same-day entries or
 | 2.0.6 | 2026-07-06 | P0-8/9/10 landed — the pipeline spine. Semantics settled in code (proposal status, per §3's graduation rule): Phase 0 stage order is FETCH → VALIDATE → EXTRACT → VERIFY → SCORE, since content-based VALIDATE needs the primary fetch first (⚠ flagged against DESIGN §10.1's diagram order — ruled in 2.0.7 / DESIGN v2.4); the extraction schema includes only page-text criteria (tool/vision/composed keys excluded); VERIFY demotions keep the value and record a `VerifyFlag` — known values score regardless of confidence (superseded by 2.0.8: values now confidence-thresholded per the v2.3 `min_confidence` contract), and gate-relevant checkpoint escalation is deferred to Phase 1 (needs jobs/`waiting_user`); `all_in_monthly` interim composition = conservative advertised rent (rent_max) until P3-9; RunState grew `status`/`error`/`verify_flags`/`scores` and uses float `cost_usd`; Phase 0 persistence is atomic JSON run files under `.manzil/runs/` behind the same Persistence protocol P1-2's jobs row will implement. Three plausibility tunables added (see §3 table). CLI `manzil ingest <url>` is live against the hardcoded §19 rubric (`phase0_rubric.py`, rubric version 0). |
 | 2.0.7 | 2026-07-06 | Tracking DESIGN v2.4 (VALIDATE split): new **VALIDATE_URL** stage (`stages/validate_url.py`) heads the spine — deterministic P2, zero LLM: http(s) scheme, public host (private/loopback refused, SSRF guard), not a binary extension; strips whitespace/fragments and writes the normalized URL back to RunState so the ladder and adapter registry see one canonical form. Spine order now VALIDATE_URL → FETCH → VALIDATE → EXTRACT → VERIFY → SCORE; the 2.0.6 ⚠ is closed. |
 | 2.0.8 | 2026-07-06 | **Correction to 2.0.6** aligning SCORE with the DESIGN v2.3 hunt-settings contract: effective values are confidence-thresholded — a value below `min_confidence` (Phase 0: the contract default `medium`, injected via `StageCtx.min_confidence`; hunts own the setting from P1-5) scores as **unknown**, so a VERIFY-demoted value on a gate-bearing criterion fires the gate instead of passing suspect data. The value itself stays on `reconciled`/extractions as provenance; a Phase 1 `confirm_value` answer is the path back up. Floor-plan figures carry no confidence dimension yet and are not thresholded. Test-pinned both ways (`medium` gates a demoted value; `low` admits it). |
+| 2.0.9 | 2026-07-06 | Seam goes multi-provider (the §11.2 bench prerequisite — adoption as a default pin still requires bench evidence + DESIGN §20 at P0-14): `_live_call` dispatches by model-ID prefix (`claude-*` → Anthropic forced-tool adapter, `gemini-*` → new Google adapter using `response_schema` structured output; thinking disabled on 2.5 Flash family; usage normalized to uncached-input convention). Cache economics are per-provider (Anthropic 10%/125%, Gemini implicit 25%/none); the two §11.2 Gemini candidates are priced in `MODEL_PRICES`. New `MANZIL_MODEL_<STAGE>` env override (refused unless priced). Langfuse pinned `>=4` and the removed v3 `update_current_trace` replaced with `propagate_attributes` (trace name + session). Deps: `google-genai` added, `python-dotenv` declared (was riding transitively). Docs: `uv sync` → `uv sync --all-packages` (plain sync uninstalls workspace-member deps). |
+| 2.0.10 | 2026-07-07 | Code halves of P0-11/12/13 landed ahead of the human labels. **Label format settled** (owned by `evals/labels.py`): `labels/{slug}.json` = `criteria` (key → true value, validated against catalog `value_schema` via `schema_gen.value_adapter`), `unknown` (page genuinely doesn't state it — model graded correct only on null), optional `floor_plans` (omit = plans ungraded); keys absent from both maps are not graded; loader hard-fails on nulls/unknown keys/out-of-schema values. `manzil bench-skeleton <slug>` scaffolds from a corpus page. Harness (P0-12): EXTRACT → VERIFY over saved corpus text, graded per label; report carries per-listing job_id (= Langfuse session) plus tally-based tokens/cost/latency; per-listing failures never abort the run. `manzil bench-run` writes `worker/evals/reports/{name}.json`; `manzil bench-compare` renders the §11.2 decision table (P0-13) — it never edits pins. Gate accuracy = accuracy over rubric non-negotiable keys; `all_in_monthly` is graded through plan rent fields (composed, §9.5). Still human-blocked: the 20 labels (P0-11 🧍), record-mode bench runs (needs provider key), the P0-13/14 decisions. |
+| 2.0.11 | 2026-07-07 | **Tier 3 landed free-plan-only per DESIGN v2.5** (§20 2026-07-07): `fetching/tier3.py` — provider seam (`MANZIL_TIER3_PROVIDER`: `brightdata` default via Web Unlocker API, `scrapingbee` alternate; adding one = a `_Provider` entry), off the ladder until the selected provider's key env is set. `MAX_TIER` 2→3; ladder start-tier now clamps to available fetchers (registry may demand 3 in a run without a tier-3 key) and escalation skips missing rungs (`{1,3}` under `--no-tier2`). Census: `tier3_outcome` column; verdicts `tier3_ok` / `hostile_unfetchable` (blocked even at 3) / `hostile_needs_tier3` (kept when tier 3 absent). CLI: `--no-tier3` on ingest/save-page/census. New tunable `TIER3_TIMEOUT_SECONDS` 90. **Stopgap**: `fetching/slug_hint.py` — deterministic URL-slug identity; FETCH's `source unfetchable` error now suggests the sibling-source search (manual DISCOVER stand-in until P3-5). |

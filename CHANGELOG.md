@@ -7,6 +7,80 @@ repo itself.
 
 ## Unreleased — Phase 0
 
+### 2026-07-07 — Tier 3 (free plans only, DESIGN v2.5) + slug-hint stopgap
+
+- **Tier 3 fetcher** (`fetching/tier3.py`): managed-unblocker adapter behind a
+  provider seam — Bright Data Web Unlocker default, ScrapingBee alternate,
+  selected by `MANZIL_TIER3_PROVIDER`; off the ladder entirely until the
+  selected provider's key env is set. Free plans only; paid escalation
+  requires a new DESIGN §20 decision (v2.5 entry records the rationale).
+- Ladder/registry: `MAX_TIER` 2→3; start tier clamps to available fetchers
+  (a domain recorded as needing tier 3 no longer crashes a keyless run);
+  escalation skips missing rungs (`{1,3}` under `--no-tier2`). CLI grew
+  `--no-tier3` on `ingest` / `save-page` / `census`.
+- Census: `tier3_outcome` column; verdicts now end the argument —
+  `tier3_ok` (vendor wins), `hostile_unfetchable` (blocked even at 3),
+  `hostile_needs_tier3` preserved for tier-3-less runs.
+- **Stopgap** (`fetching/slug_hint.py`): deterministic property identity from
+  the URL slug; FETCH's `source unfetchable` error now says e.g. `try
+  searching "apartment complex name city state" on a fetchable source` — zero LLM, the
+  human stand-in for DISCOVER's sibling-source rescue until P3-5.
+- New tunable `TIER3_TIMEOUT_SECONDS` (90 s — vendors solve challenges
+  server-side). 17 new tests (provider seam via httpx MockTransport, ladder
+  gaps/clamps, census verdicts, slug hints, e2e error hint).
+
+### 2026-07-07 — P0-11/12/13 (code halves): bench labels, eval harness, model compare
+
+- **P0-11 (loader + scaffolding; labels themselves stay human-only)**:
+  `evals/labels.py` pins the label format — `criteria` (true values, validated
+  against the catalog `value_schema` through the new
+  `schema_gen.value_adapter`), `unknown` (model must emit null), optional
+  `floor_plans`; absent keys aren't graded. Loader hard-fails on unfilled
+  skeletons, unknown keys, out-of-schema values, criteria/unknown overlap.
+  `manzil bench-skeleton <slug>` scaffolds a fill-in-the-blanks label from a
+  corpus page and seeds `bench/manifest.md`. Skeletons committed for the two
+  existing corpus pages (autumn-ridge, windsor-woods) as labeling starters.
+- **P0-12 (harness L0)**: `evals/harness.py` runs the real EXTRACT → VERIFY
+  stages over saved corpus text per label (no refetch), grades criterion /
+  gate / unknown accuracy, evidence-flag counts, and floor plans (name-matched,
+  only label-stated fields compared). Per-listing failures (missing corpus
+  page, replay miss, stage error) are recorded, never abort the run.
+  `manzil bench-run` writes `worker/evals/reports/{name}.json` and prints the
+  summary table; traces are `bench/{stage}` with session = job_id and
+  `listing_slug` metadata (IMPL §6).
+- **P0-13 (compare tooling)**: `evals/compare.py` + `manzil bench-compare`
+  render the §11.2 side-by-side decision table over N reports; a sweep is
+  `MANZIL_MODEL_EXTRACT=… manzil bench-run --name …` per candidate. The table
+  informs the pin decision; it never edits `llm/config.py`.
+- 20 tests over labels + harness + compare, proven against the authored
+  synthetic e2e page. Still human-blocked: the 20 real labels, record-mode
+  runs (provider key), and the P0-13/P0-14 decisions.
+
+### 2026-07-06 — Seam: Langfuse v4 fix + multi-provider dispatch (bench prereq)
+
+- **Langfuse v4**: the installed SDK (4.13) removed v3's `update_current_trace`;
+  `_traced_live_call` now sets trace name + session via `propagate_attributes`.
+  `worker` pins `langfuse>=4`. First live traced call still pending a provider
+  key in `.env` (only the Langfuse pair is set) — the run now fails exactly at
+  the provider-key guard, past all tracing setup.
+- **Multi-provider seam** (DESIGN §11.1 "swapping providers is one adapter";
+  needed so P0-13 can bench Gemini at all): `_live_call` dispatches on the
+  model-ID prefix — `claude-*` → Anthropic (forced tool, cache_control),
+  `gemini-*` → Google (`response_schema` structured output, implicit caching,
+  thinking disabled on the 2.5 Flash family, usage normalized so
+  `input_tokens` = uncached input). Tracing, record/replay, and the cost
+  tally sit above the dispatch and are provider-blind.
+- `llm/config.py`: per-provider cache multipliers (Anthropic 10% read / 125%
+  write; Gemini 25% read / no write premium); §11.2 bench candidates
+  `gemini-2.5-flash-lite` (0.10/0.40) and `gemini-2.5-flash` (0.30/2.50)
+  priced. New `MANZIL_MODEL_<STAGE>` override for bench/dev runs — refused
+  unless the model is priced, so cost accounting never guesses.
+- Deps: `google-genai` added; `python-dotenv` declared (cli.py imported it
+  transitively). Note: plain `uv sync` uninstalls workspace-member deps —
+  the documented command is now `uv sync --all-packages`.
+- Adopting a non-Anthropic model as a *default* pin remains gated on bench
+  evidence + a DESIGN §20 entry (P0-14); nothing changed in the pins.
+
 ### 2026-07-06 — P0-10 followup: SCORE honors `min_confidence` (v2.3 contract)
 
 - Correction: effective values in the SCORE stage are now
