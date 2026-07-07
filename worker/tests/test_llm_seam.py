@@ -23,6 +23,7 @@ from manzil_worker.llm.config import (
     WORKHORSE_MODEL,
     cost_usd,
     model_for_stage,
+    openrouter_provider_order,
     provider_for_model,
 )
 from manzil_worker.llm.prompt_loader import PromptError, load_prompt
@@ -91,7 +92,7 @@ def test_replay_serves_the_committed_smoke_fixture(
     """The P0-7 'replay test green' gate: the exact call `manzil llm-smoke`
     makes is served from the committed fixture — zero tokens, no keys."""
     monkeypatch.setenv("MANZIL_LLM_MODE", "replay")
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
 
     with cost_tally() as tally:
         result = asyncio.run(run_smoke())
@@ -165,7 +166,7 @@ def test_live_call_without_langfuse_keys_is_refused(
     monkeypatch.setenv("MANZIL_LLM_MODE", "live")
     monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
     monkeypatch.delenv("LANGFUSE_SECRET_KEY", raising=False)
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-never-used")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test-never-used")
     with pytest.raises(SeamConfigError, match="NFR6"):
         asyncio.run(call_structured("smoke", SmokeResult, "Token: anything"))
 
@@ -175,22 +176,27 @@ def test_unknown_stage_has_no_silent_fallback() -> None:
         model_for_stage("brand-new-stage")
 
 
-# ── multi-provider dispatch (DESIGN §11.1: swapping providers is one adapter) ─
+# ── OpenRouter routing + cache economics ─────────────────────────────────────
 
 
-def test_provider_derives_from_model_id() -> None:
-    assert provider_for_model("claude-haiku-4-5-20251001") == "anthropic"
-    assert provider_for_model("gemini-2.5-flash-lite") == "google"
-    with pytest.raises(KeyError, match="unknown provider prefix"):
-        provider_for_model("gpt-5-mini")
+def test_provider_derives_cache_family_from_openrouter_slug() -> None:
+    assert provider_for_model("anthropic/claude-haiku-4.5") == "anthropic"
+    assert provider_for_model("google/gemini-2.5-flash-lite") == "google"
+    with pytest.raises(KeyError, match="unknown vendor family"):
+        provider_for_model("openai/gpt-5-mini")
+
+
+def test_openrouter_provider_order_pins_upstream_vendors() -> None:
+    assert openrouter_provider_order("anthropic/claude-haiku-4.5") == ["Anthropic"]
+    assert openrouter_provider_order("google/gemini-2.5-flash-lite") == ["Google AI Studio"]
 
 
 def test_model_override_env_swaps_the_pin(monkeypatch: pytest.MonkeyPatch) -> None:
     """P0-13 bench runs sweep models via MANZIL_MODEL_<STAGE> without editing
     pins; an unpriced override is refused so cost accounting never guesses."""
-    monkeypatch.setenv("MANZIL_MODEL_SMOKE", "gemini-2.5-flash-lite")
-    assert model_for_stage("smoke") == "gemini-2.5-flash-lite"
-    monkeypatch.setenv("MANZIL_MODEL_SMOKE", "gemini-9.9-imaginary")
+    monkeypatch.setenv("MANZIL_MODEL_SMOKE", "google/gemini-2.5-flash-lite")
+    assert model_for_stage("smoke") == "google/gemini-2.5-flash-lite"
+    monkeypatch.setenv("MANZIL_MODEL_SMOKE", "google/gemini-9.9-imaginary")
     with pytest.raises(KeyError, match="not in MODEL_PRICES"):
         model_for_stage("smoke")
 
@@ -198,49 +204,37 @@ def test_model_override_env_swaps_the_pin(monkeypatch: pytest.MonkeyPatch) -> No
 def test_gemini_pricing_uses_google_cache_economics() -> None:
     # 1M uncached in + 1M out at (0.10, 0.40); cache reads at 25%, no write premium.
     assert cost_usd(
-        "gemini-2.5-flash-lite", input_tokens=1_000_000, output_tokens=1_000_000
+        "google/gemini-2.5-flash-lite", input_tokens=1_000_000, output_tokens=1_000_000
     ) == pytest.approx(0.50)
     assert cost_usd(
-        "gemini-2.5-flash-lite", input_tokens=0, output_tokens=0, cache_read_tokens=1_000_000
+        "google/gemini-2.5-flash-lite", input_tokens=0, output_tokens=0, cache_read_tokens=1_000_000
     ) == pytest.approx(0.025)
 
 
-def test_live_call_dispatches_gemini_models_to_the_google_adapter(
+def test_live_call_routes_all_models_through_openrouter(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[str] = []
     stub = ProviderResponse(
-        output={"echo": "x", "model_family": "gemini"}, input_tokens=1, output_tokens=1
+        output={"echo": "x", "model_family": "stub"}, input_tokens=1, output_tokens=1
     )
 
-    async def fake_google(plan: object, schema: object) -> ProviderResponse:
-        calls.append("google")
+    async def fake_openrouter(plan: object, schema: object) -> ProviderResponse:
+        calls.append("openrouter")
         return stub
 
-    async def fake_anthropic(plan: object, schema: object) -> ProviderResponse:
-        calls.append("anthropic")
-        return stub
+    monkeypatch.setattr(client_mod, "_live_call_openrouter", fake_openrouter)
 
-    monkeypatch.setattr(client_mod, "_live_call_google", fake_google)
-    monkeypatch.setattr(client_mod, "_live_call_anthropic", fake_anthropic)
-
-    plan = client_mod._CallPlan(
-        stage="smoke",
-        model="gemini-2.5-flash-lite",
-        prompt=load_prompt("smoke"),
-        content="Token: x",
-        digest="d",
-    )
-    asyncio.run(client_mod._live_call(plan, SmokeResult))
-    plan_a = client_mod._CallPlan(
-        stage="smoke",
-        model=WORKHORSE_MODEL,
-        prompt=load_prompt("smoke"),
-        content="Token: x",
-        digest="d",
-    )
-    asyncio.run(client_mod._live_call(plan_a, SmokeResult))
-    assert calls == ["google", "anthropic"]
+    for model in ("google/gemini-2.5-flash-lite", WORKHORSE_MODEL):
+        plan = client_mod._CallPlan(
+            stage="smoke",
+            model=model,
+            prompt=load_prompt("smoke"),
+            content="Token: x",
+            digest="d",
+        )
+        asyncio.run(client_mod._live_call(plan, SmokeResult))
+    assert calls == ["openrouter", "openrouter"]
 
 
 def test_bad_llm_mode_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
