@@ -1,0 +1,15 @@
+# Hostile-domain census candidates (DESIGN §19, P0-6).
+# One URL per line; # comments. Aggregator search pages for the target market —
+# add real listing URLs and official complex sites here as the corpus grows,
+# then re-run: uv run manzil census
+https://www.apartments.com/detroit-mi/
+https://www.zillow.com/detroit-mi/rentals/
+https://www.rent.com/michigan/detroit-apartments
+https://www.apartmentguide.com/apartments/Michigan/Detroit/
+https://www.zumper.com/apartments-for-rent/detroit-mi
+https://www.padmapper.com/apartments/detroit-mi
+https://www.forrent.com/find/MI/metro-Detroit/Detroit
+https://www.realtor.com/apartments/Detroit_MI
+https://hotpads.com/detroit-mi/apartments-for-rent
+https://www.trulia.com/for_rent/Detroit,MI/
+https://www.apartmentlist.com/mi/detroit
