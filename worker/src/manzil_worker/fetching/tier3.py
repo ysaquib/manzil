@@ -51,7 +51,10 @@ def _brightdata(url: str) -> _Request:
     return _Request(
         method="POST",
         url="https://api.brightdata.com/request",
-        headers={"Authorization": f"Bearer {os.environ['BRIGHTDATA_API_KEY']}"},
+        headers={
+            "Authorization": f"Bearer {os.environ['BRIGHTDATA_API_KEY']}",
+            "Content-Type": "application/json",
+        },
         json={
             "zone": os.environ.get("BRIGHTDATA_ZONE", "web_unlocker1"),
             "url": url,
