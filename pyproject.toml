@@ -2,7 +2,10 @@
 name = "manzil"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "playwright>=1.61.0",
+    "pytest-playwright>=0.8.0",
+]
 
 [tool.uv.workspace]
 members = [
@@ -24,6 +27,10 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+# typer's API is function calls in argument defaults — B008 is a false positive there
+"worker/src/manzil_worker/cli.py" = ["B008"]
 
 [tool.mypy]
 strict = true
