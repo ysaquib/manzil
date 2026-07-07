@@ -1,0 +1,176 @@
+"""P0-7: LLM client seam — prompt loading, record/replay, cost tally, NFR6 guard.
+
+No live LLM calls here, ever (AGENTS.md): the replay tests read committed
+fixtures; the record test stubs the provider call. The one genuinely live
+call is the user-run `manzil llm-smoke`.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from pathlib import Path
+
+import pytest
+from manzil_worker.llm import client as client_mod
+from manzil_worker.llm.client import (
+    ProviderResponse,
+    SeamConfigError,
+    call_structured,
+    cost_tally,
+)
+from manzil_worker.llm.config import WORKHORSE_MODEL, cost_usd, model_for_stage
+from manzil_worker.llm.prompt_loader import PromptError, load_prompt
+from manzil_worker.llm.recording import ReplayMissError, request_hash
+from manzil_worker.llm.smoke import SMOKE_TOKEN, SmokeResult, run_smoke
+
+# ── prompt loader ────────────────────────────────────────────────────────────
+
+
+def test_smoke_prompt_loads_and_splits_at_marker() -> None:
+    prompt = load_prompt("smoke")
+    assert prompt.id == "smoke"
+    assert prompt.version == 1
+    assert "smoke check" in prompt.cacheable_prefix
+    assert prompt.per_call == "Read the token from the user message and emit the structured result."
+    assert "<!-- PER-CALL -->" not in prompt.cacheable_prefix
+    assert "<!-- PER-CALL -->" not in prompt.per_call
+
+
+def test_prompt_without_marker_is_all_per_call(tmp_path: Path) -> None:
+    (tmp_path / "validate.md").write_text("---\nid: validate\nversion: 3\n---\nJudge the page.\n")
+    prompt = load_prompt("validate", prompts_dir=tmp_path)
+    assert prompt.cacheable_prefix == ""
+    assert prompt.per_call == "Judge the page."
+    assert prompt.version == 3
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "no front matter at all",
+        "---\nid: x\n---\nbody",  # missing version
+        "---\nid: x\nversion: 1\nnever terminated",
+        "---\nid: x\nversion: 1\ncacheable_prefix_marker: <!-- M -->\n---\nmarker absent",
+    ],
+)
+def test_malformed_prompts_fail_loudly(tmp_path: Path, text: str) -> None:
+    (tmp_path / "bad.md").write_text(text)
+    with pytest.raises(PromptError):
+        load_prompt("bad", prompts_dir=tmp_path)
+
+
+def test_missing_prompt_file_fails_loudly(tmp_path: Path) -> None:
+    with pytest.raises(PromptError, match="no prompt file"):
+        load_prompt("ghost", prompts_dir=tmp_path)
+
+
+# ── request hash (IMPL §5: stage, model_id, prompt_version, sha256(content)) ─
+
+
+def test_request_hash_covers_exactly_the_four_components() -> None:
+    base = request_hash("extract", "model-a", 1, "content")
+    assert base == request_hash("extract", "model-a", 1, "content")  # stable
+    assert base != request_hash("verify", "model-a", 1, "content")
+    assert base != request_hash("extract", "model-b", 1, "content")
+    assert base != request_hash("extract", "model-a", 2, "content")
+    assert base != request_hash("extract", "model-a", 1, "other content")
+
+
+# ── replay ───────────────────────────────────────────────────────────────────
+
+
+def test_replay_serves_the_committed_smoke_fixture(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The P0-7 'replay test green' gate: the exact call `manzil llm-smoke`
+    makes is served from the committed fixture — zero tokens, no keys."""
+    monkeypatch.setenv("MANZIL_LLM_MODE", "replay")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    with cost_tally() as tally:
+        result = asyncio.run(run_smoke())
+
+    assert result.echo == SMOKE_TOKEN
+    assert tally.calls == 1
+    assert tally.cost_usd > 0  # replay still tallies the recorded usage
+
+
+def test_replay_miss_fails_the_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MANZIL_LLM_MODE", "replay")
+    with pytest.raises(ReplayMissError, match="replay miss"):
+        asyncio.run(call_structured("smoke", SmokeResult, "Token: never-recorded"))
+
+
+# ── record -> replay round trip (provider stubbed; no tokens spent) ──────────
+
+
+def test_record_then_replay_round_trip(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("MANZIL_RECORDED_DIR", str(tmp_path))
+
+    stub = ProviderResponse(
+        output={"echo": "round-trip", "model_family": "stub"},
+        input_tokens=100,
+        output_tokens=20,
+        cache_read_tokens=50,
+        cache_write_tokens=10,
+    )
+
+    async def fake_traced_live_call(plan: object, schema: object) -> ProviderResponse:
+        return stub
+
+    monkeypatch.setattr(client_mod, "_traced_live_call", fake_traced_live_call)
+    monkeypatch.setenv("MANZIL_LLM_MODE", "record")
+    recorded = asyncio.run(call_structured("smoke", SmokeResult, "Token: round-trip"))
+    assert recorded == SmokeResult(echo="round-trip", model_family="stub")
+
+    fixtures = list(tmp_path.glob("smoke--*.json"))
+    assert len(fixtures) == 1
+    data = json.loads(fixtures[0].read_text())
+    assert data["model"] == model_for_stage("smoke")
+    assert data["prompt_version"] == 1
+    assert data["input_tokens"] == 100
+
+    # Same request in replay mode is served from the file just written,
+    # without the (stubbed) provider: remove the stub to prove it.
+    monkeypatch.setattr(client_mod, "_traced_live_call", None)
+    monkeypatch.setenv("MANZIL_LLM_MODE", "replay")
+    with cost_tally() as tally:
+        replayed = asyncio.run(call_structured("smoke", SmokeResult, "Token: round-trip"))
+    assert replayed == recorded
+    assert tally.input_tokens == 100
+    assert tally.cache_read_tokens == 50
+    assert tally.cost_usd == pytest.approx(
+        cost_usd(
+            WORKHORSE_MODEL,
+            input_tokens=100,
+            output_tokens=20,
+            cache_read_tokens=50,
+            cache_write_tokens=10,
+        )
+    )
+
+
+# ── NFR6 guard: an untraced live call is a bug, not a degraded mode ──────────
+
+
+def test_live_call_without_langfuse_keys_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MANZIL_LLM_MODE", "live")
+    monkeypatch.delenv("LANGFUSE_PUBLIC_KEY", raising=False)
+    monkeypatch.delenv("LANGFUSE_SECRET_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-never-used")
+    with pytest.raises(SeamConfigError, match="NFR6"):
+        asyncio.run(call_structured("smoke", SmokeResult, "Token: anything"))
+
+
+def test_unknown_stage_has_no_silent_fallback() -> None:
+    with pytest.raises(KeyError, match="no model assignment"):
+        model_for_stage("brand-new-stage")
+
+
+def test_bad_llm_mode_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MANZIL_LLM_MODE", "yolo")
+    with pytest.raises(SeamConfigError, match="expected live"):
+        client_mod.llm_mode()
