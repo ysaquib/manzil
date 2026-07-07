@@ -17,8 +17,10 @@ dependencies = [
     "structlog>=24",
     "asyncpg>=0.29",
     "anthropic>=0.40",
-    "langfuse>=3",
+    "langfuse>=4",
+    "google-genai>=1.0",
     "rapidfuzz>=3.9",
+    "python-dotenv>=1.0",
 ]
 
 [project.scripts]

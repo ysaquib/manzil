@@ -33,9 +33,9 @@ Catalog entry (§8.2) · hunt settings (§8.2) · rubric option (§8.2) · score
 - Fixture corpus: `worker/tests/fixtures/` (50+ real listing pages).
 
 ## Commands
-- Python (uv workspace, root lockfile): `uv sync` · `uv run --package manzil-shared pytest shared/tests` (likewise `manzil-api`, `manzil-worker`) · `uv run ruff check --fix .`
+- Python (uv workspace, root lockfile): `uv sync --all-packages` (plain `uv sync` uninstalls workspace-member deps) · `uv run --package manzil-shared pytest shared/tests` (likewise `manzil-api`, `manzil-worker`) · `uv run ruff check --fix .`
 - Frontend: `pnpm -C frontend dev | test | build`
 - DB: `supabase db reset` locally; migrations live in `supabase/migrations/`.
 
 ## Current phase
-Phase 0 (DESIGN.md §19): CLI pipeline proof. No auth, no UI, no RLS yet. In scope: `shared/` engine + catalog, migrations (global tables only), fetch tiers + outcome classifier, EXTRACT → VERIFY, CLI `ingest <url>`, Langfuse wiring, eval harness skeleton, model bench, hostile-domain census. Learning Track L0 only — no agents-mode code before Phase 0 exits. Exit gates listed in §19.
+Phase 0 (DESIGN.md §19): CLI pipeline proof. In scope: `shared/` engine + catalog, migrations (global tables only), fetch tiers + outcome classifier, EXTRACT → VERIFY, CLI `ingest <url>`, Langfuse wiring, eval harness skeleton, model bench, hostile-domain census. Learning Track L0 only — no agents-mode code before Phase 0 exits. Exit gates listed in §19.
