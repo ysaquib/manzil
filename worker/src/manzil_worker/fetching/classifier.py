@@ -78,7 +78,7 @@ def _is_js_shell(body: str) -> bool:
     return script_chars / len(body) > SHELL_SCRIPT_RATIO
 
 
-def _has_listing_signal(text: str) -> bool:
+def has_listing_signal(text: str) -> bool:
     return bool(_CURRENCY.search(text) or _BED_BATH.search(text) or _ADDRESS.search(text))
 
 
@@ -104,7 +104,7 @@ def classify(result: FetchResult, cleaned: CleanedPage) -> FetchOutcome:
         return FetchOutcome.SHELL
 
     text = cleaned.text
-    if len(text) >= CLEANED_TEXT_MIN_CHARS and _has_listing_signal(text):
+    if len(text) >= CLEANED_TEXT_MIN_CHARS and has_listing_signal(text):
         return FetchOutcome.SUCCESS
 
     if len(result.body.encode()) < FETCH_MIN_BODY_BYTES or len(text) < CLEANED_TEXT_MIN_CHARS:

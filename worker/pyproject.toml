@@ -16,6 +16,9 @@ dependencies = [
     "playwright>=1.47",
     "structlog>=24",
     "asyncpg>=0.29",
+    "anthropic>=0.40",
+    "langfuse>=3",
+    "rapidfuzz>=3.9",
 ]
 
 [project.scripts]
