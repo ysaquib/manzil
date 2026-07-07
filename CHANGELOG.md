@@ -7,6 +7,29 @@ repo itself.
 
 ## Unreleased — Phase 0
 
+### 2026-07-07 — Embedded structured-data miner (DESIGN v2.6)
+
+- **Miner** (`fetching/structured.py`): listing sites server-render their
+  *data* even when they don't render their DOM — JSON-LD plus framework state
+  blobs (`__NEXT_DATA__`, `window.__PRELOADED_STATE__ = {…}`, bare-JSON state
+  scripts) carry the floor plans, unit rents, sqft and fees that never reached
+  tier-1 cleaned text. The cleaner now appends a pruned digest of them under
+  `[EMBEDDED DATA]`. Deterministic, zero LLM; EXTRACT's contract unchanged.
+- Pruning is drop-before-keep: `similar`/`nearby` subtrees are dropped first
+  (another property's prices = contamination), media/URL bulk scrubbed,
+  digest capped at `EMBEDDED_DATA_MAX_CHARS` (40k). JS object literals are
+  unminable by design — no JS evaluation, ever.
+- Classifier: positive cleaned-text check now runs **before** the JS-shell
+  signature, and `has_listing_signal` matches rental-fact JSON keys
+  (`"priceLow":` …) — empty-DOM data-shipping pages (zumper, padmapper style)
+  settle at tier 1 instead of escalating.
+- `save_page` tolerates an already-domain-prefixed slug (no more
+  `domain--domain--slug` fixture dirs); corpus regenerated — 16 pages,
+  cleaned text now carries unit-level rents/sqft/availability at tier 1.
+- Tests: `test_structured.py` (14) — LD kept/boilerplate dropped, assignment
+  and bare-JSON blob parsing, contamination drop, scrub, cap, dedupe,
+  shell-rescue and true-shell classifier cases.
+
 ### 2026-07-07 — Tier 3 (free plans only, DESIGN v2.5) + slug-hint stopgap
 
 - **Tier 3 fetcher** (`fetching/tier3.py`): managed-unblocker adapter behind a

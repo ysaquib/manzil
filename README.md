@@ -40,7 +40,7 @@ manzil/
 │   │   ├── persistence.py       # Phase 0: run files under .manzil/runs/ (jobs table in P1)
 │   │   ├── phase0_rubric.py     # the hardcoded Phase 0 rubric fixture (§19)
 │   │   ├── stages/              # one module per DESIGN §10.3 stage + generated schema
-│   │   ├── fetching/            # tier ladder, outcome classifier, cleaner, registry
+│   │   ├── fetching/            # tier ladder, outcome classifier, cleaner + embedded-data miner, registry
 │   │   ├── llm/                 # THE client seam — only package importing provider SDKs
 │   │   ├── evals/               # bench labels + eval harness + model compare (P0-11..13)
 │   │   └── agents/              # agents mode ONLY (learning track); empty until L1
@@ -89,7 +89,7 @@ If all four are green, CI will be green — they are exactly the three CI jobs.
 | `manzil ingest <url>` | Full pipeline — validate-url → fetch → validate → extract → verify → score — printing the per-plan score breakdown, verify flags, and cost | The Phase 0 workhorse. **Spends tokens** (two to three LLM calls) unless `MANZIL_LLM_MODE=replay` |
 | `manzil llm-smoke` | One structured call through the LLM seam; prints echo, tokens, cost | Verifying keys/tracing after env changes; with `MANZIL_LLM_MODE=record` it refreshes the committed replay fixture |
 | `manzil save-page <url> <slug>` | Fetches through the tier ladder and saves a corpus fixture dir (`raw.html`, `cleaned.txt`, `meta.json`) | Growing the fixture corpus toward 50+ pages, and capturing bench listings for hand-labeling (P0-11) |
-| `manzil clean-corpus` | Re-runs the cleaner over every corpus page, rewriting each `cleaned.txt` | **After any change to `cleaner.py`** — cleaned text is derived data and must never go stale (runbook, IMPLEMENTATION §8) |
+| `manzil clean-corpus` | Re-runs the cleaner over every corpus page, rewriting each `cleaned.txt` | **After any change to `cleaner.py` or `structured.py`** — cleaned text is derived data and must never go stale (runbook, IMPLEMENTATION §8) |
 | `manzil census` | Probes every URL in `infra/census_urls.txt` through the tier ladder, writes `docs/hostile-domain-census.csv` | When a new listing domain enters the picture, or to refresh the Tier-3 decision-gate data (P0-14) |
 | `manzil bench-skeleton <slug>` | Scaffolds `fixtures/bench/labels/{slug}.json` from a saved corpus page, every extractable key null | Starting a hand label (P0-11) — fill in true values, move unstated keys to `unknown`, delete ungraded keys |
 | `manzil bench-run` | Runs EXTRACT → VERIFY over every bench label and grades against it; writes a JSON report to `worker/evals/reports/` | The eval harness (P0-12). **Spends tokens** unless `MANZIL_LLM_MODE=replay` |
@@ -125,6 +125,28 @@ uv run manzil census my-urls.txt --out /tmp/census.csv   # custom input list / o
 
 Tier 2 needs the Playwright browser once per machine: `uv run playwright install chromium`.
 
+### What's inside `cleaned.txt`
+
+Three sections, produced by `fetching/cleaner.py` in one pass (DESIGN v2.6):
+
+1. **Readable page text** — trafilatura (readability-lxml fallback), 5–10×
+   smaller than the raw HTML.
+2. **`[FEE TABLES]`** — fee/deposit/pet-charge tables re-rendered row-by-row
+   when the generic extractor dropped them.
+3. **`[EMBEDDED DATA]`** — a pruned JSON digest mined from script tags
+   (`fetching/structured.py`): JSON-LD blocks plus framework state blobs
+   (`__NEXT_DATA__`, `window.__PRELOADED_STATE__`, bare-JSON state scripts).
+   This is where listing sites actually ship floor plans, unit rents, sqft and
+   availability — often *only* here at tier 1. Noise and `similar`/`nearby`
+   listings (another property's prices!) are pruned; media/URL bulk is
+   scrubbed; the digest is capped at 40k chars. Zero LLM involved, and JS
+   object literals are never evaluated — sites shipping those still contribute
+   via JSON-LD.
+
+EXTRACT sees this one text blob and nothing else; the classifier also counts
+it, so a page whose DOM is empty but whose state blob carries the listing
+classifies `success` at tier 1 instead of escalating.
+
 ### Tier 3 — managed unblocker (free plans only)
 
 The fetch ladder escalates to a scraping-API vendor when tiers 1–2 come back blocked —
@@ -157,7 +179,7 @@ uv run manzil bench-skeleton <slug>                      # 2. scaffold labels/{s
 $EDITOR worker/tests/fixtures/bench/labels/<slug>.json   # 3. HAND-label: values / unknown / plans
 $EDITOR worker/tests/fixtures/bench/manifest.md          #    …and say why the page earned a slot
 MANZIL_LLM_MODE=record uv run manzil bench-run --name baseline-haiku   # 4. run + record (tokens!)
-MANZIL_MODEL_EXTRACT=gemini-2.5-flash-lite MANZIL_LLM_MODE=record \
+MANZIL_MODEL_EXTRACT=google/gemini-2.5-flash-lite MANZIL_LLM_MODE=record \
   uv run manzil bench-run --name flash-lite              # 5. sweep another model
 uv run manzil bench-compare worker/evals/reports/baseline-haiku.json \
   worker/evals/reports/flash-lite.json                   # 6. the P0-13 decision table
@@ -189,13 +211,14 @@ MANZIL_LLM_MODE=replay uv run pytest                                     # what 
 MANZIL_LLM_MODE=record uv run --package manzil-worker pytest -k <slug>   # re-record one fixture (spends tokens)
 ```
 
-Model pins live in `worker/src/manzil_worker/llm/config.py`; the provider is derived from the
-model ID (`claude-*` → Anthropic, `gemini-*` → Google — needs `GEMINI_API_KEY`). For bench/dev
-runs, `MANZIL_MODEL_<STAGE>` overrides a stage's pin without editing config (the model must be
+Model pins live in `worker/src/manzil_worker/llm/config.py` as OpenRouter slugs
+(`anthropic/claude-haiku-4.5`, `google/gemini-2.5-flash-lite`, …). All live calls
+route through OpenRouter (`OPENROUTER_API_KEY`). For bench/dev runs,
+`MANZIL_MODEL_<STAGE>` overrides a stage's pin without editing config (the model must be
 priced in `MODEL_PRICES`, and recordings are keyed by model so replay never crosses models):
 
 ```bash
-MANZIL_MODEL_SMOKE=gemini-2.5-flash-lite MANZIL_LLM_MODE=record uv run manzil llm-smoke
+MANZIL_MODEL_SMOKE=google/gemini-2.5-flash-lite MANZIL_LLM_MODE=record uv run manzil llm-smoke
 ```
 
 Golden-test rule: if an engine change alters any golden in `shared/tests/golden/`, update the golden **in the same commit** with an explanation — that's the audit trail for scoring behavior.
@@ -225,7 +248,7 @@ docker exec -it supabase_db_manzil psql -U postgres              # poke the DB d
 | You changed… | Then run… |
 |---|---|
 | `shared/catalog.py` (add/edit a criterion) | regenerate seed → `supabase db reset` → add a golden covering it → if gate-eligible, add a bench label field |
-| `fetching/cleaner.py` | `uv run manzil clean-corpus` → spot-check a few `cleaned.txt` → commit the regenerated corpus |
+| `fetching/cleaner.py` or `fetching/structured.py` (incl. its drop/signal/scrub lists) | `uv run manzil clean-corpus` → spot-check a few `cleaned.txt` (floor plans present? no `similar` contamination?) → commit the regenerated corpus |
 | `scoring/engine.py` | `uv run pytest shared/tests/golden` — any altered golden gets updated + explained in the same commit |
 | Classifier heuristics | `uv run pytest -k "classifier or ladder"` — synthetic pages + real corpus sweep |
 | A prompt (`llm/prompts/*.md`) or model pin (`llm/config.py`) | bump the prompt `version` front-matter → `MANZIL_LLM_MODE=record` against the bench set → compare the report — no eyeball-only merges. Old recordings invalidate automatically (the request hash covers prompt version + model) |
@@ -241,7 +264,7 @@ pnpm -C frontend dev | test | build
 
 ## Environment
 
-Copy `infra/.env.example` to `.env` at the repo root. Notable variables (full table in IMPLEMENTATION §1): `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` (only for `gemini-*` bench models), `LANGFUSE_*` (tracing is wired before the first LLM call — an untraced call is a bug), `DATABASE_URL`, `SUPABASE_*` (service-role key is worker-only, never api or frontend), `MANZIL_MODE` (`workflow` | `agents`), `MANZIL_LLM_MODE` (`live` | `record` | `replay`).
+Copy `infra/.env.example` to `.env` at the repo root. Notable variables (full table in IMPLEMENTATION §1): `OPENROUTER_API_KEY`, `LANGFUSE_*` (tracing is wired before the first LLM call — an untraced call is a bug), `DATABASE_URL`, `SUPABASE_*` (service-role key is worker-only, never api or frontend), `MANZIL_MODE` (`workflow` | `agents`), `MANZIL_LLM_MODE` (`live` | `record` | `replay`).
 
 ## CI
 
