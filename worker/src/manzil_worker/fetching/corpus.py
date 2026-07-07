@@ -45,7 +45,9 @@ def save_page(
     corpus_dir: Path = CORPUS_DIR,
 ) -> Path:
     """Persist a fetched page as a new corpus fixture directory."""
-    page_dir = corpus_dir / f"{site_domain(result.url)}--{slug}"
+    prefix = f"{site_domain(result.url)}--"
+    # Tolerate an already-prefixed slug — don't mint domain--domain--slug dirs.
+    page_dir = corpus_dir / (slug if slug.startswith(prefix) else f"{prefix}{slug}")
     page_dir.mkdir(parents=True, exist_ok=True)
     (page_dir / "raw.html").write_text(result.body)
     (page_dir / "cleaned.txt").write_text(clean_html(result.body).text)

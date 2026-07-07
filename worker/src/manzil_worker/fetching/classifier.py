@@ -1,10 +1,11 @@
 """Fetch outcome classifier (P0-6, DESIGN §10.7): layered checks, cheapest first.
 
 `success | shell | blocked | not_listing | error` — HTTP-layer signals, then
-negative body signals (challenge fingerprints, JS-shell signature, size
-floor), then positive content signals (JSON-LD short-circuit; text length AND
-a listing token). `not_listing` here is a candidate verdict — VALIDATE (LLM)
-confirms it before it reaches the user.
+challenge fingerprints, then positive content signals (JSON-LD short-circuit;
+cleaned text — which includes the mined [EMBEDDED DATA] digest — long enough
+AND a listing token), then negative body signals (JS-shell signature, size
+floor). `not_listing` here is a candidate verdict — VALIDATE (LLM) confirms it
+before it reaches the user.
 """
 
 from __future__ import annotations
@@ -35,9 +36,14 @@ _CHALLENGE_FINGERPRINTS = (
     "are you a robot",
 )
 
-# Positive content signals: currency, bed/bath tokens, address fragments.
+# Positive content signals: currency, bed/bath tokens, address fragments, and
+# rental-fact keys in the mined [EMBEDDED DATA] digest (state blobs carry
+# prices as bare numbers — `"priceLow": 1443` — that the currency regex misses).
 _CURRENCY = re.compile(r"\$\s?\d{3,4}(?:[,.]\d{3})?")
 _BED_BATH = re.compile(r"\b(?:\d+|studio)\s*(?:bed|br\b|bd\b|bedroom)|\bbath|\bba\b", re.I)
+_JSON_FACT_KEYS = re.compile(
+    r'"[a-z_]*(?:price|rent|bed|bath|floor_?plan|sq_?ft)[a-z_]*"\s*:', re.I
+)
 _ADDRESS = re.compile(
     r"\b(?:st|ave|rd|blvd|dr|ln|lane|way|ct|circle|pkwy)\.?,?\s+[a-z .]+,?\s+[a-z]{2}\s+\d{5}"
     r"|\b[a-z]{2}\s+\d{5}\b",
@@ -79,7 +85,12 @@ def _is_js_shell(body: str) -> bool:
 
 
 def has_listing_signal(text: str) -> bool:
-    return bool(_CURRENCY.search(text) or _BED_BATH.search(text) or _ADDRESS.search(text))
+    return bool(
+        _CURRENCY.search(text)
+        or _BED_BATH.search(text)
+        or _ADDRESS.search(text)
+        or _JSON_FACT_KEYS.search(text)
+    )
 
 
 def classify(result: FetchResult, cleaned: CleanedPage) -> FetchOutcome:
@@ -100,12 +111,15 @@ def classify(result: FetchResult, cleaned: CleanedPage) -> FetchOutcome:
     if _JSONLD_BLOCK.search(result.body) and _JSONLD_TYPES.search(result.body):
         return FetchOutcome.SUCCESS
 
-    if _is_js_shell(result.body):
-        return FetchOutcome.SHELL
-
+    # Positive content outranks the JS-shell heuristic (§20 v2.6): cleaned text
+    # includes the mined [EMBEDDED DATA] digest, so a script-heavy body whose
+    # state blob carries prices/floor plans is a usable page, not a shell.
     text = cleaned.text
     if len(text) >= CLEANED_TEXT_MIN_CHARS and has_listing_signal(text):
         return FetchOutcome.SUCCESS
+
+    if _is_js_shell(result.body):
+        return FetchOutcome.SHELL
 
     if len(result.body.encode()) < FETCH_MIN_BODY_BYTES or len(text) < CLEANED_TEXT_MIN_CHARS:
         return FetchOutcome.SHELL

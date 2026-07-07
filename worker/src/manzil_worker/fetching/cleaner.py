@@ -1,11 +1,14 @@
 """HTML cleaner (P0-5, DESIGN §7): trafilatura primary, readability-lxml
-fallback, custom fee-table preserver.
+fallback, custom fee-table preserver, embedded structured-data digest.
 
 The 5-10x token reduction happens here, before any LLM sees the page. Fee
 language is exactly where listings get vague (§9.5), and generic extractors
 love to drop marketing-formatted fee tables — so tables whose text mentions
 fees/deposits/pet charges are re-rendered row-by-row and appended under a
-marker section when the extractor lost them.
+marker section when the extractor lost them. Listing sites also ship their
+data as JSON in script tags (JSON-LD, __NEXT_DATA__, preloaded state) that no
+text extractor sees — the miner (structured.py, §20 v2.6) appends a pruned
+digest of it under [EMBEDDED DATA].
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ import trafilatura
 from readability import Document
 
 from manzil_worker.fetching.results import CleanedPage
+from manzil_worker.fetching.structured import EMBEDDED_DATA_MARKER, extract_embedded_data
 
 FEE_TABLE_MARKER = "[FEE TABLES]"
 
@@ -94,9 +98,15 @@ def clean_html(html: str) -> CleanedPage:
             else (f"{FEE_TABLE_MARKER}\n" + "\n".join(missing))
         )
 
+    digest, embedded_blobs = extract_embedded_data(html)
+    if digest:
+        section = f"{EMBEDDED_DATA_MARKER}\n{digest}"
+        text = f"{text}\n\n{section}" if text else section
+
     return CleanedPage(
         text=text,
         text_hash=hashlib.sha256(text.encode()).hexdigest(),
         fee_tables_found=len(fee_lines),
         used_fallback=used_fallback,
+        embedded_blobs=embedded_blobs,
     )

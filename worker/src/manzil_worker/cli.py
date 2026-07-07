@@ -154,7 +154,9 @@ def clean_corpus() -> None:
 @app.command("save-page")
 def save_page_cmd(
     url: str,
-    slug: str,
+    slug: str = typer.Argument(
+        ..., help="Corpus slug WITHOUT the domain — the {domain}-- prefix is added automatically"
+    ),
     official: bool = typer.Option(False, "--official", help="Mark source as official site"),
     notes: str = typer.Option("", "--notes"),
     tier2: bool = typer.Option(True, "--tier2/--no-tier2", help="Allow browser escalation"),

@@ -23,9 +23,11 @@ class FetchResult(BaseModel):
 
 
 class CleanedPage(BaseModel):
-    """Cleaner output: normalized text (fee tables preserved) + its content hash."""
+    """Cleaner output: normalized text (fee tables + embedded data preserved)
+    + its content hash."""
 
     text: str
     text_hash: str
     fee_tables_found: int = 0
     used_fallback: bool = False
+    embedded_blobs: int = 0
