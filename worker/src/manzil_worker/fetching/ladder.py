@@ -35,7 +35,12 @@ async def fetch_with_ladder(
     fetch — the outcome recorded on each rung is what makes the next fetch of
     this domain start at the right tier."""
     domain = site_domain(url)
-    tier = max(min(await registry.required_tier(domain), MAX_TIER), min(fetchers))
+    # Clamp the start tier to what's actually runnable: the registry may say a
+    # domain needs tier 3 while this run has no tier-3 fetcher configured.
+    available = sorted(fetchers)
+    wanted = min(await registry.required_tier(domain), MAX_TIER)
+    runnable = [t for t in available if t <= wanted]
+    tier = runnable[-1] if runnable else available[0]
     attempts: list[tuple[int, FetchOutcome]] = []
 
     while True:
@@ -52,7 +57,8 @@ async def fetch_with_ladder(
         log.info("fetch_classified", url=url, tier=tier, outcome=outcome.value)
 
         escalate = outcome in (FetchOutcome.SHELL, FetchOutcome.BLOCKED)
-        next_tier = tier + 1
-        if not escalate or next_tier > MAX_TIER or next_tier not in fetchers:
+        # Next *available* rung (tiers may have gaps, e.g. {1, 3} under --no-tier2).
+        higher = [t for t in available if tier < t <= MAX_TIER]
+        if not escalate or not higher:
             return LadderResult(result=result, cleaned=cleaned, outcome=outcome, attempts=attempts)
-        tier = next_tier
+        tier = higher[0]

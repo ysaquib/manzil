@@ -49,3 +49,7 @@ SHELL_SCRIPT_RATIO = 0.7
 
 # Tier-2 (browser) politeness: minimum seconds between fetches to one domain
 TIER2_MIN_DELAY_SECONDS = 3.0
+
+# Tier-3 (managed unblocker) request timeout — the vendor retries/solves
+# challenges server-side, so a single request can legitimately take a minute
+TIER3_TIMEOUT_SECONDS = 90.0
