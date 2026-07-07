@@ -103,7 +103,7 @@ def test_ingest_of_a_blocked_page_fails_at_fetch(tmp_path: Path) -> None:
     llm = FakeLLM({})
     state = asyncio.run(
         run_job(
-            make_state("https://hostile.test/park-west-detroit-mi/xk1234"),
+            make_state("https://hostile.test/riverfront-towers-detroit-mi/xk1234"),
             make_ctx(body, llm, tmp_path),
         )
     )
@@ -111,5 +111,5 @@ def test_ingest_of_a_blocked_page_fails_at_fetch(tmp_path: Path) -> None:
     assert state.status is JobState.FAILED
     assert state.error is not None and "unfetchable: blocked" in state.error
     # §20 2026-07-07 stopgap: the failure hands the human the sibling search.
-    assert 'try searching "apartment complex name city state"' in state.error
+    assert 'try searching "riverfront towers detroit mi"' in state.error
     assert llm.calls == []
