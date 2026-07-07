@@ -20,7 +20,7 @@ from typing import Annotated, Any, Literal
 
 from manzil_shared.catalog import CATALOG
 from manzil_shared.models import CatalogEntry, Confidence
-from pydantic import BaseModel, ConfigDict, Field, create_model
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, create_model
 
 from manzil_worker.state import FloorPlanIn
 
@@ -59,6 +59,14 @@ def _bounds(value_schema: dict[str, Any]) -> dict[str, Any]:
     if "maximum" in value_schema:
         kwargs["le"] = value_schema["maximum"]
     return kwargs
+
+
+def value_adapter(entry: CatalogEntry) -> TypeAdapter[Any]:
+    """Validator for a bare criterion value (no confidence/evidence wrapper) —
+    used by the bench label loader (P0-11) so hand-labeled ground truth obeys
+    the same catalog `value_schema` the extraction schema is generated from."""
+    ann = Annotated[_value_type(entry.value_schema), Field(**_bounds(entry.value_schema))]
+    return TypeAdapter(ann)
 
 
 def field_model(entry: CatalogEntry) -> type[BaseModel]:
