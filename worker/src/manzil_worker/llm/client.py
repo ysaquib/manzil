@@ -28,7 +28,12 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel
 
-from manzil_worker.llm.config import cost_usd, max_tokens_for_stage, model_for_stage
+from manzil_worker.llm.config import (
+    cost_usd,
+    max_tokens_for_stage,
+    model_for_stage,
+    provider_for_model,
+)
 from manzil_worker.llm.prompt_loader import Prompt, load_prompt
 from manzil_worker.llm.recording import (
     Recording,
@@ -170,6 +175,15 @@ def _langfuse() -> Any:
 
 
 async def _live_call(plan: _CallPlan, schema: type[BaseModel]) -> ProviderResponse:
+    """Dispatch to the provider adapter by model ID. Everything above this
+    call (tracing, record/replay, cost tally) is provider-blind, so a new
+    provider = one adapter + price entries in config.py."""
+    if provider_for_model(plan.model) == "google":
+        return await _live_call_google(plan, schema)
+    return await _live_call_anthropic(plan, schema)
+
+
+async def _live_call_anthropic(plan: _CallPlan, schema: type[BaseModel]) -> ProviderResponse:
     """One real Anthropic call: cached prefix + per-call system, forced tool."""
     from anthropic import AsyncAnthropic
 
@@ -219,28 +233,96 @@ async def _live_call(plan: _CallPlan, schema: type[BaseModel]) -> ProviderRespon
     )
 
 
+async def _live_call_google(plan: _CallPlan, schema: type[BaseModel]) -> ProviderResponse:
+    """One real Gemini call: structured output via response_schema (their
+    forced-schema equivalent), JSON mime type, temperature 0. Gemini caches
+    prompts implicitly — no cache_control markers; the cached-read discount
+    shows up in usage_metadata and CACHE_READ_MULTIPLIERS prices it."""
+    import json
+
+    from google import genai
+    from google.genai import types as genai_types
+
+    if not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")):
+        raise SeamConfigError("GEMINI_API_KEY (or GOOGLE_API_KEY) unset — cannot make a live call")
+
+    system = "\n\n".join(p for p in (plan.prompt.cacheable_prefix, plan.prompt.per_call) if p)
+    config = genai_types.GenerateContentConfig(
+        system_instruction=system or None,
+        temperature=0.0,
+        max_output_tokens=max_tokens_for_stage(plan.stage),
+        response_mime_type="application/json",
+        response_schema=schema,
+        # 2.5 Flash thinks by default; extraction is deterministic fact-pulling
+        # and the §11.2 bench prices assume non-thinking output.
+        thinking_config=(
+            genai_types.ThinkingConfig(thinking_budget=0)
+            if plan.model.startswith("gemini-2.5-flash")
+            else None
+        ),
+    )
+    client = genai.Client()
+    response = await client.aio.models.generate_content(
+        model=plan.model, contents=plan.content, config=config
+    )
+
+    parsed = response.parsed
+    if isinstance(parsed, BaseModel):
+        output = parsed.model_dump(mode="json")
+    elif isinstance(parsed, dict):
+        output = parsed
+    elif response.text:
+        output = json.loads(response.text)
+    else:
+        finish = response.candidates[0].finish_reason if response.candidates else None
+        raise SeamConfigError(
+            f"stage {plan.stage!r}: Gemini returned no parseable structured output "
+            f"(finish_reason={finish})"
+        )
+
+    um = response.usage_metadata
+    cached = (um.cached_content_token_count or 0) if um else 0
+    prompt_tokens = (um.prompt_token_count or 0) if um else 0
+    out_tokens = ((um.candidates_token_count or 0) + (um.thoughts_token_count or 0)) if um else 0
+    return ProviderResponse(
+        output=output,
+        # normalize to the seam convention: input_tokens = uncached input only
+        # (Gemini's prompt_token_count includes cached tokens; Anthropic's
+        # input_tokens excludes them)
+        input_tokens=prompt_tokens - cached,
+        output_tokens=out_tokens,
+        cache_read_tokens=cached,
+        cache_write_tokens=0,
+    )
+
+
 async def _traced_live_call(plan: _CallPlan, schema: type[BaseModel]) -> ProviderResponse:
     """Live call wrapped in its Langfuse generation (IMPL §6): trace named
     `{job_type}/{stage}`, session = job_id, metadata carries mode / model /
     prompt_version / listing_slug plus token and cost figures."""
     _require_langfuse_configured()
     ctx = _current_context()
-    from langfuse import Langfuse
+    from langfuse import Langfuse, propagate_attributes
+
     lf: Langfuse = _langfuse()
-    with lf.start_as_current_observation(
-        name=f"{ctx.job_type}/{plan.stage}",
-        model=plan.model,
-        input=plan.content,
-        as_type="generation",
-        metadata={
-            "mode": ctx.mode,
-            "model": plan.model,
-            "prompt_version": plan.prompt.version,
-            "listing_slug": ctx.listing_slug,
-            "llm_mode": llm_mode(),
-        },
-    ) as generation:
-        lf.update_current_trace(name=f"{ctx.job_type}/{plan.stage}", session_id=ctx.job_id)
+    # v4 SDK: trace-level attributes (name, session) propagate via context, not
+    # the removed v3 `update_current_trace`.
+    with (
+        propagate_attributes(trace_name=f"{ctx.job_type}/{plan.stage}", session_id=ctx.job_id),
+        lf.start_as_current_observation(
+            name=f"{ctx.job_type}/{plan.stage}",
+            model=plan.model,
+            input=plan.content,
+            as_type="generation",
+            metadata={
+                "mode": ctx.mode,
+                "model": plan.model,
+                "prompt_version": plan.prompt.version,
+                "listing_slug": ctx.listing_slug,
+                "llm_mode": llm_mode(),
+            },
+        ) as generation,
+    ):
         response = await _live_call(plan, schema)
         generation.update(
             output=response.output,
