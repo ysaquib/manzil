@@ -1,7 +1,7 @@
 """Deterministic search hint from a listing URL (§20 2026-07-07 stopgap).
 
 Aggregator URLs embed the property's identity in the slug
-(`apartments.com/park-west-detroit-mi/…` → "apartment complex name city state"). When every
+(`apartments.com/riverfront-towers-detroit-mi/…` → "riverfront towers detroit mi"). When every
 tier fails, FETCH puts this hint in the job error so a human can find the
 same property on a fetchable source and resubmit. Zero LLM, zero network —
 the principled multi-source rescue is DISCOVER (P3-5); this is the Phase 0

@@ -199,12 +199,13 @@ def test_census_tier3_column_and_verdicts(tmp_path: Path) -> None:
             "https://www.rent.com/apartment/autumn-ridge-detroit-mi-lc5933022",
             "autumn ridge detroit mi",
         ),
-        ("https://www.apartments.com/park-west-detroit-mi/xk1234/", "apartment complex name city state"),
+        ("https://www.apartments.com/riverfront-towers-detroit-mi/xk1234/", "riverfront towers detroit mi"),
         (
             "https://www.zillow.com/apartments/detroit-mi/windsor-woods/5XjKcm/",
             "detroit mi windsor woods",
         ),
-        ("https://www.forrent.com/find/MI/metro-Detroit/Detroit", "mi metro detroit detroit"),
+        ("https://www.forrent.com/find/MI/metro-Detroit/Detroit", "mi metro detroit"),
+        ("https://www.forrent.com/find/MI/metro-Detroit/Dearborn", "mi metro detroit dearborn"),
         ("https://example.com/", None),  # no identity in the path
         ("https://example.com/listings/12345", None),  # ids and noise only
     ],
