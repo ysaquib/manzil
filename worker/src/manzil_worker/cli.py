@@ -8,11 +8,11 @@ The CLI and the Phase 1+ queue worker are two entry points calling the same
 import asyncio
 import os
 from pathlib import Path
-from dotenv import load_dotenv
-
-load_dotenv()
 
 import typer
+from dotenv import load_dotenv
+
+load_dotenv()  # .env keys are read lazily inside commands, so loading here is early enough
 
 app = typer.Typer(no_args_is_help=True)
 
@@ -20,12 +20,15 @@ DEFAULT_CENSUS_URLS = Path("infra/census_urls.txt")
 DEFAULT_CENSUS_OUT = Path("docs/hostile-domain-census.csv")
 
 
-def _fetchers(tier2: bool) -> dict[int, object]:
+def _fetchers(tier2: bool, tier3: bool = True) -> dict[int, object]:
+    from manzil_worker.fetching.tier3 import Tier3Fetcher, tier3_configured
     from manzil_worker.fetching.tiers import Tier1Fetcher, Tier2Fetcher
 
     fetchers: dict[int, object] = {1: Tier1Fetcher()}
     if tier2:
         fetchers[2] = Tier2Fetcher()
+    if tier3 and tier3_configured():  # no provider key = tier 3 stays off the ladder
+        fetchers[3] = Tier3Fetcher()
     return fetchers
 
 
@@ -38,6 +41,9 @@ def main() -> None:
 def ingest(
     url: str,
     tier2: bool = typer.Option(True, "--tier2/--no-tier2", help="Allow browser escalation"),
+    tier3: bool = typer.Option(
+        True, "--tier3/--no-tier3", help="Allow unblocker escalation (needs a provider key)"
+    ),
 ) -> None:
     """Run the ingest pipeline (validate-url → fetch → validate → extract →
     verify → score) for a listing URL and print the score breakdown.
@@ -66,7 +72,7 @@ def ingest(
         persistence = FilePersistence()
         state = RunState(job_id=uuid.uuid4(), job_type=JobType.INGEST, url=url)
         ctx = StageCtx(
-            fetchers=_fetchers(tier2),  # type: ignore[arg-type]
+            fetchers=_fetchers(tier2, tier3),  # type: ignore[arg-type]
             registry=registry,  # type: ignore[arg-type]
             rubric=phase0_rubric(),
             rubric_version=PHASE0_RUBRIC_VERSION,
@@ -152,6 +158,9 @@ def save_page_cmd(
     official: bool = typer.Option(False, "--official", help="Mark source as official site"),
     notes: str = typer.Option("", "--notes"),
     tier2: bool = typer.Option(True, "--tier2/--no-tier2", help="Allow browser escalation"),
+    tier3: bool = typer.Option(
+        True, "--tier3/--no-tier3", help="Allow unblocker escalation (needs a provider key)"
+    ),
 ) -> None:
     """Fetch a listing page through the tier ladder and save it as a corpus fixture."""
     from manzil_worker.fetching.corpus import save_page
@@ -161,7 +170,7 @@ def save_page_cmd(
     async def run() -> None:
         dsn = os.environ.get("DATABASE_URL")
         registry = PostgresRegistry(dsn) if dsn else InMemoryRegistry()
-        ladder = await fetch_with_ladder(url, registry, _fetchers(tier2))  # type: ignore[arg-type]
+        ladder = await fetch_with_ladder(url, registry, _fetchers(tier2, tier3))  # type: ignore[arg-type]
         typer.echo(f"outcome: {ladder.outcome.value} (tier {ladder.result.tier})")
         if not ladder.result.body:
             typer.echo("no body fetched — nothing saved", err=True)
@@ -172,11 +181,98 @@ def save_page_cmd(
     asyncio.run(run())
 
 
+@app.command("bench-skeleton")
+def bench_skeleton(
+    slug: str,
+    force: bool = typer.Option(False, "--force", help="Overwrite an existing label file"),
+) -> None:
+    """Scaffold a bench label file from a saved corpus page (P0-11).
+
+    Emits labels/{slug}.json with every extractable key set to null — fill in
+    the true values by hand, move keys the page doesn't state to `unknown`,
+    delete keys you don't want graded. The loader rejects unfilled skeletons.
+    """
+    from manzil_worker.evals.labels import LabelError, write_skeleton
+    from manzil_worker.fetching.corpus import CORPUS_DIR
+
+    try:
+        path = write_skeleton(slug, corpus_dir=CORPUS_DIR, force=force)
+    except LabelError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=1) from None
+    typer.echo(f"skeleton written to {path}")
+    typer.echo("fill in criteria values by hand; add a manifest.md row for the slug")
+
+
+@app.command("bench-run")
+def bench_run(
+    out_dir: Path = typer.Option(Path("worker/evals/reports"), "--out-dir"),
+    name: str = typer.Option("", "--name", help="Report file stem (default: timestamp+model)"),
+) -> None:
+    """Run the eval harness over the bench labels (P0-12); write a JSON report.
+
+    Spends tokens unless MANZIL_LLM_MODE=replay. Model sweeps (P0-13): set
+    MANZIL_MODEL_EXTRACT / MANZIL_MODEL_VERIFY and give each run a --name,
+    then `manzil bench-compare` the reports.
+    """
+    from datetime import UTC, datetime
+
+    from manzil_worker.evals.harness import gate_keys_from, report_text, run_bench
+    from manzil_worker.evals.labels import LABELS_DIR, LabelError, load_labels
+    from manzil_worker.fetching.corpus import CORPUS_DIR
+    from manzil_worker.llm.config import model_for_stage
+    from manzil_worker.phase0_rubric import phase0_rubric
+    from manzil_worker.stages.base import StageCtx
+
+    try:
+        labels = load_labels(LABELS_DIR)
+    except LabelError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=1) from None
+    if not labels:
+        typer.echo(
+            f"no labels in {LABELS_DIR} — `manzil bench-skeleton <slug>` then label by hand",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    rubric = phase0_rubric()
+    ctx = StageCtx(rubric=rubric)
+    report = asyncio.run(
+        run_bench(labels, corpus_dir=CORPUS_DIR, ctx=ctx, gate_keys=gate_keys_from(rubric))
+    )
+
+    stem = name or (datetime.now(UTC).strftime("%Y%m%d-%H%M%S") + "--" + model_for_stage("extract"))
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out = out_dir / f"{stem}.json"
+    out.write_text(report.model_dump_json(indent=2) + "\n")
+    typer.echo(report_text(report))
+    typer.echo(f"\nreport written to {out}")
+    if all(listing.error is not None for listing in report.listings):
+        raise typer.Exit(code=1)
+
+
+@app.command("bench-compare")
+def bench_compare(
+    reports: list[Path] = typer.Argument(..., help="Two or more bench-run report JSONs"),
+) -> None:
+    """Side-by-side comparison of bench reports (P0-13 model decision input)."""
+    from manzil_worker.evals.compare import compare_table, load_report
+
+    if len(reports) < 2:
+        typer.echo("need at least two reports to compare", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(compare_table({path.stem: load_report(path) for path in reports}))
+
+
 @app.command()
 def census(
     urls_file: Path = typer.Argument(DEFAULT_CENSUS_URLS),
     out: Path = typer.Option(DEFAULT_CENSUS_OUT, "--out"),
     tier2: bool = typer.Option(True, "--tier2/--no-tier2", help="Allow browser escalation"),
+    tier3: bool = typer.Option(
+        True, "--tier3/--no-tier3", help="Allow unblocker escalation (needs a provider key)"
+    ),
 ) -> None:
     """Probe candidate domains through the tier ladder; emit the census CSV (§19)."""
     from manzil_worker.fetching.census import read_url_file, run_census
@@ -185,5 +281,5 @@ def census(
     if not urls:
         typer.echo(f"no URLs in {urls_file}", err=True)
         raise typer.Exit(code=1)
-    path = asyncio.run(run_census(urls, _fetchers(tier2), out))  # type: ignore[arg-type]
+    path = asyncio.run(run_census(urls, _fetchers(tier2, tier3), out))  # type: ignore[arg-type]
     typer.echo(f"census written to {path} ({len(urls)} URLs)")
