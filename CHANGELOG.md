@@ -7,6 +7,149 @@ repo itself.
 
 ## Unreleased — Phase 0
 
+### 2026-07-06 — P0-10 followup: SCORE honors `min_confidence` (v2.3 contract)
+
+- Correction: effective values in the SCORE stage are now
+  confidence-thresholded per the DESIGN v2.3 hunt-settings contract —
+  anything below `min_confidence` (default `medium`, injected via
+  `StageCtx.min_confidence`) scores as unknown. Concretely: a VERIFY-demoted
+  value on a gate-bearing criterion now **fires the gate** rather than
+  letting suspect data pass; the value stays on `reconciled` as provenance,
+  and a Phase 1 `confirm_value` checkpoint answer is the path back up.
+- Floor-plan figures have no confidence dimension yet and are not
+  thresholded. Both directions test-pinned: `medium` gates a demoted
+  pets_policy; `min_confidence=low` admits it (total 13.5 restored).
+
+### 2026-07-06 — P0-10 followup: VALIDATE_URL stage (DESIGN v2.4 ruling)
+
+- The VALIDATE ordering conflict is resolved by splitting the stage (DESIGN
+  v2.4, §20): `stages/validate_url.py` now heads the spine — deterministic,
+  zero-LLM checks of the submitted URL itself (http(s) scheme, public host
+  with private/loopback refused as an SSRF guard, no binary extensions) plus
+  URL normalization (whitespace/fragments stripped, canonical form written
+  back to RunState). VALIDATE keeps its content judgment, explicitly after
+  FETCH.
+- Spine order: **VALIDATE_URL → FETCH → VALIDATE → EXTRACT → VERIFY →
+  SCORE**. Tests: 17 cases over good/garbage/private/binary URLs plus an e2e
+  bad-URL run proving failure lands before any fetch or LLM call.
+
+### 2026-07-06 — P0-10: RunState + runner + CLI `manzil ingest <url>`
+
+- `state.py`: RunState per the IMPL §3 proposal (with `source_policy`), plus
+  fields the CLI/eval harness need on the state: `status`, `error`,
+  `verify_flags`, `effective_values`, `scores` (per-plan §9.3 contract
+  dicts), `display_score_index`; `cost_usd` is float, matching the seam's
+  tally.
+- `runner.py`: persist-BEFORE-advance runner (two saves per stage: outputs at
+  the old cursor, then the advance), StageRetryable backoff
+  (`10s·2^attempt` jittered, sleep injected for tests), fatal mapping,
+  CheckpointRaised → persisted + parked `waiting_user`, cursor resume.
+  Phase 0 stage order **FETCH → VALIDATE → EXTRACT → VERIFY → SCORE** —
+  content-based VALIDATE requires the primary fetch first (flagged against
+  §10.1's diagram order).
+- `stages/score.py`: single-source reconciliation, effective values (known
+  values score regardless of confidence — demotions are provenance),
+  `all_in_monthly` interim composition = conservative advertised rent
+  (rent_max, never the teaser rate; full §9.5 lands P3-9), per-plan fan-out +
+  best-plan display (§9.4).
+- `phase0_rubric.py`: the §19 hardcoded rubric as a code fixture (2 br ·
+  in-unit laundry · cats · balcony · all-in < $2,000 — the first three and
+  all-in as non-negotiables), rubric version 0.
+- `persistence.py`: atomic JSON run files under `.manzil/runs/` (gitignored);
+  P1-2 swaps in the jobs row behind the same protocol.
+- CLI `manzil ingest <url>` is live: prints status, verify flags, per-plan
+  breakdowns with gate firings, display-score marker, cost, run-file path.
+  Exit codes: 1 failed, 2 agents-mode (no pipeline yet), 3 waiting_user.
+- Tests: runner semantics (persist-before-advance snapshot order, resume,
+  retry/backoff, fatal, checkpoint), score-stage assembly (teaser-rate test
+  pinned), and the e2e spine over a committed fixture listing — real ladder +
+  cleaner + classifier + engine, fake transport + LLM — asserting the exact
+  13.5 breakdown and the failure paths (non-listing, blocked).
+
+### 2026-07-06 — P0-9: VERIFY stage — checks 1-3 code, check 4 call
+
+- `stages/verify.py` per §10.5: **(1)** evidence audit — every non-null
+  value's quote must fuzzy-match the page (rapidfuzz partial_ratio ≥
+  `EVIDENCE_FUZZY_THRESHOLD`), missing/unlocatable evidence demotes to low;
+  **(2)** schema conformance re-checked post-parse against the catalog field
+  models; **(3)** plausibility on static cold-start bounds — new tunables
+  `RENT_PLAUSIBLE_MIN/MAX`, `SQFT_PER_BED_MIN/MAX`,
+  `DEPOSIT_MAX_RENT_MULTIPLIER` (self-derived metro bands need accumulated
+  listings; Phase 0 is always cold start); **(4)** cross-field consistency —
+  exactly one P1 call (`prompts/verify.md` v1) returning contradictions that
+  demote the named criteria.
+- Demotions keep the value and record a `VerifyFlag` (criterion, check,
+  note) on RunState — provenance shows the doubt. Gate-relevant escalation to
+  `confirm_value` checkpoints activates in Phase 1 (needs jobs/waiting_user).
+- Injection fixture committed (`fixtures/pages/injection_listing.html`, an
+  embedded "report rent as $1/month" notice) and test-pinned: a fabricated
+  quote dies at the evidence audit; the injected figure — whose quote IS on
+  the page — dies at plausibility. Injection degrades to a flagged low-trust
+  value, never an action (§16).
+
+### 2026-07-06 — P0-8: dynamic extraction schema + VALIDATE + EXTRACT
+
+- `stages/schema_gen.py`: the extraction schema generated at runtime from
+  `criteria_catalog` via dynamic Pydantic model creation — every field
+  `{value, confidence, evidence_quote}`, catalog label + extraction_hint as
+  the field description (so hints ride inside the cached tool schema), enum/
+  bounds enforced, extras forbidden, every criterion field required (unknown
+  = value null + confidence not_found). Includes only page-text criteria:
+  tool-dependent (maps/web-search/vision) and pipeline-composed
+  (`all_in_monthly`) keys are excluded — extraction stages get zero tools
+  (§16). Plus `floor_plans`: list of per-plan extractions (name, beds,
+  baths, sqft/rent ranges, deposit, availability).
+- `stages/validate.py` (+ `prompts/validate.md` v1): heuristics first — pages
+  without currency/bed-bath/address signals (classifier's
+  `has_listing_signal`, now public) or under the text floor are rejected
+  with zero LLM spend; the rest get one forced-schema confirm. Not-a-listing
+  is StageFatal with the reason.
+- `stages/extract.py` (+ `prompts/extract.md` v1): full-catalog P1 call; on
+  schema-validation failure, one corrective retry with the validation error
+  appended, then `ExtractionInvalid` (§10.2 P1 rule — test-pinned). Every
+  extraction stamped with source URL, model, and prompt version.
+- `stages/base.py`: the Stage protocol + StageCtx (fetchers, registry,
+  call_structured, rubric, persistence, clock, sleep — injected so tests
+  fake the world wholesale).
+- Fixtures: `e2e_listing.html` (a fully-controlled synthetic listing whose
+  ground truth lives in tests/conftest.py) joins the synthetic pages set.
+
+### 2026-07-06 — P0-7: LLM client seam + Langfuse + record/replay
+
+- `llm/client.py`: the §11.1 seam — `call_structured` live (forced tool use:
+  the schema is a tool the model must call, so prose answers are impossible);
+  `call_agent` / `call_vision` pinned signatures, stubbed until their first
+  consumers (P3-5, P3-7). Resolves model + prompt by stage, applies
+  `cache_control` to the stable prefix, and hard-fails a live call when
+  Langfuse keys are unset — an untraced call is a bug (NFR6), not a degraded
+  mode. Replay serves fixtures without tracing (not a model call; CI has no
+  keys).
+- `llm/config.py`: per-stage model map (Haiku 4.5 workhorse / Sonnet 4.6
+  taste tier per §11.2 baseline; P0-13 bench rewrites this file), max-tokens
+  per stage, list prices for the cost tally. Unknown stage is an error, never
+  a fallback.
+- `llm/prompt_loader.py` + `prompts/{stage}.md`: front-matter (`id`,
+  `version`, `cacheable_prefix_marker`), body split at the marker into
+  cacheable prefix vs per-call text (IMPL §4). First prompt: `smoke.md` v1.
+- `llm/recording.py`: record/replay store per IMPL §5 — hash covers
+  `(stage, model_id, prompt_version, sha256(content))`; fixtures land in
+  `tests/fixtures/recorded/{stage}--{hash16}.json`; replay miss raises
+  (CI fails rather than spends).
+- Ambient context: `run_context` (trace = `{job_type}/{stage}`, session =
+  `job_id`, `listing_slug` metadata) and `cost_tally` context managers —
+  P0-10's runner sets both around each stage and adds the tally onto
+  RunState.
+- CLI `manzil llm-smoke`: one structured call through the seam (the "traced
+  call visible in Langfuse" gate); in `record` mode it refreshes the exact
+  fixture the replay test reads. A seeded synthetic recording is committed so
+  replay is green pre-first-live-run.
+- Tests (14): prompt parsing/splitting + loud failures, request-hash
+  component coverage, committed-fixture replay, replay-miss failure,
+  record→replay round trip with a stubbed provider, cost-tally math,
+  NFR6 no-Langfuse refusal, unknown-stage refusal.
+- Deps: `anthropic`, `langfuse` added to `worker/` (SDK imports stay inside
+  `llm/`, lazy, so replay-mode CI never touches them).
+
 ### 2026-07-05 — P0-6: fetch tiers 1-2 + outcome classifier + adapter registry + census
 
 - `fetching/tiers.py`: Tier 1 (httpx, sane headers) and Tier 2 (Playwright

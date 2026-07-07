@@ -36,7 +36,10 @@ manzil/
 ├── worker/                      # manzil-worker: the agent pipeline
 │   ├── src/manzil_worker/
 │   │   ├── cli.py               # `manzil ingest <url>` — Phase 0 entry point
-│   │   ├── stages/              # one module per DESIGN §10.3 stage
+│   │   ├── state.py / runner.py # RunState + persist-before-advance runner (§10.2)
+│   │   ├── persistence.py       # Phase 0: run files under .manzil/runs/ (jobs table in P1)
+│   │   ├── phase0_rubric.py     # the hardcoded Phase 0 rubric fixture (§19)
+│   │   ├── stages/              # one module per DESIGN §10.3 stage + generated schema
 │   │   ├── fetching/            # tier ladder, outcome classifier, cleaner, registry
 │   │   ├── llm/                 # THE client seam — only package importing provider SDKs
 │   │   └── agents/              # agents mode ONLY (learning track); empty until L1
@@ -80,10 +83,26 @@ If all four are green, CI will be green — they are exactly the three CI jobs.
 
 | Command | What it does | Use it when |
 |---|---|---|
-| `manzil ingest <url>` | Full pipeline: fetch → extract → verify → score, printing the breakdown | The Phase 0 endgame — **stub until P0-10** |
+| `manzil ingest <url>` | Full pipeline — validate-url → fetch → validate → extract → verify → score — printing the per-plan score breakdown, verify flags, and cost | The Phase 0 workhorse. **Spends tokens** (two to three LLM calls) unless `MANZIL_LLM_MODE=replay` |
+| `manzil llm-smoke` | One structured call through the LLM seam; prints echo, tokens, cost | Verifying keys/tracing after env changes; with `MANZIL_LLM_MODE=record` it refreshes the committed replay fixture |
 | `manzil save-page <url> <slug>` | Fetches through the tier ladder and saves a corpus fixture dir (`raw.html`, `cleaned.txt`, `meta.json`) | Growing the fixture corpus toward 50+ pages, and capturing bench listings for hand-labeling (P0-11) |
 | `manzil clean-corpus` | Re-runs the cleaner over every corpus page, rewriting each `cleaned.txt` | **After any change to `cleaner.py`** — cleaned text is derived data and must never go stale (runbook, IMPLEMENTATION §8) |
 | `manzil census` | Probes every URL in `infra/census_urls.txt` through the tier ladder, writes `docs/hostile-domain-census.csv` | When a new listing domain enters the picture, or to refresh the Tier-3 decision-gate data (P0-14) |
+
+`ingest` details worth knowing:
+
+- Runs against the hardcoded Phase 0 rubric (`worker/src/manzil_worker/phase0_rubric.py` —
+  2 br · in-unit laundry · cats · balcony · all-in < $2,000 conservative). Rubric editing
+  arrives with the UI in Phase 1.
+- Run state persists to `.manzil/runs/<job_id>.json` after **every** stage (gitignored) —
+  inspect it to debug a run; it is the resumability contract in file form.
+- Values VERIFY demoted below `min_confidence` (default `medium`) score as **unknown** —
+  on a gated criterion that fires the gate. The extracted value is still in the run file's
+  `reconciled` map with its flags; suspect data never silently passes.
+- A malformed/private/binary URL fails at VALIDATE_URL before anything is fetched; a
+  non-listing page fails at VALIDATE with the reason; a blocked/hostile domain fails at
+  FETCH with the tier attempts; a checkpoint parks the run as `waiting_user` (exit code 3).
+- `--no-tier2` forbids browser escalation, same as the other fetch commands.
 
 Useful flags:
 
@@ -106,7 +125,7 @@ uv run --package manzil-worker pytest worker/tests  # cleaner, classifier, ladde
 uv run pytest -k classifier                         # one area, by keyword
 ```
 
-LLM call modes (`MANZIL_LLM_MODE`, live from P0-7 onward):
+LLM call modes (`MANZIL_LLM_MODE`):
 
 | Mode | Behavior | Use it when |
 |---|---|---|
@@ -149,7 +168,8 @@ docker exec -it supabase_db_manzil psql -U postgres              # poke the DB d
 | `fetching/cleaner.py` | `uv run manzil clean-corpus` → spot-check a few `cleaned.txt` → commit the regenerated corpus |
 | `scoring/engine.py` | `uv run pytest shared/tests/golden` — any altered golden gets updated + explained in the same commit |
 | Classifier heuristics | `uv run pytest -k "classifier or ladder"` — synthetic pages + real corpus sweep |
-| A prompt or model pin (from P0-7) | bump the version → `MANZIL_LLM_MODE=record` against the bench set → compare the report — no eyeball-only merges |
+| A prompt (`llm/prompts/*.md`) or model pin (`llm/config.py`) | bump the prompt `version` front-matter → `MANZIL_LLM_MODE=record` against the bench set → compare the report — no eyeball-only merges. Old recordings invalidate automatically (the request hash covers prompt version + model) |
+| `stages/schema_gen.py` or the catalog's `value_schema`s | `uv run pytest -k "schema_gen or extract"` — the extraction schema is generated, never hand-maintained |
 | Migration files | `supabase db reset` must come back clean |
 
 ### Frontend (Phase 1+)
