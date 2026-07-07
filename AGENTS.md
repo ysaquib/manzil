@@ -10,7 +10,7 @@ Agentic apartment-hunting dashboard. Monorepo: `frontend/` (React + Vite + Manti
 ## Hard rules
 - Never implement anything listed in DESIGN.md §18 (Deferred / Backlog) unless explicitly asked.
 - Ambiguous or missing design detail → ask, don't guess. The answer gets recorded in DESIGN.md.
-- Material design changes require a §20 Decision Log entry plus in-place updates to affected sections.
+- Material design changes require a §20 Decision Log entry (append to decision log table) plus in-place updates to affected sections.
 - No provider SDK imports outside `worker/pipeline/llm/`. Every model call goes through the client seam: `call_structured` / `call_agent` / `call_vision`.
 - `shared/` stays domain-blind (no rental-specific assumptions) and LLM-free. The scoring engine is pure and deterministic — facts in, points out, nothing else.
 - Pipeline stages persist state BEFORE advancing the cursor. Stages are idempotent and resumable.
@@ -38,4 +38,10 @@ Catalog entry (§8.2) · hunt settings (§8.2) · rubric option (§8.2) · score
 - DB: `supabase db reset` locally; migrations live in `supabase/migrations/`.
 
 ## Current phase
-Phase 0 (DESIGN.md §19): CLI pipeline proof. In scope: `shared/` engine + catalog, migrations (global tables only), fetch tiers + outcome classifier, EXTRACT → VERIFY, CLI `ingest <url>`, Langfuse wiring, eval harness skeleton, model bench, hostile-domain census. Learning Track L0 only — no agents-mode code before Phase 0 exits. Exit gates listed in §19.
+**Phase 0 tail and Phase 1 are running in parallel.** Full task tables: IMPLEMENTATION.md §7.
+
+**Phase 0 (DESIGN.md §19) — closing out.** The pipeline spine (P0-1..P0-10) is done: `shared/` engine + catalog, migrations (global tables only), fetch tiers + outcome classifier + tier-3 free-plan stopgap, VALIDATE_URL → FETCH → VALIDATE → EXTRACT → VERIFY → SCORE, CLI `ingest <url>`, Langfuse wiring. Remaining, and safe to run alongside Phase 1: P0-11 (bench labeling — human-only, in progress), P0-12/13 (eval harness + model bench — code landed, real runs and the model-pin decision still pending), P0-14 (census verdict + model choice → DESIGN §20 entries). None of Phase 1's API/frontend work depends on these — the model pin and census verdict only affect `llm/config.py` and the tier-3 gate.
+
+**Phase 1 (DESIGN.md §19) — in progress.** Replace the spreadsheet: API + durable Postgres queue + in-process worker loop, Overview table, detail panel, rubric builder, overrides, fees checklist, Tasks Active tab, Supabase Auth for one user. Exit: Yusuf's real hunt runs here, spreadsheet retired.
+
+Learning Track stays at L0 (Phase 0's eval harness) — L1 remains gated on Phase 0's exit per §19; no agents-mode code yet regardless of Phase 1 progress.

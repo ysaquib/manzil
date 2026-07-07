@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| **Version** | 2.4 |
+| **Version** | 2.6 |
 | **Status** | Living document — this is the source of truth during implementation |
 | **Supersedes** | `apartment-hunt-dashboard-design.md` draft v0.4 |
 | **Owner** | Yusuf |
@@ -310,7 +310,7 @@ Conventions: the **scoring engine and Pydantic domain models live in `shared/`**
 | Observability | Langfuse (cloud free tier or self-hosted) | Traces every LLM call with stage/mode/cost in both modes; wired day one (NFR6) |
 | LLM access | Thin provider-agnostic client in `worker/pipeline/llm/`; per-stage model config in one settings file | Keeps the multi-provider door open without committing to it ([§11](#11-llm-strategy)) |
 | Fetching | Tiered ladder: httpx → Playwright → unblocker/actor ([§10.7](#107-fetching-subsystem)) | Escalate per domain, not per fetch |
-| HTML cleaning | trafilatura primary, readability-lxml fallback, custom fee-table preserver | 5–10× token reduction before any LLM sees the page |
+| HTML cleaning | trafilatura primary, readability-lxml fallback, custom fee-table preserver, embedded structured-data miner (JSON-LD + framework state blobs, [§20](#20-decision-log) v2.6) | 5–10× token reduction before any LLM sees the page; the data sites ship as JSON survives it |
 | Maps/location | Google Maps Platform: Geocoding, Places, Routes | One vendor; monthly free credit covers this scale |
 | DB/Auth/Storage/Realtime | Supabase | Postgres as the single stateful system (NFR5); RLS as the security boundary |
 | Hosting | Cloudflare Pages (frontend) + Render (api, worker) + Supabase | Identical operational model to RoleCast |
@@ -621,7 +621,7 @@ Semantics, precisely: the policy constrains **discovered sibling sources only �
 
 The policy is selected at submit time (FR3), defaulting from `hunts.settings.default_source_policy` (itself defaulting to `tiers_1_2_3`), persisted on the listing (`hunt_listings.source_policy`) so refresh jobs honor the same constraint, and recorded in the plan manifest ([§10.4](#104-planner)). Under `trust_link` the run is single-source: RECONCILE degrades trivially (one candidate per criterion, `resolution_rule: single_source`), and the listing carries a permanent **"single source — not cross-checked"** badge in the table and detail panel, because the cross-source outvoting that backs R3/R4 is absent by the user's explicit choice ([§16](#16-security-and-privacy)). VERIFY and the deterministic truth layer are untouched in every policy — Source Policy narrows *which pages feed the pipeline*, never *what counts as correct*.
 
-**Tier-detection heuristics (fetch outcome classification).** Every fetch is classified `success | shell | blocked | not_listing | error` by layered checks, cheapest first. *HTTP-layer signals:* status 403/429/503, challenge headers and cookies (Cloudflare `cf-chl`/`cf_clearance` flows, PerimeterX `_px` cookies), redirects to captcha paths. *Negative body signals:* rendered text under a size floor (~5 KB), known challenge fingerprints ("Pardon Our Interruption", "Verify you are human", "Enable JavaScript and cookies to continue", `cf-challenge` markup), or a body that is nearly all script tags (the JS-shell signature). *Positive content signals:* cleaned text above a length threshold **and** at least one of — a currency amount pattern, bed/bath tokens, or an address fragment; JSON-LD `schema.org` blocks (`ApartmentComplex`, `RealEstateListing`, `Offer`) are a strong positive that also short-circuits doubt. Routing: `shell` → escalate one tier; `blocked` → escalate and record in the registry; `not_listing` → the VALIDATE verdict (surface to user); `success` → clean, hash, proceed. Outcomes update `fetch_adapter_registry` so the ladder self-tunes: a previously easy domain that starts failing simply resumes climbing from the next tier.
+**Tier-detection heuristics (fetch outcome classification).** Every fetch is classified `success | shell | blocked | not_listing | error` by layered checks, cheapest first. *HTTP-layer signals:* status 403/429/503, challenge headers and cookies (Cloudflare `cf-chl`/`cf_clearance` flows, PerimeterX `_px` cookies), redirects to captcha paths. *Challenge fingerprints in the body:* "Pardon Our Interruption", "Verify you are human", "Enable JavaScript and cookies to continue", `cf-challenge` markup. *Positive content signals:* cleaned text — which includes the mined `[EMBEDDED DATA]` digest ([§20](#20-decision-log) v2.6) — above a length threshold **and** at least one of: a currency amount pattern, bed/bath tokens, an address fragment, or rental-fact JSON keys (`"priceLow":`, `"bedCount":` — state blobs carry prices as bare numbers); JSON-LD `schema.org` blocks (`ApartmentComplex`, `RealEstateListing`, `Offer`) are a strong positive that also short-circuits doubt. *Negative body signals, checked only after the positives fail:* a body that is nearly all script tags (the JS-shell signature), rendered text under a size floor (~5 KB). Positive content deliberately outranks the JS-shell heuristic: a script-heavy page whose state blob carries the listing's floor plans is a usable page, not a shell — this is what lets tier 1 settle domains (zumper, padmapper) that render an empty DOM but server-ship their data as JSON. Routing: `shell` → escalate one tier; `blocked` → escalate and record in the registry; `not_listing` → the VALIDATE verdict (surface to user); `success` → clean, hash, proceed. Outcomes update `fetch_adapter_registry` so the ladder self-tunes: a previously easy domain that starts failing simply resumes climbing from the next tier.
 
 ### 10.8 Vision
 
@@ -657,31 +657,30 @@ The named architectures it implements, each chosen because it fits Manzil natura
 
 ### 11.1 Provider Seam
 
-All model calls go through a thin client in `worker/pipeline/llm/` with a per-stage model map in one settings module (`worker/pipeline/llm/config.py` — pinned model IDs, per-stage assignment, cache-control markers). Swapping a stage's model is a config change; swapping providers is one adapter. This seam exists so the bench in Phase 0 can settle model choices empirically — it is **not** a mandate to go multi-provider. A second provider is adopted only if the bench shows material savings at an equal verification pass-rate; otherwise the operational simplicity of one bill, one SDK, shared prompt caching, and one batch API wins (NFR5).
+All model calls go through a thin client in `worker/pipeline/llm/` with a per-stage model map in one settings module (`worker/pipeline/llm/config.py` — pinned OpenRouter model slugs, per-stage assignment, cache-control markers). The seam speaks one OpenAI-compatible API via **OpenRouter** (`openai` SDK → `https://openrouter.ai/api/v1`); swapping a stage's model — any vendor — is a config change in `llm/config.py`. Upstream provider pinning (`provider.order` + `allow_fallbacks: false`) keeps routing deterministic and cache hits sticky across calls (§11.3). Structured output uses forced tool use (`tools` + pinned `tool_choice`); explicit `cache_control` on the stable prefix passes through to Anthropic models and is harmless elsewhere. This seam exists so the bench in Phase 0 can settle model choices empirically — it is **not** a mandate to go multi-vendor on day one. A non-Anthropic default pin is adopted only if the bench shows material savings at an equal verification pass-rate (P0-14 + a §20 entry).
 
 ### 11.2 Model Roles and Candidates
 
-Baseline plan (all-Anthropic): **Claude Haiku 4.5** as the workhorse (extract, verify, reconcile-equivalence, validate, custom-match, plan-assist), **Claude Sonnet 4.6** for the taste-tier (vision, DISCOVER same-property judgment).
+Baseline plan (all-Anthropic via OpenRouter): **Claude Haiku 4.5** (`anthropic/claude-haiku-4.5`) as the workhorse (extract, verify, reconcile-equivalence, validate, custom-match, plan-assist), **Claude Sonnet 4.6** (`anthropic/claude-sonnet-4.6`) for the taste-tier (vision, DISCOVER same-property judgment).
 
-Alternatives explicitly evaluated per Yusuf's request — indicative list pricing as of mid-2026, **verify before committing** (prices move quarterly):
+Alternatives explicitly evaluated per Yusuf's request — indicative list pricing as of mid-2026, **verify before committing** (prices move quarterly). OpenRouter slugs shown; list prices in `MODEL_PRICES` are the cost-tally source of truth:
 
-| Model | ~$/MTok in / out | Candidate for | Assessment |
+| Model (OpenRouter slug) | ~$/MTok in / out | Candidate for | Assessment |
 |---|---|---|---|
-| Claude Haiku 4.5 | 1.00 / 5.00 | workhorse (baseline) | Strong structured extraction + evidence fidelity; prompt caching (−90% cached input) and batch (−50%) apply |
-| Claude Sonnet 4.6 | 3.00 / 15.00 | vision + judgment (baseline) | Highest-confidence vision assessments |
-| Gemini 2.5 Flash-Lite | 0.10 / 0.40 | VALIDATE, CUSTOM_MATCH, possibly EXTRACT | ~10× cheaper than Haiku on input; supports vision + structured output; the question is evidence-quote fidelity and fee-language extraction quality — bench it |
-| Gemini 2.5 Flash | 0.30 / 2.50 | VISION replacement | Credible vision at ~⅙ Sonnet price; also has caching + batch |
+| `anthropic/claude-haiku-4.5` | 1.00 / 5.00 | workhorse (baseline) | Strong structured extraction + evidence fidelity; prompt caching (−90% cached input) via OpenRouter passthrough |
+| `anthropic/claude-sonnet-4.6` | 3.00 / 15.00 | vision + judgment (baseline) | Highest-confidence vision assessments |
+| `google/gemini-2.5-flash-lite` | 0.10 / 0.40 | VALIDATE, CUSTOM_MATCH, possibly EXTRACT | ~10× cheaper than Haiku on input; supports vision + structured output; the question is evidence-quote fidelity and fee-language extraction quality — bench it |
+| `google/gemini-2.5-flash` | 0.30 / 2.50 | VISION replacement | Credible vision at ~⅙ Sonnet price; implicit caching via Google AI Studio |
 | Gemini 3 / 3.1 Flash-Lite tier | 0.25–0.50 / 1.50–3.00 | mid-tier alternative | Newer family; only worth it if 2.5 Flash-Lite fails the bench |
 | DeepSeek V3.x | ~0.14 in | text-only stages | Cheapest text; no fit for vision; weaker structured-output ergonomics — likely not worth a third provider for pennies |
 | GPT-5 Mini / Nano tier | mid/low range | same slots as Gemini Flash | Competitive on paper; adds a provider without a distinct advantage here |
 
-**Recommendation:** start all-Anthropic (Phases 0–2). In Phase 0, run the extraction bench (same 20 listings, same schema) across Haiku 4.5, Gemini 2.5 Flash-Lite, and Gemini 2.5 Flash, measuring verification pass-rate, gate-criterion accuracy, and cost. The realistic upside of a Gemini second provider is cutting the two biggest LLM lines (EXTRACT and VISION) by 5–10×, taking per-listing cost from ~$0.10 toward ~$0.03 — real money at zero scale is still ~nothing, so quality wins any tie.
+**Recommendation:** start all-Anthropic (Phases 0–2). In Phase 0, run the extraction bench (same 20 listings, same schema) across Haiku 4.5, Gemini 2.5 Flash-Lite, and Gemini 2.5 Flash, measuring verification pass-rate, gate-criterion accuracy, and cost. The realistic upside of a Gemini split is cutting the two biggest LLM lines (EXTRACT and VISION) by 5–10×, taking per-listing cost from ~$0.10 toward ~$0.03 — real money at zero scale is still ~nothing, so quality wins any tie. OpenRouter's ~5.5% platform fee is cents at this scale (§15).
 
 ### 11.3 Cross-Cutting Techniques
 
 - **Structured outputs everywhere:** extraction schema generated from `criteria_catalog`; every field `{value, confidence, evidence_quote}` — the evidence requirement measurably suppresses hallucination and feeds VERIFY.
 - **Prompt caching:** stable per-stage prefixes (schema, catalog, rules, few-shots; ~3–6k tokens) marked cacheable → ~90% off on hits.
-- **Batch API:** anything non-interactive (scheduled refreshes, baseline updates, model-migration re-extractions) → −50%.
 - **Model pinning and migrations:** model IDs pinned in config and recorded per extraction; upgrading a model is a deliberate migration — re-extract from stored cleaned text, diff against prior values, review the diff. Never let a silent model change wobble scores.
 
 ---
@@ -690,8 +689,7 @@ Alternatives explicitly evaluated per Yusuf's request — indicative list pricin
 
 | Integration | Used for | Notes |
 |---|---|---|
-| Anthropic API | All LLM stages (baseline) | Caching + batch are load-bearing for NFR1 |
-| Google Gemini API | Contingent second provider | Only post-bench ([§11.2](#112-model-roles-and-candidates)) |
+| OpenRouter | All LLM stages | Single gateway (`OPENROUTER_API_KEY`); OpenAI-compatible API; prompt caching passthrough is load-bearing for NFR1; Anthropic Message Batches API unavailable — accepted (§15) |
 | Google Maps Platform | Geocoding (dedupe), Places (grocery/mosque proximity, reviews), Routes (commute criteria) | Within monthly free credit at this scale; geocodes and distances cached forever |
 | Supabase | Postgres, Auth, Storage (images, cleaned text, screenshots), Realtime | The single stateful system |
 | Bright Data (default) / ScrapingBee (alternate) | Tier-3 fetching | **Free plans only** (§20 2026-07-07); provider swap = one env var. Apify structured actors still deferred |
@@ -747,17 +745,18 @@ Supabase channels per hunt on: `hunt_listings`, `scores`, `comments`, `jobs`, `j
 
 ## 15. Cost Model and Optimization
 
-Baseline (all-Anthropic) per-listing budget, first ingestion, 3 sources, ~8 images — naive: **~$0.26**. With the levers below: **~$0.10–0.12 new · <$0.01 refresh · $0 re-score**, meeting NFR1. A 60-listing hunt with two months of daily refreshes: roughly $8–12 total inference. A Gemini split per [§11.2](#112-model-roles-and-candidates) could roughly triple the headroom; take it only on a quality tie.
+Baseline (all-Anthropic via OpenRouter) per-listing budget, first ingestion, 3 sources, ~8 images — naive: **~$0.26**. With the levers below: **~$0.10–0.12 new · <$0.01 refresh · $0 re-score**, meeting NFR1. A 60-listing hunt with two months of daily refreshes: roughly $8–12 total inference (plus OpenRouter's ~5.5% platform fee — cents at this scale). A Gemini split per [§11.2](#112-model-roles-and-candidates) could roughly triple the headroom; take it only on a quality tie.
 
 Levers, in order of impact:
 
 1. **Prompt caching** on stable stage prefixes → ~40–50% off workhorse input spend.
 2. **Content-hash gating** → refreshes stop costing extraction at all; without this, refreshes quietly become 80% of the bill.
-3. **Batch API** for all non-interactive work → −50%.
-4. **Vision discipline:** ≤8 images, ~1024px, skip on unchanged hashes; bench the cheaper vision model with reference-image anchoring.
-5. **Source-count honesty:** third source only when the first two disagree.
-6. **Global property reuse:** re-adding a known property to a new hunt costs a $0 SCORE plus whatever TTLs say is stale.
-7. **Not worth optimizing:** Maps (inside free credit), Postgres-as-queue ($0), and anything requiring new infrastructure — complexity is the real budget.
+3. **Vision discipline:** ≤8 images, ~1024px, skip on unchanged hashes; bench the cheaper vision model with reference-image anchoring.
+4. **Source-count honesty:** third source only when the first two disagree.
+5. **Global property reuse:** re-adding a known property to a new hunt costs a $0 SCORE plus whatever TTLs say is stale.
+6. **Not worth optimizing:** Maps (inside free credit), Postgres-as-queue ($0), and anything requiring new infrastructure — complexity is the real budget.
+
+*Dropped lever — Anthropic Message Batches API (−50% on non-interactive work):* unavailable through OpenRouter. New-listing ingestion is latency-bound (NFR2), so batch never applied there; content-hash gating (lever 2) already zeroes unchanged refreshes; the realistic savings over a full hunt were ~$1–3. NFR1 is met without it.
 
 Fixed monthly: Cloudflare Pages $0 · Supabase $0 (cleaned-text caching + image cap keep free tier viable indefinitely at this scale) · Render API $0–7 · Render worker ~$7 (paid, so jobs never wait on cold starts; Phase 1 may run the in-process loop instead, [§5](#5-system-architecture)) · Maps $0 · Tier-3 services $0 unless the gate opens, then ~$5–30 pay-per-use. **Realistic: $7–14/mo + usage.**
 
@@ -824,7 +823,7 @@ RLS policies + permissions matrix (Curator role), invites, realtime sync, commen
 *Exit:* second real user active; permissions verified at the RLS layer by tests.
 
 **Phase 3 — Full agent system.**
-Planner manifests; DISCOVER multi-source + RECONCILE ladder; VISION with reference set; Maps/reviews/safety ENRICH; utility baselines job; custom-criteria routing; checkpoints incl. 24 h auto-resume; refresh TTLs + hash gating + batch routing; compare view; separate paid worker; mobile sheet polish. Tier-3 adapters if — and only as much as — the Phase 0 gate demands.
+Planner manifests; DISCOVER multi-source + RECONCILE ladder; VISION with reference set; Maps/reviews/safety ENRICH; utility baselines job; custom-criteria routing; checkpoints incl. 24 h auto-resume; refresh TTLs + hash gating; compare view; separate paid worker; mobile sheet polish. Tier-3 adapters if — and only as much as — the Phase 0 gate demands.
 *Exit:* NFR1–NFR4 measured and met on the live hunt.
 
 **Learning Track (parallel, never blocking).** Gating rule: an L-milestone starts only after the shipping milestone it depends on is green, and must never delay the next shipping milestone — **the lease deadline wins every conflict** (R11).
@@ -878,6 +877,8 @@ Chronological. Dates before 2026-07-01 are reconstructed from the drafting sessi
 | 2026-07-06 | v2.3: **hunt settings contract pinned** (§8.2) — the four settings the design already implied, gathered into one Owner-edited, API-validated object: `default_source_policy` (§10.7), `cost_estimate_mode` (§9.5), `min_confidence` (§9.3, default `medium`), `proximity_mode` (§8.2 catalog). Edit effects specified per key: scoring inputs (`cost_estimate_mode`, `min_confidence`) reuse the rubric-mutation path — version bump + free rescore; `proximity_mode` triggers a field-scoped location refresh; `default_source_policy` affects future submissions only. "Edit hunt settings" added to the §4.2 matrix (Owner-only); settings panel added to the §13.1 settings route. No speculative settings added — every key is read by machinery already in the design | Four subsystems read this object, so its shape is design, not implementation (the v1.3 pinning standard); routing scoring-affecting edits through `rubric_version` keeps score provenance honest — a stored breakdown is fully explained by its version | §4.2, §5.1, §8.2, §9.2, §9.3, §9.5, §13.1, §20 |
 | 2026-07-06 | v2.4: **VALIDATE split in two**, resolving the ordering conflict P0-8/10 implementation surfaced (the old diagram put VALIDATE before FETCH, but "is this a rental listing page?" needs fetched content). **VALIDATE_URL** — deterministic P2, pre-fetch, in the old diagram position: scheme + public host (private/loopback refused, an SSRF guard per §16) + not-a-binary, and the single place URL normalization (whitespace, fragments) happens. **VALIDATE** — the content judgment (heuristics first, LLM confirm), now explicitly after FETCH of the submitted source. Phase 0 spine order pinned: VALIDATE_URL → FETCH → VALIDATE → EXTRACT → VERIFY → SCORE | A URL-shaped sanity check costs nothing and belongs before any fetch; a content judgment cannot precede the content — splitting the stage lets both truths hold instead of picking one | §10.1, §10.2, §10.3, §16, §19 |
 | 2026-07-07 | v2.5: **Tier 3 built ahead of the census gate, free plans only.** The 2026-06-28 deferral is partially reversed: the managed-unblocker fetcher exists now (Bright Data Web Unlocker default, ScrapingBee alternate, swappable via `MANZIL_TIER3_PROVIDER`, off the ladder until a key is set), but strictly on vendor free tiers (~5k req/mo Bright Data) — **moving to a paid plan is a new §20 decision**, not a config change. What changed since the deferral: the ladder/registry/classifier infrastructure made the fetcher a half-day adapter; free tiers cover Phase 0 volumes entirely, deleting the per-request-cost argument; the census gains a definitive tier-3 column (`hostile_unfetchable` vs `tier3_ok`), turning the P0-14 gate from "build or not" into "keep, and which provider". The Apify structured-actor path stays deferred (second data path, own decision). Stopgap added alongside: FETCH's `source unfetchable` error now carries a deterministic URL-slug search hint (zero LLM) so a human can find the same property on a fetchable source — the manual stand-in for DISCOVER (P3-5) | The infra investment changed the cost of building it, and free tiers changed the cost of running it; capping at free plans preserves the original economic judgment while removing the census blind spot (we can now *measure* whether unblockers beat the hostile five instead of guessing) | §10.7, §19, §20 |
+| 2026-07-07 | v2.6: **Embedded structured data mined into the cleaned text; positive content outranks the JS-shell heuristic.** Corpus reality (16 pages, 10 domains): listing sites server-render their *data* even when they don't render their DOM — JSON-LD blocks plus framework state blobs (`__NEXT_DATA__`, `window.__PRELOADED_STATE__`, bare-JSON state scripts) carry the floor plans, unit prices, sqft and fees that never reached tier-1 cleaned text. A deterministic, zero-LLM miner (`fetching/structured.py`) now parses those script tags and appends a pruned digest under `[EMBEDDED DATA]` in the cleaned text; EXTRACT's contract is unchanged (it still receives one text blob). Pruning is list-driven, drop-before-keep: `similar`/`nearby` subtrees are dropped **first** because they carry *another property's* prices (contamination, not just noise); media/URL bulk is scrubbed; digest capped at `EMBEDDED_DATA_MAX_CHARS` (40k). Classifier consequence: the positive cleaned-text check (now also matching rental-fact JSON keys like `"priceLow":`) runs **before** the JS-shell signature, so empty-DOM-but-data-shipping pages settle at tier 1 instead of escalating. JS object literals (unquoted keys, e.g. zumper's inline state) are unminable by design — no JS evaluation, ever; those sites still contribute via JSON-LD | The data was *right there* in every saved page; mining it is a cleaner concern (the stored artifact is cleaned text, §8.2), costs zero LLM calls, fixes tier-1 pages whose rendered text lacked prices, and demotes shell verdicts that were pure DOM-emptiness artifacts. Rejected alternative: per-site JSON adapters — a schema-mapping treadmill; the generic key-signal pruner is domain-blind and fails soft to the old behavior when nothing parses | §7, §10.7, §20 |
+| 2026-07-07 | v2.7: **OpenRouter as sole LLM gateway; direct vendor SDKs dropped.** Supersedes the 2026-06-30 all-Anthropic decision in practice: the Gemini adapter (P0-13 bench prerequisite) had already eroded the "one bill, one SDK" argument. OpenRouter restores it — one `OPENROUTER_API_KEY`, one `openai` SDK, model swaps are config string changes (`anthropic/claude-haiku-4.5`, `google/gemini-2.5-flash-lite`, …). Upstream provider pinning preserves deterministic routing and cache stickiness. What's lost: Anthropic Message Batches API (−50% on non-interactive work) — new-listing ingestion is latency-bound (NFR2), hash gating zeroes unchanged refreshes, realistic hunt savings were ~$1–3; NFR1 still holds. Prompt caching passthrough (`cache_control` on stable prefixes) remains load-bearing. ~5.5% OpenRouter fee is cents at this scale | Operational simplicity wins again, without giving up the bench's ability to sweep Gemini candidates; batch was a future Phase 3 lever that never justified maintaining two direct SDKs | §11, §12, §15, §20 |
 
 ---
 
