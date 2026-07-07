@@ -30,3 +30,5 @@ supabase/.temp/
 
 # Phase 0 run persistence (worker/src/manzil_worker/persistence.py)
 .manzil/
+
+archive/

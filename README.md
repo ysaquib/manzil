@@ -42,9 +42,10 @@ manzil/
 │   │   ├── stages/              # one module per DESIGN §10.3 stage + generated schema
 │   │   ├── fetching/            # tier ladder, outcome classifier, cleaner, registry
 │   │   ├── llm/                 # THE client seam — only package importing provider SDKs
+│   │   ├── evals/               # bench labels + eval harness + model compare (P0-11..13)
 │   │   └── agents/              # agents mode ONLY (learning track); empty until L1
-│   ├── tests/fixtures/          # corpus/ (saved pages) · bench/ (labels) · recorded/ (replay)
-│   └── evals/                   # dual-mode eval harness + reports
+│   ├── tests/fixtures/          # corpus/ (saved pages) · bench/ (manifest + labels) · recorded/ (replay)
+│   └── evals/reports/           # generated bench reports (committed alongside model/prompt changes)
 ├── api/                         # manzil-api (FastAPI): near-empty until Phase 1
 ├── frontend/                    # Vite + React + Mantine: untouched until Phase 1
 ├── supabase/                    # config, migrations/, seed.sql (generated — never hand-edit)
@@ -57,7 +58,9 @@ manzil/
 Prerequisites: [`uv`](https://docs.astral.sh/uv/) ≥ 0.5 · Supabase CLI · Docker (for the local Supabase stack) · Node 20 + `pnpm` (Phase 1+) · Playwright (`uv run playwright install chromium`, needed from P0-6).
 
 ```bash
-uv sync                        # one venv, all workspace packages (pins Python 3.12)
+uv sync --all-packages         # one venv, all workspace packages (pins Python 3.12)
+                               # plain `uv sync` installs only the root package's deps
+                               # and UNINSTALLS the workers' — always pass the flag
 cp infra/.env.example .env     # fill in keys; never commit real values
 supabase start                 # local Postgres/Auth/Storage/Realtime stack
 ```
@@ -88,6 +91,9 @@ If all four are green, CI will be green — they are exactly the three CI jobs.
 | `manzil save-page <url> <slug>` | Fetches through the tier ladder and saves a corpus fixture dir (`raw.html`, `cleaned.txt`, `meta.json`) | Growing the fixture corpus toward 50+ pages, and capturing bench listings for hand-labeling (P0-11) |
 | `manzil clean-corpus` | Re-runs the cleaner over every corpus page, rewriting each `cleaned.txt` | **After any change to `cleaner.py`** — cleaned text is derived data and must never go stale (runbook, IMPLEMENTATION §8) |
 | `manzil census` | Probes every URL in `infra/census_urls.txt` through the tier ladder, writes `docs/hostile-domain-census.csv` | When a new listing domain enters the picture, or to refresh the Tier-3 decision-gate data (P0-14) |
+| `manzil bench-skeleton <slug>` | Scaffolds `fixtures/bench/labels/{slug}.json` from a saved corpus page, every extractable key null | Starting a hand label (P0-11) — fill in true values, move unstated keys to `unknown`, delete ungraded keys |
+| `manzil bench-run` | Runs EXTRACT → VERIFY over every bench label and grades against it; writes a JSON report to `worker/evals/reports/` | The eval harness (P0-12). **Spends tokens** unless `MANZIL_LLM_MODE=replay` |
+| `manzil bench-compare <a.json> <b.json>…` | Side-by-side table over bench reports: gate/criterion accuracy, evidence flags, cost, latency | Judging a model sweep or prompt change (P0-13) — never eyeball-only |
 
 `ingest` details worth knowing:
 
@@ -101,8 +107,11 @@ If all four are green, CI will be green — they are exactly the three CI jobs.
   `reconciled` map with its flags; suspect data never silently passes.
 - A malformed/private/binary URL fails at VALIDATE_URL before anything is fetched; a
   non-listing page fails at VALIDATE with the reason; a blocked/hostile domain fails at
-  FETCH with the tier attempts; a checkpoint parks the run as `waiting_user` (exit code 3).
-- `--no-tier2` forbids browser escalation, same as the other fetch commands.
+  FETCH with the tier attempts **plus a search hint pulled from the URL slug**
+  ("try searching *apartment complex name city state* on a fetchable source") so you can resubmit the
+  same property from a friendlier site — the manual stand-in for DISCOVER until Phase 3.
+- `--no-tier2` forbids browser escalation; `--no-tier3` forbids unblocker escalation —
+  both apply to `ingest`, `save-page`, and `census` alike.
 
 Useful flags:
 
@@ -115,6 +124,48 @@ uv run manzil census my-urls.txt --out /tmp/census.csv   # custom input list / o
 ```
 
 Tier 2 needs the Playwright browser once per machine: `uv run playwright install chromium`.
+
+### Tier 3 — managed unblocker (free plans only)
+
+The fetch ladder escalates to a scraping-API vendor when tiers 1–2 come back blocked —
+but **only if a provider key is configured**; without one the ladder behaves exactly as
+before. Strictly free plans (DESIGN §20 2026-07-07): going paid is a design decision,
+not an env change.
+
+```bash
+# .env — Bright Data Web Unlocker is the default provider
+BRIGHTDATA_API_KEY=...          # from brightdata.com → Web Unlocker zone
+BRIGHTDATA_ZONE=web_unlocker1   # your zone name (this is their default)
+```
+
+**Changing the provider** is one env var — the selected provider's own key gates it:
+
+```bash
+MANZIL_TIER3_PROVIDER=scrapingbee   # + SCRAPINGBEE_API_KEY=...
+```
+
+**Adding a provider** is one `_Provider` entry in `worker/src/manzil_worker/fetching/tier3.py`
+(request builder + required env names) — nothing outside that module changes. After any
+provider change, re-run `uv run manzil census` and check the `tier3_outcome` column:
+`tier3_ok` means the vendor beats the domain, `hostile_unfetchable` means even tier 3 lost.
+
+### Bench workflow (P0-11 → P0-13)
+
+```bash
+uv run manzil save-page <url> <slug>                     # 1. capture the page into the corpus
+uv run manzil bench-skeleton <slug>                      # 2. scaffold labels/{slug}.json
+$EDITOR worker/tests/fixtures/bench/labels/<slug>.json   # 3. HAND-label: values / unknown / plans
+$EDITOR worker/tests/fixtures/bench/manifest.md          #    …and say why the page earned a slot
+MANZIL_LLM_MODE=record uv run manzil bench-run --name baseline-haiku   # 4. run + record (tokens!)
+MANZIL_MODEL_EXTRACT=gemini-2.5-flash-lite MANZIL_LLM_MODE=record \
+  uv run manzil bench-run --name flash-lite              # 5. sweep another model
+uv run manzil bench-compare worker/evals/reports/baseline-haiku.json \
+  worker/evals/reports/flash-lite.json                   # 6. the P0-13 decision table
+```
+
+Labels are ground truth **only a human writes** (step 3) — the loader refuses unfilled
+skeletons, unknown keys, and out-of-catalog values, so a typo'd label can't silently
+mis-grade a run. Keys absent from both `criteria` and `unknown` simply aren't graded.
 
 ### Tests
 
@@ -136,6 +187,15 @@ LLM call modes (`MANZIL_LLM_MODE`):
 ```bash
 MANZIL_LLM_MODE=replay uv run pytest                                     # what CI runs — zero tokens
 MANZIL_LLM_MODE=record uv run --package manzil-worker pytest -k <slug>   # re-record one fixture (spends tokens)
+```
+
+Model pins live in `worker/src/manzil_worker/llm/config.py`; the provider is derived from the
+model ID (`claude-*` → Anthropic, `gemini-*` → Google — needs `GEMINI_API_KEY`). For bench/dev
+runs, `MANZIL_MODEL_<STAGE>` overrides a stage's pin without editing config (the model must be
+priced in `MODEL_PRICES`, and recordings are keyed by model so replay never crosses models):
+
+```bash
+MANZIL_MODEL_SMOKE=gemini-2.5-flash-lite MANZIL_LLM_MODE=record uv run manzil llm-smoke
 ```
 
 Golden-test rule: if an engine change alters any golden in `shared/tests/golden/`, update the golden **in the same commit** with an explanation — that's the audit trail for scoring behavior.
@@ -170,6 +230,7 @@ docker exec -it supabase_db_manzil psql -U postgres              # poke the DB d
 | Classifier heuristics | `uv run pytest -k "classifier or ladder"` — synthetic pages + real corpus sweep |
 | A prompt (`llm/prompts/*.md`) or model pin (`llm/config.py`) | bump the prompt `version` front-matter → `MANZIL_LLM_MODE=record` against the bench set → compare the report — no eyeball-only merges. Old recordings invalidate automatically (the request hash covers prompt version + model) |
 | `stages/schema_gen.py` or the catalog's `value_schema`s | `uv run pytest -k "schema_gen or extract"` — the extraction schema is generated, never hand-maintained |
+| A bench label, or `evals/` grading logic | `uv run pytest -k bench` — then re-run `manzil bench-run` before trusting any older report |
 | Migration files | `supabase db reset` must come back clean |
 
 ### Frontend (Phase 1+)
@@ -180,7 +241,7 @@ pnpm -C frontend dev | test | build
 
 ## Environment
 
-Copy `infra/.env.example` to `.env` at the repo root. Notable variables (full table in IMPLEMENTATION §1): `ANTHROPIC_API_KEY`, `LANGFUSE_*` (tracing is wired before the first LLM call — an untraced call is a bug), `DATABASE_URL`, `SUPABASE_*` (service-role key is worker-only, never api or frontend), `MANZIL_MODE` (`workflow` | `agents`), `MANZIL_LLM_MODE` (`live` | `record` | `replay`).
+Copy `infra/.env.example` to `.env` at the repo root. Notable variables (full table in IMPLEMENTATION §1): `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` (only for `gemini-*` bench models), `LANGFUSE_*` (tracing is wired before the first LLM call — an untraced call is a bug), `DATABASE_URL`, `SUPABASE_*` (service-role key is worker-only, never api or frontend), `MANZIL_MODE` (`workflow` | `agents`), `MANZIL_LLM_MODE` (`live` | `record` | `replay`).
 
 ## CI
 
