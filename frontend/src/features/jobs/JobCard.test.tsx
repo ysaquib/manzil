@@ -1,0 +1,115 @@
+import { screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
+
+import { renderWithProviders } from "../../../tests/testUtils";
+import { checkpointAnswer, type Job } from "./api";
+import { CheckpointPromptCard } from "./CheckpointPromptCard";
+import { isCancellable, JobCard, STATE_COLOR } from "./JobCard";
+
+function job(overrides: Partial<Job> = {}): Job {
+  return {
+    id: "job-1",
+    hunt_listing_id: "listing-1",
+    type: "ingest",
+    state: "running",
+    current_stage: "EXTRACT",
+    attempts: 1,
+    error: null,
+    cost_actual_usd: 0,
+    ...overrides,
+  };
+}
+
+const noop = () => {};
+
+function renderCard(j: Job) {
+  return renderWithProviders(
+    <JobCard
+      job={j}
+      listingName="The Test Flats"
+      onCancel={noop}
+      onRetry={noop}
+      onAnswer={noop}
+      busy={false}
+    />,
+  );
+}
+
+describe("job state mapping", () => {
+  it("covers every job state with a color", () => {
+    expect(Object.keys(STATE_COLOR).sort()).toEqual(
+      ["cancelled", "done", "failed", "queued", "running", "waiting_user"].sort(),
+    );
+  });
+
+  it("only live states are cancellable", () => {
+    expect(isCancellable("queued")).toBe(true);
+    expect(isCancellable("running")).toBe(true);
+    expect(isCancellable("waiting_user")).toBe(true);
+    expect(isCancellable("done")).toBe(false);
+    expect(isCancellable("failed")).toBe(false);
+    expect(isCancellable("cancelled")).toBe(false);
+  });
+
+  it("shows stage progress and cancel for a running job", () => {
+    renderCard(job());
+    expect(screen.getByText("stage: EXTRACT")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+  });
+
+  it("shows retry and the error for a failed job", () => {
+    renderCard(job({ state: "failed", error: "fetch blocked" }));
+    expect(screen.getByText("fetch blocked")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+  });
+
+  it("renders the checkpoint prompt inline when waiting on the user", () => {
+    renderCard(
+      job({
+        state: "waiting_user",
+        checkpoint: {
+          kind: "confirm_value",
+          question: "Does $2,450 look right?",
+          options: ["yes", "no"],
+          default: "yes",
+        },
+      }),
+    );
+    expect(screen.getByText("Does $2,450 look right?")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "yes" })).toBeInTheDocument();
+  });
+});
+
+describe("checkpoint answering", () => {
+  it("builds the §10.10 answer payload", () => {
+    expect(checkpointAnswer("yes")).toEqual({ answer: { choice: "yes" } });
+    expect(checkpointAnswer("other", "call the office")).toEqual({
+      answer: { choice: "other", text: "call the office" },
+    });
+  });
+
+  it("fires onAnswer with the picked option", async () => {
+    const onAnswer = vi.fn();
+    renderWithProviders(
+      <CheckpointPromptCard
+        prompt={{
+          kind: "confirm_value",
+          question: "Confirm?",
+          options: ["yes", "no", "other:<input>"],
+          default: "yes",
+        }}
+        onAnswer={onAnswer}
+        answering={false}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "no" }));
+    expect(onAnswer).toHaveBeenCalledWith("no");
+
+    await userEvent.type(screen.getByPlaceholderText("Something else…"), "check site");
+    await userEvent.click(screen.getByRole("button", { name: "Answer" }));
+    expect(onAnswer).toHaveBeenCalledWith("other", "check site");
+  });
+});

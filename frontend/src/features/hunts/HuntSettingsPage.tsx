@@ -1,6 +1,207 @@
-import { PagePlaceholder } from "../../components/PagePlaceholder";
+// Hunt settings (P1-5 consumer, §8.2): name/archive + the 4-key settings
+// form. Scoring-affecting keys (cost mode, min confidence) rescore for free;
+// the source-policy default affects future submissions only. Members/roles/
+// invites arrive with Phase 2. Archive is destructive-adjacent → confirm
+// modal, tucked at the bottom (frontend/AGENTS.md hierarchy).
+import {
+  Alert,
+  Button,
+  Center,
+  Divider,
+  Group,
+  Loader,
+  Modal,
+  Select,
+  Stack,
+  Text,
+  TextInput,
+  Title,
+} from "@mantine/core";
+import { notifications } from "@mantine/notifications";
+import { useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 
-// Name/archive + the 4-key settings form (Phase 1 plan §5.2, P1-5/P2-7).
+import { ApiError } from "../../lib/apiClient";
+import { resolveSettings, SOURCE_POLICIES, type HuntSettings } from "../../lib/contracts";
+import { semantic } from "../../theme";
+import { useHunt, usePatchHunt, usePatchHuntSettings, type Hunt } from "./api";
+
+function notifyError(title: string) {
+  return (error: unknown) =>
+    notifications.show({
+      title,
+      message: error instanceof ApiError ? error.message : "Unexpected error",
+      color: "red",
+    });
+}
+
+function SettingsForm({ hunt }: { hunt: Hunt }) {
+  const patchHunt = usePatchHunt(hunt.id);
+  const patchSettings = usePatchHuntSettings(hunt.id);
+  const navigate = useNavigate();
+
+  const [name, setName] = useState(hunt.name);
+  const [settings, setSettings] = useState<HuntSettings>(() => resolveSettings(hunt.settings));
+  const [confirmArchive, setConfirmArchive] = useState(false);
+
+  const set = <K extends keyof HuntSettings>(key: K, value: HuntSettings[K]) =>
+    setSettings((prev) => ({ ...prev, [key]: value }));
+
+  const saveName = () =>
+    patchHunt.mutate(
+      { name },
+      {
+        onSuccess: () => notifications.show({ message: "Hunt renamed", color: "green" }),
+        onError: notifyError("Couldn't rename hunt"),
+      },
+    );
+
+  const saveSettings = () =>
+    patchSettings.mutate(
+      { settings: { ...settings } },
+      {
+        onSuccess: () =>
+          notifications.show({
+            message: "Settings saved — scoring-related changes re-score in the background.",
+            color: "green",
+          }),
+        onError: notifyError("Couldn't save settings"),
+      },
+    );
+
+  const archive = () =>
+    patchHunt.mutate(
+      { archived: true },
+      {
+        onSuccess: () => navigate("/"),
+        onError: notifyError("Couldn't archive hunt"),
+      },
+    );
+
+  return (
+    <Stack gap="lg" maw={480}>
+      <Group align="flex-end" gap="sm">
+        <TextInput
+          label="Hunt name"
+          value={name}
+          onChange={(e) => setName(e.currentTarget.value)}
+          style={{ flex: 1 }}
+        />
+        <Button
+          variant="default"
+          onClick={saveName}
+          disabled={!name.trim() || name === hunt.name || patchHunt.isPending}
+        >
+          Rename
+        </Button>
+      </Group>
+
+      <Divider />
+
+      <Stack gap="sm">
+        <Select
+          label="Default cross-checking"
+          description="Applies to future submissions; existing listings keep their policy."
+          data={SOURCE_POLICIES}
+          value={settings.default_source_policy}
+          onChange={(v) => v && set("default_source_policy", v as HuntSettings["default_source_policy"])}
+          allowDeselect={false}
+        />
+        <Select
+          label="Cost estimates"
+          description="Conservative uses the worst realistic month for estimated utilities."
+          data={[
+            { value: "conservative", label: "Conservative (peak month)" },
+            { value: "median", label: "Median month" },
+          ]}
+          value={settings.cost_estimate_mode}
+          onChange={(v) => v && set("cost_estimate_mode", v as HuntSettings["cost_estimate_mode"])}
+          allowDeselect={false}
+        />
+        <Select
+          label="Minimum extraction confidence"
+          description="Extractions below this score as unknown — low-confidence data can't pass a gate."
+          data={[
+            { value: "low", label: "Low" },
+            { value: "medium", label: "Medium" },
+            { value: "high", label: "High" },
+          ]}
+          value={settings.min_confidence}
+          onChange={(v) => v && set("min_confidence", v as HuntSettings["min_confidence"])}
+          allowDeselect={false}
+        />
+        <Select
+          label="Proximity mode"
+          description="Travel mode for location criteria like grocery proximity."
+          data={[
+            { value: "driving", label: "Driving" },
+            { value: "walking", label: "Walking" },
+          ]}
+          value={settings.proximity_mode}
+          onChange={(v) => v && set("proximity_mode", v as HuntSettings["proximity_mode"])}
+          allowDeselect={false}
+        />
+        <Group>
+          <Button onClick={saveSettings} loading={patchSettings.isPending}>
+            Save settings
+          </Button>
+        </Group>
+      </Stack>
+
+      <Divider />
+
+      <Group justify="space-between" align="center">
+        <div>
+          <Text size="sm" fw={600}>
+            Archive this hunt
+          </Text>
+          <Text size="xs" c="dimmed">
+            Hides it from the switcher; nothing is deleted.
+          </Text>
+        </div>
+        <Button variant="outline" color={semantic.danger} onClick={() => setConfirmArchive(true)}>
+          Archive…
+        </Button>
+      </Group>
+
+      <Modal opened={confirmArchive} onClose={() => setConfirmArchive(false)} title="Archive hunt?">
+        <Stack>
+          <Text size="sm">
+            <Text span fw={600}>{hunt.name}</Text> disappears from your hunts. Listings, scores,
+            and history are kept.
+          </Text>
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setConfirmArchive(false)}>
+              Cancel
+            </Button>
+            <Button color={semantic.danger} onClick={archive} loading={patchHunt.isPending}>
+              Archive
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+    </Stack>
+  );
+}
+
 export function HuntSettingsPage() {
-  return <PagePlaceholder title="Settings" task="P1-5 (settings PATCH)" />;
+  const { huntId = "" } = useParams();
+  const { data: hunt, isLoading, error } = useHunt(huntId);
+
+  return (
+    <Stack gap="lg">
+      <Title order={2}>Settings</Title>
+      {isLoading && (
+        <Center py="xl">
+          <Loader />
+        </Center>
+      )}
+      {error && (
+        <Alert color="red" title="Couldn't load hunt">
+          {error.message}
+        </Alert>
+      )}
+      {hunt && <SettingsForm hunt={hunt} />}
+    </Stack>
+  );
 }
