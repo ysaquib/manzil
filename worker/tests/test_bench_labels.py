@@ -111,6 +111,39 @@ def test_skeleton_prefills_every_extractable_key_as_null(tmp_path: Path) -> None
         load_label(path)
 
 
+def test_skeleton_appends_manifest_row_with_slug_site_tier(tmp_path: Path) -> None:
+    corpus, labels = tmp_path / "corpus", tmp_path / "labels"
+    page = corpus / "rent.com--x"
+    page.mkdir(parents=True)
+    (page / "meta.json").write_text(json.dumps({"url": "https://rent.com/x", "tier": 2}))
+    write_skeleton("rent.com--x", corpus_dir=corpus, labels_dir=labels)
+
+    manifest = (labels.parent / "manifest.md").read_text()
+    assert "| rent.com--x | rent.com | 2 | | | |" in manifest
+
+
+def test_skeleton_manifest_row_is_idempotent_and_preserves_edits(tmp_path: Path) -> None:
+    corpus, labels = tmp_path / "corpus", tmp_path / "labels"
+    make_corpus_page(corpus, "rent.com--x", "https://rent.com/x")
+    write_skeleton("rent.com--x", corpus_dir=corpus, labels_dir=labels)
+
+    # Human fills in the trait columns on the scaffolded row.
+    manifest_path = labels.parent / "manifest.md"
+    lines = [
+        "| rent.com--x | rent.com |  | sparse page | tier-1 shell | 2026-07-07 |\n"
+        if line.startswith("| rent.com--x |")
+        else line
+        for line in manifest_path.read_text().splitlines(keepends=True)
+    ]
+    manifest_path.write_text("".join(lines))
+
+    # A --force re-scaffold must not duplicate the row or clobber the edits.
+    write_skeleton("rent.com--x", corpus_dir=corpus, labels_dir=labels, force=True)
+    final = manifest_path.read_text()
+    assert sum(line.startswith("| rent.com--x |") for line in final.splitlines()) == 1
+    assert "sparse page" in final
+
+
 def test_skeleton_refuses_overwrite_without_force(tmp_path: Path) -> None:
     corpus, labels = tmp_path / "corpus", tmp_path / "labels"
     make_corpus_page(corpus, "rent.com--x", "https://rent.com/x")

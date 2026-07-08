@@ -199,7 +199,10 @@ def test_census_tier3_column_and_verdicts(tmp_path: Path) -> None:
             "https://www.rent.com/apartment/autumn-ridge-detroit-mi-lc5933022",
             "autumn ridge detroit mi",
         ),
-        ("https://www.apartments.com/riverfront-towers-detroit-mi/xk1234/", "riverfront towers detroit mi"),
+        (
+            "https://www.apartments.com/riverfront-towers-detroit-mi/xk1234/",
+            "riverfront towers detroit mi",
+        ),
         (
             "https://www.zillow.com/apartments/detroit-mi/windsor-woods/5XjKcm/",
             "detroit mi windsor woods",

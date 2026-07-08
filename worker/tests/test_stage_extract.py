@@ -27,7 +27,9 @@ def test_extract_populates_every_criterion_with_provenance() -> None:
     assert beds.value == 2
     assert beds.source_id == state.sources[0].url
     assert beds.model == model_for_stage("extract")
-    assert beds.prompt_version == 1
+    from manzil_worker.llm.prompt_loader import load_prompt
+
+    assert beds.prompt_version == load_prompt("extract").version  # provenance, not a pin
     unknown = state.extractions["private_entry"][0]
     assert unknown.value is None
     assert unknown.confidence == "not_found"

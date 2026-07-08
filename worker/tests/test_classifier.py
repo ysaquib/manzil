@@ -104,6 +104,12 @@ def test_plain_404_is_error_not_blocked() -> None:
     assert classify_page("not_listing_article.html", status=404) is FetchOutcome.ERROR
 
 
+def test_missing_corpus_dir_is_empty_not_crash(tmp_path: Path) -> None:
+    """Fresh clone: the corpus is a local eval asset (gitignored, §20 v2.8) —
+    its absence must yield a clean skip, not a collection error."""
+    assert corpus_pages(tmp_path / "never-created") == []
+
+
 @pytest.mark.parametrize(
     "page_dir", corpus_pages() or [None], ids=lambda p: p.name if p else "corpus-empty"
 )
