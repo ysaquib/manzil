@@ -25,6 +25,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from manzil_worker.fetching.tiers import site_domain
 from manzil_worker.stages.schema_gen import extractable_entries, value_adapter
 from manzil_worker.state import FloorPlanIn
 
@@ -34,9 +35,24 @@ LABELS_DIR = BENCH_DIR / "labels"
 MANIFEST_HEADER = """# Bench manifest (P0-11)
 
 One row per bench listing. ~20 rows is the Phase 0 exit gate. Labels live in
-`labels/{slug}.json`; create one with `manzil bench-skeleton <slug>` after
-`manzil save-page`. Fill in every cell — a blank cell means the listing hasn't
-been vetted for its slot yet.
+`labels/{slug}.json`; `manzil bench-skeleton <slug>` (run after `manzil
+save-page`) scaffolds the label and appends this row with slug/site/tier
+prefilled. Fill in the rest by hand — a blank page-traits / why / labeled cell
+means the listing hasn't been vetted for its slot yet.
+
+Labeling rules (learned the hard way):
+
+1. **Label page truth, never world truth or hunt truth.** If the page states
+   it, that's the value — even when it's stale (a past availability date) or
+   irrelevant to the rubric. The bench grades extraction fidelity, not rubric
+   fit; plan-vs-rubric matching happens later, in SCORE's floor-plan overlay.
+2. **Multi-plan page → delete `beds`/`baths`/`sqft` from `criteria`.** There
+   is no single property-level truth for unit-scoped fields when plans span
+   studio→3BR; their ground truth lives in `floor_plans`. Keep those keys only
+   for single-unit listings.
+3. **`availability_date` = the earliest date the page states** (property level:
+   earliest across plans; plan level: earliest for that plan). Never today's
+   date. Delete the key if the page states no dates.
 
 Column guide:
 
@@ -138,6 +154,23 @@ def skeleton_payload(slug: str, url: str) -> dict[str, Any]:
     }
 
 
+def add_manifest_row(manifest_path: Path, slug: str, meta: dict[str, Any]) -> bool:
+    """Append a manifest row for the slug — slug/site/tier prefilled from the
+    corpus meta, the page-traits / why / labeled columns left blank for the
+    human. Creates the manifest from the header if absent. Idempotent: an
+    existing row for the slug is left untouched, so hand-filled columns survive a
+    `--force` re-scaffold. Returns True iff a row was added."""
+    body = manifest_path.read_text() if manifest_path.exists() else MANIFEST_HEADER
+    if any(line.startswith(f"| {slug} |") for line in body.splitlines()):
+        return False
+    site, tier = site_domain(meta["url"]), meta.get("tier", "")
+    if not body.endswith("\n"):
+        body += "\n"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(f"{body}| {slug} | {site} | {tier} | | | |\n")
+    return True
+
+
 def write_skeleton(
     slug: str,
     *,
@@ -145,7 +178,8 @@ def write_skeleton(
     labels_dir: Path = LABELS_DIR,
     force: bool = False,
 ) -> Path:
-    """Scaffold labels/{slug}.json from a saved corpus page's meta.json."""
+    """Scaffold labels/{slug}.json from a saved corpus page's meta.json and add a
+    manifest.md row (slug/site/tier prefilled) for the slug."""
     meta_path = corpus_dir / slug / "meta.json"
     if not meta_path.exists():
         raise LabelError(
@@ -154,10 +188,8 @@ def write_skeleton(
     out = labels_dir / f"{slug}.json"
     if out.exists() and not force:
         raise LabelError(f"{out} already exists — pass --force to overwrite it")
-    url = json.loads(meta_path.read_text())["url"]
+    meta = json.loads(meta_path.read_text())
     labels_dir.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(skeleton_payload(slug, url), indent=2) + "\n")
-    manifest = BENCH_DIR / "manifest.md" if labels_dir == LABELS_DIR else None
-    if manifest is not None and not manifest.exists():
-        manifest.write_text(MANIFEST_HEADER)
+    out.write_text(json.dumps(skeleton_payload(slug, meta["url"]), indent=2) + "\n")
+    add_manifest_row(labels_dir.parent / "manifest.md", slug, meta)
     return out

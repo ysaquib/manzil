@@ -203,7 +203,7 @@ def bench_skeleton(
         typer.echo(str(error), err=True)
         raise typer.Exit(code=1) from None
     typer.echo(f"skeleton written to {path}")
-    typer.echo("fill in criteria values by hand; add a manifest.md row for the slug")
+    typer.echo("manifest.md row added; fill in criteria values and its trait columns by hand")
 
 
 @app.command("bench-run")

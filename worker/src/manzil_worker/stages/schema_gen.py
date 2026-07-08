@@ -16,16 +16,48 @@ zero tools (§16).
 
 from __future__ import annotations
 
+import json
 from typing import Annotated, Any, Literal
 
 from manzil_shared.catalog import CATALOG
 from manzil_shared.models import CatalogEntry, Confidence
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, create_model
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, create_model, model_validator
 
 from manzil_worker.state import FloorPlanIn
 
 # Composed by the pipeline, never extracted from the page (§9.5).
 COMPOSED_KEYS = frozenset({"all_in_monthly"})
+
+
+def _maybe_decode_container(data: Any) -> Any:
+    """A JSON *string* whose content is an object/array -> the parsed container;
+    everything else (including malformed pseudo-JSON — a model hand-building a
+    string can botch inner quoting, which no parser can salvage) passes through
+    for the real validator to reject."""
+    if isinstance(data, str):
+        try:
+            parsed = json.loads(data)
+        except (json.JSONDecodeError, ValueError):
+            return data
+        return parsed if isinstance(parsed, (dict, list)) else data
+    return data
+
+
+def _parse_stringified_field(cls: type[BaseModel], data: Any) -> Any:
+    """Some models emit a nested `{value, confidence, evidence_quote}` field as a
+    JSON *string* instead of an object (seen on date fields with haiku). Parse it
+    back into a dict so a well-formed-but-stringified field validates instead of
+    failing the whole extraction."""
+    return _maybe_decode_container(data)
+
+
+def _parse_stringified_top_level(cls: type[BaseModel], data: Any) -> Any:
+    """Same rescue one level up: a criterion field or the floor_plans array
+    emitted as a JSON string inside the tool payload. Top-level fields are all
+    objects/lists — never legitimate strings — so decoding is unambiguous."""
+    if isinstance(data, dict):
+        return {key: _maybe_decode_container(value) for key, value in data.items()}
+    return data
 
 
 def extractable_entries(catalog: tuple[CatalogEntry, ...] = CATALOG) -> list[CatalogEntry]:
@@ -80,7 +112,14 @@ def field_model(entry: CatalogEntry) -> type[BaseModel]:
     )
     return create_model(
         f"Extracted_{entry.key}",
+        __doc__=(
+            f"{entry.label}: emit as a JSON object with keys value, confidence, "
+            "evidence_quote — NEVER as a JSON-encoded string."
+        ),
         __config__=ConfigDict(extra="forbid"),
+        __validators__={
+            "_parse_stringified_field": model_validator(mode="before")(_parse_stringified_field)
+        },
         value=value_field,
         confidence=(
             Confidence,
@@ -120,5 +159,10 @@ def build_extraction_schema(
     return create_model(
         "ListingExtraction",
         __config__=ConfigDict(extra="forbid"),
+        __validators__={
+            "_parse_stringified_top_level": model_validator(mode="before")(
+                _parse_stringified_top_level
+            )
+        },
         **fields,
     )
