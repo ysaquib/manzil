@@ -1,0 +1,4 @@
+# pnpm build-script allowlist. esbuild needs its postinstall to fetch its
+# platform binary (vite/vitest depend on it).
+allowBuilds:
+  esbuild: true
