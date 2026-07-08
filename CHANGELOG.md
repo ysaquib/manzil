@@ -7,6 +7,26 @@ repo itself.
 
 ## Unreleased — Phase 0
 
+### 2026-07-07 — Eval kit goes local: corpus + bench labels gitignored (DESIGN v2.8)
+
+- `fixtures/corpus/` (scraped pages: copyrighted third-party content with
+  embedded vendor keys) and `fixtures/bench/labels/` (ground truth about those
+  exact local snapshots) are **gitignored**; tracked `.gitkeep` placeholders
+  keep the dirs on fresh clones. `bench/manifest.md` and the smoke replay
+  fixture stay tracked; other record-mode artifacts are ignored (keyed to
+  local corpus content). Replaces the earlier blunt `raw.html` / `corpus/`
+  ignore lines with anchored rules.
+- `corpus_pages()` hardened: returns `[]` when the corpus dir is absent, so a
+  fresh clone's test collection can't crash — the corpus sweep test skips as
+  designed (new test pins this).
+- Follow-through: P0-11 exit metric is now "20 labels present locally +
+  backed up"; P1-1 dev-seed retargets committed synthetic `fixtures/pages/`;
+  new backup runbook (IMPLEMENTATION §8) — the kit is unrecoverable if lost
+  (delisted pages 404, hostile pages need tier 3).
+- Reviewed and **reaffirmed unchanged**: the production cleaned-text retention
+  design (facts in `extractions`, gzipped cleaned text in Storage, raw HTML
+  transient — §20 2026-06-28). The repo decision is orthogonal to it.
+
 ### 2026-07-07 — Embedded structured-data miner (DESIGN v2.6)
 
 - **Miner** (`fetching/structured.py`): listing sites server-render their
@@ -46,7 +66,7 @@ repo itself.
   `hostile_needs_tier3` preserved for tier-3-less runs.
 - **Stopgap** (`fetching/slug_hint.py`): deterministic property identity from
   the URL slug; FETCH's `source unfetchable` error now says e.g. `try
-  searching "apartment complex name city state" on a fetchable source` — zero LLM, the
+  searching "riverfront towers detroit mi" on a fetchable source` — zero LLM, the
   human stand-in for DISCOVER's sibling-source rescue until P3-5.
 - New tunable `TIER3_TIMEOUT_SECONDS` (90 s — vendors solve challenges
   server-side). 17 new tests (provider seam via httpx MockTransport, ladder

@@ -30,7 +30,7 @@ Catalog entry (§8.2) · hunt settings (§8.2) · rubric option (§8.2) · score
 - Scoring engine: golden tests in `shared/` asserting exact breakdowns.
 - Pipeline stages: fixture-based (saved cleaned text + recorded LLM responses). No live LLM calls in CI, ever.
 - Prompt or model changes: re-run the Phase 0 bench set. Eyeballing is not validation.
-- Fixture corpus: `worker/tests/fixtures/` (50+ real listing pages).
+- Fixture corpus: `worker/tests/fixtures/corpus/` (50+ real listing pages) — a **local eval kit**, gitignored with the bench labels (DESIGN §20 v2.8); CI reads only the committed synthetic `fixtures/pages/`.
 
 ## Commands
 - Python (uv workspace, root lockfile): `uv sync --all-packages` (plain `uv sync` uninstalls workspace-member deps) · `uv run --package manzil-shared pytest shared/tests` (likewise `manzil-api`, `manzil-worker`) · `uv run ruff check --fix .`
