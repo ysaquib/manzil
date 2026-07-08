@@ -21,6 +21,10 @@ CORPUS_DIR = Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "corpu
 
 
 def corpus_pages(corpus_dir: Path = CORPUS_DIR) -> list[Path]:
+    """Saved pages, or [] on a fresh clone — the corpus is a local eval asset
+    (gitignored, DESIGN §20 v2.8), so its absence must never break collection."""
+    if not corpus_dir.is_dir():
+        return []
     return sorted(p for p in corpus_dir.iterdir() if (p / "raw.html").exists())
 
 

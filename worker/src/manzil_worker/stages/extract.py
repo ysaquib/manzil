@@ -39,10 +39,15 @@ async def extract_stage(state: RunState, ctx: StageCtx) -> RunState:
             stage="extract",
             errors=first_error.error_count(),
         )
+        # Correction leads the content: appended at the end of a 30k-char page
+        # it gets ignored (observed: byte-identical retry output at temp 0).
         corrective = (
-            f"{content}\n\n"
-            "Your previous attempt failed schema validation with these errors — "
-            f"emit a corrected result:\n{first_error}"
+            "Your previous attempt failed schema validation — emit a corrected "
+            "result. Most common cause: a criterion field emitted as a "
+            "JSON-encoded STRING. Every criterion field must be a JSON OBJECT "
+            "with keys value/confidence/evidence_quote (floor_plans a JSON "
+            "array); the tool call handles all escaping, including quotes "
+            f"inside evidence. The validation errors:\n{first_error}\n\n{content}"
         )
         try:
             extraction = await ctx.call_structured("extract", schema, corrective)
