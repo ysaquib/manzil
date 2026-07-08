@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import { scoreColor } from "./ScoreCell";
+import { formatScore, scoreColor } from "./ScoreCell";
 
 describe("scoreColor", () => {
-  it("maps proportional bands to colors", () => {
-    expect(scoreColor(90)).toBe("green");
-    expect(scoreColor(60)).toBe("lime");
-    expect(scoreColor(30)).toBe("yellow");
-    expect(scoreColor(10)).toBe("red");
+  // Default max is the §9.3 engine clamp (15); green anchors on the base (10).
+  it("maps engine-domain bands to colors", () => {
+    expect(scoreColor(10)).toBe("green");
+    expect(scoreColor(12.5)).toBe("green");
+    expect(scoreColor(8)).toBe("lime");
+    expect(scoreColor(7.5)).toBe("lime");
+    expect(scoreColor(5)).toBe("yellow");
+    expect(scoreColor(4)).toBe("red");
+    expect(scoreColor(0)).toBe("red");
   });
 
   it("respects a custom max", () => {
@@ -17,5 +21,12 @@ describe("scoreColor", () => {
 
   it("does not divide by zero", () => {
     expect(scoreColor(0, 0)).toBe("red");
+  });
+});
+
+describe("formatScore", () => {
+  it("keeps half points visible", () => {
+    expect(formatScore(9.5)).toBe("9.5");
+    expect(formatScore(10)).toBe("10");
   });
 });
