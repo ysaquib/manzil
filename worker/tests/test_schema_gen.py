@@ -92,6 +92,59 @@ def test_extraction_hints_ride_in_field_descriptions() -> None:
     assert "a studio is 0" in description
 
 
+def test_stringified_field_object_is_coerced() -> None:
+    """Some models emit a nested field as a JSON string instead of an object
+    (observed on availability_date with haiku); the schema parses it back rather
+    than failing the whole extraction."""
+    import json
+
+    schema = build_extraction_schema()
+    stringified = json.dumps(field_payload("2026-07-02", quote="Available July 2"))
+    parsed = schema.model_validate(extraction_payload(availability_date=stringified))
+    assert parsed.availability_date.value == "2026-07-02"
+    assert parsed.availability_date.confidence == "high"
+
+
+def test_non_json_string_field_is_still_rejected() -> None:
+    """The coercion only rescues a stringified object — real garbage still fails
+    loudly rather than being swallowed."""
+    schema = build_extraction_schema()
+    with pytest.raises(ValidationError, match="availability_date"):
+        schema.model_validate(extraction_payload(availability_date="not json at all"))
+
+
+def test_malformed_stringified_field_is_rejected_not_swallowed() -> None:
+    """The exact haiku failure from the first bench run: a hand-built string
+    with unescaped quotes inside the evidence. No parser can salvage it — it
+    must fail loudly so the corrective retry (and prompt rule 8) handle it."""
+    malformed = (
+        '{\n  "value": "2026-07-02",\n  "confidence": "high",\n'
+        '  "evidence_quote": "dateAvailable":"2026-07-02T00:00:00.000Z"\n}'
+    )
+    with pytest.raises(ValidationError, match="availability_date"):
+        build_extraction_schema().model_validate(extraction_payload(availability_date=malformed))
+
+
+def test_stringified_floor_plans_array_is_coerced() -> None:
+    """The same rescue for the top-level list: floor_plans emitted as a JSON
+    string of an array parses instead of failing the extraction."""
+    import json
+
+    plans = json.dumps([{"plan_name": "A1", "beds": 1, "rent_min": 1443.0}])
+    parsed = build_extraction_schema().model_validate(extraction_payload(floor_plans=plans))
+    assert parsed.floor_plans[0].plan_name == "A1"
+    assert parsed.floor_plans[0].rent_min == 1443.0
+
+
+def test_object_not_string_instruction_rides_in_the_tool_schema() -> None:
+    """The anti-stringification nudge must reach the model inside the (cached)
+    tool schema, not just the prompt."""
+    schema = build_extraction_schema().model_json_schema()
+    beds_ref = schema["properties"]["beds"]["$ref"].rsplit("/", 1)[-1]
+    description = schema["$defs"][beds_ref]["description"]
+    assert "NEVER as a JSON-encoded string" in description
+
+
 def test_null_value_needs_no_evidence_but_keeps_confidence() -> None:
     schema = build_extraction_schema()
     parsed = schema.model_validate(extraction_payload())
