@@ -1,6 +1,6 @@
 # CI per IMPLEMENTATION.md §2: ruff, mypy --strict on shared/, pytest in replay
-# mode (a replay miss fails the build — CI cannot spend tokens). The fourth job
-# (frontend eslint + vitest) is added in Phase 1 when the frontend fills in.
+# mode (a replay miss fails the build — CI cannot spend tokens), plus the
+# Phase 1 frontend job (eslint + vitest + build against the committed API types).
 name: CI
 
 on:
@@ -37,3 +37,24 @@ jobs:
       - run: uv run --package manzil-shared pytest shared/tests
       - run: uv run --package manzil-api pytest api/tests
       - run: uv run --package manzil-worker pytest worker/tests
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm test
+      # `build` runs tsc against the committed API types, catching drift from the API.
+      - run: pnpm build

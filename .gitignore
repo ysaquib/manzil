@@ -33,4 +33,22 @@ supabase/.temp/
 
 archive/
 
-raw.html
+# Bench/eval kit — local eval assets, never repo content (DESIGN §20 v2.8).
+# Scraped listing pages are copyrighted third-party content with embedded
+# vendor keys/tracking IDs; the hand labels are ground truth about those
+# local snapshots and travel with them. Only .gitkeep placeholders are
+# tracked so a fresh clone still has the directories. bench/manifest.md
+# (methodology, no page content) stays tracked. BACK THE KIT UP — hostile
+# pages and delisted listings cannot be re-fetched (IMPLEMENTATION §8).
+worker/tests/fixtures/corpus/*
+!worker/tests/fixtures/corpus/.gitkeep
+worker/tests/fixtures/bench/labels/*
+!worker/tests/fixtures/bench/labels/.gitkeep
+
+# Record-mode artifacts are keyed to local corpus content (and carry page
+# evidence quotes) — only the smoke replay fixture is repo content. When
+# Phase 1 dev-seed needs committed recordings for the synthetic pages,
+# un-ignore those specific hashes here.
+worker/tests/fixtures/recorded/*
+!worker/tests/fixtures/recorded/.gitkeep
+!worker/tests/fixtures/recorded/smoke--*.json
