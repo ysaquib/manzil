@@ -44,7 +44,7 @@ manzil/
 │   │   ├── llm/                 # THE client seam — only package importing provider SDKs
 │   │   ├── evals/               # bench labels + eval harness + model compare (P0-11..13)
 │   │   └── agents/              # agents mode ONLY (learning track); empty until L1
-│   ├── tests/fixtures/          # corpus/ (saved pages) · bench/ (manifest + labels) · recorded/ (replay)
+│   ├── tests/fixtures/          # pages/ (synthetic, committed) · corpus/ + bench/labels/ (LOCAL eval kit, gitignored) · recorded/ (smoke fixture committed)
 │   └── evals/reports/           # generated bench reports (committed alongside model/prompt changes)
 ├── api/                         # manzil-api (FastAPI): near-empty until Phase 1
 ├── frontend/                    # Vite + React + Mantine: untouched until Phase 1
@@ -108,7 +108,7 @@ If all four are green, CI will be green — they are exactly the three CI jobs.
 - A malformed/private/binary URL fails at VALIDATE_URL before anything is fetched; a
   non-listing page fails at VALIDATE with the reason; a blocked/hostile domain fails at
   FETCH with the tier attempts **plus a search hint pulled from the URL slug**
-  ("try searching *apartment complex name city state* on a fetchable source") so you can resubmit the
+  ("try searching *riverfront towers detroit mi* on a fetchable source") so you can resubmit the
   same property from a friendlier site — the manual stand-in for DISCOVER until Phase 3.
 - `--no-tier2` forbids browser escalation; `--no-tier3` forbids unblocker escalation —
   both apply to `ingest`, `save-page`, and `census` alike.
@@ -189,6 +189,15 @@ Labels are ground truth **only a human writes** (step 3) — the loader refuses 
 skeletons, unknown keys, and out-of-catalog values, so a typo'd label can't silently
 mis-grade a run. Keys absent from both `criteria` and `unknown` simply aren't graded.
 
+The corpus and labels are a **local eval kit** — gitignored, never repo content
+(scraped pages carry copyright + embedded vendor keys; labels only grade the exact
+snapshots next to them; DESIGN §20 v2.8). `bench/manifest.md` is the tracked part.
+**Back the kit up after every session** (runbook, IMPLEMENTATION §8):
+
+```bash
+tar czf ~/manzil-eval-kit-$(date +%Y%m%d).tgz -C worker/tests/fixtures corpus bench/labels
+```
+
 ### Tests
 
 ```bash
@@ -248,7 +257,7 @@ docker exec -it supabase_db_manzil psql -U postgres              # poke the DB d
 | You changed… | Then run… |
 |---|---|
 | `shared/catalog.py` (add/edit a criterion) | regenerate seed → `supabase db reset` → add a golden covering it → if gate-eligible, add a bench label field |
-| `fetching/cleaner.py` or `fetching/structured.py` (incl. its drop/signal/scrub lists) | `uv run manzil clean-corpus` → spot-check a few `cleaned.txt` (floor plans present? no `similar` contamination?) → commit the regenerated corpus |
+| `fetching/cleaner.py` or `fetching/structured.py` (incl. its drop/signal/scrub lists) | `uv run manzil clean-corpus` → spot-check a few `cleaned.txt` (floor plans present? no `similar` contamination?) — the corpus is local (gitignored, DESIGN §20 v2.8), nothing to commit |
 | `scoring/engine.py` | `uv run pytest shared/tests/golden` — any altered golden gets updated + explained in the same commit |
 | Classifier heuristics | `uv run pytest -k "classifier or ladder"` — synthetic pages + real corpus sweep |
 | A prompt (`llm/prompts/*.md`) or model pin (`llm/config.py`) | bump the prompt `version` front-matter → `MANZIL_LLM_MODE=record` against the bench set → compare the report — no eyeball-only merges. Old recordings invalidate automatically (the request hash covers prompt version + model) |
