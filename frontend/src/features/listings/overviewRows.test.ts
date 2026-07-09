@@ -29,7 +29,6 @@ function makeListing(
   );
   const scores = Object.entries(totals).map(
     ([planId, total]): Score => ({
-      id: `score-${planId}`,
       hunt_listing_id: id,
       floor_plan_id: planId,
       total,

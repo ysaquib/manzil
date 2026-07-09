@@ -36,8 +36,8 @@ export interface FloorPlan {
   available_units: number | null;
 }
 
+// scores has a composite PK (hunt_listing_id, floor_plan_id) — no `id` column.
 export interface Score {
-  id: string;
   hunt_listing_id: string;
   floor_plan_id: string;
   total: number;
@@ -70,8 +70,8 @@ export interface Override {
   created_at: string;
 }
 
+// fee_checklist has a composite PK (hunt_listing_id, fee_slot) — no `id` column.
 export interface FeeEntry {
-  id: string;
   hunt_listing_id: string;
   fee_slot: string;
   amount: number | null;
