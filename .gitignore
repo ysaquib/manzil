@@ -52,3 +52,16 @@ worker/tests/fixtures/bench/labels/*
 worker/tests/fixtures/recorded/*
 !worker/tests/fixtures/recorded/.gitkeep
 !worker/tests/fixtures/recorded/smoke--*.json
+# P1-1 dev-seed replay fixtures for the committed synthetic pages
+# (e2e_listing / success_text / injection_listing; validate+extract+verify each).
+# These are repo content, so committing them is repo-safe (DESIGN §20 v2.8
+# excludes only corpus-keyed artifacts). Per-file, keyed by content hash.
+!worker/tests/fixtures/recorded/validate--66a28376a741c2d0.json
+!worker/tests/fixtures/recorded/validate--732bb26edb1bff20.json
+!worker/tests/fixtures/recorded/validate--b1649475d00045fd.json
+!worker/tests/fixtures/recorded/extract--964f117040a442fb.json
+!worker/tests/fixtures/recorded/extract--988f532eb2e793d0.json
+!worker/tests/fixtures/recorded/extract--a009fd40d0f2b52e.json
+!worker/tests/fixtures/recorded/verify--47f3b20746f0fd07.json
+!worker/tests/fixtures/recorded/verify--c5b00f8b3dd8d301.json
+!worker/tests/fixtures/recorded/verify--d8805afded1f787f.json
