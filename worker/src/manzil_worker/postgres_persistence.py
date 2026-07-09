@@ -17,6 +17,7 @@ the queue dispatch can rebuild a `RunState` from the row on resume.
 from __future__ import annotations
 
 import json
+from collections.abc import Awaitable, Callable
 from decimal import Decimal
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -30,6 +31,12 @@ if TYPE_CHECKING:
 
 # jobs.state accepts these terminal values; the rest of JobState maps 1:1 too.
 _TERMINAL = (JobState.DONE, JobState.FAILED, JobState.CANCELLED)
+
+# A projection hook: derived-row writes (e.g. scores/extractions) that must
+# commit atomically with the DONE flip. Runs inside the terminal-save
+# transaction, so a failure rolls the whole terminal transition back — the job
+# never reaches `done` without its projection (persist-before-advance for it).
+OnDone = Callable[["asyncpg.Connection", RunState], Awaitable[None]]
 
 
 class PostgresPersistence:
@@ -48,12 +55,15 @@ class PostgresPersistence:
         stage_names: list[str],
         *,
         start_cursor: int | None = None,
+        on_done: OnDone | None = None,
     ) -> None:
         self._pool = pool
         self.job_id = job_id
         self._stage_names = stage_names
         self._last_completed = start_cursor
         self._terminal_emitted = False
+        self._on_done = on_done
+        self._projected = False
 
     def _current_stage(self, cursor: int) -> str | None:
         # The stage the job is at / resumes from; None once every stage is done.
@@ -71,6 +81,12 @@ class PostgresPersistence:
         current_stage = self._current_stage(cursor)
 
         async with self._pool.acquire() as conn, conn.transaction():
+            # The projection commits in THIS transaction, before the DONE flip is
+            # visible — so a projection failure rolls back the terminal state and
+            # the job stays reclaimable/retryable rather than ending done-empty.
+            if state.status is JobState.DONE and self._on_done is not None and not self._projected:
+                await self._on_done(conn, state)
+                self._projected = True
             await conn.execute(
                 """
                 update jobs set
