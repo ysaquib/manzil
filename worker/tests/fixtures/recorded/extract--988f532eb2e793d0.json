@@ -1,0 +1,92 @@
+{
+  "cache_read_tokens": 4914,
+  "cache_write_tokens": 0,
+  "content_sha256": "7602c90c145665c9c24994b333640be40d15e065023a8ccb075fdad165f13c46",
+  "input_tokens": 996,
+  "model": "anthropic/claude-haiku-4.5",
+  "output": {
+    "availability_date": {
+      "confidence": "not_found",
+      "evidence_quote": null,
+      "value": null
+    },
+    "baths": {
+      "confidence": "high",
+      "evidence_quote": "2 bed / 1 bath from $1,450 per month",
+      "value": 1
+    },
+    "beds": {
+      "confidence": "high",
+      "evidence_quote": "2 bed / 1 bath from $1,450 per month",
+      "value": 2
+    },
+    "cooling": {
+      "confidence": "not_found",
+      "evidence_quote": null,
+      "value": null
+    },
+    "dishwasher": {
+      "confidence": "not_found",
+      "evidence_quote": null,
+      "value": null
+    },
+    "floor_plans": [
+      {
+        "availability_date": null,
+        "baths": 1,
+        "beds": 2,
+        "deposit": null,
+        "evidence_quote": "2 bed / 1 bath from $1,450 per month",
+        "plan_name": null,
+        "rent_max": null,
+        "rent_min": 1450,
+        "sqft_max": null,
+        "sqft_min": null
+      }
+    ],
+    "in_unit_laundry": {
+      "confidence": "not_found",
+      "evidence_quote": null,
+      "value": null
+    },
+    "min_lease_months": {
+      "confidence": "not_found",
+      "evidence_quote": null,
+      "value": null
+    },
+    "parking": {
+      "confidence": "not_found",
+      "evidence_quote": null,
+      "value": null
+    },
+    "patio_balcony": {
+      "confidence": "not_found",
+      "evidence_quote": null,
+      "value": null
+    },
+    "pets_policy": {
+      "confidence": "not_found",
+      "evidence_quote": null,
+      "value": null
+    },
+    "private_entry": {
+      "confidence": "not_found",
+      "evidence_quote": null,
+      "value": null
+    },
+    "security_deposit": {
+      "confidence": "not_found",
+      "evidence_quote": null,
+      "value": null
+    },
+    "sqft": {
+      "confidence": "not_found",
+      "evidence_quote": null,
+      "value": null
+    }
+  },
+  "output_tokens": 769,
+  "prompt_version": 2,
+  "recorded_at": "2026-07-09T02:22:31.012292+00:00",
+  "stage": "extract"
+}
