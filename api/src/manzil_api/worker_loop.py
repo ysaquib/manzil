@@ -37,5 +37,7 @@ async def run_inprocess_worker(pool: asyncpg.Pool, settings: Settings, stop: asy
         await stop.wait()
         return
 
-    # --- P1-2 wiring: build the StageCtx factory the loop needs and hand off. ---
+    # P1-2 landed: the loop builds its own per-job StageCtx (rubric + settings
+    # loaded from each job's hunt) and dispatches by job_type. Hand off until the
+    # lifespan sets `stop`, then it drains the in-flight job and returns.
     await run_worker_loop(pool, stop=stop)
