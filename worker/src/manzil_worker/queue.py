@@ -31,9 +31,9 @@ from uuid import UUID
 
 import structlog
 from manzil_shared.config import JOB_ORPHAN_AFTER_SECONDS, WORKER_IDLE_BACKOFF_SECONDS
+from manzil_shared.errors import StageFatal
 from manzil_shared.models import (
     Confidence,
-    JobState,
     JobType,
     NonNegotiable,
     RubricCriterion,
@@ -200,7 +200,11 @@ async def _persist_ingest_results(
     `floor_plans` row per scorable plan, and the `scores` upsert per plan.
 
     Catalog-criterion extractions carry `hunt_id = NULL` (global facts, §8.2).
-    Score order mirrors SCORE's `scorable` order, so plans and PlanScores zip."""
+    SCORE emits one PlanScore per scorable plan (both beds+baths known) in that
+    order — or, when NO plan is scorable, a single property-level PlanScore
+    (`plan_name is None`). The `scores` table keys on a NOT-NULL `floor_plan_id`
+    (§8.2), so a property-level score has nowhere to go; that case is raised
+    rather than silently dropped (see below), pending a routing decision."""
     source = state.sources[0]
     source_id = await conn.fetchval(
         """
@@ -237,7 +241,17 @@ async def _persist_ingest_results(
         )
 
     scorable = [p for p in state.floor_plans if p.beds is not None and p.baths is not None]
-    for plan_in, plan_score in zip(scorable, state.scores, strict=False):
+    if not scorable:
+        # Property-level score only: scores.floor_plan_id is NOT NULL (§8.2), so
+        # there is no valid row to write. Fail loudly instead of ending done-empty
+        # — routing property-level scores is a schema decision, not one to guess.
+        raise StageFatal(
+            "property-level score (no floor plan with both beds and baths) cannot be "
+            "persisted: scores.floor_plan_id is NOT NULL (DESIGN §8.2) — needs a routing decision"
+        )
+    # strict=True: SCORE guarantees one PlanScore per scorable plan, so any length
+    # mismatch is a real filter/order drift and must surface, not truncate.
+    for plan_in, plan_score in zip(scorable, state.scores, strict=True):
         floor_plan_id = await conn.fetchval(
             """
             insert into floor_plans
@@ -306,8 +320,21 @@ def make_ingest_dispatcher(
         settings = json.loads(listing["settings"]) if listing["settings"] else {}
         min_confidence = Confidence(settings.get("min_confidence", "medium"))
         state = _build_run_state(job)
+
+        async def project(conn: asyncpg.Connection, done_state: RunState) -> None:
+            await _persist_ingest_results(
+                conn,
+                hunt_listing_id=job["hunt_listing_id"],
+                property_id=listing["property_id"],
+                rubric_version=listing["rubric_version"],
+                state=done_state,
+            )
+
+        # The projection runs in the same transaction as the DONE flip (see
+        # PostgresPersistence.on_done), so results and terminal state commit
+        # atomically — no window where the job is `done` with no result rows.
         persistence = PostgresPersistence(
-            pool, job_id, _STAGE_NAMES, start_cursor=state.cursor
+            pool, job_id, _STAGE_NAMES, start_cursor=state.cursor, on_done=project
         )
         registry = PostgresRegistry(dsn) if dsn else InMemoryRegistry()
         ctx = StageCtx(
@@ -319,21 +346,7 @@ def make_ingest_dispatcher(
             persistence=persistence,
         )
 
-        state = await run_job(state, ctx)
-        if state.status is not JobState.DONE:
-            return  # runner already persisted the terminal (failed / waiting_user) state
-
-        try:
-            async with pool.acquire() as conn, conn.transaction():
-                await _persist_ingest_results(
-                    conn,
-                    hunt_listing_id=job["hunt_listing_id"],
-                    property_id=listing["property_id"],
-                    rubric_version=listing["rubric_version"],
-                    state=state,
-                )
-        except Exception as error:
-            await _mark_failed(pool, job_id, f"ingest results write failed: {error}")
+        await run_job(state, ctx)
 
     return dispatch
 
