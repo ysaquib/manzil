@@ -20,3 +20,13 @@ class JobNotCancellable(ManzilAPIError):
 class JobNotRetryable(ManzilAPIError):
     status_code = status.HTTP_409_CONFLICT
     code = "job_not_retryable"
+
+
+class NotJobOwner(ManzilAPIError):
+    status_code = status.HTTP_403_FORBIDDEN
+    code = "not_job_owner"
+
+
+class InvalidCheckpointAnswer(ManzilAPIError):
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    code = "invalid_checkpoint_answer"
