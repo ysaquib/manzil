@@ -69,3 +69,4 @@ worker/tests/fixtures/recorded/*
 # Bench reports are keyed to the gitignored local eval kit (corpus + labels)
 # and carry page evidence quotes — local artifacts, never repo content.
 worker/evals/reports/
+.pnpm-store/**
