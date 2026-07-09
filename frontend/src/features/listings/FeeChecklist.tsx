@@ -14,6 +14,7 @@ import {
   Text,
   Tooltip,
 } from "@mantine/core";
+import { IconPencil, IconUserEdit } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import { useState } from "react";
 
@@ -77,9 +78,7 @@ function FeeRow({
           </Badge>
           {state === "manual" && (
             <Tooltip label={`Entered manually${entry?.entered_by ? ` by ${entry.entered_by}` : ""}`}>
-              <Text size="xs" aria-label="manual entry">
-                ✎👤
-              </Text>
+              <IconUserEdit size={14} stroke={1.5} color="var(--mantine-color-dimmed)" aria-label="manual entry" />
             </Tooltip>
           )}
         </Group>
@@ -89,7 +88,6 @@ function FeeRow({
           <Popover.Target>
             <Tooltip label="Fill in after a leasing-office call">
               <ActionIcon
-                variant="subtle"
                 color="gray"
                 size="sm"
                 onClick={() => {
@@ -98,7 +96,7 @@ function FeeRow({
                 }}
                 aria-label={`edit ${label}`}
               >
-                ✎
+                <IconPencil size={14} stroke={1.5} />
               </ActionIcon>
             </Tooltip>
           </Popover.Target>

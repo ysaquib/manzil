@@ -3,7 +3,8 @@
 // set is small). One row per Unit Group; score cell shows the group's best or
 // pinned plan (§9.4). Sqft/all-in columns hide below md/sm — no horizontal
 // page scroll (frontend/AGENTS.md).
-import { ActionIcon, Menu, Table, Text, UnstyledButton } from "@mantine/core";
+import { ActionIcon, Group, Menu, Table, Text, UnstyledButton } from "@mantine/core";
+import { IconChevronDown, IconChevronUp, IconDotsVertical, IconTrash } from "@tabler/icons-react";
 
 import { ScoreCell } from "./ScoreCell";
 import { formatRange, type OverviewRow, type SortKey, type SortState } from "./overviewRows";
@@ -30,11 +31,15 @@ function SortHeader({
   onSort: (key: SortKey) => void;
 }) {
   const active = sort.key === sortKey;
+  const SortIcon = active ? (sort.dir === "asc" ? IconChevronUp : IconChevronDown) : null;
   return (
     <UnstyledButton onClick={() => onSort(sortKey)} aria-label={`sort by ${label}`}>
-      <Text size="sm" fw={active ? 700 : 500} span>
-        {label} {active ? (sort.dir === "asc" ? "↑" : "↓") : ""}
-      </Text>
+      <Group gap={4} wrap="nowrap">
+        <Text size="sm" fw={active ? 700 : 500} span>
+          {label}
+        </Text>
+        {SortIcon && <SortIcon size={14} stroke={1.5} />}
+      </Group>
     </UnstyledButton>
   );
 }
@@ -49,7 +54,7 @@ export interface OverviewTableProps {
 
 export function OverviewTable({ rows, sort, onSort, onOpen, onDelete }: OverviewTableProps) {
   return (
-    <Table highlightOnHover verticalSpacing="sm">
+    <Table striped highlightOnHover verticalSpacing="sm">
       <Table.Thead>
         <Table.Tr>
           <Table.Th>
@@ -115,12 +120,16 @@ export function OverviewTable({ rows, sort, onSort, onOpen, onDelete }: Overview
               <Table.Td onClick={(e) => e.stopPropagation()} width={40}>
                 <Menu position="bottom-end" withinPortal>
                   <Menu.Target>
-                    <ActionIcon variant="subtle" color="gray" aria-label="listing actions">
-                      ⋯
+                    <ActionIcon color="gray" aria-label="listing actions">
+                      <IconDotsVertical size={16} stroke={1.5} />
                     </ActionIcon>
                   </Menu.Target>
                   <Menu.Dropdown>
-                    <Menu.Item color="red" onClick={() => onDelete(row)}>
+                    <Menu.Item
+                      color="red"
+                      leftSection={<IconTrash size={14} stroke={1.5} />}
+                      onClick={() => onDelete(row)}
+                    >
                       Delete listing…
                     </Menu.Item>
                   </Menu.Dropdown>

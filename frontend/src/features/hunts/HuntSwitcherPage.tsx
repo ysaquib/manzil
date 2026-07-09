@@ -2,19 +2,19 @@
 // leads with the create form — the first-run path is "make a hunt".
 import {
   Button,
-  Card,
-  Container,
   Group,
   Loader,
+  NavLink,
   Stack,
   Text,
   TextInput,
-  Title,
 } from "@mantine/core";
+import { IconChevronRight } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
+import { PublicPageShell } from "../../components/PublicPageShell";
 import { ApiError } from "../../lib/apiClient";
 import { useCreateHunt, useHunts } from "./api";
 
@@ -40,10 +40,12 @@ export function HuntSwitcherPage() {
   const empty = !isLoading && !error && (hunts ?? []).length === 0;
 
   return (
-    <Container size="xs" py="xl">
+    <PublicPageShell>
       <Stack gap="lg">
         <div>
-          <Title order={2}>Manzil</Title>
+          <Text fw={600} size="lg">
+            {empty ? "Start your first hunt" : "Your hunts"}
+          </Text>
           <Text c="dimmed" size="sm">
             {empty ? "Name your first hunt to get started." : "Pick a hunt or start a new one."}
           </Text>
@@ -60,16 +62,18 @@ export function HuntSwitcherPage() {
           </Text>
         )}
 
-        {(hunts ?? []).map((hunt) => (
-          <Card key={hunt.id} component={Link} to={`/h/${hunt.id}`} padding="md">
-            <Group justify="space-between">
-              <Text fw={600}>{hunt.name}</Text>
-              <Text size="xs" c="dimmed">
-                rubric v{hunt.rubric_version}
-              </Text>
-            </Group>
-          </Card>
-        ))}
+        <Stack gap="xs">
+          {(hunts ?? []).map((hunt) => (
+            <NavLink
+              key={hunt.id}
+              component={Link}
+              to={`/h/${hunt.id}`}
+              label={hunt.name}
+              description={`rubric v${hunt.rubric_version}`}
+              rightSection={<IconChevronRight size={16} stroke={1.5} color="var(--mantine-color-dimmed)" />}
+            />
+          ))}
+        </Stack>
 
         <Group align="flex-end" gap="sm">
           <TextInput
@@ -85,6 +89,6 @@ export function HuntSwitcherPage() {
           </Button>
         </Group>
       </Stack>
-    </Container>
+    </PublicPageShell>
   );
 }

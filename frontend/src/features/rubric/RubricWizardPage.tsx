@@ -13,18 +13,24 @@ import {
   Stepper,
   Table,
   Text,
-  Title,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 
+import { PageHeader } from "../../components/PageHeader";
 import { ApiError } from "../../lib/apiClient";
 import { semantic } from "../../theme";
 import { CriterionCard } from "./CriterionCard";
 import { useCatalog, usePutRubric, useRubric, type CatalogEntry, type RubricCriterion } from "./api";
 import { deriveIsBonus, draftToPayload, initDraft, validateDraft } from "./rubricDraft";
+
+const STEP_DESCRIPTIONS = [
+  "Step 1 of 3 — Choose which criteria to score",
+  "Step 2 of 3 — Set points and gates",
+  "Step 3 of 3 — Review and save",
+];
 
 function ReviewTable({ draft, catalog }: { draft: RubricCriterion[]; catalog: CatalogEntry[] }) {
   const labelByKey = new Map(catalog.map((e) => [e.key, e.label]));
@@ -38,6 +44,20 @@ function ReviewTable({ draft, catalog }: { draft: RubricCriterion[]; catalog: Ca
   }
   return (
     <Table verticalSpacing="xs" withRowBorders={false}>
+      <Table.Thead>
+        <Table.Tr>
+          <Table.Th>
+            <Text size="xs" c="dimmed" fw={500}>
+              Criterion
+            </Text>
+          </Table.Th>
+          <Table.Th>
+            <Text size="xs" c="dimmed" fw={500}>
+              Configuration
+            </Text>
+          </Table.Th>
+        </Table.Tr>
+      </Table.Thead>
       <Table.Tbody>
         {enabled.map((criterion) => (
           <Table.Tr key={criterion.catalog_key}>
@@ -116,6 +136,9 @@ function RubricWizard({
 
   return (
     <Stack gap="lg">
+      <Text size="sm" c="dimmed">
+        {STEP_DESCRIPTIONS[step]}
+      </Text>
       <Stepper
         active={step}
         onStepClick={setStep}
@@ -209,7 +232,7 @@ export function RubricWizardPage() {
 
   return (
     <Stack gap="lg">
-      <Title order={2}>Rubric</Title>
+      <PageHeader title="Rubric" description="Define how listings are scored in this hunt" />
       {(catalogLoading || rubricLoading) && (
         <Center py="xl">
           <Loader />

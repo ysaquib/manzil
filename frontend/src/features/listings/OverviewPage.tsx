@@ -11,11 +11,12 @@ import {
   NumberInput,
   Stack,
   Text,
-  Title,
 } from "@mantine/core";
+import { IconHome } from "@tabler/icons-react";
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 
+import { PageHeader } from "../../components/PageHeader";
 import { resolveSettings } from "../../lib/contracts";
 import { useHunt } from "../hunts/api";
 import { useDeleteListing, useListings } from "./api";
@@ -53,14 +54,15 @@ export function OverviewPage() {
 
   return (
     <Stack gap="lg">
-      <Title order={2}>Overview</Title>
-      {hunt && (
-        <SubmitUrlControl
-          huntId={huntId}
-          defaultPolicy={resolveSettings(hunt.settings).default_source_policy}
-        />
-      )}
-      <Group justify="flex-end">
+      <PageHeader title="Overview" description="All unit groups in this hunt" />
+
+      <Group justify="space-between" align="flex-end" wrap="wrap" gap="md">
+        {hunt && (
+          <SubmitUrlControl
+            huntId={huntId}
+            defaultPolicy={resolveSettings(hunt.settings).default_source_policy}
+          />
+        )}
         <NumberInput
           label="Hide score below"
           placeholder="off"
@@ -70,6 +72,7 @@ export function OverviewPage() {
           max={15}
           w={140}
           size="xs"
+          styles={{ label: { fontWeight: 400, color: "var(--mantine-color-dimmed)" } }}
         />
       </Group>
 
@@ -85,11 +88,14 @@ export function OverviewPage() {
       )}
       {!isLoading && !error && rows.length === 0 && (
         <Card py="xl">
-          <Text ta="center" c="dimmed">
-            {(listings ?? []).length === 0
-              ? "No listings yet — paste a listing URL above to start."
-              : "Every listing is hidden by the score filter."}
-          </Text>
+          <Stack align="center" gap="sm">
+            <IconHome size={32} stroke={1.5} color="var(--mantine-color-dimmed)" />
+            <Text ta="center" c="dimmed">
+              {(listings ?? []).length === 0
+                ? "No listings yet — paste a listing URL above to start."
+                : "Every listing is hidden by the score filter."}
+            </Text>
+          </Stack>
         </Card>
       )}
       {rows.length > 0 && (

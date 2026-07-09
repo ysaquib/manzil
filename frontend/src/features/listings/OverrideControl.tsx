@@ -3,6 +3,7 @@
 // (frontend/AGENTS.md hierarchy), never inline clutter. POST then invalidate;
 // the async rescore updates the score on the next poll/refetch.
 import { ActionIcon, Button, Popover, Stack, TextInput, Tooltip } from "@mantine/core";
+import { IconPencil } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import { useState } from "react";
 
@@ -66,8 +67,8 @@ export function OverrideControl({
     <Popover opened={opened} onChange={setOpened} width={260} position="bottom-end" withArrow>
       <Popover.Target>
         <Tooltip label="Override this value">
-          <ActionIcon variant="subtle" color="gray" size="sm" onClick={open} aria-label={`override ${criterionKey}`}>
-            ✎
+          <ActionIcon color="gray" size="sm" onClick={open} aria-label={`override ${criterionKey}`}>
+            <IconPencil size={14} stroke={1.5} />
           </ActionIcon>
         </Tooltip>
       </Popover.Target>

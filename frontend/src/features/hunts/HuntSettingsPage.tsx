@@ -7,7 +7,6 @@ import {
   Alert,
   Button,
   Center,
-  Divider,
   Group,
   Loader,
   Modal,
@@ -15,12 +14,13 @@ import {
   Stack,
   Text,
   TextInput,
-  Title,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
+import { PageHeader } from "../../components/PageHeader";
+import { Section } from "../../components/Section";
 import { ApiError } from "../../lib/apiClient";
 import { resolveSettings, SOURCE_POLICIES, type HuntSettings } from "../../lib/contracts";
 import { semantic } from "../../theme";
@@ -79,90 +79,87 @@ function SettingsForm({ hunt }: { hunt: Hunt }) {
     );
 
   return (
-    <Stack gap="lg" maw={480}>
-      <Group align="flex-end" gap="sm">
-        <TextInput
-          label="Hunt name"
-          value={name}
-          onChange={(e) => setName(e.currentTarget.value)}
-          style={{ flex: 1 }}
-        />
-        <Button
-          variant="default"
-          onClick={saveName}
-          disabled={!name.trim() || name === hunt.name || patchHunt.isPending}
-        >
-          Rename
-        </Button>
-      </Group>
-
-      <Divider />
-
-      <Stack gap="sm">
-        <Select
-          label="Default cross-checking"
-          description="Applies to future submissions; existing listings keep their policy."
-          data={SOURCE_POLICIES}
-          value={settings.default_source_policy}
-          onChange={(v) => v && set("default_source_policy", v as HuntSettings["default_source_policy"])}
-          allowDeselect={false}
-        />
-        <Select
-          label="Cost estimates"
-          description="Conservative uses the worst realistic month for estimated utilities."
-          data={[
-            { value: "conservative", label: "Conservative (peak month)" },
-            { value: "median", label: "Median month" },
-          ]}
-          value={settings.cost_estimate_mode}
-          onChange={(v) => v && set("cost_estimate_mode", v as HuntSettings["cost_estimate_mode"])}
-          allowDeselect={false}
-        />
-        <Select
-          label="Minimum extraction confidence"
-          description="Extractions below this score as unknown — low-confidence data can't pass a gate."
-          data={[
-            { value: "low", label: "Low" },
-            { value: "medium", label: "Medium" },
-            { value: "high", label: "High" },
-          ]}
-          value={settings.min_confidence}
-          onChange={(v) => v && set("min_confidence", v as HuntSettings["min_confidence"])}
-          allowDeselect={false}
-        />
-        <Select
-          label="Proximity mode"
-          description="Travel mode for location criteria like grocery proximity."
-          data={[
-            { value: "driving", label: "Driving" },
-            { value: "walking", label: "Walking" },
-          ]}
-          value={settings.proximity_mode}
-          onChange={(v) => v && set("proximity_mode", v as HuntSettings["proximity_mode"])}
-          allowDeselect={false}
-        />
-        <Group>
-          <Button onClick={saveSettings} loading={patchSettings.isPending}>
-            Save settings
+    <Stack gap="xl" maw={520}>
+      <Section title="General">
+        <Group align="flex-end" gap="sm">
+          <TextInput
+            label="Hunt name"
+            value={name}
+            onChange={(e) => setName(e.currentTarget.value)}
+            style={{ flex: 1 }}
+          />
+          <Button
+            variant="default"
+            onClick={saveName}
+            disabled={!name.trim() || name === hunt.name || patchHunt.isPending}
+          >
+            Rename
           </Button>
         </Group>
-      </Stack>
+      </Section>
 
-      <Divider />
+      <Section title="Scoring defaults">
+        <Stack gap="sm">
+          <Select
+            label="Default cross-checking"
+            description="Applies to future submissions; existing listings keep their policy."
+            data={SOURCE_POLICIES}
+            value={settings.default_source_policy}
+            onChange={(v) => v && set("default_source_policy", v as HuntSettings["default_source_policy"])}
+            allowDeselect={false}
+          />
+          <Select
+            label="Cost estimates"
+            description="Conservative uses the worst realistic month for estimated utilities."
+            data={[
+              { value: "conservative", label: "Conservative (peak month)" },
+              { value: "median", label: "Median month" },
+            ]}
+            value={settings.cost_estimate_mode}
+            onChange={(v) => v && set("cost_estimate_mode", v as HuntSettings["cost_estimate_mode"])}
+            allowDeselect={false}
+          />
+          <Select
+            label="Minimum extraction confidence"
+            description="Extractions below this score as unknown — low-confidence data can't pass a gate."
+            data={[
+              { value: "low", label: "Low" },
+              { value: "medium", label: "Medium" },
+              { value: "high", label: "High" },
+            ]}
+            value={settings.min_confidence}
+            onChange={(v) => v && set("min_confidence", v as HuntSettings["min_confidence"])}
+            allowDeselect={false}
+          />
+          <Select
+            label="Proximity mode"
+            description="Travel mode for location criteria like grocery proximity."
+            data={[
+              { value: "driving", label: "Driving" },
+              { value: "walking", label: "Walking" },
+            ]}
+            value={settings.proximity_mode}
+            onChange={(v) => v && set("proximity_mode", v as HuntSettings["proximity_mode"])}
+            allowDeselect={false}
+          />
+          <Group>
+            <Button onClick={saveSettings} loading={patchSettings.isPending}>
+              Save settings
+            </Button>
+          </Group>
+        </Stack>
+      </Section>
 
-      <Group justify="space-between" align="center">
-        <div>
-          <Text size="sm" fw={600}>
-            Archive this hunt
-          </Text>
+      <Section title="Danger zone">
+        <Stack gap="sm">
           <Text size="xs" c="dimmed">
-            Hides it from the switcher; nothing is deleted.
+            Hides this hunt from the switcher; nothing is deleted.
           </Text>
-        </div>
-        <Button variant="outline" color={semantic.danger} onClick={() => setConfirmArchive(true)}>
-          Archive…
-        </Button>
-      </Group>
+          <Button variant="light" color={semantic.danger} onClick={() => setConfirmArchive(true)}>
+            Archive hunt…
+          </Button>
+        </Stack>
+      </Section>
 
       <Modal opened={confirmArchive} onClose={() => setConfirmArchive(false)} title="Archive hunt?">
         <Stack>
@@ -190,7 +187,7 @@ export function HuntSettingsPage() {
 
   return (
     <Stack gap="lg">
-      <Title order={2}>Settings</Title>
+      <PageHeader title="Settings" description="Hunt name, scoring defaults, and archive" />
       {isLoading && (
         <Center py="xl">
           <Loader />

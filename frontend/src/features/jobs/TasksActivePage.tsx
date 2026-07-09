@@ -1,9 +1,11 @@
 // Tasks — Active tab (P1-13): job cards polled at 3s via the one apiClient
 // read (queued, running, waiting_user). Realtime replaces the polling in
 // P2-4; the History tab is P2-6.
-import { Alert, Center, Loader, SimpleGrid, Stack, Text, Title } from "@mantine/core";
-import { useParams } from "react-router-dom";
+import { Alert, Card, Center, Loader, SimpleGrid, Stack, Text } from "@mantine/core";
+import { IconList } from "@tabler/icons-react";
+import { Link, useParams } from "react-router-dom";
 
+import { PageHeader } from "../../components/PageHeader";
 import { useListings } from "../listings/api";
 import { JobCard } from "./JobCard";
 import { useActiveJobs, useAnswerCheckpoint, useCancelJob, useRetryJob } from "./api";
@@ -23,7 +25,10 @@ export function TasksActivePage() {
 
   return (
     <Stack gap="lg">
-      <Title order={2}>Tasks</Title>
+      <PageHeader
+        title="Tasks"
+        description="Active jobs — updates every few seconds"
+      />
       {isLoading && (
         <Center py="xl">
           <Loader />
@@ -35,9 +40,18 @@ export function TasksActivePage() {
         </Alert>
       )}
       {jobs && jobs.length === 0 && (
-        <Text c="dimmed" size="sm">
-          Nothing running. Submit a listing from the Overview to start a job.
-        </Text>
+        <Card py="lg">
+          <Stack align="center" gap="sm">
+            <IconList size={28} stroke={1.5} color="var(--mantine-color-dimmed)" />
+            <Text c="dimmed" size="sm" ta="center">
+              Nothing running.{" "}
+              <Text component={Link} to={`/h/${huntId}`} span c="indigo" inherit>
+                Submit a listing from Overview
+              </Text>{" "}
+              to start a job.
+            </Text>
+          </Stack>
+        </Card>
       )}
       {jobs && jobs.length > 0 && (
         <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
