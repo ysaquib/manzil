@@ -1,3 +1,8 @@
+> ⚠️ **SUPERSEDED 2026-07-09** by `.claude/plans/status-phase-1-2026-07-09-1652.md`.
+> This document describes the **PRE-execution** state; its "current state" claims are
+> stale (P1-1..P1-14 have since landed). Kept for history — read the newer status plan
+> for reality.
+
 # Phase 1 Completion Plan — Manzil
 
 ## Context
