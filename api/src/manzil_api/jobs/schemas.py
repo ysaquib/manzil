@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from manzil_shared.models import JobState, JobType
+from manzil_shared.models import CheckpointPrompt, JobState, JobType
 from pydantic import BaseModel
 
 
@@ -21,6 +21,7 @@ class JobResponse(BaseModel):
     cost_actual_usd: float
     created_at: datetime | None = None
     finished_at: datetime | None = None
+    checkpoint: CheckpointPrompt | None = None
 
 
 class CheckpointAnswer(BaseModel):

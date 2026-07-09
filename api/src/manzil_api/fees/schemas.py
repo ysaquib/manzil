@@ -16,7 +16,6 @@ class FeeEntryUpsert(BaseModel):
 
 
 class FeeEntryResponse(BaseModel):
-    id: UUID
     hunt_listing_id: UUID
     fee_slot: str
     amount: float | None

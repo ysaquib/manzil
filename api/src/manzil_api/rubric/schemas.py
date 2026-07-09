@@ -7,17 +7,8 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
+from manzil_shared.models import NonNegotiable, RubricOption
 from pydantic import BaseModel, Field
-
-
-class RubricOption(BaseModel):
-    """One §8.2 rubric option: a value (matching the criterion's value_schema)
-    and its point delta. `is_bonus` is display-only; all deltas are >= 0."""
-
-    value: Any
-    delta: float = Field(ge=0)
-    label: str | None = None
-    is_bonus: bool = False
 
 
 class RubricCriterionIn(BaseModel):
@@ -26,7 +17,7 @@ class RubricCriterionIn(BaseModel):
     enabled: bool = True
     options: list[RubricOption] = Field(default_factory=list)
     unknown_delta: float = 0
-    non_negotiable: dict[str, Any] | None = None
+    non_negotiable: NonNegotiable | None = None
     is_bonus: bool = False
     position: int = 0
 
