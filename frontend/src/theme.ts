@@ -5,20 +5,35 @@ import { createTheme, rem } from "@mantine/core";
 
 export const theme = createTheme({
   primaryColor: "indigo",
+  primaryShade: { light: 6, dark: 5 },
+  autoContrast: true,
   fontFamily:
     "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
   defaultRadius: "md",
   headings: {
     fontWeight: "600",
     sizes: {
-      h2: { fontSize: rem(24) },
+      h2: { fontSize: rem(24), lineHeight: "1.3" },
     },
   },
   components: {
     Badge: { defaultProps: { variant: "light" } },
     Tooltip: { defaultProps: { withArrow: true } },
-    Card: { defaultProps: { withBorder: true, radius: "md" } },
-    Drawer: { defaultProps: { overlayProps: { opacity: 0.35 } } },
+    Card: { defaultProps: { withBorder: true, radius: "md", padding: "md" } },
+    Drawer: { defaultProps: { overlayProps: { opacity: 0.45 } } },
+    ActionIcon: { defaultProps: { variant: "subtle" } },
+    NavLink: {
+      defaultProps: { variant: "subtle" },
+      styles: { label: { fontWeight: 500 } },
+    },
+    AppShell: {
+      styles: {
+        main: { backgroundColor: "var(--mantine-color-body)" },
+      },
+    },
+    Anchor: {
+      defaultProps: { underline: "never" },
+    },
   },
 });
 
@@ -35,4 +50,12 @@ export const semantic = {
   active: "indigo" as const,
   /** waiting on the user (checkpoints) */
   waiting: "orange" as const,
+  /** pinned/outline badges, secondary chrome */
+  surface: "gray" as const,
+  scoreBands: {
+    high: "green",
+    mid: "lime",
+    low: "yellow",
+    poor: "red",
+  } as const,
 };

@@ -6,7 +6,7 @@ if (typeof window !== "undefined") {
     window.matchMedia ||
     ((query: string) =>
       ({
-        matches: false,
+        matches: query.includes("prefers-color-scheme: dark") ? false : false,
         media: query,
         onchange: null,
         addListener: () => {},
