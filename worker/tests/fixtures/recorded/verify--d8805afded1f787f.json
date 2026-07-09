@@ -1,0 +1,23 @@
+{
+  "cache_read_tokens": 0,
+  "cache_write_tokens": 0,
+  "content_sha256": "787d24cf39dcd7fa5f69e41a304abedafc709a447bbacc7b6c0c3db412caa77c",
+  "input_tokens": 1698,
+  "model": "anthropic/claude-haiku-4.5",
+  "output": {
+    "contradictions": [
+      {
+        "criterion_key": "in_unit_laundry",
+        "note": "Extracted value is 'on_site', but page states 'Shared laundry facilities on site' which does not indicate in-unit laundry."
+      },
+      {
+        "criterion_key": "parking",
+        "note": "Extracted value is 'dedicated_lot', but page states 'Surface parking available on a first-come basis' which indicates non-dedicated, first-come parking."
+      }
+    ]
+  },
+  "output_tokens": 157,
+  "prompt_version": 1,
+  "recorded_at": "2026-07-09T02:22:41.776182+00:00",
+  "stage": "verify"
+}

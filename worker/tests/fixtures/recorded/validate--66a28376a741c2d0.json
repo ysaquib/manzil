@@ -1,0 +1,16 @@
+{
+  "cache_read_tokens": 0,
+  "cache_write_tokens": 0,
+  "content_sha256": "ce9676e544851f18ac234f3a846e7b2d809b6ee91a3fec43ba4afdfabe8f7717",
+  "input_tokens": 1347,
+  "model": "anthropic/claude-haiku-4.5",
+  "output": {
+    "is_listing": true,
+    "property_name": "Willow Bend Flats",
+    "reason": "Page advertises one specific apartment complex with concrete rental facts: address, unit types, rent price ($1,650/month for 2BR), square footage, amenities, and contact information."
+  },
+  "output_tokens": 116,
+  "prompt_version": 1,
+  "recorded_at": "2026-07-09T02:22:34.152514+00:00",
+  "stage": "validate"
+}
