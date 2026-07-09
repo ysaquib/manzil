@@ -1,9 +1,14 @@
-// Hunts data hooks (Phase 1 plan §5.2). Reads via supabase-js; the create
-// mutation via apiClient. Full wiring lands with P1-9; these are the seams.
+// Hunts data hooks (Phase 1 plan §5.2). Reads via supabase-js; mutations via
+// apiClient with generated DTOs. Assumptions: frontend/API_ASSUMPTIONS.md.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiFetch } from "../../lib/apiClient";
+import type { components } from "../../lib/generated/api";
 import { supabase } from "../../lib/supabase";
+
+type HuntCreate = components["schemas"]["HuntCreate"];
+type HuntUpdate = components["schemas"]["HuntUpdate"];
+type HuntSettingsPatch = components["schemas"]["HuntSettingsPatch"];
 
 export interface Hunt {
   id: string;
@@ -30,11 +35,45 @@ export function useHunts() {
   });
 }
 
+export function useHunt(huntId: string) {
+  return useQuery({
+    queryKey: ["hunts", huntId],
+    queryFn: async (): Promise<Hunt> => {
+      const { data, error } = await supabase.from("hunts").select("*").eq("id", huntId).single();
+      if (error) throw error;
+      return data as Hunt;
+    },
+  });
+}
+
 export function useCreateHunt() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { name: string; domain?: "rent" | "buy" }) =>
-      apiFetch<Hunt>("/v1/hunts", { method: "POST", body }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["hunts"] }),
+    mutationFn: (body: HuntCreate) => apiFetch<Hunt>("/v1/hunts", { method: "POST", body }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["hunts"] }),
+  });
+}
+
+export function usePatchHunt(huntId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: HuntUpdate) =>
+      apiFetch<Hunt>(`/v1/hunts/${huntId}`, { method: "PATCH", body }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["hunts"] }),
+  });
+}
+
+export function usePatchHuntSettings(huntId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: HuntSettingsPatch) =>
+      apiFetch<Hunt>(`/v1/hunts/${huntId}/settings`, { method: "PATCH", body }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["hunts"] });
+      // Scoring-affecting settings take the bump+rescore path (§8.2) — the
+      // scores re-fetch picks the new totals up when the rescore job lands.
+      void qc.invalidateQueries({ queryKey: ["hunt_listings", huntId] });
+      void qc.invalidateQueries({ queryKey: ["jobs", huntId] });
+    },
   });
 }
