@@ -1,6 +1,6 @@
 // One live job card (P1-13, §13.2): type, stage progress, state, cancel /
 // retry, inline checkpoint prompt when the job waits on the user.
-import { Badge, Button, Card, Divider, Group, Stack, Text } from "@mantine/core";
+import { Badge, Button, Card, Group, Paper, Stack, Text } from "@mantine/core";
 
 import { semantic } from "../../theme";
 import { CheckpointPromptCard } from "./CheckpointPromptCard";
@@ -17,6 +17,10 @@ export const STATE_COLOR: Record<JobState, string> = {
 
 export function isCancellable(state: JobState): boolean {
   return state === "queued" || state === "running" || state === "waiting_user";
+}
+
+function stateBadgeVariant(state: JobState): "light" | "filled" {
+  return state === "failed" ? "filled" : "light";
 }
 
 export function JobCard({
@@ -46,7 +50,7 @@ export function JobCard({
               {listingName ?? "—"}
             </Text>
           </Group>
-          <Badge color={STATE_COLOR[job.state]} variant="filled">
+          <Badge color={STATE_COLOR[job.state]} variant={stateBadgeVariant(job.state)}>
             {job.state.replace("_", " ")}
           </Badge>
         </Group>
@@ -62,10 +66,9 @@ export function JobCard({
           </Text>
         )}
         {job.state === "waiting_user" && job.checkpoint && (
-          <>
-            <Divider />
+          <Paper withBorder p="sm" mt="sm">
             <CheckpointPromptCard prompt={job.checkpoint} onAnswer={onAnswer} answering={busy} />
-          </>
+          </Paper>
         )}
         <Group gap="xs" justify="flex-end">
           {job.state === "failed" && (

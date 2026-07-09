@@ -1,9 +1,10 @@
 // Magic-link login (Phase 1 plan §1.2, §5.2): one user, email OTP — no password
 // or reset flow. Sends signInWithOtp; AuthProvider picks up the session on return.
-import { Button, Card, Center, Stack, Text, TextInput, Title } from "@mantine/core";
+import { Button, Card, Center, Stack, Text, TextInput } from "@mantine/core";
 import { useState } from "react";
 import { Navigate } from "react-router-dom";
 
+import { PublicPageShell } from "../components/PublicPageShell";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "./useAuth";
 
@@ -23,32 +24,36 @@ export function LoginPage() {
   }
 
   return (
-    <Center h="100vh">
-      <Card withBorder shadow="sm" w={360} padding="lg">
-        <Stack>
-          <Title order={3}>Manzil</Title>
-          {sent ? (
-            <Text>Check your email for a sign-in link.</Text>
-          ) : (
-            <>
-              <TextInput
-                label="Email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.currentTarget.value)}
-              />
-              {error && (
-                <Text c="red" size="sm">
-                  {error}
-                </Text>
-              )}
-              <Button onClick={sendLink} disabled={!email}>
-                Send magic link
-              </Button>
-            </>
-          )}
-        </Stack>
-      </Card>
-    </Center>
+    <PublicPageShell>
+      <Center py="xl">
+        <Card withBorder w="100%" maw={400}>
+          <Stack>
+            <Text fw={600} size="lg">
+              Sign in
+            </Text>
+            {sent ? (
+              <Text>Check your email for a sign-in link.</Text>
+            ) : (
+              <>
+                <TextInput
+                  label="Email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.currentTarget.value)}
+                />
+                {error && (
+                  <Text c="red" size="sm">
+                    {error}
+                  </Text>
+                )}
+                <Button onClick={sendLink} disabled={!email}>
+                  Send magic link
+                </Button>
+              </>
+            )}
+          </Stack>
+        </Card>
+      </Center>
+    </PublicPageShell>
   );
 }

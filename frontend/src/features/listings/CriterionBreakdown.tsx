@@ -64,6 +64,26 @@ export function CriterionBreakdown({
 
   return (
     <Table verticalSpacing="xs" withRowBorders={false}>
+      <Table.Thead>
+        <Table.Tr>
+          <Table.Th>
+            <Text size="xs" c="dimmed" fw={500}>
+              Criterion
+            </Text>
+          </Table.Th>
+          <Table.Th>
+            <Text size="xs" c="dimmed" fw={500}>
+              Value
+            </Text>
+          </Table.Th>
+          <Table.Th>
+            <Text size="xs" c="dimmed" fw={500}>
+              Points
+            </Text>
+          </Table.Th>
+          <Table.Th aria-label="override actions" />
+        </Table.Tr>
+      </Table.Thead>
       <Table.Tbody>
         {breakdown.criteria.map((criterion) => {
           const entry = catalogByKey.get(criterion.key);
