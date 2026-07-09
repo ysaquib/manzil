@@ -7,14 +7,20 @@ import { ActionIcon, Group, Menu, Table, Text, UnstyledButton } from "@mantine/c
 import { IconChevronDown, IconChevronUp, IconDotsVertical, IconTrash } from "@tabler/icons-react";
 
 import { ScoreCell } from "./ScoreCell";
-import { formatRange, type OverviewRow, type SortKey, type SortState } from "./overviewRows";
+import {
+  formatRange,
+  rowAvailability,
+  type OverviewRow,
+  type SortKey,
+  type SortState,
+} from "./overviewRows";
 
 // Effective all-in monthly cost: read from the persisted breakdown (never
 // recomputed client-side). Phase 1 carries the interim composition (advertised
 // rent); the estimated-portion split renders once P3-9's real composition
 // lands — no fabricated "~est" until then.
 export function allInValue(row: OverviewRow): number | null {
-  const criteria = row.group.displayScore?.breakdown.criteria ?? [];
+  const criteria = row.group?.displayScore?.breakdown.criteria ?? [];
   const value = criteria.find((c) => c.key === "all_in_monthly")?.value;
   return typeof value === "number" ? value : null;
 }
@@ -75,11 +81,14 @@ export function OverviewTable({ rows, sort, onSort, onOpen, onDelete }: Overview
       <Table.Tbody>
         {rows.map((row) => {
           const allIn = allInValue(row);
+          const group = row.group;
+          const availability = rowAvailability(row);
           return (
             <Table.Tr
-              key={`${row.listing.id}:${row.group.key}`}
+              key={`${row.listing.id}:${group?.key ?? "listing"}`}
               onClick={() => onOpen(row)}
-              style={{ cursor: "pointer" }}
+              // A no-availability listing is dimmed — present but nothing to rank on.
+              style={{ cursor: "pointer", opacity: availability === "unavailable" ? 0.55 : 1 }}
             >
               <Table.Td>
                 <Text size="sm" fw={600}>
@@ -91,28 +100,33 @@ export function OverviewTable({ rows, sort, onSort, onOpen, onDelete }: Overview
               </Table.Td>
               <Table.Td>
                 <Text size="sm">
-                  {row.group.beds === 0 ? "Studio" : `${row.group.beds} bd`} /{" "}
-                  {row.group.baths} ba
+                  {group === null
+                    ? "—"
+                    : `${group.beds === 0 ? "Studio" : `${group.beds} bd`} / ${group.baths} ba`}
                 </Text>
               </Table.Td>
               <Table.Td>
-                {row.group.displayScore ? (
+                {group?.displayScore ? (
                   <ScoreCell
-                    total={row.group.displayScore.total}
-                    scoredPlanCount={row.group.scoredPlanCount}
-                    pinned={row.group.pinnedPlanId !== null}
+                    total={group.displayScore.total}
+                    scoredPlanCount={group.scoredPlanCount}
+                    pinned={group.pinnedPlanId !== null}
                   />
                 ) : (
                   <Text size="sm" c="dimmed">
-                    pending
+                    {availability === "unavailable" ? "No availability" : "pending"}
                   </Text>
                 )}
               </Table.Td>
               <Table.Td>
-                <Text size="sm">{formatRange(row.group.rentMin, row.group.rentMax, "$")}</Text>
+                <Text size="sm">
+                  {group === null ? "—" : formatRange(group.rentMin, group.rentMax, "$")}
+                </Text>
               </Table.Td>
               <Table.Td visibleFrom="md">
-                <Text size="sm">{formatRange(row.group.sqftMin, row.group.sqftMax)}</Text>
+                <Text size="sm">
+                  {group === null ? "—" : formatRange(group.sqftMin, group.sqftMax)}
+                </Text>
               </Table.Td>
               <Table.Td visibleFrom="sm">
                 <Text size="sm">{allIn === null ? "—" : `$${allIn.toLocaleString()}`}</Text>

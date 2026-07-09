@@ -101,6 +101,9 @@ export interface Listing {
   source_policy: SourcePolicy;
   pins: Record<string, string>;
   created_at: string;
+  // Set when ingest/refresh found no available floor plans (§8.2); null while
+  // pending or scored. A no-availability listing renders as a dimmed, null-score row.
+  unavailable_at: string | null;
   property: Property & { floor_plans: FloorPlan[]; sources: PropertySource[] };
   scores: Score[];
 }

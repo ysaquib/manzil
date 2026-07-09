@@ -47,6 +47,12 @@ declared at all · `implemented` = working · `no table` = table not yet in a mi
    newest-first; `HuntResponse.created_at` already exposed it. See DESIGN §20 (2026-07-09).
 4. **`Score`/`FeeEntry` had no `id`** — resolved: `scores` and `fee_checklist` use composite PKs
    (no `id` column); the spurious hand-typed `id` fields were removed to match the DB.
+5. **`hunt_listings.unavailable_at`** — added (migration 0004): a listing with no available
+   floor plans renders as a dimmed, null-score Overview row (distinct from pending/error).
+   Exposed on `ListingResponse.unavailable_at` and read on the hand-typed `Listing`.
+   `buildRows` now emits one listing-level row (`group: null`) for a plan-less listing.
+6. **`jobs.hunt_id`** — added (migration 0004): `list_jobs` filters on it directly. Not read by
+   the frontend (jobs are fetched via `GET /v1/hunts/{id}/jobs`); `JobResponse` is unchanged.
 
 ## Not assumed (deliberately)
 
