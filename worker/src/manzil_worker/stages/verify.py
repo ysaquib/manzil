@@ -4,10 +4,8 @@ and primary anti-prompt-injection control (§16).
 Checks 1-3 are deterministic code (P2 discipline: resist making them
 smarter); check 4 is exactly one cheap P1 call. Failures demote confidence to
 `low` and record a VerifyFlag; the value is kept — provenance shows the doubt.
-Phase 0 note: gate-relevant escalation to a `confirm_value` checkpoint
-activates in Phase 1 (needs jobs/waiting_user); until then the flag is the
-record. Plausibility runs on static cold-start bounds (shared/config.py) —
-self-derived metro bands need accumulated listings that don't exist yet.
+Phase 1 (P1-14): gate-relevant demotions below `min_confidence` raise a
+`confirm_value` checkpoint; the resume path upgrades confidence on "yes".
 """
 
 from __future__ import annotations
@@ -24,12 +22,20 @@ from manzil_shared.config import (
     SQFT_PER_BED_MAX,
     SQFT_PER_BED_MIN,
 )
-from manzil_shared.models import Confidence
+from manzil_shared.errors import CheckpointRaised
+from manzil_shared.models import (
+    CheckpointKind,
+    CheckpointPrompt,
+    Confidence,
+    RubricCriterion,
+)
+from manzil_shared.scoring.engine import criterion_key
 from pydantic import BaseModel, Field, ValidationError
 from rapidfuzz import fuzz
 
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.schema_gen import extractable_entries, field_model
+from manzil_worker.stages.score import meets_confidence
 from manzil_worker.state import FieldExtraction, RunState, VerifyCheck, VerifyFlag
 
 log = structlog.get_logger()
@@ -254,12 +260,69 @@ async def _check_consistency(state: RunState, ctx: StageCtx, page_text: str) -> 
             )
 
 
+def _is_gate_relevant(criterion: RubricCriterion) -> bool:
+    if criterion.non_negotiable is not None:
+        return True
+    return any(o.dealbreaker_set_score is not None for o in criterion.options)
+
+
+def _criterion_by_key(ctx: StageCtx) -> dict[str, RubricCriterion]:
+    return {criterion_key(c): c for c in ctx.rubric}
+
+
+def _apply_checkpoint_answer(state: RunState, ctx: StageCtx) -> None:
+    answer = state.checkpoint_answer
+    if not answer:
+        return
+    key = answer.get("context_ref")
+    choice = answer.get("choice", "yes")
+    if key and choice == "yes":
+        extractions = state.extractions.get(key, [])
+        if extractions:
+            extractions[0].confidence = ctx.min_confidence
+    if key:
+        state.confirm_value_resolved.append(key)
+    state.checkpoint_answer = None
+
+
+def _maybe_raise_confirm_value(state: RunState, ctx: StageCtx) -> None:
+    by_key = _criterion_by_key(ctx)
+    for flag in state.verify_flags:
+        if flag.criterion_key in state.confirm_value_resolved:
+            continue
+        criterion = by_key.get(flag.criterion_key)
+        if criterion is None or not _is_gate_relevant(criterion):
+            continue
+        extractions = state.extractions.get(flag.criterion_key, [])
+        if not extractions or extractions[0].value is None:
+            continue
+        extraction = extractions[0]
+        if meets_confidence(extraction.confidence, ctx.min_confidence):
+            continue
+        label = criterion.catalog_key or str(
+            (criterion.custom_def or {}).get("label", flag.criterion_key)
+        )
+        prompt = CheckpointPrompt(
+            kind=CheckpointKind.CONFIRM_VALUE,
+            question=(
+                f"VERIFY flagged {label} = {extraction.value!r} ({flag.note}). "
+                "Accept at low confidence?"
+            ),
+            options=["yes", "no"],
+            default="yes",
+            context_ref=flag.criterion_key,
+        )
+        raise CheckpointRaised(prompt)
+
+
 async def verify_stage(state: RunState, ctx: StageCtx) -> RunState:
     page_text = state.sources[0].cleaned_text
     _check_evidence(state, page_text)
     _check_conformance(state)
     _check_plausibility(state, ctx.today())
     await _check_consistency(state, ctx, page_text)
+    _apply_checkpoint_answer(state, ctx)
+    _maybe_raise_confirm_value(state, ctx)
     log.info(
         "verified",
         job_id=str(state.job_id),

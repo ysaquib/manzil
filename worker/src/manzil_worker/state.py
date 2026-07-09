@@ -105,4 +105,6 @@ class RunState(BaseModel):
     scores: list[PlanScore] = Field(default_factory=list)
     display_score_index: int | None = None
     checkpoint: CheckpointPrompt | None = None
+    checkpoint_answer: dict[str, Any] | None = None
+    confirm_value_resolved: list[str] = Field(default_factory=list)
     cost_usd: float = 0.0
