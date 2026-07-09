@@ -28,6 +28,10 @@ intent.
   columns at narrow breakpoints or degrade to stacked cards; forms and steppers stack vertically.
   Use Mantine breakpoints + `useMediaQuery` — no bespoke media queries. No horizontal page scroll,
   ever.
+- **Dark mode via Mantine only.** `defaultColorScheme="auto"` (system preference); header
+  `ColorSchemeToggle` persists explicit `light`/`dark` in localStorage (`manzil-color-scheme`).
+  Pre-mount inline script in `index.html` prevents flash. Audit semantic colors in both schemes;
+  contrast fixes go through `theme.ts` (`autoContrast`, `primaryShade`) — not per-component hex.
 
 ## Data-layer rules (from the Phase 1 plan)
 
