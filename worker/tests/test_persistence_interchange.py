@@ -8,18 +8,23 @@ test_migration_0002_schema.py's guard.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from uuid import uuid4
 
 import asyncpg
 import pytest
 import pytest_asyncio
-from conftest import DATABASE_URL
 from manzil_shared.models import Confidence, FetchOutcome, JobState, JobType
 from manzil_worker.persistence import FilePersistence
 from manzil_worker.postgres_persistence import PostgresPersistence
 from manzil_worker.state import FieldExtraction, RunState, SourceState
 
+# Defined inline (not imported from conftest) so a sibling test package's
+# same-named conftest can never shadow it — see test_migration_0002_schema.py.
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL", "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+)
 STAGE_NAMES = ["validate_url", "fetch", "validate", "extract", "verify", "score"]
 
 

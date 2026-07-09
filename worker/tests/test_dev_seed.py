@@ -14,8 +14,12 @@ from pathlib import Path
 
 import asyncpg
 import pytest
-from conftest import DATABASE_URL
 
+# Inline (not imported from conftest) to avoid a same-named sibling conftest
+# shadowing it during full-suite collection — see test_migration_0002_schema.py.
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL", "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+)
 SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts"
 
 
