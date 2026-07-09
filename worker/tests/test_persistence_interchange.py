@@ -68,9 +68,15 @@ async def persistence_case(request, tmp_path: Path):  # type: ignore[no-untyped-
         pool = await asyncpg.create_pool(DATABASE_URL, timeout=5, min_size=1, max_size=2)
     except (OSError, asyncpg.PostgresError) as exc:  # pragma: no cover - env guard
         pytest.skip(f"Postgres unreachable at {DATABASE_URL}: {exc}")
+    hunt_id = uuid4()
     try:
         await pool.execute(
-            "insert into jobs (id, type, state) values ($1, 'ingest', 'queued')", job_id
+            "insert into hunts (id, name, owner_id) values ($1, 'test', $2)", hunt_id, uuid4()
+        )
+        await pool.execute(
+            "insert into jobs (id, hunt_id, type, state) values ($1, $2, 'ingest', 'queued')",
+            job_id,
+            hunt_id,
         )
         pg_sink = PostgresPersistence(pool, job_id, STAGE_NAMES)
 
@@ -79,6 +85,7 @@ async def persistence_case(request, tmp_path: Path):  # type: ignore[no-untyped-
 
         yield job_id, pg_sink, readback
         await pool.execute("delete from jobs where id = $1", job_id)
+        await pool.execute("delete from hunts where id = $1", hunt_id)
     finally:
         await pool.close()
 

@@ -52,10 +52,7 @@ def _row_to_response(row: dict[str, Any]) -> JobResponse:
 
 async def _assert_job_owner(client: Client, job: dict[str, Any], user_id: str) -> UUID:
     """Return the hunt_id for this job after verifying the caller owns it."""
-    raw = job.get("hunt_id")
-    if raw is None:
-        raise JobNotFound("Job has no hunt association")
-    hunt_id = UUID(raw)
+    hunt_id = UUID(job["hunt_id"])
     hunt = await hunts_service.get_hunt_row(client, hunt_id)
     if hunt is None or hunt.get("owner_id") != user_id:
         raise NotJobOwner("Only the hunt owner may perform this action")

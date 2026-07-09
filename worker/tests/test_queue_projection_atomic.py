@@ -27,8 +27,14 @@ async def _one_stage(state: RunState, ctx: StageCtx) -> RunState:
 
 async def test_projection_failure_rolls_back_the_done_flip(pg_pool: asyncpg.Pool) -> None:
     job_id = uuid4()
+    hunt_id = uuid4()
     await pg_pool.execute(
-        "insert into jobs (id, type, state) values ($1, 'ingest', 'running')", job_id
+        "insert into hunts (id, name, owner_id) values ($1, 'test', $2)", hunt_id, uuid4()
+    )
+    await pg_pool.execute(
+        "insert into jobs (id, hunt_id, type, state) values ($1, $2, 'ingest', 'running')",
+        job_id,
+        hunt_id,
     )
     try:
         attempts: list[int] = []
@@ -76,3 +82,4 @@ async def test_projection_failure_rolls_back_the_done_flip(pg_pool: asyncpg.Pool
         assert await marker_count() == 1  # exactly one commit — the successful retry
     finally:
         await pg_pool.execute("delete from jobs where id = $1", job_id)
+        await pg_pool.execute("delete from hunts where id = $1", hunt_id)

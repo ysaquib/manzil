@@ -146,10 +146,11 @@ async def test_rescore_applies_override_and_persists_scores() -> None:
         async with pool.acquire() as conn:
             job_id = await conn.fetchval(
                 """
-                insert into jobs (type, state, payload)
-                values ('rescore', 'queued', $1::jsonb)
+                insert into jobs (hunt_id, type, state, payload)
+                values ($1, 'rescore', 'queued', $2::jsonb)
                 returning id
                 """,
+                hunt_id,
                 json.dumps({"hunt_id": str(hunt_id)}),
             )
         dispatch = build_dispatch(pool)
@@ -185,10 +186,11 @@ async def test_rescore_after_rubric_version_bump_updates_all_scores() -> None:
             await conn.execute("update hunts set rubric_version = 2 where id = $1", hunt_id)
             await conn.fetchval(
                 """
-                insert into jobs (type, state, payload)
-                values ('rescore', 'queued', $1::jsonb)
+                insert into jobs (hunt_id, type, state, payload)
+                values ($1, 'rescore', 'queued', $2::jsonb)
                 returning id
                 """,
+                hunt_id,
                 json.dumps({"hunt_id": str(hunt_id)}),
             )
         dispatch = build_dispatch(pool)
