@@ -10,6 +10,7 @@ from supabase import Client
 async def enqueue_rescore(client: Client, hunt_id: UUID) -> None:
     client.table("jobs").insert(
         {
+            "hunt_id": str(hunt_id),
             "type": "rescore",
             "state": "queued",
             "payload": {"hunt_id": str(hunt_id)},

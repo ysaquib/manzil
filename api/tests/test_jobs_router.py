@@ -40,9 +40,10 @@ async def test_list_jobs_includes_rescore(client: AsyncClient, db_pool) -> None:
     hunt_id, _listing_id = await _seed_hunt_with_listing(db_pool)
     await db_pool.execute(
         """
-        insert into jobs (type, state, payload)
-        values ('rescore', 'queued', $1::jsonb)
+        insert into jobs (hunt_id, type, state, payload)
+        values ($1, 'rescore', 'queued', $2::jsonb)
         """,
+        hunt_id,
         json.dumps({"hunt_id": str(hunt_id)}),
     )
     try:
@@ -59,9 +60,10 @@ async def test_cancel_guard_rejects_done(client: AsyncClient, db_pool) -> None:
     hunt_id, listing_id = await _seed_hunt_with_listing(db_pool)
     job_id = await db_pool.fetchval(
         """
-        insert into jobs (hunt_listing_id, type, state, payload)
-        values ($1, 'ingest', 'done', '{}'::jsonb) returning id
+        insert into jobs (hunt_id, hunt_listing_id, type, state, payload)
+        values ($1, $2, 'ingest', 'done', '{}'::jsonb) returning id
         """,
+        hunt_id,
         listing_id,
     )
     try:
@@ -92,9 +94,10 @@ async def test_parked_job_exposes_checkpoint(client: AsyncClient, db_pool) -> No
     }
     job_id = await db_pool.fetchval(
         """
-        insert into jobs (hunt_listing_id, type, state, payload)
-        values ($1, 'ingest', 'waiting_user', $2::jsonb) returning id
+        insert into jobs (hunt_id, hunt_listing_id, type, state, payload)
+        values ($1, $2, 'ingest', 'waiting_user', $3::jsonb) returning id
         """,
+        hunt_id,
         listing_id,
         json.dumps(payload),
     )
@@ -129,10 +132,11 @@ async def test_answer_checkpoint_requeues(client: AsyncClient, db_pool) -> None:
     }
     job_id = await db_pool.fetchval(
         """
-        insert into jobs (id, hunt_listing_id, type, state, payload)
-        values ($1, $2, 'ingest', 'waiting_user', $3::jsonb) returning id
+        insert into jobs (id, hunt_id, hunt_listing_id, type, state, payload)
+        values ($1, $2, $3, 'ingest', 'waiting_user', $4::jsonb) returning id
         """,
         job_uuid,
+        hunt_id,
         listing_id,
         json.dumps(payload),
     )

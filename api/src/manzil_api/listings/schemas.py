@@ -25,6 +25,9 @@ class ListingResponse(BaseModel):
     source_policy: str
     pins: dict[str, Any]
     created_at: datetime | None = None
+    # Set when ingest/refresh found no available floor plans (§8.2); null while
+    # pending or scored. Drives the dimmed, null-score Overview row.
+    unavailable_at: datetime | None = None
 
 
 class PinsPatch(BaseModel):

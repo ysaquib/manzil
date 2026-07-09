@@ -31,7 +31,7 @@ declared at all · `implemented` = working · `no table` = table not yet in a mi
 
 | Table(s) | Hook (file) | Shape | Status |
 |---|---|---|---|
-| `hunts` | `useHunts`, `useHunt` (`features/hunts/api.ts`) | hand-typed `Hunt` | exists (0002) |
+| `hunts` | `useHunts`, `useHunt` (`features/hunts/api.ts`) | hand-typed `Hunt` (incl. `created_at`) | exists (0002; `created_at` 0003) |
 | `hunt_listings` + embedded `properties`, `floor_plans`, `scores` | `useListings` (`features/listings/api.ts`) | hand-typed | exists (0001 + 0002) |
 | `overrides` for one listing | `useOverrides` (`features/listings/api.ts`) | hand-typed | exists (0002) |
 | `fee_checklist` for one listing | `useFees` (`features/listings/api.ts`) | hand-typed | exists (0002) |
@@ -43,6 +43,16 @@ declared at all · `implemented` = working · `no table` = table not yet in a mi
 
 1. **RubricOption shape** — resolved: API imports shared `{match, delta, dealbreaker_set_score}`.
 2. **Checkpoint prompt** — resolved: `JobResponse.checkpoint` populated when `state=waiting_user`.
+3. **`hunts.created_at`** — resolved (migration 0003): column added so `useHunts` can order
+   newest-first; `HuntResponse.created_at` already exposed it. See DESIGN §20 (2026-07-09).
+4. **`Score`/`FeeEntry` had no `id`** — resolved: `scores` and `fee_checklist` use composite PKs
+   (no `id` column); the spurious hand-typed `id` fields were removed to match the DB.
+5. **`hunt_listings.unavailable_at`** — added (migration 0004): a listing with no available
+   floor plans renders as a dimmed, null-score Overview row (distinct from pending/error).
+   Exposed on `ListingResponse.unavailable_at` and read on the hand-typed `Listing`.
+   `buildRows` now emits one listing-level row (`group: null`) for a plan-less listing.
+6. **`jobs.hunt_id`** — added (migration 0004): `list_jobs` filters on it directly. Not read by
+   the frontend (jobs are fetched via `GET /v1/hunts/{id}/jobs`); `JobResponse` is unchanged.
 
 ## Not assumed (deliberately)
 
