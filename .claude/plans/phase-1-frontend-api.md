@@ -2,7 +2,7 @@
 
 Status: proposed plan, not yet executed. Written against DESIGN.md (read at commit
 `d8a8235`) §5, §6, §7, §8, §13, §19 and IMPLEMENTATION.md §7's provisional Phase 1
-table (P1-1..P1-14), which this plan revises per IMPLEMENTATION.md's own "entering a
+table (P1-1..P1-15), which this plan revises per IMPLEMENTATION.md's own "entering a
 phase means revising its table first" rule. FastAPI structural conventions follow
 https://github.com/zhanymkanov/fastapi-best-practices, adapted at the one point where
 it conflicts with a settled Manzil decision (DB access — see §2.1 below).

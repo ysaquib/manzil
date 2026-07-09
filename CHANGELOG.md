@@ -7,6 +7,29 @@ repo itself.
 
 ## Unreleased — Phase 1
 
+### 2026-07-09 — VERIFY `confirm_value` checkpoint (P1-14)
+
+- VERIFY raises `CheckpointRaised` when a gate-relevant criterion is demoted
+  below the hunt's `min_confidence`; one checkpoint per ingest job in Phase 1.
+- Resume path: `"yes"` upgrades extraction confidence to at least
+  `min_confidence`; `"no"` leaves demoted; `confirm_value_resolved` prevents
+  re-raise after answer.
+- `answer_checkpoint` persists `context_ref` alongside the choice for resume.
+- Tests: `test_confirm_value_checkpoint.py`.
+- Phase 1 task table: exit review renumbered **P1-15** (15 rows total).
+
+### 2026-07-09 — Backend API + rescore (P1-5..P1-8, P1-6)
+
+- All 16 §4.3 API handlers implemented with supabase-py mutations and ownership
+  guards; listing delete is soft-archive only (job history retained).
+- **Rescore-on-mutation:** rubric PUT, settings PATCH (scoring keys),
+  overrides POST, fees PUT each enqueue one hunt-level `rescore` job.
+- `stages/rescore.py` + `JobType.RESCORE` dispatch: resolve effective values,
+  score floor plans, upsert `scores`.
+- Contract fixes: shared `RubricOption` shape in API schemas;
+  `JobResponse.checkpoint` for `waiting_user` jobs.
+- API integration tests per router + `test_e2e_flow`.
+
 ### 2026-07-08 — In-process worker loop wired (P1-3)
 
 - API lifespan starts `run_worker_loop` when `MANZIL_WORKER_INPROCESS=true`
