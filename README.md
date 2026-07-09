@@ -17,7 +17,7 @@ Manzil is also deliberately dual-purpose: a real tool on a real deadline, and a 
 | [`AGENTS.md`](AGENTS.md) | Instructions for coding agents (`CLAUDE.md` imports it). |
 | [`CHANGELOG.md`](CHANGELOG.md) | What has landed in the code, by task. |
 
-**Current phase: Phase 0** — prove the pipeline as a CLI (no UI, no auth, no RLS). See DESIGN §19 for scope and exit gates, IMPLEMENTATION §7 for the task-by-task plan.
+**Current phase: Phase 0 tail ∥ Phase 1 in progress** — Phase 0 closes out the CLI pipeline spine and bench; Phase 1 replaces the spreadsheet with API + frontend. See DESIGN §19 for scope and exit gates, IMPLEMENTATION §7 for the task-by-task plan.
 
 ## Repo layout
 
@@ -37,7 +37,9 @@ manzil/
 │   ├── src/manzil_worker/
 │   │   ├── cli.py               # `manzil ingest <url>` — Phase 0 entry point
 │   │   ├── state.py / runner.py # RunState + persist-before-advance runner (§10.2)
-│   │   ├── persistence.py       # Phase 0: run files under .manzil/runs/ (jobs table in P1)
+│   │   ├── persistence.py       # Phase 0 CLI: run files under .manzil/runs/
+│   │   ├── postgres_persistence.py # P1-2: durable sink behind the jobs row
+│   │   ├── queue.py             # P1-2: claim/heartbeat/reclaim + worker loop
 │   │   ├── phase0_rubric.py     # the hardcoded Phase 0 rubric fixture (§19)
 │   │   ├── stages/              # one module per DESIGN §10.3 stage + generated schema
 │   │   ├── fetching/            # tier ladder, outcome classifier, cleaner + embedded-data miner, registry
@@ -45,9 +47,10 @@ manzil/
 │   │   ├── evals/               # bench labels + eval harness + model compare (P0-11..13)
 │   │   └── agents/              # agents mode ONLY (learning track); empty until L1
 │   ├── tests/fixtures/          # pages/ (synthetic, committed) · corpus/ + bench/labels/ (LOCAL eval kit, gitignored) · recorded/ (smoke fixture committed)
-│   └── evals/reports/           # generated bench reports (committed alongside model/prompt changes)
-├── api/                         # manzil-api (FastAPI): near-empty until Phase 1
-├── frontend/                    # Vite + React + Mantine: untouched until Phase 1
+│   └── evals/reports/           # generated bench reports (local artifacts — gitignored)
+├── api/                         # manzil-api (FastAPI): domain routers + in-process worker loop
+├── frontend/                    # Vite + React + Mantine: auth shell + feature pages (P1-9..13)
+├── scripts/dev_seed.py          # P1-1: seed 1 hunt / 3 listings via the real ingest path
 ├── supabase/                    # config, migrations/, seed.sql (generated — never hand-edit)
 ├── infra/                       # .env.example, render.yaml (Phase 1+)
 └── docs/adr/                    # rationale too detailed for DESIGN §20
@@ -80,6 +83,45 @@ uv run mypy                # --strict on shared/ (the engine must be airtight)
 
 If all four are green, CI will be green — they are exactly the three CI jobs.
 
+### Phase 1 local dev loop
+
+Two terminals after setup (`uv sync --all-packages`, `cp infra/.env.example .env`,
+`supabase start`):
+
+```bash
+# Terminal 1 — DB + seed (once per reset)
+supabase db reset
+uv run --package manzil-worker python scripts/dev_seed.py
+
+# Terminal 1 — API (in-process worker loop on by default via MANZIL_WORKER_INPROCESS=true)
+uv run --package manzil-api uvicorn manzil_api.main:app --reload --port 8000
+
+# Terminal 2 — frontend
+pnpm -C frontend install   # first time
+pnpm -C frontend dev
+```
+
+Regenerate API types after handler changes (API must be running locally):
+
+```bash
+pnpm -C frontend gen:api-types
+```
+
+Phase 1 ingest jobs persist to the `jobs` row via `PostgresPersistence` (not
+`.manzil/runs/`). The CLI `manzil ingest` path still uses file persistence until
+wired to enqueue jobs (P1-7).
+
+Key env vars: `DATABASE_URL` (local Supabase Postgres), `MANZIL_WORKER_INPROCESS`
+(API, default `true`), `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` /
+`VITE_API_BASE_URL` (frontend) — full table in `infra/.env.example` and
+IMPLEMENTATION §1.
+
+### Frontend (Phase 1+)
+
+```bash
+pnpm -C frontend dev | test | build | gen:api-types
+```
+
 ### Worker CLI (`manzil`)
 
 `uv run manzil --help` lists everything. What exists today and when to reach for it:
@@ -101,7 +143,8 @@ If all four are green, CI will be green — they are exactly the three CI jobs.
   2 br · in-unit laundry · cats · balcony · all-in < $2,000 conservative). Rubric editing
   arrives with the UI in Phase 1.
 - Run state persists to `.manzil/runs/<job_id>.json` after **every** stage (gitignored) —
-  inspect it to debug a run; it is the resumability contract in file form.
+  inspect it to debug a run; this is the Phase 0 CLI resumability contract. Phase 1
+  ingest jobs enqueued through the API or dev-seed use the `jobs` row instead.
 - Values VERIFY demoted below `min_confidence` (default `medium`) score as **unknown** —
   on a gated criterion that fires the gate. The extracted value is still in the run file's
   `reconciled` map with its flags; suspect data never silently passes.
@@ -265,15 +308,9 @@ docker exec -it supabase_db_manzil psql -U postgres              # poke the DB d
 | A bench label, or `evals/` grading logic | `uv run pytest -k bench` — then re-run `manzil bench-run` before trusting any older report |
 | Migration files | `supabase db reset` must come back clean |
 
-### Frontend (Phase 1+)
+### Environment
 
-```bash
-pnpm -C frontend dev | test | build
-```
-
-## Environment
-
-Copy `infra/.env.example` to `.env` at the repo root. Notable variables (full table in IMPLEMENTATION §1): `OPENROUTER_API_KEY`, `LANGFUSE_*` (tracing is wired before the first LLM call — an untraced call is a bug), `DATABASE_URL`, `SUPABASE_*` (service-role key is worker-only, never api or frontend), `MANZIL_MODE` (`workflow` | `agents`), `MANZIL_LLM_MODE` (`live` | `record` | `replay`).
+Copy `infra/.env.example` to `.env` at the repo root. Notable variables (full table in IMPLEMENTATION §1): `OPENROUTER_API_KEY`, `LANGFUSE_*` (tracing is wired before the first LLM call — an untraced call is a bug), `DATABASE_URL`, `SUPABASE_*` (service-role key is worker + API in-process loop only, never frontend), `MANZIL_WORKER_INPROCESS` (API, default `true`), `MANZIL_MODE` (`workflow` | `agents`), `MANZIL_LLM_MODE` (`live` | `record` | `replay`), `VITE_*` (frontend).
 
 ## CI
 
