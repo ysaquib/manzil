@@ -18,6 +18,7 @@ export interface Hunt {
   rubric_version: number;
   settings: Record<string, unknown>;
   archived_at: string | null;
+  created_at: string;
 }
 
 export function useHunts() {
