@@ -154,9 +154,10 @@ async def _seed_listings_and_jobs(conn: asyncpg.Connection) -> None:
         )
         await conn.execute(
             """
-            insert into jobs (hunt_listing_id, type, state, payload)
-            values ($1, 'ingest', 'queued', $2::jsonb)
+            insert into jobs (hunt_id, hunt_listing_id, type, state, payload)
+            values ($1, $2, 'ingest', 'queued', $3::jsonb)
             """,
+            DEV_HUNT_ID,
             listing_id,
             json.dumps({"url": url}),
         )

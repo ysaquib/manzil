@@ -48,8 +48,14 @@ def _stages(executed: list[str], *, crash_at: int | None):  # type: ignore[no-un
 
 async def test_orphaned_job_resumes_from_current_stage(pg_pool: asyncpg.Pool) -> None:
     job_id = uuid4()
+    hunt_id = uuid4()
     await pg_pool.execute(
-        "insert into jobs (id, type, state) values ($1, 'ingest', 'queued')", job_id
+        "insert into hunts (id, name, owner_id) values ($1, 'test', $2)", hunt_id, uuid4()
+    )
+    await pg_pool.execute(
+        "insert into jobs (id, hunt_id, type, state) values ($1, $2, 'ingest', 'queued')",
+        job_id,
+        hunt_id,
     )
     try:
         # First worker claims the job.
@@ -100,3 +106,4 @@ async def test_orphaned_job_resumes_from_current_stage(pg_pool: asyncpg.Pool) ->
         assert done["state"] == "done"
     finally:
         await pg_pool.execute("delete from jobs where id = $1", job_id)
+        await pg_pool.execute("delete from hunts where id = $1", hunt_id)
