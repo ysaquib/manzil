@@ -5,6 +5,41 @@ IMPLEMENTATION.md §7 task IDs. Design changes go to DESIGN.md §20 (Decision
 Log); doc-mechanics changes go to IMPLEMENTATION.md §9 — this file tracks the
 repo itself.
 
+## Unreleased — Phase 1
+
+### 2026-07-08 — In-process worker loop wired (P1-3)
+
+- API lifespan starts `run_worker_loop` when `MANZIL_WORKER_INPROCESS=true`
+  (default); clean-shutdown drain via `stop` Event.
+- `worker_loop.py` passes `settings.database_url` into `build_dispatch` so
+  the per-domain adapter registry uses Postgres even when `DATABASE_URL` comes
+  from the `.env` file (pydantic-settings does not populate `os.environ`).
+- Test: `test_worker_inprocess` — job reaches `done` while `/v1/health` serves.
+
+### 2026-07-08 — Durable Postgres queue + persistence (P1-2)
+
+- `queue.py`: `claim_next_job` (`FOR UPDATE SKIP LOCKED`), `heartbeat`,
+  `reclaim_orphans`, `run_worker_loop`, ingest dispatch + result projection.
+- `postgres_persistence.py`: `Persistence` protocol over the `jobs` row +
+  `job_events` timeline.
+- Ingest results commit atomically with the DONE flip via
+  `PostgresPersistence.on_done` — no window where a job is `done` with no
+  result rows.
+- Property-level-only scores (no scorable floor plan) fail loud: §8.2
+  `scores.floor_plan_id NOT NULL` leaves nowhere to write them.
+- Tests: interchange, orphan reclaim, atomic projection rollback.
+
+### 2026-07-08 — Migration 0002 + dev-seed (P1-1)
+
+- Migration `20260708000000_hunt_and_pipeline_tables.sql`: 4 enums, all §8.2
+  per-hunt/pipeline tables, claim/heartbeat/job_events indexes,
+  `extractions.hunt_id` FK, hunt-scoped extraction index; no RLS (P2-1).
+- `scripts/dev_seed.py`: enqueues three ingest jobs against committed
+  `fixtures/pages/` in replay mode; committed seed recordings in
+  `fixtures/recorded/`.
+- Tests: `test_migration_0002_schema`, `test_dev_seed` (1 hunt / 3 listings /
+  non-zero scores).
+
 ## Unreleased — Phase 0
 
 ### 2026-07-07 — Eval kit goes local: corpus + bench labels gitignored (DESIGN v2.8)
