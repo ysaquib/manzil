@@ -12,8 +12,8 @@ boundary; a `running` job whose heartbeat is older than `JOB_ORPHAN_AFTER` is
 reclaimed to `queued` by `reclaim_orphans` (run every tick) and resumed from its
 `current_stage`. Clean shutdown drains the in-flight job before exiting.
 
-Dispatch is keyed on `JobType`; only `ingest` is implemented here. A later task
-adds `rescore` by registering one more entry in `build_dispatch`.
+Dispatch is keyed on `JobType`; `ingest` and `rescore` are registered in
+`build_dispatch`.
 """
 
 from __future__ import annotations
@@ -45,6 +45,7 @@ from manzil_worker.fetching.tiers import Fetcher, site_domain
 from manzil_worker.postgres_persistence import PostgresPersistence
 from manzil_worker.runner import PHASE0_STAGES, run_job
 from manzil_worker.stages.base import StageCtx
+from manzil_worker.stages.rescore import rescore_hunt
 from manzil_worker.state import RunState
 
 if TYPE_CHECKING:
@@ -162,14 +163,18 @@ def _build_run_state(job: asyncpg.Record) -> RunState:
     payload = json.loads(job["payload"])
     snapshot = payload.get("run_state")
     if snapshot is not None:
-        return RunState.model_validate(snapshot)
-    return RunState(
-        job_id=job["id"],
-        job_type=JobType(job["type"]),
-        url=payload["url"],
-        hunt_listing_id=job["hunt_listing_id"],
-        source_policy=payload.get("source_policy", "tiers_1_2_3"),
-    )
+        state = RunState.model_validate(snapshot)
+    else:
+        state = RunState(
+            job_id=job["id"],
+            job_type=JobType(job["type"]),
+            url=payload["url"],
+            hunt_listing_id=job["hunt_listing_id"],
+            source_policy=payload.get("source_policy", "tiers_1_2_3"),
+        )
+    if payload.get("checkpoint_answer"):
+        state.checkpoint_answer = payload["checkpoint_answer"]
+    return state
 
 
 # ── ingest dispatch ──────────────────────────────────────────────────────────
@@ -351,19 +356,89 @@ def make_ingest_dispatcher(
     return dispatch
 
 
+def make_rescore_dispatcher() -> Dispatcher:
+    """Build the `rescore` handler — hunt-level, no stage machine."""
+
+    async def dispatch(pool: asyncpg.Pool, job: asyncpg.Record) -> None:
+        job_id: UUID = job["id"]
+        payload = json.loads(job["payload"])
+        hunt_id_raw = payload.get("hunt_id")
+        if hunt_id_raw is None:
+            await _mark_failed(pool, job_id, "rescore: payload missing hunt_id")
+            return
+        hunt_id = UUID(hunt_id_raw)
+
+        async with pool.acquire() as conn:
+            hunt = await conn.fetchrow(
+                "select settings, rubric_version from hunts where id = $1",
+                hunt_id,
+            )
+            if hunt is None:
+                await _mark_failed(pool, job_id, f"rescore: hunt {hunt_id} not found")
+                return
+            rubric = await _load_rubric(conn, hunt_id)
+
+        settings = json.loads(hunt["settings"]) if hunt["settings"] else {}
+        min_confidence = Confidence(settings.get("min_confidence", "medium"))
+
+        try:
+            async with pool.acquire() as conn, conn.transaction():
+                await conn.execute(
+                    """
+                    insert into job_events (job_id, stage, event, detail)
+                    values ($1, 'rescore', 'started', '{}'::jsonb)
+                    """,
+                    job_id,
+                )
+                await rescore_hunt(
+                    conn,
+                    hunt_id=hunt_id,
+                    rubric=rubric,
+                    rubric_version=hunt["rubric_version"],
+                    min_confidence=min_confidence,
+                )
+                await conn.execute(
+                    """
+                    update jobs set
+                        state = 'done',
+                        finished_at = now(),
+                        locked_by = null,
+                        locked_at = null,
+                        current_stage = 'rescore'
+                    where id = $1
+                    """,
+                    job_id,
+                )
+                await conn.execute(
+                    """
+                    insert into job_events (job_id, stage, event, detail)
+                    values ($1, 'rescore', 'completed', '{}'::jsonb)
+                    """,
+                    job_id,
+                )
+        except Exception as error:
+            log.error("rescore_failed", job_id=str(job_id), error=str(error))
+            await _mark_failed(pool, job_id, f"rescore: {error}")
+            return
+        log.info("rescore_job_done", job_id=str(job_id), hunt_id=str(hunt_id))
+
+    return dispatch
+
+
 def build_dispatch(
     pool: asyncpg.Pool,
     *,
     dsn: str | None = None,
     fetchers_factory: FetchersFactory | None = None,
 ) -> dict[JobType, Dispatcher]:
-    """The `job_type -> dispatcher` table. Only `ingest` today; `rescore` is one
-    more entry (P1-6). `dsn` (when given) backs the per-domain adapter registry."""
+    """The `job_type -> dispatcher` table. `ingest` and `rescore` (P1-6).
+    `dsn` (when given) backs the per-domain adapter registry."""
     dsn = dsn or os.environ.get("DATABASE_URL")
     return {
         JobType.INGEST: make_ingest_dispatcher(
             dsn=dsn, fetchers_factory=fetchers_factory or _default_fetchers
         ),
+        JobType.RESCORE: make_rescore_dispatcher(),
     }
 
 
