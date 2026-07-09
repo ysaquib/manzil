@@ -18,7 +18,6 @@ from manzil_api.jobs.exceptions import (
     NotJobOwner,
 )
 from manzil_api.jobs.schemas import CheckpointAnswer, JobResponse
-from manzil_api.listings import service as listings_service
 from supabase import Client
 
 
@@ -53,18 +52,10 @@ def _row_to_response(row: dict[str, Any]) -> JobResponse:
 
 async def _assert_job_owner(client: Client, job: dict[str, Any], user_id: str) -> UUID:
     """Return the hunt_id for this job after verifying the caller owns it."""
-    hunt_id: UUID | None = None
-    if job.get("hunt_listing_id"):
-        listing = await listings_service.get_listing_row(client, UUID(job["hunt_listing_id"]))
-        if listing is None:
-            raise JobNotFound("Job listing not found")
-        hunt_id = UUID(listing["hunt_id"])
-    else:
-        payload = _parse_payload(job.get("payload"))
-        raw = payload.get("hunt_id")
-        if raw is None:
-            raise JobNotFound("Job has no hunt association")
-        hunt_id = UUID(raw)
+    raw = job.get("hunt_id")
+    if raw is None:
+        raise JobNotFound("Job has no hunt association")
+    hunt_id = UUID(raw)
     hunt = await hunts_service.get_hunt_row(client, hunt_id)
     if hunt is None or hunt.get("owner_id") != user_id:
         raise NotJobOwner("Only the hunt owner may perform this action")
@@ -80,31 +71,10 @@ async def get_job_row(client: Client, job_id: UUID) -> dict[str, Any] | None:
 async def list_jobs(
     client: Client, hunt_id: UUID, states: list[JobState] | None
 ) -> list[JobResponse]:
-    listings = (
-        client.table("hunt_listings").select("id").eq("hunt_id", str(hunt_id)).execute()
-    )
-    listing_ids = [row["id"] for row in listings.data or []]
-
-    jobs: dict[str, dict[str, Any]] = {}
-    if listing_ids:
-        query = client.table("jobs").select("*").in_("hunt_listing_id", listing_ids)
-        if states:
-            query = query.in_("state", [s.value for s in states])
-        for row in query.execute().data or []:
-            jobs[row["id"]] = row
-
-    rescore_query = (
-        client.table("jobs")
-        .select("*")
-        .eq("type", "rescore")
-        .contains("payload", {"hunt_id": str(hunt_id)})
-    )
+    query = client.table("jobs").select("*").eq("hunt_id", str(hunt_id))
     if states:
-        rescore_query = rescore_query.in_("state", [s.value for s in states])
-    for row in rescore_query.execute().data or []:
-        jobs[row["id"]] = row
-
-    return [_row_to_response(row) for row in jobs.values()]
+        query = query.in_("state", [s.value for s in states])
+    return [_row_to_response(row) for row in query.execute().data or []]
 
 
 async def cancel_job(client: Client, job_id: UUID, user_id: str) -> JobResponse:

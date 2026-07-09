@@ -31,7 +31,6 @@ from uuid import UUID
 
 import structlog
 from manzil_shared.config import JOB_ORPHAN_AFTER_SECONDS, WORKER_IDLE_BACKOFF_SECONDS
-from manzil_shared.errors import StageFatal
 from manzil_shared.models import (
     Confidence,
     JobType,
@@ -202,14 +201,15 @@ async def _persist_ingest_results(
 ) -> None:
     """Write the completed run's facts to Postgres (DESIGN §5, §8.2): one
     `property_sources` row for the fetched page, append-only `extractions`, a
-    `floor_plans` row per scorable plan, and the `scores` upsert per plan.
+    `floor_plans` upsert per scorable plan, and the `scores` upsert per plan.
 
     Catalog-criterion extractions carry `hunt_id = NULL` (global facts, §8.2).
-    SCORE emits one PlanScore per scorable plan (both beds+baths known) in that
-    order — or, when NO plan is scorable, a single property-level PlanScore
-    (`plan_name is None`). The `scores` table keys on a NOT-NULL `floor_plan_id`
-    (§8.2), so a property-level score has nowhere to go; that case is raised
-    rather than silently dropped (see below), pending a routing decision."""
+    SCORE emits one PlanScore per scorable plan (both beds+baths known). When NO
+    plan is scorable — extraction (and any cross-validation) found no available
+    floor plans — that is a legitimate "no availability" result, not an error
+    (§8.2, §20): the source/extractions still persist, the listing is marked
+    `unavailable_at = now()`, and it renders as a dimmed, null-score row. When
+    plans are found the marker is cleared, so the state reverses on refresh."""
     source = state.sources[0]
     source_id = await conn.fetchval(
         """
@@ -247,22 +247,38 @@ async def _persist_ingest_results(
 
     scorable = [p for p in state.floor_plans if p.beds is not None and p.baths is not None]
     if not scorable:
-        # Property-level score only: scores.floor_plan_id is NOT NULL (§8.2), so
-        # there is no valid row to write. Fail loudly instead of ending done-empty
-        # — routing property-level scores is a schema decision, not one to guess.
-        raise StageFatal(
-            "property-level score (no floor plan with both beds and baths) cannot be "
-            "persisted: scores.floor_plan_id is NOT NULL (DESIGN §8.2) — needs a routing decision"
+        # No available floor plans, even after extraction/cross-validation — a
+        # legitimate "no availability" result (§8.2), not an error. The source and
+        # extractions above still persist; mark the listing unavailable so the
+        # Overview shows a dimmed, null-score row distinct from a failed job.
+        await conn.execute(
+            "update hunt_listings set unavailable_at = now() where id = $1",
+            hunt_listing_id,
         )
+        return
+    # Plans found — clear any prior no-availability marker (reversible on refresh).
+    await conn.execute(
+        "update hunt_listings set unavailable_at = null where id = $1",
+        hunt_listing_id,
+    )
     # strict=True: SCORE guarantees one PlanScore per scorable plan, so any length
     # mismatch is a real filter/order drift and must surface, not truncate.
     for plan_in, plan_score in zip(scorable, state.scores, strict=True):
+        # Upsert on the natural plan key so a plan keeps a stable id across
+        # refreshes — scores and pins that reference floor_plan_id stay attached.
         floor_plan_id = await conn.fetchval(
             """
             insert into floor_plans
                 (property_id, source_id, plan_name, beds, baths, sqft_min, sqft_max,
                  rent_min, rent_max, deposit, availability_date)
             values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            on conflict (source_id, plan_name, beds, baths) do update set
+                sqft_min = excluded.sqft_min,
+                sqft_max = excluded.sqft_max,
+                rent_min = excluded.rent_min,
+                rent_max = excluded.rent_max,
+                deposit = excluded.deposit,
+                availability_date = excluded.availability_date
             returning id
             """,
             property_id,

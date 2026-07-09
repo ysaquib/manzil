@@ -5,13 +5,30 @@ import { deriveUnitGroups, type UnitGroupRow } from "./unitGroups";
 
 export interface OverviewRow {
   listing: Listing;
-  group: UnitGroupRow;
+  // null → a listing-level row: the listing has no unit groups yet, either
+  // because it is still ingesting (pending) or because ingest found no available
+  // floor plans (no-availability, §8.2). See `rowAvailability`.
+  group: UnitGroupRow | null;
 }
 
 export function buildRows(listings: Listing[]): OverviewRow[] {
-  return listings.flatMap((listing) =>
-    deriveUnitGroups(listing).map((group) => ({ listing, group })),
-  );
+  return listings.flatMap((listing): OverviewRow[] => {
+    const groups = deriveUnitGroups(listing);
+    // A listing with no scorable plans still gets exactly one row so it stays
+    // visible — dimmed for no-availability, "pending" while it ingests.
+    if (groups.length === 0) return [{ listing, group: null }];
+    return groups.map((group) => ({ listing, group }));
+  });
+}
+
+export type RowAvailability = "scored" | "pending" | "unavailable";
+
+// Which of the three terminal-ish states a row is in. `unavailable` is a
+// legitimate "no available floor plans" result (§8.2), distinct from an error
+// (a failed job never produces a row here) and from `pending` (still ingesting).
+export function rowAvailability(row: OverviewRow): RowAvailability {
+  if (row.group === null) return row.listing.unavailable_at ? "unavailable" : "pending";
+  return row.group.displayScore ? "scored" : "pending";
 }
 
 // `hide score < N` (§13.2, §9.3 rationale): declutters gate-zeroed rows
@@ -20,7 +37,7 @@ export function buildRows(listings: Listing[]): OverviewRow[] {
 export function filterRows(rows: OverviewRow[], minScore: number | null): OverviewRow[] {
   if (minScore === null) return rows;
   return rows.filter(
-    (row) => row.group.displayScore === null || row.group.displayScore.total >= minScore,
+    (row) => row.group?.displayScore == null || row.group.displayScore.total >= minScore,
   );
 }
 
@@ -32,8 +49,10 @@ export interface SortState {
 }
 
 function sortValue(row: OverviewRow, key: SortKey): number | string | null {
-  if (key === "score") return row.group.displayScore?.total ?? null;
-  if (key === "rent") return row.group.rentMin ?? row.group.rentMax;
+  // Listing-level rows (no group) have no score or rent — they sink to the
+  // bottom via the null handling in `sortRows`, never coerced to 0.
+  if (key === "score") return row.group?.displayScore?.total ?? null;
+  if (key === "rent") return row.group ? (row.group.rentMin ?? row.group.rentMax) : null;
   return row.listing.property.name.toLowerCase();
 }
 
