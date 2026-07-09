@@ -14,6 +14,7 @@ from uuid import uuid4
 
 import asyncpg
 import pytest
+from manzil_shared.config import MANZIL_JOB_MAX_ATTEMPTS
 from manzil_shared.models import JobState, JobType
 from manzil_worker.postgres_persistence import PostgresPersistence
 from manzil_worker.queue import JOB_ORPHAN_AFTER, claim_next_job, reclaim_orphans
@@ -22,6 +23,93 @@ from manzil_worker.stages.base import StageCtx
 from manzil_worker.state import RunState
 
 STAGE_NAMES = ["a", "b", "c", "d"]
+
+
+async def _seed_running_orphan(pool: asyncpg.Pool, *, attempts: int):  # type: ignore[no-untyped-def]
+    """A `running` job with a stale heartbeat (orphaned) and a given attempt count."""
+    job_id, hunt_id = uuid4(), uuid4()
+    await pool.execute(
+        "insert into hunts (id, name, owner_id) values ($1, 'test', $2)", hunt_id, uuid4()
+    )
+    await pool.execute(
+        """
+        insert into jobs (id, hunt_id, type, state, attempts, locked_by, locked_at)
+        values ($1, $2, 'ingest', 'running', $3, 'dead-worker',
+                now() - $4::interval)
+        """,
+        job_id,
+        hunt_id,
+        attempts,
+        JOB_ORPHAN_AFTER + timedelta(seconds=30),
+    )
+    return job_id, hunt_id
+
+
+async def test_orphan_at_cap_is_dead_lettered(pg_pool: asyncpg.Pool) -> None:
+    job_id, hunt_id = await _seed_running_orphan(pg_pool, attempts=MANZIL_JOB_MAX_ATTEMPTS)
+    try:
+        async with pg_pool.acquire() as conn:
+            reclaimed = await reclaim_orphans(conn)
+        assert reclaimed >= 1
+        row = await pg_pool.fetchrow(
+            "select state, error, finished_at, locked_by, locked_at from jobs where id = $1",
+            job_id,
+        )
+        assert row["state"] == "failed"
+        assert row["error"] == f"dead-lettered: orphaned after {MANZIL_JOB_MAX_ATTEMPTS} attempts"
+        assert row["finished_at"] is not None
+        assert row["locked_by"] is None and row["locked_at"] is None
+    finally:
+        await pg_pool.execute("delete from hunts where id = $1", hunt_id)
+
+
+async def test_orphan_below_cap_is_requeued(pg_pool: asyncpg.Pool) -> None:
+    job_id, hunt_id = await _seed_running_orphan(pg_pool, attempts=MANZIL_JOB_MAX_ATTEMPTS - 1)
+    try:
+        async with pg_pool.acquire() as conn:
+            reclaimed = await reclaim_orphans(conn)
+        assert reclaimed >= 1
+        row = await pg_pool.fetchrow(
+            "select state, error, finished_at, locked_at from jobs where id = $1", job_id
+        )
+        assert row["state"] == "queued"  # re-queued, unchanged behavior below the cap
+        assert row["error"] is None
+        assert row["finished_at"] is None
+        assert row["locked_at"] is None
+    finally:
+        await pg_pool.execute("delete from hunts where id = $1", hunt_id)
+
+
+async def test_claim_stamps_started_at_once(pg_pool: asyncpg.Pool) -> None:
+    job_id, hunt_id = uuid4(), uuid4()
+    await pg_pool.execute(
+        "insert into hunts (id, name, owner_id) values ($1, 'test', $2)", hunt_id, uuid4()
+    )
+    await pg_pool.execute(
+        "insert into jobs (id, hunt_id, type, state) values ($1, $2, 'ingest', 'queued')",
+        job_id,
+        hunt_id,
+    )
+    try:
+        async with pg_pool.acquire() as conn:
+            first = await claim_next_job(conn, "worker-1")
+        assert first is not None and first["started_at"] is not None
+        original = first["started_at"]
+
+        # Orphan and reclaim (attempts=1 < cap → re-queued), then claim again.
+        await pg_pool.execute(
+            "update jobs set locked_at = now() - $2::interval where id = $1",
+            job_id,
+            JOB_ORPHAN_AFTER + timedelta(seconds=30),
+        )
+        async with pg_pool.acquire() as conn:
+            await reclaim_orphans(conn)
+            second = await claim_next_job(conn, "worker-2")
+        assert second is not None and second["id"] == job_id
+        # coalesce(started_at, now()) — a resume must not reset the metric.
+        assert second["started_at"] == original
+    finally:
+        await pg_pool.execute("delete from hunts where id = $1", hunt_id)
 
 
 def _stages(executed: list[str], *, crash_at: int | None):  # type: ignore[no-untyped-def]

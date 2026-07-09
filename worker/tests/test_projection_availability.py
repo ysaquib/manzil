@@ -13,6 +13,7 @@ Skips without a database, like the other queue tests.
 
 from __future__ import annotations
 
+import json
 from uuid import uuid4
 
 import asyncpg
@@ -123,6 +124,41 @@ async def test_scorable_plan_clears_marker_and_upserts_stable_id(pg_pool: asyncp
             "select count(*) from scores where floor_plan_id = $1", first_id
         )
         assert score_count == 1
+    finally:
+        await pg_pool.execute("delete from hunts where id = $1", hunt_id)
+        await pg_pool.execute("delete from properties where id = $1", property_id)
+
+
+@pytest.mark.asyncio
+async def test_floor_plan_raw_persists_extracted_object(pg_pool: asyncpg.Pool) -> None:
+    hunt_id, property_id, listing_id = await _seed_listing(pg_pool)
+    try:
+        plan = FloorPlanIn(
+            plan_name="B2",
+            beds=1,
+            baths=1.0,
+            sqft_min=650,
+            rent_min=1500.0,
+            rent_max=1600.0,
+            evidence_quote="1BR from $1,500",
+        )
+        score = PlanScore(plan_name="B2", breakdown={"total": 3.0, "gates": [], "criteria": []})
+        async with pg_pool.acquire() as conn, conn.transaction():
+            await _persist_ingest_results(
+                conn,
+                hunt_listing_id=listing_id,
+                property_id=property_id,
+                rubric_version=0,
+                state=_state("https://x.test/raw", [plan], [score]),
+            )
+        raw = await pg_pool.fetchval(
+            "select raw from floor_plans where property_id = $1", property_id
+        )
+        stored = json.loads(raw) if isinstance(raw, str) else raw
+        # Non-empty and faithful to the extracted plan — including a field with no
+        # column of its own (evidence_quote), which is the point of raw.
+        assert stored == plan.model_dump(mode="json")
+        assert stored["evidence_quote"] == "1BR from $1,500"
     finally:
         await pg_pool.execute("delete from hunts where id = $1", hunt_id)
         await pg_pool.execute("delete from properties where id = $1", property_id)

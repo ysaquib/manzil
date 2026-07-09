@@ -30,7 +30,11 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 import structlog
-from manzil_shared.config import JOB_ORPHAN_AFTER_SECONDS, WORKER_IDLE_BACKOFF_SECONDS
+from manzil_shared.config import (
+    JOB_ORPHAN_AFTER_SECONDS,
+    MANZIL_JOB_MAX_ATTEMPTS,
+    WORKER_IDLE_BACKOFF_SECONDS,
+)
 from manzil_shared.models import (
     Confidence,
     JobType,
@@ -81,6 +85,7 @@ async def claim_next_job(conn: asyncpg.Connection, worker_id: str) -> asyncpg.Re
             state = 'running',
             locked_by = $1,
             locked_at = now(),
+            started_at = coalesce(started_at, now()),
             attempts = attempts + 1
         from next_job
         where jobs.id = next_job.id
@@ -99,15 +104,27 @@ async def heartbeat(conn: asyncpg.Connection, job_id: UUID) -> None:
 
 
 async def reclaim_orphans(conn: asyncpg.Connection) -> int:
-    """Return every `running` job whose heartbeat is older than
-    `JOB_ORPHAN_AFTER` to `queued` with its lock cleared. Resumption is safe
-    because stages persist before advancing (NFR3). Returns the count reclaimed."""
+    """Sweep `running` jobs whose heartbeat is older than `JOB_ORPHAN_AFTER`.
+    Below the dead-letter cap they return to `queued` with the lock cleared and
+    resume safely (stages persist before advancing, NFR3). At or above the cap
+    (`attempts >= MANZIL_JOB_MAX_ATTEMPTS`) they are dead-lettered to `failed` so
+    a crash loop cannot churn the queue forever — a manual retry (which resets
+    `attempts`) is the only way back. Both branches happen in one atomic UPDATE
+    per tick. Returns the count of rows swept (re-queued + dead-lettered)."""
     result = await conn.execute(
         """
-        update jobs set state = 'queued', locked_by = null, locked_at = null
+        update jobs set
+            state = case when attempts >= $2 then 'failed' else 'queued' end::job_state,
+            error = case when attempts >= $2
+                then 'dead-lettered: orphaned after ' || attempts::text || ' attempts'
+                else error end,
+            finished_at = case when attempts >= $2 then now() else finished_at end,
+            locked_by = null,
+            locked_at = null
         where state = 'running' and locked_at < now() - $1::interval
         """,
         JOB_ORPHAN_AFTER,
+        MANZIL_JOB_MAX_ATTEMPTS,
     )
     return int(result.split()[-1])  # "UPDATE <n>"
 
@@ -270,15 +287,16 @@ async def _persist_ingest_results(
             """
             insert into floor_plans
                 (property_id, source_id, plan_name, beds, baths, sqft_min, sqft_max,
-                 rent_min, rent_max, deposit, availability_date)
-            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                 rent_min, rent_max, deposit, availability_date, raw)
+            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)
             on conflict (source_id, plan_name, beds, baths) do update set
                 sqft_min = excluded.sqft_min,
                 sqft_max = excluded.sqft_max,
                 rent_min = excluded.rent_min,
                 rent_max = excluded.rent_max,
                 deposit = excluded.deposit,
-                availability_date = excluded.availability_date
+                availability_date = excluded.availability_date,
+                raw = excluded.raw
             returning id
             """,
             property_id,
@@ -292,6 +310,10 @@ async def _persist_ingest_results(
             None if plan_in.rent_max is None else Decimal(str(plan_in.rent_max)),
             None if plan_in.deposit is None else Decimal(str(plan_in.deposit)),
             date.fromisoformat(plan_in.availability_date) if plan_in.availability_date else None,
+            # The per-plan raw extracted object (§8.2 floor_plans.raw): the full
+            # FloorPlanIn as EXTRACT emitted it, including fields with no column of
+            # their own (e.g. evidence_quote) — provenance for re-derivation.
+            json.dumps(plan_in.model_dump(mode="json")),
         )
         await conn.execute(
             """
