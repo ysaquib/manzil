@@ -5,15 +5,15 @@ import {
   ActionIcon,
   Badge,
   Button,
-  Divider,
+  Card,
   Group,
   NumberInput,
-  Paper,
   Stack,
   Switch,
   Text,
   Tooltip,
 } from "@mantine/core";
+import { IconX } from "@tabler/icons-react";
 
 import type { RubricOption } from "../../lib/contracts";
 import { semantic } from "../../theme";
@@ -74,8 +74,8 @@ function OptionRow({
         />
       )}
       <Tooltip label="Remove option">
-        <ActionIcon variant="subtle" color="gray" size="sm" onClick={onRemove} aria-label="remove option">
-          ✕
+        <ActionIcon color="gray" size="sm" onClick={onRemove} aria-label="remove option">
+          <IconX size={14} stroke={1.5} />
         </ActionIcon>
       </Tooltip>
     </Group>
@@ -99,7 +99,7 @@ export function CriterionCard({
   };
 
   return (
-    <Paper p="md">
+    <Card>
       <Stack gap="sm">
         <Group justify="space-between" wrap="nowrap">
           <Group gap="sm" wrap="nowrap">
@@ -132,68 +132,65 @@ export function CriterionCard({
         </Group>
 
         {criterion.enabled && (
-          <>
-            <Divider />
-            <Stack gap="xs">
-              {criterion.options.map((option, index) => (
-                <OptionRow
-                  key={index}
-                  option={option}
-                  entry={entry}
-                  onChange={(next) => setOption(index, next)}
-                  onRemove={() =>
-                    onChange({
-                      ...criterion,
-                      options: criterion.options.filter((_, i) => i !== index),
-                    })
-                  }
-                />
-              ))}
-              <Group>
-                <Button
-                  variant="light"
-                  size="xs"
-                  onClick={() =>
-                    onChange({
-                      ...criterion,
-                      options: [
-                        ...criterion.options,
-                        {
-                          match: {
-                            op: entry.value_schema.type === "boolean" ? "bool" : "eq",
-                            value: null,
-                          },
-                          delta: 0,
-                          dealbreaker_set_score: null,
+          <Stack gap="xs" mt="xs">
+            {criterion.options.map((option, index) => (
+              <OptionRow
+                key={index}
+                option={option}
+                entry={entry}
+                onChange={(next) => setOption(index, next)}
+                onRemove={() =>
+                  onChange({
+                    ...criterion,
+                    options: criterion.options.filter((_, i) => i !== index),
+                  })
+                }
+              />
+            ))}
+            <Group>
+              <Button
+                variant="light"
+                size="xs"
+                onClick={() =>
+                  onChange({
+                    ...criterion,
+                    options: [
+                      ...criterion.options,
+                      {
+                        match: {
+                          op: entry.value_schema.type === "boolean" ? "bool" : "eq",
+                          value: null,
                         },
-                      ],
-                    })
-                  }
-                >
-                  Add option
-                </Button>
-              </Group>
-              <Group gap="sm" align="flex-end">
-                <NumberInput
-                  label="If unknown"
-                  description="points when the value can't be determined"
-                  size="xs"
-                  w={160}
-                  step={0.5}
-                  value={criterion.unknown_delta}
-                  onChange={(next) =>
-                    onChange({ ...criterion, unknown_delta: typeof next === "number" ? next : 0 })
-                  }
-                />
-                <GateControls
-                  nonNegotiable={criterion.non_negotiable}
-                  onChange={(non_negotiable) => onChange({ ...criterion, non_negotiable })}
-                />
-              </Group>
-            </Stack>
-          </>
+                        delta: 0,
+                        dealbreaker_set_score: null,
+                      },
+                    ],
+                  })
+                }
+              >
+                Add option
+              </Button>
+            </Group>
+            <Group gap="sm" align="flex-end" mt="md">
+              <NumberInput
+                label="If unknown"
+                description="points when the value can't be determined"
+                size="xs"
+                w={160}
+                step={0.5}
+                value={criterion.unknown_delta}
+                onChange={(next) =>
+                  onChange({ ...criterion, unknown_delta: typeof next === "number" ? next : 0 })
+                }
+              />
+              <GateControls
+                nonNegotiable={criterion.non_negotiable}
+                onChange={(non_negotiable) => onChange({ ...criterion, non_negotiable })}
+              />
+            </Group>
+          </Stack>
         )}
       </Stack>
-    </Paper>
+    </Card>
   );
 }
