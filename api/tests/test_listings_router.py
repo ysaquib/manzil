@@ -64,9 +64,10 @@ async def test_delete_listing_soft_archives(client: AsyncClient, db_pool) -> Non
     )
     job_id = await db_pool.fetchval(
         """
-        insert into jobs (hunt_listing_id, type, state, payload)
-        values ($1, 'ingest', 'done', '{}'::jsonb) returning id
+        insert into jobs (hunt_id, hunt_listing_id, type, state, payload)
+        values ($1, $2, 'ingest', 'done', '{}'::jsonb) returning id
         """,
+        hunt_id,
         listing_id,
     )
     try:

@@ -75,6 +75,7 @@ async def create_listing(
 
     client.table("jobs").insert(
         {
+            "hunt_id": str(hunt_id),
             "hunt_listing_id": listing_row["id"],
             "type": "ingest",
             "state": "queued",

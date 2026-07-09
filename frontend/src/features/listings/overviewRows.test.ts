@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildRows, filterRows, formatRange, sortRows } from "./overviewRows";
+import { buildRows, filterRows, formatRange, rowAvailability, sortRows } from "./overviewRows";
 import type { FloorPlan, Listing, Score } from "./types";
 
 function makeListing(
@@ -8,6 +8,7 @@ function makeListing(
   name: string,
   plans: Partial<FloorPlan>[],
   totals: Record<string, number> = {},
+  unavailable_at: string | null = null,
 ): Listing {
   const floorPlans = plans.map(
     (p, i): FloorPlan => ({
@@ -29,7 +30,6 @@ function makeListing(
   );
   const scores = Object.entries(totals).map(
     ([planId, total]): Score => ({
-      id: `score-${planId}`,
       hunt_listing_id: id,
       floor_plan_id: planId,
       total,
@@ -47,6 +47,7 @@ function makeListing(
     source_policy: "tiers_1_2_3",
     pins: {},
     created_at: "2026-07-08T00:00:00Z",
+    unavailable_at,
     property: {
       id: `${id}-prop`,
       name,
@@ -73,6 +74,20 @@ describe("buildRows", () => {
     ]);
     expect(buildRows([both])).toHaveLength(2);
     expect(buildRows(listings)).toHaveLength(3);
+  });
+
+  it("emits one listing-level row for a listing with no floor plans", () => {
+    const noPlans = makeListing("l5", "Empty", []);
+    const rows = buildRows([noPlans]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].group).toBeNull();
+  });
+
+  it("classifies a plan-less listing as unavailable vs pending by unavailable_at", () => {
+    const unavailable = makeListing("l6", "Full Building", [], {}, "2026-07-09T00:00:00Z");
+    const pending = makeListing("l7", "Still Ingesting", []);
+    expect(rowAvailability(buildRows([unavailable])[0])).toBe("unavailable");
+    expect(rowAvailability(buildRows([pending])[0])).toBe("pending");
   });
 });
 
@@ -112,6 +127,15 @@ describe("sortRows", () => {
   it("sorts by name", () => {
     const rows = sortRows(buildRows(listings), { key: "name", dir: "asc" });
     expect(rows[0].listing.property.name).toBe("Alpha Court");
+  });
+
+  it("sinks plan-less rows (null score, not 0) below a negatively-scored row", () => {
+    const withNeg = [
+      makeListing("neg", "Negative", [{ beds: 2, baths: 2 }], { "neg-plan-0": -3 }),
+      makeListing("none", "No Availability", [], {}, "2026-07-09T00:00:00Z"),
+    ];
+    const rows = sortRows(buildRows(withNeg), { key: "score", dir: "desc" });
+    expect(rows.map((r) => r.listing.property.name)).toEqual(["Negative", "No Availability"]);
   });
 });
 

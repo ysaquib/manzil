@@ -36,8 +36,8 @@ export interface FloorPlan {
   available_units: number | null;
 }
 
+// scores has a composite PK (hunt_listing_id, floor_plan_id) — no `id` column.
 export interface Score {
-  id: string;
   hunt_listing_id: string;
   floor_plan_id: string;
   total: number;
@@ -70,8 +70,8 @@ export interface Override {
   created_at: string;
 }
 
+// fee_checklist has a composite PK (hunt_listing_id, fee_slot) — no `id` column.
 export interface FeeEntry {
-  id: string;
   hunt_listing_id: string;
   fee_slot: string;
   amount: number | null;
@@ -101,6 +101,9 @@ export interface Listing {
   source_policy: SourcePolicy;
   pins: Record<string, string>;
   created_at: string;
+  // Set when ingest/refresh found no available floor plans (§8.2); null while
+  // pending or scored. A no-availability listing renders as a dimmed, null-score row.
+  unavailable_at: string | null;
   property: Property & { floor_plans: FloorPlan[]; sources: PropertySource[] };
   scores: Score[];
 }

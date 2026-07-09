@@ -23,7 +23,6 @@ function plan(overrides: Partial<FloorPlan> & { id: string }): FloorPlan {
 
 function score(floorPlanId: string, total: number): Score {
   return {
-    id: `score-${floorPlanId}`,
     hunt_listing_id: "listing-1",
     floor_plan_id: floorPlanId,
     total,
@@ -50,6 +49,7 @@ function listing(plans: FloorPlan[], scores: Score[], pins: Record<string, strin
     source_policy: "tiers_1_2_3",
     pins,
     created_at: "2026-07-08T00:00:00Z",
+    unavailable_at: null,
     property: {
       id: "prop-1",
       name: "The Test Flats",
