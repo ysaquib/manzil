@@ -65,3 +65,7 @@ worker/tests/fixtures/recorded/*
 !worker/tests/fixtures/recorded/verify--47f3b20746f0fd07.json
 !worker/tests/fixtures/recorded/verify--c5b00f8b3dd8d301.json
 !worker/tests/fixtures/recorded/verify--d8805afded1f787f.json
+
+# Bench reports are keyed to the gitignored local eval kit (corpus + labels)
+# and carry page evidence quotes — local artifacts, never repo content.
+worker/evals/reports/
