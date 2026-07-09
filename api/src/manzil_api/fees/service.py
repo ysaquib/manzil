@@ -3,6 +3,7 @@ hunt-level rescore job (rescore-on-mutation, plan §1.7)."""
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -34,6 +35,10 @@ async def upsert_fee(
                 "value_state": body.value_state.value,
                 "entered_by": user_id,
                 "evidence_ref": body.evidence_ref,
+                # Bump on re-entry: the INSERT default only fires on first insert,
+                # so an upsert of an existing (hunt_listing_id, fee_slot) must set
+                # updated_at explicitly or it would freeze at the original time.
+                "updated_at": datetime.now(UTC).isoformat(),
             },
             on_conflict="hunt_listing_id,fee_slot",
         )

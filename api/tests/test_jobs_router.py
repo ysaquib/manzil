@@ -74,6 +74,32 @@ async def test_cancel_guard_rejects_done(client: AsyncClient, db_pool) -> None:
 
 
 @pytest.mark.asyncio
+async def test_retry_resets_attempts(client: AsyncClient, db_pool) -> None:
+    hunt_id, listing_id = await _seed_hunt_with_listing(db_pool)
+    job_id = await db_pool.fetchval(
+        """
+        insert into jobs (hunt_id, hunt_listing_id, type, state, attempts, error, finished_at)
+        values ($1, $2, 'ingest', 'failed', 3, 'boom', now()) returning id
+        """,
+        hunt_id,
+        listing_id,
+    )
+    try:
+        resp = await client.post(f"/v1/jobs/{job_id}/retry")
+        assert resp.status_code == 200
+        assert resp.json()["attempts"] == 0
+        row = await db_pool.fetchrow(
+            "select state, attempts, error, finished_at from jobs where id = $1", job_id
+        )
+        assert row["state"] == "queued"
+        assert row["attempts"] == 0  # a human retry grants a fresh cycle budget
+        assert row["error"] is None
+        assert row["finished_at"] is None
+    finally:
+        await db_pool.execute("delete from hunts where id = $1", hunt_id)
+
+
+@pytest.mark.asyncio
 async def test_parked_job_exposes_checkpoint(client: AsyncClient, db_pool) -> None:
     hunt_id, listing_id = await _seed_hunt_with_listing(db_pool)
     prompt = CheckpointPrompt(

@@ -29,6 +29,11 @@ STAGE_BACKOFF_BASE_SECONDS = 10
 # Queue reclaim: a running job without a heartbeat this long is orphaned
 JOB_ORPHAN_AFTER_SECONDS = 5 * 60
 
+# Queue dead-letter cap: an orphaned job reclaimed this many times is dead-lettered
+# to `failed` instead of re-queued (a crash loop must not churn the queue forever).
+# A manual retry resets `attempts`, granting a fresh cycle budget.
+MANZIL_JOB_MAX_ATTEMPTS = 5
+
 # Worker loop: how long to sleep between claim attempts when the queue is empty
 # (the loop wakes early on a clean-shutdown signal, so this only bounds idle poll rate)
 WORKER_IDLE_BACKOFF_SECONDS = 1.0

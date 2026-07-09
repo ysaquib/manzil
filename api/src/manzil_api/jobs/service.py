@@ -104,6 +104,7 @@ async def retry_job(client: Client, job_id: UUID, user_id: str) -> JobResponse:
         {
             "state": JobState.QUEUED.value,
             "error": None,
+            "attempts": 0,
             "locked_by": None,
             "locked_at": None,
             "finished_at": None,

@@ -50,3 +50,35 @@ async def test_upsert_fee_enqueues_rescore(client: AsyncClient, db_pool) -> None
         assert rescore == 1
     finally:
         await db_pool.execute("delete from hunts where id = $1", hunt_id)
+
+
+@pytest.mark.asyncio
+async def test_upsert_fee_bumps_updated_at(client: AsyncClient, db_pool) -> None:
+    hunt_id, listing_id = await _seed_listing(db_pool)
+    try:
+        first = await client.put(
+            f"/v1/listings/{listing_id}/fees/parking",
+            json={"amount": 50.0, "value_state": "manual"},
+        )
+        assert first.status_code == 200
+        first_updated = await db_pool.fetchval(
+            "select updated_at from fee_checklist"
+            " where hunt_listing_id = $1 and fee_slot = 'parking'",
+            listing_id,
+        )
+
+        # Re-entering the same (hunt_listing_id, fee_slot) must bump updated_at,
+        # not freeze it at the INSERT default.
+        second = await client.put(
+            f"/v1/listings/{listing_id}/fees/parking",
+            json={"amount": 75.0, "value_state": "manual"},
+        )
+        assert second.status_code == 200
+        second_updated = await db_pool.fetchval(
+            "select updated_at from fee_checklist"
+            " where hunt_listing_id = $1 and fee_slot = 'parking'",
+            listing_id,
+        )
+        assert second_updated > first_updated
+    finally:
+        await db_pool.execute("delete from hunts where id = $1", hunt_id)
