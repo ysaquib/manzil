@@ -29,6 +29,10 @@ STAGE_BACKOFF_BASE_SECONDS = 10
 # Queue reclaim: a running job without a heartbeat this long is orphaned
 JOB_ORPHAN_AFTER_SECONDS = 5 * 60
 
+# Worker loop: how long to sleep between claim attempts when the queue is empty
+# (the loop wakes early on a clean-shutdown signal, so this only bounds idle poll rate)
+WORKER_IDLE_BACKOFF_SECONDS = 1.0
+
 # P3 bounded tool loops
 AGENT_MAX_TURNS = 8
 
