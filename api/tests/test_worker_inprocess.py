@@ -79,8 +79,9 @@ async def _seed_one_ingest_job(pool: asyncpg.Pool, hunt_id, listing_id) -> None:
         user_id,
     )
     await pool.execute(
-        "insert into jobs (hunt_listing_id, type, state, payload) "
-        "values ($1, 'ingest', 'queued', $2::jsonb)",
+        "insert into jobs (hunt_id, hunt_listing_id, type, state, payload) "
+        "values ($1, $2, 'ingest', 'queued', $3::jsonb)",
+        hunt_id,
         listing_id,
         json.dumps({"url": FIXTURE_URL}),
     )

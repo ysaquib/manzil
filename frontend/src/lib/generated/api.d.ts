@@ -422,6 +422,8 @@ export interface components {
             };
             /** Created At */
             created_at?: string | null;
+            /** Unavailable At */
+            unavailable_at?: string | null;
         };
         /** OverrideCreate */
         OverrideCreate: {

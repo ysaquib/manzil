@@ -49,6 +49,7 @@ function listing(plans: FloorPlan[], scores: Score[], pins: Record<string, strin
     source_policy: "tiers_1_2_3",
     pins,
     created_at: "2026-07-08T00:00:00Z",
+    unavailable_at: null,
     property: {
       id: "prop-1",
       name: "The Test Flats",

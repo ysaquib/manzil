@@ -38,8 +38,13 @@ export function ListingDetailDrawer({
   const { data: overrides } = useOverrides(listing.id);
   const { data: fees } = useFees(listing.id);
 
-  const score = group.displayScore;
-  const unitLabel = `${group.beds === 0 ? "Studio" : `${group.beds} bd`} / ${group.baths} ba`;
+  // group === null → a listing with no unit groups: still ingesting (pending) or
+  // no available floor plans found (unavailable, §8.2). No score, no unit label.
+  const score = group?.displayScore ?? null;
+  const unitLabel = group
+    ? `${group.beds === 0 ? "Studio" : `${group.beds} bd`} / ${group.baths} ba`
+    : null;
+  const isUnavailable = group === null && listing.unavailable_at !== null;
 
   return (
     <Drawer
@@ -52,19 +57,27 @@ export function ListingDetailDrawer({
           <Stack gap={4}>
             <Title order={4}>{listing.property.name}</Title>
             <Group gap="sm">
-              <Badge variant="outline" color={semantic.surface}>
-                {unitLabel}
-              </Badge>
-              {score && <ScoreCell total={score.total} pinned={group.pinnedPlanId !== null} />}
+              {unitLabel && (
+                <Badge variant="outline" color={semantic.surface}>
+                  {unitLabel}
+                </Badge>
+              )}
+              {score && group && (
+                <ScoreCell total={score.total} pinned={group.pinnedPlanId !== null} />
+              )}
             </Group>
           </Stack>
         ) : (
           <Group gap="sm" wrap="nowrap">
             <Title order={4}>{listing.property.name}</Title>
-            <Badge variant="outline" color={semantic.surface}>
-              {unitLabel}
-            </Badge>
-            {score && <ScoreCell total={score.total} pinned={group.pinnedPlanId !== null} />}
+            {unitLabel && (
+              <Badge variant="outline" color={semantic.surface}>
+                {unitLabel}
+              </Badge>
+            )}
+            {score && group && (
+              <ScoreCell total={score.total} pinned={group.pinnedPlanId !== null} />
+            )}
           </Group>
         )
       }
@@ -90,6 +103,10 @@ export function ListingDetailDrawer({
                 overrides={overrides ?? []}
               />
             )
+          ) : isUnavailable ? (
+            <Text size="sm" c="dimmed">
+              No available floor plans found for this property.
+            </Text>
           ) : (
             <Text size="sm" c="dimmed">
               Not scored yet — ingestion may still be running (see Tasks).
@@ -97,8 +114,16 @@ export function ListingDetailDrawer({
           )}
         </Section>
 
-        <Section title={`Floor plans (${group.plans.length})`}>
-          <FloorPlanPins huntId={huntId} listing={listing} group={group} />
+        <Section title={`Floor plans (${group?.plans.length ?? 0})`}>
+          {group ? (
+            <FloorPlanPins huntId={huntId} listing={listing} group={group} />
+          ) : (
+            <Text size="sm" c="dimmed">
+              {isUnavailable
+                ? "No available floor plans found."
+                : "No floor plans yet — ingestion may still be running."}
+            </Text>
+          )}
         </Section>
 
         <Section title="Fees checklist">
