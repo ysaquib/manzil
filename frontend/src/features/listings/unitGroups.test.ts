@@ -23,7 +23,6 @@ function plan(overrides: Partial<FloorPlan> & { id: string }): FloorPlan {
 
 function score(floorPlanId: string, total: number): Score {
   return {
-    id: `score-${floorPlanId}`,
     hunt_listing_id: "listing-1",
     floor_plan_id: floorPlanId,
     total,

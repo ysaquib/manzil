@@ -87,6 +87,7 @@ async def list_hunts(client: Client, user_id: str) -> list[HuntResponse]:
         .select("*")
         .eq("owner_id", user_id)
         .is_("archived_at", "null")
+        .order("created_at", desc=True)
         .execute()
     )
     return [_to_response(row) for row in response.data or []]
