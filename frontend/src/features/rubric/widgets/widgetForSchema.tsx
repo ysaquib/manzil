@@ -1,12 +1,14 @@
 // value_schema -> widget dispatcher (Phase 1 plan §5.3, DESIGN §8.2). The same
 // schema the API validates rubric options against picks the input here — one
 // schema, two consumers.
+import type { ComponentType } from "react";
+
 import { BoolWidget } from "./BoolWidget";
 import { EnumWidget } from "./EnumWidget";
 import { NumberWidget } from "./NumberWidget";
 import type { ValueSchema, WidgetProps } from "./types";
 
-export function selectWidget(schema: ValueSchema): (props: WidgetProps) => JSX.Element {
+export function selectWidget(schema: ValueSchema): ComponentType<WidgetProps> {
   if (schema.type === "boolean") return BoolWidget;
   if (schema.type === "string" && schema.enum) return EnumWidget;
   if (schema.type === "integer" || schema.type === "number") return NumberWidget;
