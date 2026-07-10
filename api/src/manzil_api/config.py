@@ -17,7 +17,7 @@ Environment = Literal["local", "staging", "production"]
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", populate_by_name=True)
 
     # Supabase — anon key is RLS-safe; service role is held ONLY for the
     # in-process worker loop (Phase 1 budget option, §1.5), never exposed.

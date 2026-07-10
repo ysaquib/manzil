@@ -6,10 +6,10 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from conftest import make_state
 from manzil_shared.errors import StageFatal
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.validate_url import normalize_url, validate_url_stage
+from worker_helpers import make_state
 
 
 @pytest.mark.parametrize(
