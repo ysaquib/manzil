@@ -60,7 +60,7 @@ SHELL_SCRIPT_RATIO = 0.7
 # least this long are candidate state blobs, and the digest appended to the
 # cleaned text is capped at this many chars
 EMBEDDED_SCRIPT_MIN_CHARS = 500
-EMBEDDED_DATA_MAX_CHARS = 40_000
+EMBEDDED_DATA_MAX_CHARS = 50_000
 
 # Tier-2 (browser) politeness: minimum seconds between fetches to one domain
 TIER2_MIN_DELAY_SECONDS = 3.0

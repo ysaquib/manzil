@@ -58,6 +58,11 @@ def test_ingest_end_to_end_prints_a_clean_breakdown(tmp_path: Path) -> None:
     assert [stage for stage, _ in llm.calls] == ["validate", "extract", "verify"]
     assert state.verify_flags == []  # every maple_extraction quote is really on the page
 
+    # EXTRACT's non-catalog identity block rides the same structured call (§20 2026-07-10).
+    assert state.property_identity is not None
+    assert state.property_identity.name == "Maple Court Apartments"
+    assert state.property_identity.address == "120 Maple Court Dr, Detroit, MI 48187"
+
     (plan_score,) = state.scores
     assert plan_score.plan_name == "The Maple"
     breakdown = plan_score.breakdown

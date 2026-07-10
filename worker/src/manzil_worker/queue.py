@@ -219,8 +219,12 @@ async def _persist_ingest_results(
     state: RunState,
 ) -> None:
     """Write the completed run's facts to Postgres (DESIGN §5, §8.2): one
-    `property_sources` row for the fetched page, append-only `extractions`, a
-    `floor_plans` upsert per scorable plan, and the `scores` upsert per plan.
+    `property_sources` row for the fetched page (including `cleaned_text`, the
+    Phase-1 debugging artifact — the exact text the extraction model saw), the
+    `properties` identity update
+    (name/address/official_url from EXTRACT's non-catalog block, §20 2026-07-10),
+    append-only `extractions`, a `floor_plans` upsert per scorable plan, and the
+    `scores` upsert per plan.
 
     Catalog-criterion extractions carry `hunt_id = NULL` (global facts, §8.2).
     SCORE emits one PlanScore per scorable plan (both beds+baths known). When NO
@@ -229,14 +233,17 @@ async def _persist_ingest_results(
     (§8.2, §20): the source/extractions still persist, the listing is marked
     `unavailable_at = now()`, and it renders as a dimmed, null-score row. When
     plans are found the marker is cleared, so the state reverses on refresh."""
+
     source = state.sources[0]
     source_id = await conn.fetchval(
         """
         insert into property_sources
-            (property_id, url, site_domain, cleaned_text_hash, last_fetched_at, last_success_at)
-        values ($1, $2, $3, $4, now(), now())
+            (property_id, url, site_domain, cleaned_text_hash, cleaned_text,
+             last_fetched_at, last_success_at)
+        values ($1, $2, $3, $4, $5, now(), now())
         on conflict (url) do update set
             cleaned_text_hash = excluded.cleaned_text_hash,
+            cleaned_text = excluded.cleaned_text,
             last_fetched_at = now(),
             last_success_at = now()
         returning id
@@ -245,7 +252,30 @@ async def _persist_ingest_results(
         source.url,
         site_domain(source.url),
         source.cleaned_hash,
+        source.cleaned_text,
     )
+
+    # Project EXTRACT's identity block onto the global properties row, replacing the
+    # URL-slug placeholders written at submit. Non-null-wins: an extracted value
+    # overwrites, a null leaves the existing value. Phase 1 single-source
+    # last-write-wins; DEDUPE/RECONCILE own identity when multi-source arrives (P3).
+    identity = state.property_identity
+    if identity is not None and any(
+        v is not None for v in (identity.name, identity.address, identity.official_url)
+    ):
+        await conn.execute(
+            """
+            update properties set
+                name = coalesce($2, name),
+                canonical_address = coalesce($3, canonical_address),
+                official_url = coalesce($4, official_url)
+            where id = $1
+            """,
+            property_id,
+            identity.name,
+            identity.address,
+            identity.official_url,
+        )
 
     for key, ext in state.reconciled.items():
         await conn.execute(

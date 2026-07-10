@@ -61,6 +61,41 @@ def test_value_without_any_evidence_quote_is_demoted() -> None:
     assert "without evidence" in flag.note
 
 
+def test_stitched_fragments_both_present_pass() -> None:
+    """A quote joining two verbatim fragments with an ellipsis passes when each
+    fragment is on the page, even though the stitched whole never appears."""
+    state = make_state(cleaned_text=PAGE_TEXT)
+    state.extractions["pets_policy"] = [
+        fe("cats_only", "Cats welcome with a small monthly pet fee ... washer and dryer hookups")
+    ]
+    run_verify(state)
+    assert state.extractions["pets_policy"][0].confidence is Confidence.HIGH
+    assert flags_for(state, "evidence") == []
+
+
+def test_stitched_fragment_with_one_fabricated_is_demoted() -> None:
+    """If any fragment of a stitched quote is not on the page, the value demotes."""
+    state = make_state(cleaned_text=PAGE_TEXT)
+    state.extractions["pets_policy"] = [
+        fe("cats_only", "Cats welcome with a small monthly pet fee ... valet parking, rooftop pool")
+    ]
+    run_verify(state)
+    assert state.extractions["pets_policy"][0].confidence is Confidence.LOW
+    (flag,) = flags_for(state, "evidence")
+    assert flag.criterion_key == "pets_policy"
+
+
+def test_whitespace_divergent_json_quote_passes_against_compact_digest() -> None:
+    """A model quotes pretty-printed JSON ({"a": 1}) while the page ships the
+    compact digest ({"a":1}); whitespace divergence must not demote."""
+    page = 'Overview of units. [EMBEDDED DATA] {"name":"A4","sqFt":1031,"priceRange":"1500"}'
+    state = make_state(cleaned_text=page)
+    state.extractions["sqft"] = [fe(1031, '"name": "A4" … "sqFt": 1031 … "priceRange"')]
+    run_verify(state)
+    assert state.extractions["sqft"][0].confidence is Confidence.HIGH
+    assert flags_for(state, "evidence") == []
+
+
 # ── check 2: schema conformance re-check ─────────────────────────────────────
 
 

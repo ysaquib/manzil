@@ -42,7 +42,43 @@ def test_extractable_set_is_page_text_only() -> None:
 
 def test_schema_has_one_field_per_criterion_plus_floor_plans() -> None:
     schema = build_extraction_schema()
-    assert set(schema.model_fields) == EXPECTED_KEYS | {"floor_plans"}
+    assert set(schema.model_fields) == EXPECTED_KEYS | {"floor_plans", "property_identity"}
+
+
+def test_property_identity_is_optional_and_defaults_none() -> None:
+    """Identity is a non-catalog block like floor_plans; absent from the payload it
+    validates to None so recorded LLM fixtures and stored RunState snapshots that
+    predate it keep validating (DESIGN §20 2026-07-10)."""
+    schema = build_extraction_schema()
+    parsed = schema.model_validate(extraction_payload())
+    assert parsed.property_identity is None
+
+
+def test_property_identity_full_block_validates() -> None:
+    schema = build_extraction_schema()
+    payload = extraction_payload(
+        property_identity={
+            "name": "Maple Court Apartments",
+            "address": "120 Maple Court Dr, Detroit, MI 48187",
+            "official_url": None,
+        }
+    )
+    parsed = schema.model_validate(payload)
+    assert parsed.property_identity.name == "Maple Court Apartments"
+    assert parsed.property_identity.address == "120 Maple Court Dr, Detroit, MI 48187"
+    assert parsed.property_identity.official_url is None
+
+
+def test_property_identity_matches_floor_plan_extra_policy() -> None:
+    """PropertyIdentityIn mirrors FloorPlanIn's config — extra keys are ignored,
+    not rejected. Don't invent stricter validation than the sibling block."""
+    schema = build_extraction_schema()
+    payload = extraction_payload(
+        property_identity={"name": "Maple Court Apartments", "place_id": "ChIJdeadbeef"}
+    )
+    parsed = schema.model_validate(payload)
+    assert parsed.property_identity.name == "Maple Court Apartments"
+    assert not hasattr(parsed.property_identity, "place_id")
 
 
 def test_every_criterion_field_is_value_confidence_evidence() -> None:
