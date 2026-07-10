@@ -6,7 +6,7 @@ import json
 from uuid import uuid4
 
 import pytest
-from conftest import FAKE_USER
+from api_helpers import FAKE_USER
 from httpx import AsyncClient
 from manzil_shared.models import CheckpointKind, CheckpointPrompt, JobState
 
@@ -51,6 +51,38 @@ async def test_list_jobs_includes_rescore(client: AsyncClient, db_pool) -> None:
         assert resp.status_code == 200
         types = {j["type"] for j in resp.json()}
         assert "rescore" in types
+    finally:
+        await db_pool.execute("delete from hunts where id = $1", hunt_id)
+
+
+@pytest.mark.asyncio
+async def test_list_jobs_comma_separated_states(client: AsyncClient, db_pool) -> None:
+    hunt_id, listing_id = await _seed_hunt_with_listing(db_pool)
+    await db_pool.execute(
+        """
+        insert into jobs (hunt_id, hunt_listing_id, type, state, payload)
+        values ($1, $2, 'ingest', 'queued', '{}'::jsonb)
+        """,
+        hunt_id,
+        listing_id,
+    )
+    await db_pool.execute(
+        """
+        insert into jobs (hunt_id, hunt_listing_id, type, state, payload)
+        values ($1, $2, 'ingest', 'running', '{}'::jsonb)
+        """,
+        hunt_id,
+        listing_id,
+    )
+    try:
+        resp = await client.get(
+            f"/v1/hunts/{hunt_id}/jobs?state=queued,running,waiting_user"
+        )
+        assert resp.status_code == 200
+        states = {j["state"] for j in resp.json()}
+        assert "queued" in states
+        assert "running" in states
+        assert "done" not in states
     finally:
         await db_pool.execute("delete from hunts where id = $1", hunt_id)
 

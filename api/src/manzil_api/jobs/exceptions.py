@@ -30,3 +30,8 @@ class NotJobOwner(ManzilAPIError):
 class InvalidCheckpointAnswer(ManzilAPIError):
     status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
     code = "invalid_checkpoint_answer"
+
+
+class InvalidJobState(ManzilAPIError):
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    code = "invalid_job_state"

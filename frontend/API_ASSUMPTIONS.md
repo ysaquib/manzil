@@ -21,6 +21,9 @@ declared at all · `implemented` = working · `no table` = table not yet in a mi
 | `DELETE /v1/listings/{id}` | `useDeleteListing` (`features/listings/api.ts`) | generated (204) | P1-7 | implemented |
 | `PATCH /v1/listings/{id}/pins` | `usePatchPins` (`features/listings/api.ts`) | generated `PinsPatch` | P1-11 mini-endpoint | implemented |
 | `GET /v1/hunts/{id}/jobs?state=…` | `useActiveJobs` (`features/jobs/api.ts`) — the one polled read, 3s | generated `JobResponse` + optional `checkpoint` | P1-7 / P1-13 | implemented |
+
+`state` accepts repeated query params (`state=queued&state=running`) **and** a single
+comma-separated value (`state=queued,running,waiting_user`) — the form the Tasks tab polls.
 | `POST /v1/jobs/{id}/cancel` | `useCancelJob` (`features/jobs/api.ts`) | generated `JobResponse` | P1-7 | implemented |
 | `POST /v1/jobs/{id}/retry` | `useRetryJob` (`features/jobs/api.ts`) | generated `JobResponse` | P1-7 | implemented |
 | `POST /v1/jobs/{id}/checkpoint` | `useAnswerCheckpoint` (`features/jobs/api.ts`) | generated `CheckpointAnswer` | P1-7 | implemented |
