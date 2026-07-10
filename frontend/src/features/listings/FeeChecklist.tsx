@@ -1,7 +1,5 @@
-// Fees checklist (P1-11, §9.5): the standard fee slots with extracted /
-// manual / unknown states. Manual entries carry the person-pencil marker with
-// attribution on hover — unmistakable from agent-sourced values. Unknown slots
-// keep contributing unknown; an unfilled checklist never improves a score.
+// Fees checklist (P1-11, §9.5): fee slots with extracted / manual / unknown states.
+// Manual fill-ins stage in the drawer draft until Save.
 import {
   ActionIcon,
   Badge,
@@ -15,12 +13,10 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { IconPencil, IconUserEdit } from "@tabler/icons-react";
-import { notifications } from "@mantine/notifications";
 import { useState } from "react";
 
-import { ApiError } from "../../lib/apiClient";
+import { useListingDetailDraft } from "./ListingDetailDraft";
 import { semantic } from "../../theme";
-import { useUpsertFee } from "./api";
 import { FEE_SLOTS, type FeeEntry } from "./types";
 
 const STATE_COLOR: Record<FeeEntry["value_state"], string> = {
@@ -31,37 +27,32 @@ const STATE_COLOR: Record<FeeEntry["value_state"], string> = {
 };
 
 function FeeRow({
-  huntId,
-  listingId,
   slot,
   label,
   entry,
 }: {
-  huntId: string;
-  listingId: string;
   slot: string;
   label: string;
   entry: FeeEntry | undefined;
 }) {
-  const upsertFee = useUpsertFee(huntId, listingId);
+  const { draftFees, setDraftFee } = useListingDetailDraft();
   const [opened, setOpened] = useState(false);
-  const [amount, setAmount] = useState<number | "">(entry?.amount ?? "");
+  const draftEntry = draftFees.get(slot);
+  const [amount, setAmount] = useState<number | "">("");
 
+  const isPending = draftEntry !== undefined;
   const state = entry?.value_state ?? "unknown";
+  const displayAmount = isPending ? draftEntry.amount : entry?.amount;
 
-  const save = () =>
-    upsertFee.mutate(
-      { slot, amount: amount === "" ? null : amount, value_state: "manual" },
-      {
-        onSuccess: () => setOpened(false),
-        onError: (error) =>
-          notifications.show({
-            title: "Couldn't save fee",
-            message: error instanceof ApiError ? error.message : "Unexpected error",
-            color: "red",
-          }),
-      },
-    );
+  const open = () => {
+    setAmount(draftEntry?.amount ?? entry?.amount ?? "");
+    setOpened(true);
+  };
+
+  const apply = () => {
+    setDraftFee(slot, { amount: amount === "" ? null : amount });
+    setOpened(false);
+  };
 
   return (
     <Table.Tr>
@@ -70,33 +61,46 @@ function FeeRow({
       </Table.Td>
       <Table.Td>
         <Group gap="xs" wrap="nowrap">
-          <Text size="sm" fw={600} c={state === "unknown" ? "dimmed" : undefined}>
-            {entry?.amount != null ? `$${entry.amount.toLocaleString()}/mo` : "unknown"}
+          <Text size="sm" fw={600} c={displayAmount == null ? "dimmed" : undefined}>
+            {displayAmount != null ? `$${displayAmount.toLocaleString()}/mo` : "unknown"}
           </Text>
-          <Badge size="xs" variant="light" color={STATE_COLOR[state]}>
-            {state}
-          </Badge>
-          {state === "manual" && (
-            <Tooltip label={`Entered manually${entry?.entered_by ? ` by ${entry.entered_by}` : ""}`}>
-              <IconUserEdit size={14} stroke={1.5} color="var(--mantine-color-dimmed)" aria-label="manual entry" />
-            </Tooltip>
+          {isPending ? (
+            <Badge size="xs" color={semantic.manual} variant="light">
+              pending
+            </Badge>
+          ) : (
+            <>
+              <Badge size="xs" variant="light" color={STATE_COLOR[state]}>
+                {state}
+              </Badge>
+              {state === "manual" && (
+                <Tooltip
+                  label={`Entered manually${entry?.entered_by ? ` by ${entry.entered_by}` : ""}`}
+                >
+                  <IconUserEdit
+                    size={14}
+                    stroke={1.5}
+                    color="var(--mantine-color-dimmed)"
+                    aria-label="manual entry"
+                  />
+                </Tooltip>
+              )}
+            </>
           )}
         </Group>
       </Table.Td>
       <Table.Td width={40}>
         <Popover opened={opened} onChange={setOpened} width={220} position="bottom-end" withArrow>
           <Popover.Target>
-            <Tooltip label="Fill in after a leasing-office call">
+            <Tooltip label="Fill in" openDelay={450}>
               <ActionIcon
                 color="gray"
                 size="sm"
-                onClick={() => {
-                  setAmount(entry?.amount ?? "");
-                  setOpened(true);
-                }}
+                variant="subtle"
+                onClick={open}
                 aria-label={`edit ${label}`}
               >
-                <IconPencil size={14} stroke={1.5} />
+                <IconPencil size={14} stroke={1.5} color="var(--mantine-color-dimmed)" />
               </ActionIcon>
             </Tooltip>
           </Popover.Target>
@@ -109,8 +113,8 @@ function FeeRow({
                 value={amount}
                 onChange={(next) => setAmount(typeof next === "number" ? next : "")}
               />
-              <Button size="xs" onClick={save} loading={upsertFee.isPending}>
-                Save
+              <Button size="xs" onClick={apply}>
+                Apply
               </Button>
             </Stack>
           </Popover.Dropdown>
@@ -120,28 +124,13 @@ function FeeRow({
   );
 }
 
-export function FeeChecklist({
-  huntId,
-  listingId,
-  fees,
-}: {
-  huntId: string;
-  listingId: string;
-  fees: FeeEntry[];
-}) {
+export function FeeChecklist({ fees }: { fees: FeeEntry[] }) {
   const bySlot = new Map(fees.map((entry) => [entry.fee_slot, entry]));
   return (
     <Table verticalSpacing="xs" withRowBorders={false}>
       <Table.Tbody>
         {FEE_SLOTS.map(({ slot, label }) => (
-          <FeeRow
-            key={slot}
-            huntId={huntId}
-            listingId={listingId}
-            slot={slot}
-            label={label}
-            entry={bySlot.get(slot)}
-          />
+          <FeeRow key={slot} slot={slot} label={label} entry={bySlot.get(slot)} />
         ))}
       </Table.Tbody>
     </Table>
