@@ -33,9 +33,39 @@ require_docker() {
   fi
 }
 
+_env_var_empty() {
+  local name="$1"
+  local file="$2"
+  [[ ! -f "$file" ]] && return 0
+  local line
+  line="$(grep -E "^${name}=" "$file" 2>/dev/null | tail -1 || true)"
+  [[ -z "$line" ]] && return 0
+  local value="${line#*=}"
+  value="${value%\"}"
+  value="${value#\"}"
+  value="${value%\'}"
+  value="${value#\'}"
+  [[ -z "${value//[[:space:]]/}" ]]
+}
+
 warn_missing_env() {
   if [[ ! -f "$ROOT/.env" ]]; then
     echo "Warning: $ROOT/.env not found. Copy infra/.env.example to .env and fill in keys." >&2
+    return
+  fi
+  local missing=()
+  _env_var_empty SUPABASE_ANON_KEY "$ROOT/.env" && missing+=(SUPABASE_ANON_KEY)
+  _env_var_empty SUPABASE_SERVICE_ROLE_KEY "$ROOT/.env" && missing+=(SUPABASE_SERVICE_ROLE_KEY)
+  if ((${#missing[@]} > 0)); then
+    echo "Warning: .env is missing values for: ${missing[*]}" >&2
+    echo "  Run: supabase status -o env" >&2
+    echo "  Then copy ANON_KEY -> SUPABASE_ANON_KEY and SERVICE_ROLE_KEY -> SUPABASE_SERVICE_ROLE_KEY" >&2
+    echo "  Authenticated API calls will 500 (browser reports this as a CORS error) until set." >&2
+  fi
+  if [[ ! -f "$ROOT/frontend/.env.local" ]]; then
+    echo "Warning: frontend/.env.local not found. Copy frontend/.env.example and set VITE_SUPABASE_* keys." >&2
+  elif _env_var_empty VITE_SUPABASE_ANON_KEY "$ROOT/frontend/.env.local"; then
+    echo "Warning: frontend/.env.local has empty VITE_SUPABASE_ANON_KEY — auth will not work." >&2
   fi
 }
 

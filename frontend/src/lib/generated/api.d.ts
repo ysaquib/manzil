@@ -260,13 +260,28 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /**
+         * CheckpointKind
+         * @enum {string}
+         */
+        CheckpointKind: "confirm_value" | "resolve_dedupe" | "resolve_dispute";
+        /**
+         * CheckpointPrompt
+         * @description Pinned shape (§10.10): {kind, question, options, default, context_ref}.
+         */
+        CheckpointPrompt: {
+            kind: components["schemas"]["CheckpointKind"];
+            /** Question */
+            question: string;
+            /** Options */
+            options?: string[];
+            /** Default */
+            default: string;
+            /** Context Ref */
+            context_ref?: string | null;
+        };
         /** FeeEntryResponse */
         FeeEntryResponse: {
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
             /**
              * Hunt Listing Id
              * Format: uuid
@@ -377,6 +392,7 @@ export interface components {
             created_at?: string | null;
             /** Finished At */
             finished_at?: string | null;
+            checkpoint?: components["schemas"]["CheckpointPrompt"] | null;
         };
         /**
          * JobState
@@ -424,6 +440,25 @@ export interface components {
             created_at?: string | null;
             /** Unavailable At */
             unavailable_at?: string | null;
+        };
+        /**
+         * MatchOp
+         * @enum {string}
+         */
+        MatchOp: "eq" | "lt" | "gt" | "range" | "in" | "bool";
+        /**
+         * NonNegotiable
+         * @description Criterion-level gate: if no acceptable option matched, score is SET (§3 Gate).
+         */
+        NonNegotiable: {
+            /** Set Score */
+            set_score: number;
+        };
+        /** OptionMatch */
+        OptionMatch: {
+            op: components["schemas"]["MatchOp"];
+            /** Value */
+            value?: unknown;
         };
         /** OverrideCreate */
         OverrideCreate: {
@@ -490,10 +525,7 @@ export interface components {
              * @default 0
              */
             unknown_delta: number;
-            /** Non Negotiable */
-            non_negotiable?: {
-                [key: string]: unknown;
-            } | null;
+            non_negotiable?: components["schemas"]["NonNegotiable"] | null;
             /**
              * Is Bonus
              * @default false
@@ -525,10 +557,7 @@ export interface components {
              * @default 0
              */
             unknown_delta: number;
-            /** Non Negotiable */
-            non_negotiable?: {
-                [key: string]: unknown;
-            } | null;
+            non_negotiable?: components["schemas"]["NonNegotiable"] | null;
             /**
              * Is Bonus
              * @default false
@@ -552,21 +581,14 @@ export interface components {
         };
         /**
          * RubricOption
-         * @description One §8.2 rubric option: a value (matching the criterion's value_schema)
-         *     and its point delta. `is_bonus` is display-only; all deltas are >= 0.
+         * @description Pinned shape (§8.2): {"match": {"op", "value"}, "delta", "dealbreaker_set_score"}.
          */
         RubricOption: {
-            /** Value */
-            value: unknown;
+            match: components["schemas"]["OptionMatch"];
             /** Delta */
             delta: number;
-            /** Label */
-            label?: string | null;
-            /**
-             * Is Bonus
-             * @default false
-             */
-            is_bonus: boolean;
+            /** Dealbreaker Set Score */
+            dealbreaker_set_score?: number | null;
         };
         /** RubricPut */
         RubricPut: {
@@ -953,7 +975,7 @@ export interface operations {
     list_jobs_v1_hunts__hunt_id__jobs_get: {
         parameters: {
             query?: {
-                state?: components["schemas"]["JobState"][] | null;
+                state?: string[] | null;
             };
             header?: never;
             path: {

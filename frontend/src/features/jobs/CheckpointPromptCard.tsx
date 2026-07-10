@@ -4,7 +4,9 @@
 import { Button, Group, Stack, Text, TextInput } from "@mantine/core";
 import { useState } from "react";
 
-import type { CheckpointPrompt } from "../../lib/contracts";
+import type { components } from "../../lib/generated/api";
+
+type CheckpointPrompt = components["schemas"]["CheckpointPrompt"];
 
 export const OTHER_PREFIX = "other:";
 
@@ -18,8 +20,9 @@ export function CheckpointPromptCard({
   answering: boolean;
 }) {
   const [otherText, setOtherText] = useState("");
-  const plainOptions = prompt.options.filter((o) => !o.startsWith(OTHER_PREFIX));
-  const hasOther = prompt.options.some((o) => o.startsWith(OTHER_PREFIX));
+  const options = prompt.options ?? [];
+  const plainOptions = options.filter((o) => !o.startsWith(OTHER_PREFIX));
+  const hasOther = options.some((o) => o.startsWith(OTHER_PREFIX));
 
   return (
     <Stack gap="xs">

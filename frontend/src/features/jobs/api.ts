@@ -5,20 +5,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiFetch } from "../../lib/apiClient";
-import type { CheckpointPrompt } from "../../lib/contracts";
 import type { components } from "../../lib/generated/api";
 
 export type JobState = components["schemas"]["JobState"];
 export type JobType = components["schemas"]["JobType"];
-
-type JobResponse = components["schemas"]["JobResponse"];
-
-// Generated JobResponse + the checkpoint prompt P1-7 must expose for
-// waiting_user jobs (API_ASSUMPTIONS.md conflict #2) — optional so the UI
-// degrades gracefully until the backend carries it.
-export interface Job extends JobResponse {
-  checkpoint?: CheckpointPrompt | null;
-}
+export type Job = components["schemas"]["JobResponse"];
 
 export const ACTIVE_STATES = "queued,running,waiting_user";
 
@@ -26,7 +17,15 @@ export function useActiveJobs(huntId: string) {
   return useQuery({
     queryKey: ["jobs", huntId, "active"],
     queryFn: () => apiFetch<Job[]>(`/v1/hunts/${huntId}/jobs?state=${ACTIVE_STATES}`),
-    refetchInterval: 3000,
+    refetchInterval: 30000, // 30 seconds
+  });
+}
+
+export function useJobs(huntId: string) {
+  return useQuery({
+    queryKey: ["jobs", huntId],
+    queryFn: () => apiFetch<Job[]>(`/v1/hunts/${huntId}/jobs`),
+    refetchInterval: 15000, // 15 seconds
   });
 }
 

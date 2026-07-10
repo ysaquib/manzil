@@ -6,12 +6,13 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends
 from manzil_shared.models import JobState
 
 from manzil_api.dependencies import CurrentUser, UserClient
 from manzil_api.hunts.dependencies import OwnedHunt
 from manzil_api.jobs import service
+from manzil_api.jobs.dependencies import parse_job_states
 from manzil_api.jobs.schemas import CheckpointAnswer, JobResponse
 
 router = APIRouter(tags=["jobs"])
@@ -22,7 +23,7 @@ async def list_jobs(
     hunt_id: UUID,
     hunt: OwnedHunt,
     client: UserClient,
-    state: Annotated[list[JobState] | None, Query()] = None,
+    state: Annotated[list[JobState] | None, Depends(parse_job_states)],
 ) -> list[JobResponse]:
     return await service.list_jobs(client, hunt_id, state)
 
