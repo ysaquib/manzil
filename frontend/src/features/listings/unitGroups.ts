@@ -84,3 +84,31 @@ export function deriveUnitGroups(listing: Listing): UnitGroupRow[] {
   rows.sort((a, b) => b.beds - a.beds || b.baths - a.baths);
   return rows;
 }
+
+/** Re-resolve a drawer row from live listings after mutations (e.g. pin patch). */
+export function resolveRow(
+  listings: Listing[],
+  listingId: string,
+  groupKey: string | null,
+): { listing: Listing | null; group: UnitGroupRow | null } {
+  const listing = listings.find((l) => l.id === listingId) ?? null;
+  if (!listing) return { listing: null, group: null };
+  if (groupKey === null) return { listing, group: null };
+  const group = deriveUnitGroups(listing).find((g) => g.key === groupKey) ?? null;
+  return { listing, group };
+}
+
+/** Overlay draft pins onto a listing for live drawer preview before save. */
+export function resolveRowWithDraft(
+  listings: Listing[],
+  listingId: string,
+  groupKey: string | null,
+  draftPins: Record<string, string>,
+): { listing: Listing | null; group: UnitGroupRow | null } {
+  const listing = listings.find((l) => l.id === listingId) ?? null;
+  if (!listing) return { listing: null, group: null };
+  const listingWithDraft: Listing = { ...listing, pins: draftPins };
+  if (groupKey === null) return { listing: listingWithDraft, group: null };
+  const group = deriveUnitGroups(listingWithDraft).find((g) => g.key === groupKey) ?? null;
+  return { listing: listingWithDraft, group };
+}

@@ -118,7 +118,23 @@ export function usePatchPins(huntId: string) {
         method: "PATCH",
         body: { pins } satisfies components["schemas"]["PinsPatch"],
       }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["hunt_listings", huntId] }),
+    onMutate: async ({ listingId, pins }) => {
+      await qc.cancelQueries({ queryKey: ["hunt_listings", huntId] });
+      const previous = qc.getQueryData<Listing[]>(["hunt_listings", huntId]);
+      if (previous) {
+        qc.setQueryData(
+          ["hunt_listings", huntId],
+          previous.map((listing) => (listing.id === listingId ? { ...listing, pins } : listing)),
+        );
+      }
+      return { previous };
+    },
+    onError: (_error, _vars, context) => {
+      if (context?.previous) {
+        qc.setQueryData(["hunt_listings", huntId], context.previous);
+      }
+    },
+    onSettled: () => void qc.invalidateQueries({ queryKey: ["hunt_listings", huntId] }),
   });
 }
 

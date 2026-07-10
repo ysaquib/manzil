@@ -1,12 +1,25 @@
 // Criterion breakdown (P1-11, §9.3): renders the persisted scores.breakdown
 // directly — no client-side re-derivation. When a gate fired, criteria is
 // empty by contract and the UI says so instead of showing a hollow list.
-// Evidence and provenance are one tap away (HoverCard), not inline (§9.6).
-import { Alert, Badge, Group, HoverCard, Stack, Table, Text } from "@mantine/core";
+// Evidence and provenance sit behind an info affordance (HoverCard/Popover).
+import {
+  ActionIcon,
+  Alert,
+  Badge,
+  Group,
+  HoverCard,
+  Popover,
+  Stack,
+  Table,
+  Text,
+} from "@mantine/core";
+import { IconInfoCircle } from "@tabler/icons-react";
+import { useState } from "react";
 
 import type { ScoreBreakdown } from "../../lib/contracts";
 import { semantic } from "../../theme";
-import { displayValue } from "./displayValue";
+import { displayValue as formatCriterionValue } from "./displayValue";
+import { useListingDetailDraft } from "./ListingDetailDraft";
 import { OverrideControl } from "./OverrideControl";
 import type { Extraction, Override } from "./types";
 import type { CatalogEntry } from "../rubric/api";
@@ -22,6 +35,74 @@ function deltaBadge(delta: number) {
   );
 }
 
+function EvidenceContent({
+  extraction,
+  overridden,
+}: {
+  extraction: Extraction;
+  overridden: boolean;
+}) {
+  return (
+    <Stack gap={4}>
+      {overridden && (
+        <Text size="xs">
+          Original: <Text span fw={600}>{formatCriterionValue(extraction.value)}</Text>
+        </Text>
+      )}
+      {extraction.evidence_quote && (
+        <Text size="xs" fs="italic">
+          “{extraction.evidence_quote}”
+        </Text>
+      )}
+      <Text size="xs" c="dimmed">
+        {extraction.model} · {extraction.confidence} confidence
+        {extraction.extracted_at
+          ? ` · ${new Date(extraction.extracted_at).toLocaleDateString()}`
+          : ""}
+      </Text>
+    </Stack>
+  );
+}
+
+function EvidenceButton({
+  extraction,
+  overridden,
+  isMobile,
+}: {
+  extraction: Extraction;
+  overridden: boolean;
+  isMobile: boolean;
+}) {
+  const [opened, setOpened] = useState(false);
+  const icon = (
+    <ActionIcon color="gray" size="sm" variant="subtle" aria-label="evidence">
+      <IconInfoCircle size={14} stroke={1.5} color="var(--mantine-color-dimmed)" />
+    </ActionIcon>
+  );
+
+  if (isMobile) {
+    return (
+      <Popover opened={opened} onChange={setOpened} width={300} position="top" withArrow shadow="md">
+        <Popover.Target>
+          <span onClick={() => setOpened((o) => !o)}>{icon}</span>
+        </Popover.Target>
+        <Popover.Dropdown>
+          <EvidenceContent extraction={extraction} overridden={overridden} />
+        </Popover.Dropdown>
+      </Popover>
+    );
+  }
+
+  return (
+    <HoverCard width={300} shadow="md" position="top">
+      <HoverCard.Target>{icon}</HoverCard.Target>
+      <HoverCard.Dropdown>
+        <EvidenceContent extraction={extraction} overridden={overridden} />
+      </HoverCard.Dropdown>
+    </HoverCard>
+  );
+}
+
 export interface CriterionBreakdownProps {
   huntId: string;
   listingId: string;
@@ -30,21 +111,21 @@ export interface CriterionBreakdownProps {
   /** latest extraction per criterion key */
   extractions: Map<string, Extraction>;
   overrides: Override[];
+  isMobile: boolean;
 }
 
 export function CriterionBreakdown({
-  huntId,
-  listingId,
   breakdown,
   catalog,
   extractions,
   overrides,
+  isMobile,
 }: CriterionBreakdownProps) {
   const catalogByKey = new Map(catalog.map((entry) => [entry.key, entry]));
   const overriddenKeys = new Set(overrides.map((o) => o.criterion_key));
+  const { draftOverrides } = useListingDetailDraft();
 
   if (breakdown.gates.length > 0) {
-    // §9.3: total is the minimum set-score and the delta pass never ran.
     return (
       <Alert color={semantic.danger} title="A gate fired — criteria were not scored">
         <Stack gap="xs">
@@ -88,62 +169,87 @@ export function CriterionBreakdown({
         {breakdown.criteria.map((criterion) => {
           const entry = catalogByKey.get(criterion.key);
           const extraction = extractions.get(criterion.key);
-          const overridden = overriddenKeys.has(criterion.key);
+          const savedOverride = overriddenKeys.has(criterion.key);
+          const draftOverride = draftOverrides.get(criterion.key);
+          const isPending = draftOverride !== undefined;
+          const displayVal = isPending ? draftOverride.value : criterion.value;
           return (
-            <Table.Tr key={criterion.key}>
-              <Table.Td>
-                <Text size="sm">{entry?.label ?? criterion.key}</Text>
-              </Table.Td>
-              <Table.Td>
-                <HoverCard width={300} shadow="md" disabled={!extraction} position="top">
-                  <HoverCard.Target>
-                    <Group gap="xs" wrap="nowrap">
-                      <Text size="sm" fw={600} c={criterion.unknown ? "dimmed" : undefined}>
-                        {displayValue(criterion.value)}
-                      </Text>
-                      {overridden && (
-                        <Badge size="xs" color={semantic.manual} variant="light">
-                          override
-                        </Badge>
-                      )}
-                    </Group>
-                  </HoverCard.Target>
-                  <HoverCard.Dropdown>
-                    <Stack gap={4}>
-                      {overridden && (
-                        <Text size="xs">
-                          Original: <Text span fw={600}>{displayValue(extraction?.value)}</Text>
-                        </Text>
-                      )}
-                      {extraction?.evidence_quote && (
-                        <Text size="xs" fs="italic">
-                          “{extraction.evidence_quote}”
-                        </Text>
-                      )}
-                      <Text size="xs" c="dimmed">
-                        {extraction?.model} · {extraction?.confidence} confidence
-                        {extraction?.extracted_at
-                          ? ` · ${new Date(extraction.extracted_at).toLocaleDateString()}`
-                          : ""}
-                      </Text>
-                    </Stack>
-                  </HoverCard.Dropdown>
-                </HoverCard>
-              </Table.Td>
-              <Table.Td width={70}>{deltaBadge(criterion.delta)}</Table.Td>
-              <Table.Td width={40}>
-                <OverrideControl
-                  huntId={huntId}
-                  listingId={listingId}
-                  criterionKey={criterion.key}
-                  schema={entry?.value_schema}
-                  currentValue={criterion.value}
-                />
-              </Table.Td>
-            </Table.Tr>
+            <CriterionRow
+              key={criterion.key}
+              criterion={criterion}
+              entry={entry}
+              extraction={extraction}
+              displayValue={displayVal}
+              savedOverride={savedOverride}
+              isPending={isPending}
+              isMobile={isMobile}
+            />
           );
         })}
       </Table.Tbody>
     </Table>
+  );
+}
+
+function CriterionRow({
+  criterion,
+  entry,
+  extraction,
+  displayValue: value,
+  savedOverride,
+  isPending,
+  isMobile,
+}: {
+  criterion: ScoreBreakdown["criteria"][number];
+  entry: CatalogEntry | undefined;
+  extraction: Extraction | undefined;
+  displayValue: unknown;
+  savedOverride: boolean;
+  isPending: boolean;
+  isMobile: boolean;
+}) {
+  const showOverrideBadge = savedOverride && !isPending;
+  const evidenceOverridden = savedOverride || isPending;
+
+  return (
+    <Table.Tr>
+      <Table.Td>
+        <Text size="sm">{entry?.label ?? criterion.key}</Text>
+      </Table.Td>
+      <Table.Td>
+        <Group gap="xs" wrap="nowrap">
+          <Text size="sm" fw={600} c={criterion.unknown && !isPending ? "dimmed" : undefined}>
+            {formatCriterionValue(value)}
+          </Text>
+          {isPending && (
+            <Badge size="xs" color={semantic.manual} variant="light">
+              pending
+            </Badge>
+          )}
+          {showOverrideBadge && (
+            <Badge size="xs" color={semantic.manual} variant="light">
+              override
+            </Badge>
+          )}
+        </Group>
+      </Table.Td>
+      <Table.Td width={70}>{deltaBadge(criterion.delta)}</Table.Td>
+      <Table.Td width={72}>
+        <Group gap={4} wrap="nowrap" justify="flex-end">
+          {extraction && (
+            <EvidenceButton
+              extraction={extraction}
+              overridden={evidenceOverridden}
+              isMobile={isMobile}
+            />
+          )}
+          <OverrideControl
+            criterionKey={criterion.key}
+            schema={entry?.value_schema}
+            currentValue={value}
+          />
+        </Group>
+      </Table.Td>
+    </Table.Tr>
   );
 }

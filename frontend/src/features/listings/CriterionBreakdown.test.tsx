@@ -3,8 +3,9 @@ import { describe, expect, it } from "vitest";
 
 import { renderWithProviders } from "../../../tests/testUtils";
 import type { ScoreBreakdown } from "../../lib/contracts";
+import { ListingDetailDraftProvider } from "./ListingDetailDraft";
 import { CriterionBreakdown } from "./CriterionBreakdown";
-import type { Extraction, Override } from "./types";
+import type { Extraction, Listing, Override } from "./types";
 import type { CatalogEntry } from "../rubric/api";
 
 const catalog: CatalogEntry[] = [
@@ -78,16 +79,40 @@ const override: Override = {
   created_at: "2026-07-02T00:00:00Z",
 };
 
+const listingFixture: Listing = {
+  id: "listing-1",
+  hunt_id: "hunt-1",
+  property_id: "prop-1",
+  added_by: "user-1",
+  status: "active",
+  source_policy: "tiers_1_2_3",
+  pins: {},
+  created_at: "2026-07-08T00:00:00Z",
+  unavailable_at: null,
+  property: {
+    id: "prop-1",
+    name: "Test",
+    canonical_address: "1 Main",
+    official_url: null,
+    floor_plans: [],
+    sources: [],
+  },
+  scores: [],
+};
+
 function renderBreakdown(breakdown: ScoreBreakdown, overrides: Override[] = []) {
   return renderWithProviders(
-    <CriterionBreakdown
-      huntId="hunt-1"
-      listingId="listing-1"
-      breakdown={breakdown}
-      catalog={catalog}
-      extractions={new Map([["beds", extraction]])}
-      overrides={overrides}
-    />,
+    <ListingDetailDraftProvider huntId="hunt-1" listing={listingFixture} serverFees={[]}>
+      <CriterionBreakdown
+        huntId="hunt-1"
+        listingId="listing-1"
+        breakdown={breakdown}
+        catalog={catalog}
+        extractions={new Map([["beds", extraction]])}
+        overrides={overrides}
+        isMobile={false}
+      />
+    </ListingDetailDraftProvider>,
   );
 }
 

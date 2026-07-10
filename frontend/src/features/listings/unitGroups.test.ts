@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { FloorPlan, Listing, Score } from "./types";
-import { deriveUnitGroups } from "./unitGroups";
+import { deriveUnitGroups, resolveRow, resolveRowWithDraft } from "./unitGroups";
 
 function plan(overrides: Partial<FloorPlan> & { id: string }): FloorPlan {
   return {
@@ -133,5 +133,58 @@ describe("deriveUnitGroups", () => {
     expect(rows[0].rentMin).toBeNull();
     expect(rows[0].displayScore).toBeNull();
     expect(rows[0].scoredPlanCount).toBe(0);
+  });
+});
+
+describe("resolveRow", () => {
+  it("reflects updated pins on the live listing", () => {
+    const plans = [plan({ id: "a" }), plan({ id: "b" })];
+    const scores = [score("a", 8), score("b", 11.5)];
+    const before = listing(plans, scores);
+    const after = listing(plans, scores, { "2-2": "a" });
+
+    const unresolved = resolveRow([before], "listing-1", "2-2");
+    expect(unresolved.group?.pinnedPlanId).toBeNull();
+    expect(unresolved.group?.displayPlan.id).toBe("b");
+
+    const resolved = resolveRow([after], "listing-1", "2-2");
+    expect(resolved.group?.pinnedPlanId).toBe("a");
+    expect(resolved.group?.displayPlan.id).toBe("a");
+    expect(resolved.group?.displayScore?.total).toBe(8);
+  });
+
+  it("returns null listing when the row no longer exists", () => {
+    const rows = resolveRow([], "listing-1", "2-2");
+    expect(rows).toEqual({ listing: null, group: null });
+  });
+
+  it("returns listing with null group when groupKey is null", () => {
+    const l = listing([plan({ id: "a" })], []);
+    const rows = resolveRow([l], "listing-1", null);
+    expect(rows.listing?.id).toBe("listing-1");
+    expect(rows.group).toBeNull();
+  });
+});
+
+describe("resolveRowWithDraft", () => {
+  it("returns updated pinnedPlanId from draft pins without server round-trip", () => {
+    const plans = [plan({ id: "a" }), plan({ id: "b" })];
+    const scores = [score("a", 8), score("b", 11.5)];
+    const listingFixture = listing(plans, scores);
+
+    const { group: serverGroup } = resolveRow([listingFixture], "listing-1", "2-2");
+    expect(serverGroup?.pinnedPlanId).toBeNull();
+    expect(serverGroup?.displayPlan.id).toBe("b");
+
+    const draftPins = { "2-2": "a" };
+    const { group: draftGroup } = resolveRowWithDraft(
+      [listingFixture],
+      "listing-1",
+      "2-2",
+      draftPins,
+    );
+    expect(draftGroup?.pinnedPlanId).toBe("a");
+    expect(draftGroup?.displayPlan.id).toBe("a");
+    expect(draftGroup?.displayScore?.total).toBe(8);
   });
 });
