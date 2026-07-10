@@ -14,4 +14,5 @@ export interface WidgetProps {
   value: WidgetValue;
   onChange: (value: WidgetValue) => void;
   label?: string;
+  placeholder?: string;
 }

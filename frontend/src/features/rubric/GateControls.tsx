@@ -1,7 +1,7 @@
 // Gate controls (§3, §13.2): the criterion-level non-negotiable toggle
 // revealing its set-score input. Gates are consequential and rare — the
 // set-score stays hidden until the toggle is on.
-import { Group, NumberInput, Switch, Text } from "@mantine/core";
+import { Group, NumberInput, Switch, Text, Tooltip } from "@mantine/core";
 
 import type { NonNegotiable } from "../../lib/contracts";
 
@@ -21,22 +21,24 @@ export function GateControls({
         onChange={(e) => onChange(e.currentTarget.checked ? { set_score: 0 } : null)}
       />
       {nonNegotiable !== null && (
-        <>
-          <Text size="xs" c="dimmed">
-            if not met, score is set to
-          </Text>
-          <NumberInput
-            aria-label="non-negotiable set score"
-            size="xs"
-            w={80}
-            min={0}
-            max={15}
-            value={nonNegotiable.set_score}
-            onChange={(next) =>
-              onChange({ set_score: typeof next === "number" ? next : 0 })
-            }
-          />
-        </>
+        <Tooltip label="Score set when the gate fails">
+          <Group gap={4} align="center">
+            <Text size="xs" c="dimmed">
+              →
+            </Text>
+            <NumberInput
+              aria-label="non-negotiable set score"
+              size="xs"
+              w={80}
+              min={0}
+              max={15}
+              value={nonNegotiable.set_score}
+              onChange={(next) =>
+                onChange({ set_score: typeof next === "number" ? next : 0 })
+              }
+            />
+          </Group>
+        </Tooltip>
       )}
     </Group>
   );
