@@ -13,6 +13,8 @@
     "gen:api-types": "openapi-typescript http://localhost:8000/openapi.json -o src/lib/generated/api.d.ts"
   },
   "dependencies": {
+    "@fontsource-variable/literata": "^5.2.8",
+    "@fontsource-variable/source-sans-3": "^5.2.9",
     "@mantine/core": "^9.4.1",
     "@mantine/hooks": "^9.4.1",
     "@mantine/notifications": "^9.4.1",

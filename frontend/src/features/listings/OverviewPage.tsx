@@ -78,12 +78,17 @@ export function OverviewPage() {
 
       {isLoading && (
         <Center py="xl">
-          <Loader />
+          <Stack align="center" gap="xs">
+            <Loader />
+            <Text size="sm" c="dimmed">
+              Fetching your hunt…
+            </Text>
+          </Stack>
         </Center>
       )}
       {error && (
         <Alert color="red" title="Couldn't load listings">
-          {error.message}
+          {error.message} — try reloading the page.
         </Alert>
       )}
       {!isLoading && !error && rows.length === 0 && (
@@ -92,8 +97,8 @@ export function OverviewPage() {
             <IconHome size={32} stroke={1.5} color="var(--mantine-color-dimmed)" />
             <Text ta="center" c="dimmed">
               {(listings ?? []).length === 0
-                ? "No listings yet — paste a listing URL above to start."
-                : "Every listing is hidden by the score filter."}
+                ? "Nothing here yet. Paste a listing URL above and Manzil will take it from there."
+                : "Every listing is sitting below your score filter. Lower it to bring them back."}
             </Text>
           </Stack>
         </Card>

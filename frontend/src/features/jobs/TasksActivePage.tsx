@@ -6,6 +6,7 @@ import { IconList } from "@tabler/icons-react";
 import { Link, useParams } from "react-router-dom";
 
 import { PageHeader } from "../../components/PageHeader";
+import { semantic } from "../../theme";
 import { useListings } from "../listings/api";
 import { JobCard } from "./JobCard";
 import { useActiveJobs, useAnswerCheckpoint, useCancelJob, useRetryJob } from "./api";
@@ -31,12 +32,17 @@ export function TasksActivePage() {
       />
       {isLoading && (
         <Center py="xl">
-          <Loader />
+          <Stack align="center" gap="xs">
+            <Loader />
+            <Text size="sm" c="dimmed">
+              Checking on your jobs…
+            </Text>
+          </Stack>
         </Center>
       )}
       {error && (
         <Alert color="red" title="Couldn't load jobs">
-          {error.message}
+          {error.message} — try reloading the page.
         </Alert>
       )}
       {jobs && jobs.length === 0 && (
@@ -44,11 +50,11 @@ export function TasksActivePage() {
           <Stack align="center" gap="sm">
             <IconList size={28} stroke={1.5} color="var(--mantine-color-dimmed)" />
             <Text c="dimmed" size="sm" ta="center">
-              Nothing running.{" "}
-              <Text component={Link} to={`/h/${huntId}`} span c="indigo" inherit>
+              All quiet — nothing running right now.{" "}
+              <Text component={Link} to={`/h/${huntId}`} span c={semantic.active} inherit>
                 Submit a listing from Overview
               </Text>{" "}
-              to start a job.
+              and its progress lands here.
             </Text>
           </Stack>
         </Card>
