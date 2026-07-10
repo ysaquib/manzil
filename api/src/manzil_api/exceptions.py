@@ -8,13 +8,19 @@ modules define their own subclasses in their `exceptions.py`.
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import FastAPI, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.responses import Response
 
 from manzil_api.schemas import ErrorResponse
+
+logger = logging.getLogger("manzil_api")
 
 
 class ManzilAPIError(Exception):
@@ -34,6 +40,13 @@ class NotImplementedYet(ManzilAPIError):
 
     status_code = status.HTTP_501_NOT_IMPLEMENTED
     code = "not_implemented"
+
+
+class BackendMisconfigured(ManzilAPIError):
+    """Required backend configuration (Supabase keys, etc.) is missing or invalid."""
+
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    code = "backend_misconfigured"
 
 
 def _envelope(status_code: int, detail: str, code: str) -> JSONResponse:
@@ -57,3 +70,26 @@ def register_exception_handlers(app: FastAPI) -> None:
         return _envelope(
             status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc.errors()), "validation_error"
         )
+
+
+class CatchAllMiddleware(BaseHTTPMiddleware):
+    """Return enveloped 500s for unhandled exceptions.
+
+    Must be registered *before* CORSMiddleware in code (add_middleware prepends),
+    so CORS stays outermost and these responses still carry Access-Control-Allow-Origin.
+    A plain @app.exception_handler(Exception) does not — Starlette routes that
+    through ServerErrorMiddleware, which sits outside CORSMiddleware.
+    """
+
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
+        try:
+            return await call_next(request)
+        except Exception:
+            logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+            return _envelope(
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+                "Internal server error",
+                "internal_error",
+            )
