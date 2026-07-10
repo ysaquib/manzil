@@ -1048,6 +1048,7 @@ dependencies = [
     { name = "manzil-shared" },
     { name = "manzil-worker" },
     { name = "pydantic-settings" },
+    { name = "python-dotenv" },
     { name = "supabase" },
     { name = "uvicorn", extra = ["standard"] },
 ]
@@ -1070,6 +1071,7 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.4" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
+    { name = "python-dotenv", specifier = ">=1.0" },
     { name = "supabase", specifier = ">=2.7" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]

@@ -42,6 +42,9 @@ def test_tier3_configured_requires_the_selected_providers_key(
 ) -> None:
     monkeypatch.delenv("MANZIL_TIER3_PROVIDER", raising=False)
     monkeypatch.delenv("BRIGHTDATA_API_KEY", raising=False)
+    # Real keys can reach os.environ before this test runs (cli.py's import-time
+    # load_dotenv exports .env at collection) — isolate from them.
+    monkeypatch.delenv("SCRAPINGBEE_API_KEY", raising=False)
     assert tier3_configured() is None
     monkeypatch.setenv("BRIGHTDATA_API_KEY", "key")
     assert tier3_configured() == "brightdata"

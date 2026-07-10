@@ -110,6 +110,9 @@ def test_ingest_of_a_blocked_page_fails_at_fetch(tmp_path: Path) -> None:
 
     assert state.status is JobState.FAILED
     assert state.error is not None and "unfetchable: blocked" in state.error
+    # The ladder topped out below tier 3 — the error must say the unblocker was
+    # never in play (off the ladder without a provider key), not imply it failed.
+    assert "tier 3 (unblocker) was not attempted" in state.error
     # §20 2026-07-07 stopgap: the failure hands the human the sibling search.
     assert 'try searching "riverfront towers detroit mi"' in state.error
     assert llm.calls == []

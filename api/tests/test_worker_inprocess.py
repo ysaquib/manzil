@@ -87,6 +87,35 @@ async def _seed_one_ingest_job(pool: asyncpg.Pool, hunt_id, listing_id) -> None:
     )
 
 
+def test_create_app_exports_dotenv_for_the_inprocess_worker(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """The in-process worker reads its keys straight from os.environ (tier-3
+    provider, OpenRouter, Langfuse), but pydantic-settings parses .env without
+    populating os.environ — the app factory must bridge that gap, or tier 3
+    silently drops off the fetch ladder (and LLM stages fail) in-process."""
+    from manzil_api.config import get_settings
+    from manzil_api.main import create_app
+    from manzil_worker.fetching.tier3 import tier3_configured
+
+    env = {
+        "SUPABASE_URL": "http://127.0.0.1:54321",
+        "SUPABASE_ANON_KEY": "anon",
+        "SUPABASE_SERVICE_ROLE_KEY": "service",
+        "DATABASE_URL": DATABASE_URL,
+        "BRIGHTDATA_API_KEY": "test-tier3-key",
+    }
+    (tmp_path / ".env").write_text("".join(f"{k}={v}\n" for k, v in env.items()))
+    for key in (*env, "MANZIL_TIER3_PROVIDER"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.chdir(tmp_path)
+    get_settings.cache_clear()
+    try:
+        create_app()
+        assert os.environ.get("BRIGHTDATA_API_KEY") == "test-tier3-key"
+        assert tier3_configured() == "brightdata"
+    finally:
+        get_settings.cache_clear()
+
+
 async def test_inprocess_loop_processes_a_job_while_serving_and_drains(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     try:
         pool = await asyncpg.create_pool(DATABASE_URL, timeout=5, min_size=1, max_size=4)
