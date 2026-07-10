@@ -205,6 +205,8 @@ def _default_fetchers() -> dict[int, Fetcher]:
     fetchers: dict[int, Fetcher] = {1: Tier1Fetcher(), 2: Tier2Fetcher()}
     if tier3_configured():
         fetchers[3] = Tier3Fetcher()
+    else:
+        log.info("tier3_off_ladder", reason="no unblocker provider key in os.environ")
     return fetchers
 
 

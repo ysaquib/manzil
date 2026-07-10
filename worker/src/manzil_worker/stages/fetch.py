@@ -14,6 +14,7 @@ from manzil_shared.errors import StageFatal, StageRetryable
 from manzil_shared.models import FetchOutcome
 
 from manzil_worker.fetching.ladder import fetch_with_ladder
+from manzil_worker.fetching.registry import MAX_TIER
 from manzil_worker.fetching.slug_hint import search_hint
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.state import RunState, SourceState
@@ -51,6 +52,14 @@ async def fetch_stage(state: RunState, ctx: StageCtx) -> RunState:
             f"source unfetchable: {ladder.outcome.value} at tier {ladder.result.tier} "
             f"(attempts: {[(t, o.value) for t, o in ladder.attempts]})"
         )
+        # Say when the ladder topped out early: tier 3 off the ladder (no provider
+        # key in this process's environment, §10.7) reads very differently from
+        # tier 3 tried-and-blocked.
+        if MAX_TIER not in ctx.fetchers:
+            message += (
+                "; tier 3 (unblocker) was not attempted — no provider key "
+                "configured in this process's environment"
+            )
         # §20 2026-07-07 stopgap: the URL slug usually names the property —
         # hand the human the search that DISCOVER (P3-5) will one day run.
         hint = search_hint(state.url)

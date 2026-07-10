@@ -13,12 +13,13 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from manzil_api.config import get_settings
+from manzil_api.config import Settings, get_settings
 from manzil_api.database import create_db_pool
-from manzil_api.exceptions import register_exception_handlers
+from manzil_api.exceptions import CatchAllMiddleware, register_exception_handlers
 from manzil_api.fees.router import router as fees_router
 from manzil_api.hunts.router import router as hunts_router
 from manzil_api.jobs.router import router as jobs_router
@@ -30,9 +31,27 @@ from manzil_api.worker_loop import run_inprocess_worker
 logger = logging.getLogger("manzil_api")
 
 
+def _validate_supabase_keys(settings: Settings) -> None:
+    missing = [
+        name
+        for name, value in (
+            ("SUPABASE_ANON_KEY", settings.supabase_anon_key),
+            ("SUPABASE_SERVICE_ROLE_KEY", settings.supabase_service_role_key),
+        )
+        if not (value or "").strip()
+    ]
+    if missing:
+        raise RuntimeError(
+            "Missing required Supabase configuration: "
+            + ", ".join(missing)
+            + ". Run `supabase status -o env` and copy ANON_KEY / SERVICE_ROLE_KEY into .env."
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
+    _validate_supabase_keys(settings)
     pool = await create_db_pool(settings)
     app.state.db_pool = pool
 
@@ -52,6 +71,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
+    # The in-process worker loop (§1.5) reads its keys straight from os.environ —
+    # tier-3 provider, OpenRouter, Langfuse — like the worker CLI (which calls
+    # load_dotenv itself). pydantic-settings parses .env WITHOUT populating
+    # os.environ, so export it here; real environment wins (override=False) and a
+    # missing .env is a no-op. Same cwd-relative path as Settings' env_file.
+    load_dotenv(".env")
     settings = get_settings()
 
     app_configs: dict[str, Any] = {"title": "Manzil API", "version": "1.0"}
@@ -60,6 +85,8 @@ def create_app() -> FastAPI:
 
     app = FastAPI(lifespan=lifespan, **app_configs)
 
+    # add_middleware prepends — register CatchAll first so CORSMiddleware stays outermost.
+    app.add_middleware(CatchAllMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
