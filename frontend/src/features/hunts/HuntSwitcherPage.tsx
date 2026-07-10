@@ -47,7 +47,9 @@ export function HuntSwitcherPage() {
             {empty ? "Start your first hunt" : "Your hunts"}
           </Text>
           <Text c="dimmed" size="sm">
-            {empty ? "Name your first hunt to get started." : "Pick a hunt or start a new one."}
+            {empty
+              ? "Every search starts somewhere — give this one a name."
+              : "Pick up where you left off, or start fresh."}
           </Text>
         </div>
 

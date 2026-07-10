@@ -29,7 +29,7 @@ export function SubmitUrlControl({
           setUrl("");
           notifications.show({
             title: "Listing submitted",
-            message: "Ingestion started — progress is on the Tasks tab.",
+            message: "Manzil is on it — progress lives in the Tasks tab.",
             color: "green",
           });
         },

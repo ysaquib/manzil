@@ -28,11 +28,16 @@ export function LoginPage() {
       <Center py="xl">
         <Card withBorder w="100%" maw={400}>
           <Stack>
-            <Text fw={600} size="lg">
-              Sign in
-            </Text>
+            <div>
+              <Text fw={600} size="lg">
+                Sign in
+              </Text>
+              <Text c="dimmed" size="sm">
+                No password — we'll email you a link.
+              </Text>
+            </div>
             {sent ? (
-              <Text>Check your email for a sign-in link.</Text>
+              <Text>Link sent. Check your email and you'll land right back here.</Text>
             ) : (
               <>
                 <TextInput
