@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { buildRows, filterRows, formatRange, rowAvailability, sortRows } from "./overviewRows";
+import {
+  applyOverviewFilters,
+  buildRows,
+  DEFAULT_OVERVIEW_FILTERS,
+  filterPills,
+  formatRange,
+  hasActiveFilters,
+  rowAvailability,
+  sortRows,
+} from "./overviewRows";
 import type { FloorPlan, Listing, Score } from "./types";
 
 function makeListing(
@@ -91,9 +100,9 @@ describe("buildRows", () => {
   });
 });
 
-describe("filterRows (hide score < N)", () => {
+describe("applyOverviewFilters (hide score < N)", () => {
   it("hides rows scoring under the threshold but keeps unscored rows", () => {
-    const rows = filterRows(buildRows(listings), 5);
+    const rows = applyOverviewFilters(buildRows(listings), { ...DEFAULT_OVERVIEW_FILTERS, minScore: 5 });
     const names = rows.map((r) => r.listing.property.name);
     expect(names).toContain("Beta Flats"); // 11 ≥ 5
     expect(names).not.toContain("Alpha Court"); // 4 < 5 — hidden
@@ -101,7 +110,67 @@ describe("filterRows (hide score < N)", () => {
   });
 
   it("is a no-op when off", () => {
-    expect(filterRows(buildRows(listings), null)).toHaveLength(3);
+    expect(applyOverviewFilters(buildRows(listings), DEFAULT_OVERVIEW_FILTERS)).toHaveLength(3);
+  });
+});
+
+describe("applyOverviewFilters (rent)", () => {
+  const rentListings = [
+    makeListing("r1", "Cheap", [{ rent_min: 1200, rent_max: 1400 }], { "r1-plan-0": 8 }),
+    makeListing("r2", "Mid", [{ rent_min: 1800, rent_max: 2000 }], { "r2-plan-0": 8 }),
+    makeListing("r3", "Priceless", [{ rent_min: null, rent_max: null }], { "r3-plan-0": 8 }),
+    makeListing("r4", "Pending", []),
+  ];
+
+  it("filters by max rent with overlap semantics", () => {
+    const rows = applyOverviewFilters(buildRows(rentListings), {
+      ...DEFAULT_OVERVIEW_FILTERS,
+      maxRent: 1500,
+    });
+    const names = rows.map((r) => r.listing.property.name);
+    expect(names).toContain("Cheap");
+    expect(names).not.toContain("Mid");
+    expect(names).toContain("Priceless"); // no rent data — unknown, not a verdict
+    expect(names).toContain("Pending"); // group null — always passes
+  });
+
+  it("filters by min rent", () => {
+    const rows = applyOverviewFilters(buildRows(rentListings), {
+      ...DEFAULT_OVERVIEW_FILTERS,
+      minRent: 1700,
+    });
+    const names = rows.map((r) => r.listing.property.name);
+    expect(names).not.toContain("Cheap");
+    expect(names).toContain("Mid");
+  });
+});
+
+describe("applyOverviewFilters (sqft)", () => {
+  const sqftListings = [
+    makeListing("s1", "Small", [{ sqft_min: 600, sqft_max: 700 }], { "s1-plan-0": 8 }),
+    makeListing("s2", "Large", [{ sqft_min: 900, sqft_max: 1100 }], { "s2-plan-0": 8 }),
+  ];
+
+  it("filters by sqft range overlap", () => {
+    const rows = applyOverviewFilters(buildRows(sqftListings), {
+      ...DEFAULT_OVERVIEW_FILTERS,
+      minSqft: 800,
+    });
+    const names = rows.map((r) => r.listing.property.name);
+    expect(names).not.toContain("Small");
+    expect(names).toContain("Large");
+  });
+});
+
+describe("filterPills and hasActiveFilters", () => {
+  it("reports active filters", () => {
+    expect(hasActiveFilters(DEFAULT_OVERVIEW_FILTERS)).toBe(false);
+    const active = { ...DEFAULT_OVERVIEW_FILTERS, minScore: 5, maxRent: 2000 };
+    expect(hasActiveFilters(active)).toBe(true);
+    const pills = filterPills(active);
+    expect(pills).toHaveLength(2);
+    expect(pills[0].label).toBe("Score ≥ 5");
+    expect(pills[1].label).toBe("Rent ≤ $2,000");
   });
 });
 

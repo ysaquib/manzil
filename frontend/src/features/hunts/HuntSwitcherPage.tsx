@@ -64,7 +64,7 @@ export function HuntSwitcherPage() {
           </Text>
         )}
 
-        <Stack gap="xs">
+        <Stack gap="sm">
           {(hunts ?? []).map((hunt) => (
             <NavLink
               key={hunt.id}
@@ -72,6 +72,11 @@ export function HuntSwitcherPage() {
               to={`/h/${hunt.id}`}
               label={hunt.name}
               description={`rubric v${hunt.rubric_version}`}
+              p="sm"
+              style={{
+                border: "1px solid var(--mantine-color-default-border)",
+                borderRadius: "var(--mantine-radius-md)",
+              }}
               rightSection={<IconChevronRight size={16} stroke={1.5} color="var(--mantine-color-dimmed)" />}
             />
           ))}

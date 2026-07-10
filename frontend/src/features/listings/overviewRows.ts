@@ -31,14 +31,109 @@ export function rowAvailability(row: OverviewRow): RowAvailability {
   return row.group.displayScore ? "scored" : "pending";
 }
 
+export interface OverviewFilterState {
+  minScore: number | null;
+  minRent: number | null;
+  maxRent: number | null;
+  minSqft: number | null;
+  maxSqft: number | null;
+}
+
+export const DEFAULT_OVERVIEW_FILTERS: OverviewFilterState = {
+  minScore: null,
+  minRent: null,
+  maxRent: null,
+  minSqft: null,
+  maxSqft: null,
+};
+
+export function hasActiveFilters(filters: OverviewFilterState): boolean {
+  return Object.values(filters).some((v) => v !== null);
+}
+
+function rangeOverlaps(
+  rowMin: number | null,
+  rowMax: number | null,
+  filterMin: number | null,
+  filterMax: number | null,
+): boolean {
+  if (rowMin === null && rowMax === null) return true;
+  const lo = rowMin ?? rowMax ?? 0;
+  const hi = rowMax ?? rowMin ?? 0;
+  const fLo = filterMin ?? -Infinity;
+  const fHi = filterMax ?? Infinity;
+  return lo <= fHi && hi >= fLo;
+}
+
 // `hide score < N` (§13.2, §9.3 rationale): declutters gate-zeroed rows
 // without deleting the "why we rejected it" record. Unscored rows stay
 // visible — pending ingestion is not a verdict.
-export function filterRows(rows: OverviewRow[], minScore: number | null): OverviewRow[] {
-  if (minScore === null) return rows;
-  return rows.filter(
-    (row) => row.group?.displayScore == null || row.group.displayScore.total >= minScore,
+function scorePredicate(row: OverviewRow, filters: OverviewFilterState): boolean {
+  if (filters.minScore === null) return true;
+  if (row.group?.displayScore == null) return true;
+  return row.group.displayScore.total >= filters.minScore;
+}
+
+function rentPredicate(row: OverviewRow, filters: OverviewFilterState): boolean {
+  if (filters.minRent === null && filters.maxRent === null) return true;
+  if (row.group === null) return true;
+  return rangeOverlaps(
+    row.group.rentMin,
+    row.group.rentMax,
+    filters.minRent,
+    filters.maxRent,
   );
+}
+
+function sqftPredicate(row: OverviewRow, filters: OverviewFilterState): boolean {
+  if (filters.minSqft === null && filters.maxSqft === null) return true;
+  if (row.group === null) return true;
+  return rangeOverlaps(
+    row.group.sqftMin,
+    row.group.sqftMax,
+    filters.minSqft,
+    filters.maxSqft,
+  );
+}
+
+type RowPredicate = (row: OverviewRow, filters: OverviewFilterState) => boolean;
+
+// Registry — adding a future filter appends one predicate here.
+const FILTER_PREDICATES: RowPredicate[] = [scorePredicate, rentPredicate, sqftPredicate];
+
+export function applyOverviewFilters(
+  rows: OverviewRow[],
+  filters: OverviewFilterState,
+): OverviewRow[] {
+  return rows.filter((row) => FILTER_PREDICATES.every((pred) => pred(row, filters)));
+}
+
+export type FilterPillKey = keyof OverviewFilterState;
+
+export interface FilterPill {
+  key: FilterPillKey;
+  label: string;
+}
+
+/** Labels for active filter Pills. One pill per non-null bound. */
+export function filterPills(filters: OverviewFilterState): FilterPill[] {
+  const pills: FilterPill[] = [];
+  if (filters.minScore !== null) {
+    pills.push({ key: "minScore", label: `Score ≥ ${filters.minScore}` });
+  }
+  if (filters.minRent !== null) {
+    pills.push({ key: "minRent", label: `Rent ≥ $${filters.minRent.toLocaleString()}` });
+  }
+  if (filters.maxRent !== null) {
+    pills.push({ key: "maxRent", label: `Rent ≤ $${filters.maxRent.toLocaleString()}` });
+  }
+  if (filters.minSqft !== null) {
+    pills.push({ key: "minSqft", label: `Sqft ≥ ${filters.minSqft.toLocaleString()}` });
+  }
+  if (filters.maxSqft !== null) {
+    pills.push({ key: "maxSqft", label: `Sqft ≤ ${filters.maxSqft.toLocaleString()}` });
+  }
+  return pills;
 }
 
 export type SortKey = "score" | "rent" | "name";

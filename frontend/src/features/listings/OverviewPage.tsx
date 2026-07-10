@@ -1,5 +1,5 @@
-// Overview (P1-10, §13.2): submit-URL control, `hide score < N` filter, one
-// table row per Unit Group, row click opens the detail Drawer (P1-11).
+// Overview (P1-10, §13.2): submit-URL control, filter bar, one table row per
+// Unit Group, row click opens the detail Drawer (P1-11).
 import {
   Alert,
   Button,
@@ -8,7 +8,6 @@ import {
   Group,
   Loader,
   Modal,
-  NumberInput,
   Stack,
   Text,
 } from "@mantine/core";
@@ -20,13 +19,17 @@ import { PageHeader } from "../../components/PageHeader";
 import { resolveSettings } from "../../lib/contracts";
 import { useHunt } from "../hunts/api";
 import { useDeleteListing, useListings } from "./api";
-import { ListingDetailDrawer } from "./ListingDetailDrawer";
+import { ListingDetailDrawer, type DrawerSelection } from "./ListingDetailDrawer";
+import { OverviewFilterBar } from "./OverviewFilterBar";
 import { OverviewTable } from "./OverviewTable";
 import {
+  applyOverviewFilters,
   buildRows,
-  filterRows,
+  DEFAULT_OVERVIEW_FILTERS,
+  hasActiveFilters,
   sortRows,
   type OverviewRow,
+  type OverviewFilterState,
   type SortKey,
   type SortState,
 } from "./overviewRows";
@@ -38,9 +41,9 @@ export function OverviewPage() {
   const { data: listings, isLoading, error } = useListings(huntId);
   const deleteListing = useDeleteListing(huntId);
 
-  const [minScore, setMinScore] = useState<number | null>(null);
+  const [filters, setFilters] = useState<OverviewFilterState>(DEFAULT_OVERVIEW_FILTERS);
   const [sort, setSort] = useState<SortState>({ key: "score", dir: "desc" });
-  const [selected, setSelected] = useState<OverviewRow | null>(null);
+  const [selected, setSelected] = useState<DrawerSelection | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<OverviewRow | null>(null);
 
   const onSort = (key: SortKey) =>
@@ -50,7 +53,8 @@ export function OverviewPage() {
         : { key, dir: key === "name" ? "asc" : "desc" },
     );
 
-  const rows = sortRows(filterRows(buildRows(listings ?? []), minScore), sort);
+  const allRows = buildRows(listings ?? []);
+  const rows = sortRows(applyOverviewFilters(allRows, filters), sort);
 
   return (
     <Stack gap="lg">
@@ -63,18 +67,9 @@ export function OverviewPage() {
             defaultPolicy={resolveSettings(hunt.settings).default_source_policy}
           />
         )}
-        <NumberInput
-          label="Hide score below"
-          placeholder="off"
-          value={minScore ?? ""}
-          onChange={(next) => setMinScore(typeof next === "number" ? next : null)}
-          min={0}
-          max={15}
-          w={140}
-          size="xs"
-          styles={{ label: { fontWeight: 400, color: "var(--mantine-color-dimmed)" } }}
-        />
       </Group>
+
+      <OverviewFilterBar filters={filters} onChange={setFilters} />
 
       {isLoading && (
         <Center py="xl">
@@ -96,9 +91,11 @@ export function OverviewPage() {
           <Stack align="center" gap="sm">
             <IconHome size={32} stroke={1.5} color="var(--mantine-color-dimmed)" />
             <Text ta="center" c="dimmed">
-              {(listings ?? []).length === 0
+              {allRows.length === 0
                 ? "Nothing here yet. Paste a listing URL above and Manzil will take it from there."
-                : "Every listing is sitting below your score filter. Lower it to bring them back."}
+                : hasActiveFilters(filters)
+                  ? "Every listing is hidden by your filters. Clear or loosen them to bring rows back."
+                  : "No listings match the current view."}
             </Text>
           </Stack>
         </Card>
@@ -108,7 +105,9 @@ export function OverviewPage() {
           rows={rows}
           sort={sort}
           onSort={onSort}
-          onOpen={setSelected}
+          onOpen={(row) =>
+            setSelected({ listingId: row.listing.id, groupKey: row.group?.key ?? null })
+          }
           onDelete={setDeleteTarget}
         />
       )}
@@ -116,7 +115,7 @@ export function OverviewPage() {
       {selected && (
         <ListingDetailDrawer
           huntId={huntId}
-          row={selected}
+          selection={selected}
           opened
           onClose={() => setSelected(null)}
         />
