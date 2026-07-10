@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# Manzil dev launcher — Supabase check/start + API + frontend in a tmux session.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SESSION=manzil
+SUPABASE_PG_PORT=54322
+
+cd "$ROOT"
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/dev [command]
+
+Commands:
+  (none)   Ensure Supabase is up, then start or attach the dev tmux session
+  kill     Stop the dev tmux session (Supabase keeps running)
+  status   Show Supabase and tmux session status
+EOF
+}
+
+require_tmux() {
+  if ! command -v tmux >/dev/null 2>&1; then
+    echo "tmux is not installed. Install it with: brew install tmux" >&2
+    exit 1
+  fi
+}
+
+require_docker() {
+  if ! docker info >/dev/null 2>&1; then
+    echo "Docker is not running. Start Docker Desktop, then retry." >&2
+    exit 1
+  fi
+}
+
+warn_missing_env() {
+  if [[ ! -f "$ROOT/.env" ]]; then
+    echo "Warning: $ROOT/.env not found. Copy infra/.env.example to .env and fill in keys." >&2
+  fi
+}
+
+supabase_up() {
+  nc -z 127.0.0.1 "$SUPABASE_PG_PORT" 2>/dev/null
+}
+
+ensure_supabase() {
+  if supabase_up; then
+    return 0
+  fi
+  echo "Supabase is not running. Starting local stack..."
+  require_docker
+  supabase start
+}
+
+cmd_status() {
+  if supabase_up; then
+    echo "supabase: up (postgres on 127.0.0.1:$SUPABASE_PG_PORT)"
+  else
+    echo "supabase: down"
+  fi
+  if tmux has-session -t "$SESSION" 2>/dev/null; then
+    echo "tmux: session '$SESSION' running"
+  else
+    echo "tmux: session '$SESSION' not running"
+  fi
+}
+
+cmd_kill() {
+  require_tmux
+  if tmux has-session -t "$SESSION" 2>/dev/null; then
+    tmux kill-session -t "$SESSION"
+    echo "Stopped tmux session '$SESSION'."
+  else
+    echo "No tmux session '$SESSION' to stop."
+  fi
+}
+
+start_or_attach_session() {
+  require_tmux
+
+  if tmux has-session -t "$SESSION" 2>/dev/null; then
+    exec tmux attach -t "$SESSION"
+  fi
+
+  tmux new-session -d -s "$SESSION" -n dev \
+    "uv run --package manzil-api uvicorn manzil_api.main:app --reload --port 8000"
+  tmux split-window -h -t "$SESSION:dev" \
+    "pnpm -C frontend dev"
+  tmux set-option -t "$SESSION" remain-on-exit on
+  tmux select-pane -t "$SESSION:dev.0"
+  exec tmux attach -t "$SESSION"
+}
+
+cmd_start() {
+  warn_missing_env
+  ensure_supabase
+  start_or_attach_session
+}
+
+case "${1:-}" in
+  "")
+    cmd_start
+    ;;
+  kill)
+    cmd_kill
+    ;;
+  status)
+    cmd_status
+    ;;
+  -h | --help | help)
+    usage
+    ;;
+  *)
+    echo "Unknown command: $1" >&2
+    usage >&2
+    exit 1
+    ;;
+esac
