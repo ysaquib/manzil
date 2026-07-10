@@ -16,9 +16,20 @@ The API never hand-simulates permissions it can hand to the database.
 from __future__ import annotations
 
 import asyncpg
+from supabase._sync.client import SupabaseException
 
 from manzil_api.config import Settings
+from manzil_api.exceptions import BackendMisconfigured
 from supabase import Client, create_client
+
+
+def _create_client(url: str, key: str, *, key_name: str) -> Client:
+    if not (key or "").strip():
+        raise BackendMisconfigured(f"{key_name} is not configured")
+    try:
+        return create_client(url, key)
+    except SupabaseException as exc:
+        raise BackendMisconfigured(f"{key_name} is not configured") from exc
 
 
 async def create_db_pool(settings: Settings) -> asyncpg.Pool:
@@ -28,14 +39,20 @@ async def create_db_pool(settings: Settings) -> asyncpg.Pool:
 
 def create_anon_client(settings: Settings) -> Client:
     """Anon-key client — RLS-safe, no user context. Used for unauthenticated reads."""
-    return create_client(settings.supabase_url, settings.supabase_anon_key)
+    return _create_client(
+        settings.supabase_url, settings.supabase_anon_key, key_name="SUPABASE_ANON_KEY"
+    )
 
 
 def create_service_client(settings: Settings) -> Client:
     """Service-role client — bypasses RLS. Phase 1 holds it only for the
     in-process worker loop's needs; API request paths must prefer the
     user-token client so RLS (Phase 2) applies."""
-    return create_client(settings.supabase_url, settings.supabase_service_role_key)
+    return _create_client(
+        settings.supabase_url,
+        settings.supabase_service_role_key,
+        key_name="SUPABASE_SERVICE_ROLE_KEY",
+    )
 
 
 def create_user_client(settings: Settings, access_token: str) -> Client:
@@ -45,6 +62,8 @@ def create_user_client(settings: Settings, access_token: str) -> Client:
     user (Phase 1: RLS is off, but the identity already flows — Phase 2 flips a
     schema switch, not this code).
     """
-    client = create_client(settings.supabase_url, settings.supabase_anon_key)
+    client = _create_client(
+        settings.supabase_url, settings.supabase_anon_key, key_name="SUPABASE_ANON_KEY"
+    )
     client.postgrest.auth(access_token)
     return client
