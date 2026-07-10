@@ -37,6 +37,10 @@ export interface OverviewFilterState {
   maxRent: number | null;
   minSqft: number | null;
   maxSqft: number | null;
+  minBeds: number | null;
+  maxBeds: number | null;
+  minBaths: number | null;
+  maxBaths: number | null;
 }
 
 export const DEFAULT_OVERVIEW_FILTERS: OverviewFilterState = {
@@ -45,6 +49,10 @@ export const DEFAULT_OVERVIEW_FILTERS: OverviewFilterState = {
   maxRent: null,
   minSqft: null,
   maxSqft: null,
+  minBeds: null,
+  maxBeds: null,
+  minBaths: null,
+  maxBaths: null,
 };
 
 export function hasActiveFilters(filters: OverviewFilterState): boolean {
@@ -96,10 +104,38 @@ function sqftPredicate(row: OverviewRow, filters: OverviewFilterState): boolean 
   );
 }
 
+function scalarInBounds(
+  value: number,
+  filterMin: number | null,
+  filterMax: number | null,
+): boolean {
+  if (filterMin !== null && value < filterMin) return false;
+  if (filterMax !== null && value > filterMax) return false;
+  return true;
+}
+
+function bedsPredicate(row: OverviewRow, filters: OverviewFilterState): boolean {
+  if (filters.minBeds === null && filters.maxBeds === null) return true;
+  if (row.group === null) return true;
+  return scalarInBounds(row.group.beds, filters.minBeds, filters.maxBeds);
+}
+
+function bathsPredicate(row: OverviewRow, filters: OverviewFilterState): boolean {
+  if (filters.minBaths === null && filters.maxBaths === null) return true;
+  if (row.group === null) return true;
+  return scalarInBounds(row.group.baths, filters.minBaths, filters.maxBaths);
+}
+
 type RowPredicate = (row: OverviewRow, filters: OverviewFilterState) => boolean;
 
 // Registry — adding a future filter appends one predicate here.
-const FILTER_PREDICATES: RowPredicate[] = [scorePredicate, rentPredicate, sqftPredicate];
+const FILTER_PREDICATES: RowPredicate[] = [
+  scorePredicate,
+  rentPredicate,
+  sqftPredicate,
+  bedsPredicate,
+  bathsPredicate,
+];
 
 export function applyOverviewFilters(
   rows: OverviewRow[],
@@ -132,6 +168,18 @@ export function filterPills(filters: OverviewFilterState): FilterPill[] {
   }
   if (filters.maxSqft !== null) {
     pills.push({ key: "maxSqft", label: `Sqft ≤ ${filters.maxSqft.toLocaleString()}` });
+  }
+  if (filters.minBeds !== null) {
+    pills.push({ key: "minBeds", label: `Beds ≥ ${filters.minBeds}` });
+  }
+  if (filters.maxBeds !== null) {
+    pills.push({ key: "maxBeds", label: `Beds ≤ ${filters.maxBeds}` });
+  }
+  if (filters.minBaths !== null) {
+    pills.push({ key: "minBaths", label: `Baths ≥ ${filters.minBaths}` });
+  }
+  if (filters.maxBaths !== null) {
+    pills.push({ key: "maxBaths", label: `Baths ≤ ${filters.maxBaths}` });
   }
   return pills;
 }

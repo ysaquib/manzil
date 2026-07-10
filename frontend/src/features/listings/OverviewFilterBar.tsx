@@ -133,6 +133,64 @@ export function OverviewFilterBar({
               size="xs"
               styles={dimmedLabel}
             />
+            <NumberInput
+              label="Min beds"
+              placeholder="any"
+              value={filters.minBeds ?? ""}
+              onChange={(next) =>
+                setField("minBeds", typeof next === "number" ? next : null)
+              }
+              min={0}
+              max={5}
+              allowDecimal={false}
+              w={100}
+              size="xs"
+              styles={dimmedLabel}
+            />
+            <NumberInput
+              label="Max beds"
+              placeholder="any"
+              value={filters.maxBeds ?? ""}
+              onChange={(next) =>
+                setField("maxBeds", typeof next === "number" ? next : null)
+              }
+              min={0}
+              max={5}
+              allowDecimal={false}
+              w={100}
+              size="xs"
+              styles={dimmedLabel}
+            />
+            <NumberInput
+              label="Min baths"
+              placeholder="any"
+              value={filters.minBaths ?? ""}
+              onChange={(next) =>
+                setField("minBaths", typeof next === "number" ? next : null)
+              }
+              min={0}
+              max={4}
+              step={0.5}
+              decimalScale={1}
+              w={100}
+              size="xs"
+              styles={dimmedLabel}
+            />
+            <NumberInput
+              label="Max baths"
+              placeholder="any"
+              value={filters.maxBaths ?? ""}
+              onChange={(next) =>
+                setField("maxBaths", typeof next === "number" ? next : null)
+              }
+              min={0}
+              max={4}
+              step={0.5}
+              decimalScale={1}
+              w={100}
+              size="xs"
+              styles={dimmedLabel}
+            />
           </Group>
           {hasActiveFilters(filters) && (
             <Button
