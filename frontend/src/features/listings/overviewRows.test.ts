@@ -162,15 +162,67 @@ describe("applyOverviewFilters (sqft)", () => {
   });
 });
 
+describe("applyOverviewFilters (beds)", () => {
+  const bedListings = [
+    makeListing("b0", "Studio", [{ beds: 0, baths: 1 }], { "b0-plan-0": 8 }),
+    makeListing("b1", "One Bed", [{ beds: 1, baths: 1 }], { "b1-plan-0": 8 }),
+    makeListing("b2", "Two Bed", [{ beds: 2, baths: 2 }], { "b2-plan-0": 8 }),
+    makeListing("b3", "Pending", []),
+  ];
+
+  it("filters by min and max beds; pending rows stay visible", () => {
+    const rows = applyOverviewFilters(buildRows(bedListings), {
+      ...DEFAULT_OVERVIEW_FILTERS,
+      minBeds: 1,
+      maxBeds: 1,
+    });
+    const names = rows.map((r) => r.listing.property.name);
+    expect(names).not.toContain("Studio");
+    expect(names).toContain("One Bed");
+    expect(names).not.toContain("Two Bed");
+    expect(names).toContain("Pending");
+  });
+});
+
+describe("applyOverviewFilters (baths)", () => {
+  const bathListings = [
+    makeListing("ba1", "One Bath", [{ beds: 1, baths: 1 }], { "ba1-plan-0": 8 }),
+    makeListing("ba15", "One-and-half", [{ beds: 1, baths: 1.5 }], { "ba15-plan-0": 8 }),
+    makeListing("ba2", "Two Bath", [{ beds: 2, baths: 2 }], { "ba2-plan-0": 8 }),
+    makeListing("baP", "Pending", []),
+  ];
+
+  it("filters by half-step bath bounds; pending rows stay visible", () => {
+    const rows = applyOverviewFilters(buildRows(bathListings), {
+      ...DEFAULT_OVERVIEW_FILTERS,
+      minBaths: 1.5,
+      maxBaths: 1.5,
+    });
+    const names = rows.map((r) => r.listing.property.name);
+    expect(names).not.toContain("One Bath");
+    expect(names).toContain("One-and-half");
+    expect(names).not.toContain("Two Bath");
+    expect(names).toContain("Pending");
+  });
+});
+
 describe("filterPills and hasActiveFilters", () => {
   it("reports active filters", () => {
     expect(hasActiveFilters(DEFAULT_OVERVIEW_FILTERS)).toBe(false);
-    const active = { ...DEFAULT_OVERVIEW_FILTERS, minScore: 5, maxRent: 2000 };
+    const active = {
+      ...DEFAULT_OVERVIEW_FILTERS,
+      minScore: 5,
+      maxRent: 2000,
+      minBeds: 2,
+      maxBaths: 1.5,
+    };
     expect(hasActiveFilters(active)).toBe(true);
     const pills = filterPills(active);
-    expect(pills).toHaveLength(2);
+    expect(pills).toHaveLength(4);
     expect(pills[0].label).toBe("Score ≥ 5");
     expect(pills[1].label).toBe("Rent ≤ $2,000");
+    expect(pills[2].label).toBe("Beds ≥ 2");
+    expect(pills[3].label).toBe("Baths ≤ 1.5");
   });
 });
 
