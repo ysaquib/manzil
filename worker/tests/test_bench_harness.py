@@ -10,7 +10,6 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-from conftest import PAGES, FakeLLM, maple_extraction
 from manzil_worker.evals.compare import compare_table
 from manzil_worker.evals.harness import (
     BenchReport,
@@ -22,6 +21,7 @@ from manzil_worker.evals.labels import BenchLabel
 from manzil_worker.fetching.cleaner import clean_html
 from manzil_worker.phase0_rubric import phase0_rubric
 from manzil_worker.stages.base import StageCtx
+from worker_helpers import PAGES, FakeLLM, maple_extraction
 
 SLUG = "example.test--maple"
 URL = "https://example.test/listing"

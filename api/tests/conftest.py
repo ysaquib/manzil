@@ -43,19 +43,14 @@ os.environ.setdefault("MANZIL_WORKER_INPROCESS", "false")
 import asyncpg  # noqa: E402
 import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402
+from api_helpers import FAKE_USER  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 from manzil_api.config import get_settings  # noqa: E402
 from manzil_api.database import create_anon_client  # noqa: E402
-from manzil_api.dependencies import UserContext, get_current_user, get_user_client  # noqa: E402
+from manzil_api.dependencies import get_current_user, get_user_client  # noqa: E402
 from manzil_api.main import create_app  # noqa: E402
 
 DATABASE_URL = os.environ["DATABASE_URL"]
-
-FAKE_USER = UserContext(
-    id="00000000-0000-0000-0000-000000000001",
-    email="dev@example.com",
-    access_token="fake-token",
-)
 
 
 def _anon_client():

@@ -9,7 +9,6 @@ from datetime import date
 from pathlib import Path
 from uuid import uuid4
 
-from conftest import PAGES, FakeFetcher, FakeLLM, maple_extraction
 from manzil_shared.models import JobState, JobType
 from manzil_worker.fetching.registry import InMemoryRegistry
 from manzil_worker.persistence import FilePersistence
@@ -17,6 +16,7 @@ from manzil_worker.phase0_rubric import PHASE0_RUBRIC_VERSION, phase0_rubric
 from manzil_worker.runner import run_job
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.state import RunState
+from worker_helpers import PAGES, FakeFetcher, FakeLLM, maple_extraction
 
 VALIDATE_YES = {
     "is_listing": True,

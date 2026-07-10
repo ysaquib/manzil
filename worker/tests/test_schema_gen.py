@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-from conftest import extraction_payload, field_payload, maple_extraction
 from manzil_shared.catalog import CATALOG
 from manzil_worker.stages.schema_gen import (
     build_extraction_schema,
@@ -11,6 +10,7 @@ from manzil_worker.stages.schema_gen import (
     field_model,
 )
 from pydantic import ValidationError
+from worker_helpers import extraction_payload, field_payload, maple_extraction
 
 EXPECTED_KEYS = {
     "beds",

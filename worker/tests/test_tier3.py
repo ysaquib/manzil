@@ -10,13 +10,13 @@ from pathlib import Path
 
 import httpx
 import pytest
-from conftest import PAGES, FakeFetcher
 from manzil_shared.models import FetchOutcome
 from manzil_worker.fetching.census import run_census
 from manzil_worker.fetching.ladder import fetch_with_ladder
 from manzil_worker.fetching.registry import InMemoryRegistry, next_required_tier
 from manzil_worker.fetching.slug_hint import search_hint
 from manzil_worker.fetching.tier3 import Tier3Fetcher, tier3_configured, tier3_provider
+from worker_helpers import PAGES, FakeFetcher
 
 LISTING_HTML = (
     "<html><body>" + "2 bedroom apartment with rent and lease terms. " * 60 + ("</body></html>")

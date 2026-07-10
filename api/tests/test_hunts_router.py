@@ -6,7 +6,7 @@ import json
 from uuid import uuid4
 
 import pytest
-from conftest import FAKE_USER
+from api_helpers import FAKE_USER
 from httpx import AsyncClient
 
 
