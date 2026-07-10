@@ -13,7 +13,15 @@ import {
   Text,
   Tooltip,
 } from "@mantine/core";
-import { IconX } from "@tabler/icons-react";
+import {
+  IconBan,
+  IconInfoCircle,
+  IconPlus,
+  IconQuestionMark,
+  IconShieldCheck,
+  IconSparkles,
+  IconX,
+} from "@tabler/icons-react";
 
 import type { RubricOption } from "../../lib/contracts";
 import { semantic } from "../../theme";
@@ -35,49 +43,63 @@ function OptionRow({
 }) {
   const isDealbreaker = option.dealbreaker_set_score !== null;
   return (
-    <Group gap="sm" align="flex-end" wrap="wrap">
+    <Group gap="sm" align="flex-end" wrap="wrap" justify="space-between">
       <OptionMatchEditor
         match={option.match}
         schema={entry.value_schema}
         onChange={(match) => onChange({ ...option, match })}
       />
-      <NumberInput
-        label="points"
-        aria-label="option delta"
-        size="xs"
-        w={90}
-        step={0.5}
-        value={option.delta}
-        onChange={(next) => onChange({ ...option, delta: typeof next === "number" ? next : 0 })}
-        disabled={isDealbreaker}
-      />
-      <Switch
-        size="xs"
-        label="Dealbreaker"
-        checked={isDealbreaker}
-        onChange={(e) =>
-          onChange({ ...option, dealbreaker_set_score: e.currentTarget.checked ? 0 : null })
-        }
-      />
-      {isDealbreaker && (
-        <NumberInput
-          label="set score to"
-          aria-label="dealbreaker set score"
-          size="xs"
-          w={90}
-          min={0}
-          max={15}
-          value={option.dealbreaker_set_score ?? 0}
-          onChange={(next) =>
-            onChange({ ...option, dealbreaker_set_score: typeof next === "number" ? next : 0 })
-          }
-        />
-      )}
-      <Tooltip label="Remove option">
-        <ActionIcon color="gray" size="sm" onClick={onRemove} aria-label="remove option">
-          <IconX size={14} stroke={1.5} />
-        </ActionIcon>
-      </Tooltip>
+      <Group gap="sm" align="flex-end" wrap="wrap">
+        <Tooltip label="Points">
+          <NumberInput
+            aria-label="option delta"
+            size="xs"
+            w={90}
+            step={0.5}
+            value={option.delta}
+            onChange={(next) => onChange({ ...option, delta: typeof next === "number" ? next : 0 })}
+            disabled={isDealbreaker}
+            rightSection={
+              <Text size="xs" c="dimmed" pr={4}>
+                pts
+              </Text>
+            }
+            rightSectionWidth={28}
+          />
+        </Tooltip>
+        <Tooltip label="Dealbreaker — matching this option sets the score directly">
+          <Switch
+            size="xs"
+            aria-label="dealbreaker"
+            checked={isDealbreaker}
+            onChange={(e) =>
+              onChange({ ...option, dealbreaker_set_score: e.currentTarget.checked ? 0 : null })
+            }
+            onLabel={<IconBan size={12} stroke={1.5} />}
+            offLabel={<IconBan size={12} stroke={1.5} color="var(--mantine-color-dimmed)" />}
+          />
+        </Tooltip>
+        {isDealbreaker && (
+          <Tooltip label="Score to set when this option matches">
+            <NumberInput
+              aria-label="dealbreaker set score"
+              size="xs"
+              w={90}
+              min={0}
+              max={15}
+              value={option.dealbreaker_set_score ?? 0}
+              onChange={(next) =>
+                onChange({ ...option, dealbreaker_set_score: typeof next === "number" ? next : 0 })
+              }
+            />
+          </Tooltip>
+        )}
+        <Tooltip label="Remove option">
+          <ActionIcon color="gray" size="sm" onClick={onRemove} aria-label="remove option">
+            <IconX size={14} stroke={1.5} />
+          </ActionIcon>
+        </Tooltip>
+      </Group>
     </Group>
   );
 }
@@ -99,7 +121,7 @@ export function CriterionCard({
   };
 
   return (
-    <Card>
+    <Card h="100%">
       <Stack gap="sm">
         <Group justify="space-between" wrap="nowrap">
           <Group gap="sm" wrap="nowrap">
@@ -108,26 +130,45 @@ export function CriterionCard({
               onChange={(e) => onChange({ ...criterion, enabled: e.currentTarget.checked })}
               aria-label={`enable ${entry.label}`}
             />
-            <div>
-              <Group gap="xs">
-                <Text fw={600} size="sm">
-                  {entry.label}
-                </Text>
-                {isBonus && criterion.enabled && (
-                  <Badge size="xs" variant="light" color="green">
+            <Group gap="xs" wrap="wrap">
+              <Text fw={600} size="sm">
+                {entry.label}
+              </Text>
+              <Tooltip label={entry.extraction_hint}>
+                <ActionIcon
+                  color="gray"
+                  size="xs"
+                  variant="subtle"
+                  aria-label={`info about ${entry.label}`}
+                >
+                  <IconInfoCircle size={14} stroke={1.5} color="var(--mantine-color-dimmed)" />
+                </ActionIcon>
+              </Tooltip>
+              {isBonus && criterion.enabled && (
+                <Tooltip label="Bonus criterion — all deltas are non-negative">
+                  <Badge
+                    size="xs"
+                    variant="light"
+                    color="green"
+                    leftSection={<IconSparkles size={12} stroke={1.5} />}
+                  >
                     bonus
                   </Badge>
-                )}
-                {criterion.non_negotiable !== null && criterion.enabled && (
-                  <Badge size="xs" variant="light" color={semantic.danger}>
-                    gate
+                </Tooltip>
+              )}
+              {criterion.non_negotiable !== null && criterion.enabled && (
+                <Tooltip label="Non-negotiable gate">
+                  <Badge
+                    size="xs"
+                    variant="light"
+                    color={semantic.danger}
+                    leftSection={<IconShieldCheck size={12} stroke={1.5} />}
+                  >
+                    non-negotiable
                   </Badge>
-                )}
-              </Group>
-              <Text size="xs" c="dimmed">
-                {entry.extraction_hint}
-              </Text>
-            </div>
+                </Tooltip>
+              )}
+            </Group>
           </Group>
         </Group>
 
@@ -149,8 +190,9 @@ export function CriterionCard({
             ))}
             <Group>
               <Button
-                variant="light"
+                variant="subtle"
                 size="xs"
+                leftSection={<IconPlus size={14} stroke={1.5} />}
                 onClick={() =>
                   onChange({
                     ...criterion,
@@ -168,21 +210,36 @@ export function CriterionCard({
                   })
                 }
               >
-                Add option
+                Add
               </Button>
             </Group>
-            <Group gap="sm" align="flex-end" mt="md">
-              <NumberInput
-                label="If unknown"
-                description="points when the value can't be determined"
-                size="xs"
-                w={160}
-                step={0.5}
-                value={criterion.unknown_delta}
-                onChange={(next) =>
-                  onChange({ ...criterion, unknown_delta: typeof next === "number" ? next : 0 })
-                }
-              />
+            <Group gap="sm" align="flex-end" mt="md" wrap="wrap">
+              <Tooltip label="Points when the value can't be determined">
+                <Group gap={4} align="flex-end">
+                  <IconQuestionMark
+                    size={16}
+                    stroke={1.5}
+                    color="var(--mantine-color-dimmed)"
+                    style={{ marginBottom: 6 }}
+                  />
+                  <NumberInput
+                    aria-label="unknown delta"
+                    size="xs"
+                    w={90}
+                    step={0.5}
+                    value={criterion.unknown_delta}
+                    onChange={(next) =>
+                      onChange({ ...criterion, unknown_delta: typeof next === "number" ? next : 0 })
+                    }
+                    rightSection={
+                      <Text size="xs" c="dimmed" pr={4}>
+                        pts
+                      </Text>
+                    }
+                    rightSectionWidth={28}
+                  />
+                </Group>
+              </Tooltip>
               <GateControls
                 nonNegotiable={criterion.non_negotiable}
                 onChange={(non_negotiable) => onChange({ ...criterion, non_negotiable })}

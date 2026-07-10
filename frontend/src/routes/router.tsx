@@ -9,7 +9,7 @@ import { HuntSwitcherPage } from "../features/hunts/HuntSwitcherPage";
 import { HuntSettingsPage } from "../features/hunts/HuntSettingsPage";
 import { OverviewPage } from "../features/listings/OverviewPage";
 import { TasksActivePage } from "../features/jobs/TasksActivePage";
-import { RubricWizardPage } from "../features/rubric/RubricWizardPage";
+import { RubricPage } from "../features/rubric/RubricPage";
 
 const protectedRoute = (element: React.ReactNode) => <RequireAuth>{element}</RequireAuth>;
 
@@ -24,7 +24,7 @@ export const router = createBrowserRouter([
     element: protectedRoute(<AppLayout />),
     children: [
       { index: true, element: <OverviewPage /> },
-      { path: "rubric", element: <RubricWizardPage /> },
+      { path: "rubric", element: <RubricPage /> },
       { path: "tasks", element: <TasksActivePage /> },
       { path: "settings", element: <HuntSettingsPage /> },
     ],
