@@ -42,13 +42,15 @@ def truth_label(**overrides: Any) -> BenchLabel:
     """The e2e page's ground truth, derived from the authored extraction:
     non-null values become criteria, not_found keys become unknown."""
     payload = maple_extraction()
+    # Non-catalog blocks carry no {value, ...} wrapper — they are not criteria.
+    non_catalog = {"floor_plans", "property_identity"}
     criteria = {
         key: field["value"]
         for key, field in payload.items()
-        if key != "floor_plans" and field["value"] is not None
+        if key not in non_catalog and field["value"] is not None
     }
     unknown = [
-        key for key, field in payload.items() if key != "floor_plans" and field["value"] is None
+        key for key, field in payload.items() if key not in non_catalog and field["value"] is None
     ]
     data: dict[str, Any] = {
         "slug": SLUG,

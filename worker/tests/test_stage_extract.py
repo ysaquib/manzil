@@ -43,6 +43,27 @@ def test_extract_populates_every_criterion_with_provenance() -> None:
     assert [p.plan_name for p in state.floor_plans] == ["The Maple"]
 
 
+def test_extract_lands_property_identity_when_present() -> None:
+    llm = FakeLLM({"extract": maple_extraction()})
+    state = make_state(cleaned_text=CLEANED)
+    state = asyncio.run(extract_stage(state, StageCtx(call_structured=llm)))
+
+    assert state.property_identity is not None
+    assert state.property_identity.name == "Maple Court Apartments"
+    assert state.property_identity.address == "120 Maple Court Dr, Detroit, MI 48201"
+    assert state.property_identity.official_url is None
+
+
+def test_extract_leaves_property_identity_none_when_block_absent() -> None:
+    """The identity block is optional — a payload without it leaves state.property_identity
+    None, so recorded fixtures predating the block keep working."""
+    llm = FakeLLM({"extract": extraction_payload()})
+    state = make_state(cleaned_text=CLEANED)
+    state = asyncio.run(extract_stage(state, StageCtx(call_structured=llm)))
+
+    assert state.property_identity is None
+
+
 def test_invalid_first_response_gets_one_corrective_retry() -> None:
     bad = extraction_payload(beds=field_payload("two"))  # not an integer
     llm = FakeLLM({"extract": [bad, maple_extraction()]})

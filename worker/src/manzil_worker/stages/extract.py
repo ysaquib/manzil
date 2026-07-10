@@ -20,7 +20,7 @@ from manzil_worker.llm.config import model_for_stage
 from manzil_worker.llm.prompt_loader import load_prompt
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.schema_gen import build_extraction_schema, extractable_entries
-from manzil_worker.state import FieldExtraction, FloorPlanIn, RunState
+from manzil_worker.state import FieldExtraction, FloorPlanIn, PropertyIdentityIn, RunState
 
 log = structlog.get_logger()
 
@@ -73,11 +73,18 @@ async def extract_stage(state: RunState, ctx: StageCtx) -> RunState:
     plans = extraction.floor_plans
     assert isinstance(plans, list)
     state.floor_plans = [FloorPlanIn.model_validate(p, from_attributes=True) for p in plans]
+    identity = extraction.property_identity
+    state.property_identity = (
+        PropertyIdentityIn.model_validate(identity, from_attributes=True)
+        if identity is not None
+        else None
+    )
     log.info(
         "extracted",
         job_id=str(state.job_id),
         stage="extract",
         fields=len(state.extractions),
         floor_plans=len(state.floor_plans),
+        identity=state.property_identity is not None,
     )
     return state

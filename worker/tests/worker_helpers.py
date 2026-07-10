@@ -77,6 +77,11 @@ def maple_extraction() -> dict[str, Any]:
         dishwasher=field_payload(True, "Dishwasher, garbage disposal"),
         min_lease_months=field_payload(12, "Minimum lease term | 12 months"),
     )
+    payload["property_identity"] = {
+        "name": "Maple Court Apartments",
+        "address": "120 Maple Court Dr, Detroit, MI 48201",
+        "official_url": None,  # the page names no official website
+    }
     payload["floor_plans"] = [
         {
             "plan_name": "The Maple",

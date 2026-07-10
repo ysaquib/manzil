@@ -23,7 +23,7 @@ from manzil_shared.catalog import CATALOG
 from manzil_shared.models import CatalogEntry, Confidence
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, create_model, model_validator
 
-from manzil_worker.state import FloorPlanIn
+from manzil_worker.state import FloorPlanIn, PropertyIdentityIn
 
 # Composed by the pipeline, never extracted from the page (§9.5).
 COMPOSED_KEYS = frozenset({"all_in_monthly"})
@@ -140,12 +140,23 @@ def build_extraction_schema(
     catalog: tuple[CatalogEntry, ...] = CATALOG,
 ) -> type[BaseModel]:
     """The forced-tool schema for EXTRACT: one field per extractable criterion,
-    plus the page's floor plans. Every criterion field is required — omitting
-    a field is a schema violation, unknown is expressed as value null +
-    confidence not_found."""
+    plus the page's floor plans and the property's own identity. Every criterion
+    field is required — omitting a field is a schema violation, unknown is
+    expressed as value null + confidence not_found. The non-catalog blocks
+    (floor_plans, property_identity) are optional so recorded fixtures and stored
+    RunState snapshots that predate them keep validating."""
     fields: dict[str, Any] = {
         entry.key: (field_model(entry), ...) for entry in extractable_entries(catalog)
     }
+    fields["property_identity"] = (
+        PropertyIdentityIn | None,
+        Field(
+            default=None,
+            description="The property/complex itself as stated on the page: its name, "
+            "full street address, and official website URL when the page names one. "
+            "Copy from the page; null for anything not stated — never invent.",
+        ),
+    )
     fields["floor_plans"] = (
         list[FloorPlanIn],
         Field(

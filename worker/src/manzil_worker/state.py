@@ -53,6 +53,16 @@ class FloorPlanIn(BaseModel):
     evidence_quote: str | None = None
 
 
+class PropertyIdentityIn(BaseModel):
+    """The property's own identity as stated on the page — plain JSON types,
+    unscored display metadata (DESIGN §20 2026-07-10): projected onto the
+    global `properties` row, never into the rubric/scoring path."""
+
+    name: str | None = None
+    address: str | None = None
+    official_url: str | None = None
+
+
 class SourceState(BaseModel):
     """One source's fetch results (IMPL §3: url, tier_used, outcome, cleaned, hash)."""
 
@@ -100,6 +110,7 @@ class RunState(BaseModel):
     extractions: dict[str, list[FieldExtraction]] = Field(default_factory=dict)
     reconciled: dict[str, FieldExtraction] = Field(default_factory=dict)
     floor_plans: list[FloorPlanIn] = Field(default_factory=list)
+    property_identity: PropertyIdentityIn | None = None
     verify_flags: list[VerifyFlag] = Field(default_factory=list)
     effective_values: dict[str, Any] = Field(default_factory=dict)
     scores: list[PlanScore] = Field(default_factory=list)

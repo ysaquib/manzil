@@ -10,6 +10,7 @@ Phase 1 (P1-14): gate-relevant demotions below `min_confidence` raise a
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from typing import Any
 
@@ -66,9 +67,37 @@ def _flag(state: RunState, key: str, check: VerifyCheck, note: str, source_id: s
     )
 
 
+_ELLIPSIS_RE = re.compile(r"\s*(?:\.{3,}|…)\s*")
+_MIN_FRAGMENT_LEN = 4
+_WHITESPACE_RE = re.compile(r"\s+")
+
+
+def _fragment_locatable(fragment: str, page_text: str) -> bool:
+    if fuzz.partial_ratio(fragment.lower(), page_text.lower()) >= EVIDENCE_FUZZY_THRESHOLD:
+        return True
+    # Whitespace divergence must not demote: models often quote pretty-printed
+    # JSON ({"a": 1}) while the page's embedded digest is compact ({"a":1}). Retry
+    # with all whitespace stripped from both sides before giving up on a fragment.
+    stripped_fragment = _WHITESPACE_RE.sub("", fragment).lower()
+    stripped_page = _WHITESPACE_RE.sub("", page_text).lower()
+    return fuzz.partial_ratio(stripped_fragment, stripped_page) >= EVIDENCE_FUZZY_THRESHOLD
+
+
 def evidence_locatable(quote: str, page_text: str) -> bool:
-    """Check 1: the quote must fuzzy-match text actually present in the page."""
-    return fuzz.partial_ratio(quote.lower(), page_text.lower()) >= EVIDENCE_FUZZY_THRESHOLD
+    """Check 1: the quote must fuzzy-match text actually present in the page.
+
+    Models stitch multiple VERBATIM fragments with an ellipsis ("A … B") when a
+    fact spans locations; each fragment is on the page but the stitched whole is
+    not, which would falsely demote. So the quote is split on ellipsis separators
+    and every non-trivial fragment must locate independently. A quote with no
+    ellipsis is a single fragment and matches exactly as before.
+    """
+    fragments = [f for f in _ELLIPSIS_RE.split(quote) if len(f.strip()) >= _MIN_FRAGMENT_LEN]
+    if not fragments:
+        # Nothing survived the length filter (e.g. a very short no-ellipsis quote)
+        # — fall back to matching the whole quote, preserving prior behavior.
+        fragments = [quote]
+    return all(_fragment_locatable(fragment, page_text) for fragment in fragments)
 
 
 def _check_evidence(state: RunState, page_text: str) -> None:

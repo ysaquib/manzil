@@ -148,7 +148,10 @@ CATALOG: tuple[CatalogEntry, ...] = (
             _opt(MatchOp.EQ, "dogs_only", 0.0),
             _opt(MatchOp.EQ, "none", -0.5),
         ],
-        extraction_hint="Which pets the policy allows, ignoring breed and weight limits.",
+        extraction_hint=(
+            "Which pets the policy allows, ignoring breed and weight limits."
+            "If a fee is mentioned for a pet, then we can consider it a pet policy criterion."
+        ),
         requires_tool=None,
         refresh_class=RefreshClass.LISTING_DETAILS,
     ),
