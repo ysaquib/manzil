@@ -89,6 +89,18 @@ Two terminals after setup (`uv sync --all-packages`, `cp infra/.env.example .env
 `supabase start`):
 
 ```bash
+# One command — Supabase check/start + API + frontend in tmux (reattaches if already running)
+scripts/dev
+scripts/dev status   # supabase + tmux session summary
+scripts/dev kill     # stop the tmux session; Supabase keeps running
+```
+
+Requires `tmux` (`brew install tmux`). Pane 0 is the API; pane 1 is the frontend.
+`Ctrl-b` then arrow keys switches panes; `Ctrl-b d` detaches without stopping servers.
+
+Manual two-terminal loop (same processes, useful when debugging pipeline logs in isolation):
+
+```bash
 # Terminal 1 — DB + seed (once per reset)
 supabase db reset
 uv run --package manzil-worker python scripts/dev_seed.py
