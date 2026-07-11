@@ -12,6 +12,7 @@ import {
 import { Link, NavLink as RouterNavLink, Outlet, useLocation, useParams } from "react-router-dom";
 
 import { supabase } from "../lib/supabase";
+import { useHuntRealtime } from "../lib/realtime";
 import { ColorSchemeToggle } from "./ColorSchemeToggle";
 
 const NAV = [
@@ -32,6 +33,7 @@ export function AppLayout() {
   const location = useLocation();
   const [navOpened, { toggle, close }] = useDisclosure(false);
   const isMobile = useMediaQuery("(max-width: 48em)");
+  useHuntRealtime(huntId);
 
   return (
     <AppShell
