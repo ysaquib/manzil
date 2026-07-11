@@ -10,8 +10,13 @@ from manzil_shared.models import Confidence
 from manzil_worker.phase0_rubric import PHASE0_RUBRIC_VERSION, phase0_rubric
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.score import score_stage
-from manzil_worker.state import FloorPlanIn
+from manzil_worker.state import FloorPlanIn, PetCostsIn
 from worker_helpers import fe, make_state
+
+
+def _all_in(breakdown: dict) -> float | None:  # type: ignore[type-arg]
+    entry = next(c for c in breakdown["criteria"] if c["key"] == "all_in_monthly")
+    return entry["value"]
 
 
 def make_ctx() -> StageCtx:
@@ -98,6 +103,68 @@ def test_low_confidence_value_scores_as_unknown_and_fires_its_gate() -> None:
     assert state.reconciled["pets_policy"].value == "cats_and_dogs"  # provenance kept
     breakdown = state.scores[0].breakdown
     assert {"key": "pets_policy", "kind": "non_negotiable", "set_score": 2.0} in breakdown["gates"]
+
+
+def _score_with_pets(pet_costs: PetCostsIn | None, *, cats: int, dogs: int, rent: float) -> dict:  # type: ignore[type-arg]
+    state = seeded_state()
+    state.pet_costs = pet_costs
+    state.floor_plans = [
+        FloorPlanIn(plan_name="A", beds=2, baths=1.0, rent_min=rent, rent_max=rent)
+    ]
+    ctx = make_ctx()
+    ctx.cats = cats
+    ctx.dogs = dogs
+    state = asyncio.run(score_stage(state, ctx))
+    return state.scores[0].breakdown
+
+
+def test_all_in_folds_species_specific_pet_rent() -> None:
+    # §9.5 v1: 2 cats x $20 + 1 dog x $35 = $75 added to conservative rent.
+    breakdown = _score_with_pets(
+        PetCostsIn(cat_rent_monthly=20.0, dog_rent_monthly=35.0),
+        cats=2,
+        dogs=1,
+        rent=1700.0,
+    )
+    assert _all_in(breakdown) == 1775.0
+
+
+def test_all_in_falls_back_to_generic_pet_rent() -> None:
+    # No species-specific rent → the generic per-pet figure applies to each pet.
+    breakdown = _score_with_pets(
+        PetCostsIn(pet_rent_monthly=30.0),
+        cats=1,
+        dogs=1,
+        rent=1700.0,
+    )
+    assert _all_in(breakdown) == 1760.0
+
+
+def test_all_in_unchanged_when_no_pets() -> None:
+    breakdown = _score_with_pets(
+        PetCostsIn(cat_rent_monthly=20.0, dog_rent_monthly=35.0),
+        cats=0,
+        dogs=0,
+        rent=1700.0,
+    )
+    assert _all_in(breakdown) == 1700.0
+
+
+def test_species_with_no_rent_contributes_zero() -> None:
+    # Cat rent known, dog rent absent (no specific, no generic) → dog adds 0,
+    # the slot stays visibly unfilled rather than being fabricated.
+    breakdown = _score_with_pets(
+        PetCostsIn(cat_rent_monthly=20.0),
+        cats=1,
+        dogs=1,
+        rent=1700.0,
+    )
+    assert _all_in(breakdown) == 1720.0
+
+
+def test_all_in_unchanged_when_pet_costs_absent() -> None:
+    breakdown = _score_with_pets(None, cats=1, dogs=1, rent=1700.0)
+    assert _all_in(breakdown) == 1700.0
 
 
 def test_min_confidence_low_admits_demoted_values() -> None:

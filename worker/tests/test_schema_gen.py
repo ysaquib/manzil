@@ -42,7 +42,54 @@ def test_extractable_set_is_page_text_only() -> None:
 
 def test_schema_has_one_field_per_criterion_plus_floor_plans() -> None:
     schema = build_extraction_schema()
-    assert set(schema.model_fields) == EXPECTED_KEYS | {"floor_plans", "property_identity"}
+    assert set(schema.model_fields) == EXPECTED_KEYS | {
+        "floor_plans",
+        "property_identity",
+        "pet_costs",
+        "utilities",
+    }
+
+
+def test_pet_costs_and_utilities_are_optional_and_default_none() -> None:
+    """Both §9.5 blocks are non-catalog and optional — a payload without them
+    validates to None, so recorded fixtures and stored RunState snapshots that
+    predate them keep validating."""
+    schema = build_extraction_schema()
+    parsed = schema.model_validate(extraction_payload())
+    assert parsed.pet_costs is None
+    assert parsed.utilities is None
+
+
+def test_pet_costs_block_validates() -> None:
+    schema = build_extraction_schema()
+    payload = extraction_payload(
+        pet_costs={
+            "cat_rent_monthly": 20.0,
+            "dog_rent_monthly": 35.0,
+            "pet_rent_monthly": None,
+            "evidence_quote": "Cat rent $20, dog rent $35",
+        }
+    )
+    parsed = schema.model_validate(payload)
+    assert parsed.pet_costs.cat_rent_monthly == 20.0
+    assert parsed.pet_costs.dog_rent_monthly == 35.0
+    assert parsed.pet_costs.pet_rent_monthly is None
+
+
+def test_utilities_included_list_validates_and_rejects_unknown_kind() -> None:
+    schema = build_extraction_schema()
+    ok = extraction_payload(
+        utilities={"included": ["water", "sewer"], "evidence_quote": "Water and sewer included"}
+    )
+    parsed = schema.model_validate(ok)
+    assert parsed.utilities.included == ["water", "sewer"]
+
+    empty = extraction_payload(utilities={"included": [], "evidence_quote": None})
+    assert schema.model_validate(empty).utilities.included == []
+
+    bad = extraction_payload(utilities={"included": ["moonlight"]})
+    with pytest.raises(ValidationError, match="utilities"):
+        schema.model_validate(bad)
 
 
 def test_property_identity_is_optional_and_defaults_none() -> None:

@@ -10,7 +10,9 @@ import {
   Group,
   Loader,
   Modal,
+  NumberInput,
   Select,
+  SimpleGrid,
   Stack,
   Text,
   TextInput,
@@ -96,6 +98,43 @@ function SettingsForm({ hunt }: { hunt: Hunt }) {
             Rename
           </Button>
         </Group>
+      </Section>
+
+      <Section title="Household">
+        <Stack gap="sm">
+          <Text size="xs" c="dimmed">
+            Pets feed the all-in cost estimate — changing them re-scores in the background.
+          </Text>
+          <SimpleGrid cols={3} spacing="sm">
+            <NumberInput
+              label="People moving in"
+              min={1}
+              max={20}
+              step={1}
+              allowDecimal={false}
+              value={settings.occupants}
+              onChange={(v) => set("occupants", typeof v === "number" ? v : settings.occupants)}
+            />
+            <NumberInput
+              label="Cats"
+              min={0}
+              max={10}
+              step={1}
+              allowDecimal={false}
+              value={settings.cats}
+              onChange={(v) => set("cats", typeof v === "number" ? v : settings.cats)}
+            />
+            <NumberInput
+              label="Dogs"
+              min={0}
+              max={10}
+              step={1}
+              allowDecimal={false}
+              value={settings.dogs}
+              onChange={(v) => set("dogs", typeof v === "number" ? v : settings.dogs)}
+            />
+          </SimpleGrid>
+        </Stack>
       </Section>
 
       <Section title="Scoring defaults">

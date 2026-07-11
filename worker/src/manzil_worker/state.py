@@ -25,6 +25,12 @@ from pydantic import BaseModel, Field
 
 VerifyCheck = Literal["evidence", "conformance", "plausibility", "consistency"]
 
+# Utilities a listing can state are included in rent (§9.5). Kept here so the
+# EXTRACT schema block and the RunState model share one closed vocabulary.
+UtilityKind = Literal[
+    "water", "sewer", "trash", "gas", "electric", "heat", "internet", "cable"
+]
+
 
 class FieldExtraction(BaseModel):
     """One extracted fact with its provenance (IMPL §3)."""
@@ -61,6 +67,29 @@ class PropertyIdentityIn(BaseModel):
     name: str | None = None
     address: str | None = None
     official_url: str | None = None
+
+
+class PetCostsIn(BaseModel):
+    """Per-pet monthly rent as stated on the page — plain JSON types, a
+    non-catalog EXTRACT block (§9.5 v1). Projected onto the fee_checklist pet
+    slots at persistence, never into the rubric/scoring criteria path. Species-
+    specific fields are populated only when the page distinguishes cat vs dog;
+    the generic field only when it states one per-pet figure without species."""
+
+    cat_rent_monthly: float | None = None
+    dog_rent_monthly: float | None = None
+    pet_rent_monthly: float | None = None  # species-unspecified
+    evidence_quote: str | None = None
+
+
+class UtilitiesIn(BaseModel):
+    """Utilities the listing states are INCLUDED in rent (§9.5) — a non-catalog
+    EXTRACT block stored as a `utilities_included` extraction, unscored display
+    metadata. `included` is an empty list when the page says none are included
+    and None when the page says nothing about utilities."""
+
+    included: list[UtilityKind] | None = None
+    evidence_quote: str | None = None
 
 
 class SourceState(BaseModel):
@@ -111,6 +140,8 @@ class RunState(BaseModel):
     reconciled: dict[str, FieldExtraction] = Field(default_factory=dict)
     floor_plans: list[FloorPlanIn] = Field(default_factory=list)
     property_identity: PropertyIdentityIn | None = None
+    pet_costs: PetCostsIn | None = None
+    utilities: UtilitiesIn | None = None
     verify_flags: list[VerifyFlag] = Field(default_factory=list)
     effective_values: dict[str, Any] = Field(default_factory=dict)
     scores: list[PlanScore] = Field(default_factory=list)

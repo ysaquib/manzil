@@ -174,6 +174,59 @@ async def test_rescore_applies_override_and_persists_scores() -> None:
         await pool.close()
 
 
+async def test_rescore_folds_pet_rent_from_fee_slots_and_settings() -> None:
+    """§9.5 v1: rescore reads pet counts from hunt settings and per-pet rents from
+    the fee_checklist slots (extracted OR manual), folding them into all_in_monthly.
+    This is what makes a manual fee edit + a settings change genuinely rescore-
+    effective."""
+    try:
+        pool = await asyncpg.create_pool(DATABASE_URL, timeout=5, min_size=1, max_size=4)
+    except (OSError, asyncpg.PostgresError) as exc:  # pragma: no cover
+        pytest.skip(f"Postgres unreachable at {DATABASE_URL}: {exc}")
+
+    hunt_id, listing_id, floor_plan_id = await _seed_rescore_fixture(pool)
+    try:
+        async with pool.acquire() as conn:
+            # 1 cat + 1 dog on the hunt; cat rent extracted, dog rent entered manually.
+            settings = {**SETTINGS, "cats": 1, "dogs": 1}
+            await conn.execute(
+                "update hunts set settings = $2::jsonb where id = $1",
+                hunt_id,
+                json.dumps(settings),
+            )
+            await conn.execute(
+                """
+                insert into fee_checklist (hunt_listing_id, fee_slot, amount, value_state)
+                values ($1, 'pet_rent_cat', 20.00, 'extracted'),
+                       ($1, 'pet_rent_dog', 35.00, 'manual')
+                """,
+                listing_id,
+            )
+            await conn.fetchval(
+                """
+                insert into jobs (hunt_id, type, state, payload)
+                values ($1, 'rescore', 'queued', $2::jsonb) returning id
+                """,
+                hunt_id,
+                json.dumps({"hunt_id": str(hunt_id)}),
+            )
+        dispatch = build_dispatch(pool)
+        await run_worker_loop(pool, asyncio.Event(), dispatch=dispatch, until_empty=True)
+
+        breakdown = await pool.fetchval(
+            "select breakdown from scores where hunt_listing_id = $1 and floor_plan_id = $2",
+            listing_id,
+            floor_plan_id,
+        )
+        parsed = json.loads(breakdown)
+        all_in = next(c for c in parsed["criteria"] if c["key"] == "all_in_monthly")
+        # conservative rent 1900 + 1*20 (cat) + 1*35 (dog) = 1955
+        assert all_in["value"] == 1955.0
+    finally:
+        await pool.execute("delete from hunts where id = $1", hunt_id)
+        await pool.close()
+
+
 async def test_rescore_after_rubric_version_bump_updates_all_scores() -> None:
     try:
         pool = await asyncpg.create_pool(DATABASE_URL, timeout=5, min_size=1, max_size=4)

@@ -27,11 +27,23 @@ import { ScoreCell } from "./ScoreCell";
 import { SourcesList } from "./SourcesList";
 import { useExtractions, useFees, useListings, useOverrides } from "./api";
 import { resolveRow, resolveRowWithDraft } from "./unitGroups";
-import type { Listing } from "./types";
+import type { Extraction, Listing } from "./types";
 
 export interface DrawerSelection {
   listingId: string;
   groupKey: string | null;
+}
+
+// §9.5 utilities-included: the latest `utilities_included` extraction (hunt_id
+// NULL) rides in on the same useExtractions map the breakdown already reads.
+function UtilitiesIncludedLine({ extraction }: { extraction: Extraction | undefined }) {
+  if (!extraction) return null;
+  const included = Array.isArray(extraction.value) ? (extraction.value as string[]) : [];
+  return (
+    <Text size="sm" c="dimmed">
+      Utilities included: {included.length > 0 ? included.join(", ") : "none stated"}
+    </Text>
+  );
 }
 
 export function ListingDetailDrawer({
@@ -238,7 +250,10 @@ function DrawerShell({
             </Section>
 
             <Section title="Fees checklist">
-              <FeeChecklist fees={fees ?? []} />
+              <Stack gap="sm">
+                <FeeChecklist fees={fees ?? []} />
+                <UtilitiesIncludedLine extraction={extractions?.get("utilities_included")} />
+              </Stack>
             </Section>
 
             <Section title="Sources">

@@ -20,7 +20,14 @@ from manzil_worker.llm.config import model_for_stage
 from manzil_worker.llm.prompt_loader import load_prompt
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.schema_gen import build_extraction_schema, extractable_entries
-from manzil_worker.state import FieldExtraction, FloorPlanIn, PropertyIdentityIn, RunState
+from manzil_worker.state import (
+    FieldExtraction,
+    FloorPlanIn,
+    PetCostsIn,
+    PropertyIdentityIn,
+    RunState,
+    UtilitiesIn,
+)
 
 log = structlog.get_logger()
 
@@ -79,6 +86,18 @@ async def extract_stage(state: RunState, ctx: StageCtx) -> RunState:
         if identity is not None
         else None
     )
+    pet_costs = extraction.pet_costs
+    state.pet_costs = (
+        PetCostsIn.model_validate(pet_costs, from_attributes=True)
+        if pet_costs is not None
+        else None
+    )
+    utilities = extraction.utilities
+    state.utilities = (
+        UtilitiesIn.model_validate(utilities, from_attributes=True)
+        if utilities is not None
+        else None
+    )
     log.info(
         "extracted",
         job_id=str(state.job_id),
@@ -86,5 +105,7 @@ async def extract_stage(state: RunState, ctx: StageCtx) -> RunState:
         fields=len(state.extractions),
         floor_plans=len(state.floor_plans),
         identity=state.property_identity is not None,
+        pet_costs=state.pet_costs is not None,
+        utilities=state.utilities is not None,
     )
     return state

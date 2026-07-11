@@ -1,5 +1,5 @@
 // Jobs data hooks (P1-13). The jobs list is THE one polled apiClient read
-// (Phase 1 plan §1.6): refetchInterval 3000 against the active states; P2-4
+// (Phase 1 plan §1.6): refetchInterval 3000 against the active states; P2-5
 // replaces the polling with Realtime. Assumptions: frontend/API_ASSUMPTIONS.md
 // — including conflict #2: JobResponse must grow the parked checkpoint prompt.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";

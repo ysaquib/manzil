@@ -45,6 +45,7 @@ from manzil_shared.models import (
 
 from manzil_worker.fetching.registry import InMemoryRegistry, PostgresRegistry
 from manzil_worker.fetching.tiers import Fetcher, site_domain
+from manzil_worker.llm.config import model_for_stage
 from manzil_worker.postgres_persistence import PostgresPersistence
 from manzil_worker.runner import PHASE0_STAGES, run_job
 from manzil_worker.stages.base import StageCtx
@@ -294,6 +295,60 @@ async def _persist_ingest_results(
             ext.model,
         )
 
+    # §9.5 v1 species-specific pet rent → fee_checklist slots. Extracted amounts
+    # never clobber a human 'manual' entry (the DO UPDATE's WHERE guards that);
+    # only non-null amounts are written, so an unstated species stays an empty
+    # slot rather than a fabricated $0.
+    pet_costs = state.pet_costs
+    if pet_costs is not None:
+        pet_slots = {
+            "pet_rent_cat": pet_costs.cat_rent_monthly,
+            "pet_rent_dog": pet_costs.dog_rent_monthly,
+            "pet_rent": pet_costs.pet_rent_monthly,
+        }
+        for slot, amount in pet_slots.items():
+            if amount is None:
+                continue
+            await conn.execute(
+                """
+                insert into fee_checklist
+                    (hunt_listing_id, fee_slot, amount, value_state, evidence_ref, updated_at)
+                values ($1, $2, $3, 'extracted', $4, now())
+                on conflict (hunt_listing_id, fee_slot) do update set
+                    amount = excluded.amount,
+                    value_state = excluded.value_state,
+                    evidence_ref = excluded.evidence_ref,
+                    updated_at = now()
+                where fee_checklist.value_state <> 'manual'
+                """,
+                hunt_listing_id,
+                slot,
+                Decimal(str(amount)),
+                pet_costs.evidence_quote,
+            )
+
+    # §9.5 v1 utilities-included → one append-only `utilities_included` extraction
+    # (property-level, hunt_id NULL; latest row wins by design). Only when the
+    # block is present and `included` was resolved (empty list = "none included").
+    utilities = state.utilities
+    if utilities is not None and utilities.included is not None:
+        model = next((e.model for e in state.reconciled.values()), None) or model_for_stage(
+            "extract"
+        )
+        await conn.execute(
+            """
+            insert into extractions
+                (property_id, hunt_id, criterion_key, value, confidence,
+                 evidence_quote, source_id, model)
+            values ($1, null, 'utilities_included', $2::jsonb, 'high'::confidence, $3, $4, $5)
+            """,
+            property_id,
+            json.dumps(utilities.included),
+            utilities.evidence_quote,
+            source_id,
+            model,
+        )
+
     scorable = [p for p in state.floor_plans if p.beds is not None and p.baths is not None]
     if not scorable:
         # No available floor plans, even after extraction/cross-validation — a
@@ -394,6 +449,8 @@ def make_ingest_dispatcher(
 
         settings = json.loads(listing["settings"]) if listing["settings"] else {}
         min_confidence = Confidence(settings.get("min_confidence", "medium"))
+        cats = int(settings.get("cats", 0))
+        dogs = int(settings.get("dogs", 0))
         state = _build_run_state(job)
 
         async def project(conn: asyncpg.Connection, done_state: RunState) -> None:
@@ -418,6 +475,8 @@ def make_ingest_dispatcher(
             rubric=rubric,
             rubric_version=listing["rubric_version"],
             min_confidence=min_confidence,
+            cats=cats,
+            dogs=dogs,
             persistence=persistence,
         )
 
@@ -450,6 +509,8 @@ def make_rescore_dispatcher() -> Dispatcher:
 
         settings = json.loads(hunt["settings"]) if hunt["settings"] else {}
         min_confidence = Confidence(settings.get("min_confidence", "medium"))
+        cats = int(settings.get("cats", 0))
+        dogs = int(settings.get("dogs", 0))
 
         try:
             async with pool.acquire() as conn, conn.transaction():
@@ -466,6 +527,8 @@ def make_rescore_dispatcher() -> Dispatcher:
                     rubric=rubric,
                     rubric_version=hunt["rubric_version"],
                     min_confidence=min_confidence,
+                    cats=cats,
+                    dogs=dogs,
                 )
                 await conn.execute(
                     """

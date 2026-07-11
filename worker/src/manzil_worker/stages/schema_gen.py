@@ -23,7 +23,7 @@ from manzil_shared.catalog import CATALOG
 from manzil_shared.models import CatalogEntry, Confidence
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, create_model, model_validator
 
-from manzil_worker.state import FloorPlanIn, PropertyIdentityIn
+from manzil_worker.state import FloorPlanIn, PetCostsIn, PropertyIdentityIn, UtilitiesIn
 
 # Composed by the pipeline, never extracted from the page (§9.5).
 COMPOSED_KEYS = frozenset({"all_in_monthly"})
@@ -165,6 +165,27 @@ def build_extraction_schema(
             "with its rent range, sqft range, deposit, and earliest availability "
             "(ISO date). Empty if the page lists a single unit without named plans — "
             "then put its figures in a single unnamed plan.",
+        ),
+    )
+    fields["pet_costs"] = (
+        PetCostsIn | None,
+        Field(
+            default=None,
+            description="Monthly per-pet rent as stated on the page. Numbers only, no "
+            "currency symbols. Fill cat_rent_monthly / dog_rent_monthly ONLY when the "
+            "page distinguishes cat rent from dog rent; fill pet_rent_monthly ONLY when "
+            "the page states a single per-pet figure without distinguishing species. "
+            "Null any field the page does not state — never invent. Null the whole block "
+            "if the page says nothing about pet rent.",
+        ),
+    )
+    fields["utilities"] = (
+        UtilitiesIn | None,
+        Field(
+            default=None,
+            description="Utilities the listing states are INCLUDED in rent. Set `included` "
+            "to the list of included utilities; an empty list if the page states none are "
+            "included; null the block if the page says nothing about utilities. Never invent.",
         ),
     )
     return create_model(

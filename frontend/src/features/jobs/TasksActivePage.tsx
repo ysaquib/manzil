@@ -1,6 +1,6 @@
 // Tasks — Active tab (P1-13): job cards polled at 3s via the one apiClient
 // read (queued, running, waiting_user). Realtime replaces the polling in
-// P2-4; the History tab is P2-6.
+// P2-5; the History tab is P2-7.
 import { Alert, Button, Card, Center, Flex, Loader, SimpleGrid, Stack, Text } from "@mantine/core";
 import { IconList, IconRefresh } from "@tabler/icons-react";
 import { Link, useParams } from "react-router-dom";

@@ -51,6 +51,10 @@ class StageCtx:
     # Hunt setting (§8.2 contract, DESIGN v2.3): effective values below this
     # score as unknown. Phase 0 uses the contract default; hunts own it from P1-5.
     min_confidence: Confidence = Confidence.MEDIUM
+    # Household counts (§8.2 hunt settings, §9.5 v1): pet counts drive the pet-rent
+    # component of `all_in_monthly`. Default 0 so Phase 0 CLI runs compose no pet rent.
+    cats: int = 0
+    dogs: int = 0
     persistence: Persistence = field(default_factory=NullPersistence)
     today: Callable[[], date] = _today
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep  # injected so tests skip backoff
