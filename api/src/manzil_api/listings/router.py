@@ -7,9 +7,9 @@ from uuid import UUID
 from fastapi import APIRouter, status
 
 from manzil_api.dependencies import CurrentUser, UserClient
-from manzil_api.hunts.dependencies import OwnedHunt
+from manzil_api.hunts.dependencies import MemberHunt
 from manzil_api.listings import service
-from manzil_api.listings.dependencies import OwnedListing
+from manzil_api.listings.dependencies import ValidListing
 from manzil_api.listings.schemas import ListingCreate, ListingResponse, PinsPatch
 
 router = APIRouter(tags=["listings"])
@@ -23,7 +23,7 @@ router = APIRouter(tags=["listings"])
 async def create_listing(
     hunt_id: UUID,
     body: ListingCreate,
-    hunt: OwnedHunt,
+    hunt: MemberHunt,
     user: CurrentUser,
     client: UserClient,
 ) -> ListingResponse:
@@ -38,18 +38,24 @@ async def create_listing(
 
 @router.get("/hunts/{hunt_id}/listings", response_model=list[ListingResponse])
 async def list_listings(
-    hunt_id: UUID, hunt: OwnedHunt, client: UserClient
+    hunt_id: UUID, hunt: MemberHunt, client: UserClient
 ) -> list[ListingResponse]:
     return await service.list_listings(client, hunt_id)
 
 
 @router.delete("/listings/{listing_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_listing(listing_id: UUID, listing: OwnedListing, client: UserClient) -> None:
-    await service.delete_listing(client, listing_id)
+async def delete_listing(
+    listing_id: UUID, listing: ValidListing, user: CurrentUser, client: UserClient
+) -> None:
+    await service.delete_listing(client, listing_id, user.id)
 
 
 @router.patch("/listings/{listing_id}/pins", response_model=ListingResponse)
 async def patch_pins(
-    listing_id: UUID, body: PinsPatch, listing: OwnedListing, client: UserClient
+    listing_id: UUID,
+    body: PinsPatch,
+    listing: ValidListing,
+    user: CurrentUser,
+    client: UserClient,
 ) -> ListingResponse:
-    return await service.patch_pins(client, listing_id, body)
+    return await service.patch_pins(client, listing, user.id, body)

@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 import pytest
-from httpx import ASGITransport, AsyncClient
+from httpx import AsyncClient
 from manzil_worker.fetching.results import FetchResult
 from manzil_worker.phase0_rubric import phase0_rubric
 from manzil_worker.queue import build_dispatch, run_worker_loop
@@ -27,7 +27,9 @@ class _FixtureFetcher:
 
 
 @pytest.mark.asyncio
-async def test_e2e_hunt_rubric_listing_override_flow(app, db_pool, monkeypatch) -> None:
+async def test_e2e_hunt_rubric_listing_override_flow(
+    client: AsyncClient, db_pool, monkeypatch
+) -> None:
     monkeypatch.setenv("MANZIL_LLM_MODE", "replay")
     body = (
         Path(__file__).resolve().parents[2] / "worker" / "tests" / "fixtures" / "pages" / PAGE
@@ -35,8 +37,7 @@ async def test_e2e_hunt_rubric_listing_override_flow(app, db_pool, monkeypatch) 
     dispatch = build_dispatch(db_pool, fetchers_factory=lambda: {1: _FixtureFetcher(body)})
 
     hunt_id: str | None = None
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
+    try:
         hunt = await client.post("/v1/hunts", json={"name": "E2E Hunt"})
         assert hunt.status_code == 201
         hunt_id = hunt.json()["id"]
@@ -56,9 +57,7 @@ async def test_e2e_hunt_rubric_listing_override_flow(app, db_pool, monkeypatch) 
         rubric = await client.put(f"/v1/hunts/{hunt_id}/rubric", json={"criteria": criteria})
         assert rubric.status_code == 200
 
-        listing = await client.post(
-            f"/v1/hunts/{hunt_id}/listings", json={"url": FIXTURE_URL}
-        )
+        listing = await client.post(f"/v1/hunts/{hunt_id}/listings", json={"url": FIXTURE_URL})
         assert listing.status_code == 201
         listing_id = listing.json()["id"]
 
@@ -99,5 +98,6 @@ async def test_e2e_hunt_rubric_listing_override_flow(app, db_pool, monkeypatch) 
         beds = next(c for c in parsed["criteria"] if c["key"] == "beds")
         assert beds["value"] == 2
 
-    if hunt_id is not None:
-        await db_pool.execute("delete from hunts where id = $1", hunt_id)
+    finally:
+        if hunt_id is not None:
+            await db_pool.execute("delete from hunts where id = $1", hunt_id)

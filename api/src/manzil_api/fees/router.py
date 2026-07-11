@@ -9,7 +9,7 @@ from fastapi import APIRouter
 from manzil_api.dependencies import CurrentUser, UserClient
 from manzil_api.fees import service
 from manzil_api.fees.schemas import FeeEntryResponse, FeeEntryUpsert
-from manzil_api.listings.dependencies import OwnedListing
+from manzil_api.listings.dependencies import ValidListing
 
 router = APIRouter(tags=["fees"])
 
@@ -19,7 +19,7 @@ async def upsert_fee(
     listing_id: UUID,
     fee_slot: str,
     body: FeeEntryUpsert,
-    listing: OwnedListing,
+    listing: ValidListing,
     user: CurrentUser,
     client: UserClient,
 ) -> FeeEntryResponse:

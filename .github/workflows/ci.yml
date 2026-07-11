@@ -38,6 +38,22 @@ jobs:
       - run: uv run --package manzil-api pytest api/tests
       - run: uv run --package manzil-worker pytest worker/tests
 
+  collaboration-security:
+    runs-on: ubuntu-latest
+    env:
+      MANZIL_LLM_MODE: replay
+      MANZIL_WORKER_INPROCESS: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - run: uv sync --all-packages
+      - run: supabase start
+      - run: supabase db reset
+      - run: uv run --package manzil-api pytest api/tests/test_rls_matrix.py
+
   frontend:
     runs-on: ubuntu-latest
     defaults:

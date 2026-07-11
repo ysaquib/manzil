@@ -17,6 +17,16 @@ class NotHuntOwner(ManzilAPIError):
     code = "not_hunt_owner"
 
 
+class NotHuntMember(ManzilAPIError):
+    status_code = status.HTTP_404_NOT_FOUND
+    code = "hunt_not_found"
+
+
+class InsufficientRole(ManzilAPIError):
+    status_code = status.HTTP_403_FORBIDDEN
+    code = "insufficient_role"
+
+
 class InvalidHuntSettings(ManzilAPIError):
     status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
     code = "invalid_hunt_settings"

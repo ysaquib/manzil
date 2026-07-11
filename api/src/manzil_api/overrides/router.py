@@ -7,7 +7,7 @@ from uuid import UUID
 from fastapi import APIRouter, status
 
 from manzil_api.dependencies import CurrentUser, UserClient
-from manzil_api.listings.dependencies import OwnedListing
+from manzil_api.listings.dependencies import ValidListing
 from manzil_api.overrides import service
 from manzil_api.overrides.schemas import OverrideCreate, OverrideResponse
 
@@ -22,7 +22,7 @@ router = APIRouter(tags=["overrides"])
 async def create_override(
     listing_id: UUID,
     body: OverrideCreate,
-    listing: OwnedListing,
+    listing: ValidListing,
     user: CurrentUser,
     client: UserClient,
 ) -> OverrideResponse:

@@ -93,9 +93,6 @@ async def create_hunt(client: Client, user_id: str, body: HuntCreate) -> HuntRes
     row = (response.data or [None])[0]
     if row is None:
         raise RuntimeError("hunt insert returned no row")
-    client.table("hunt_members").insert(
-        {"hunt_id": row["id"], "user_id": user_id, "role": "owner"}
-    ).execute()
     return _to_response(row)
 
 
@@ -103,7 +100,6 @@ async def list_hunts(client: Client, user_id: str) -> list[HuntResponse]:
     response = (
         client.table("hunts")
         .select("*")
-        .eq("owner_id", user_id)
         .is_("archived_at", "null")
         .order("created_at", desc=True)
         .execute()
@@ -125,17 +121,14 @@ async def patch_hunt(client: Client, hunt_id: UUID, body: HuntUpdate) -> HuntRes
     return _to_response(row)
 
 
-async def patch_settings(
-    client: Client, hunt_id: UUID, body: HuntSettingsPatch
-) -> HuntResponse:
+async def patch_settings(client: Client, hunt_id: UUID, body: HuntSettingsPatch) -> HuntResponse:
     row = await get_hunt_row(client, hunt_id)
     if row is None:
         raise RuntimeError("hunt missing")
     current = row.get("settings") or {}
     merged = _merge_settings(current, body.settings)
     scoring_changed = any(
-        key in body.settings and body.settings[key] != current.get(key)
-        for key in _SCORING_KEYS
+        key in body.settings and body.settings[key] != current.get(key) for key in _SCORING_KEYS
     )
     updates: dict[str, Any] = {"settings": merged}
     if scoring_changed:

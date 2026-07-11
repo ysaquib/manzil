@@ -12,10 +12,11 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import Depends
+from manzil_shared.models import HuntRole
 
 from manzil_api.dependencies import CurrentUser, get_user_client
 from manzil_api.hunts import service
-from manzil_api.hunts.exceptions import HuntNotFound, NotHuntOwner
+from manzil_api.hunts.exceptions import HuntNotFound, InsufficientRole, NotHuntMember
 from supabase import Client
 
 Hunt = dict[str, Any]
@@ -34,10 +35,39 @@ async def valid_hunt_id(
 ValidHunt = Annotated[Hunt, Depends(valid_hunt_id)]
 
 
-async def require_owner(hunt: ValidHunt, user: CurrentUser) -> Hunt:
-    if hunt.get("owner_id") != user.id:
-        raise NotHuntOwner("Only the hunt owner may perform this action")
-    return hunt
+_ROLE_RANK = {HuntRole.MEMBER: 1, HuntRole.CURATOR: 2, HuntRole.OWNER: 3}
+
+
+def require_role(minimum: HuntRole):  # type: ignore[no-untyped-def]
+    async def dependency(
+        hunt: ValidHunt,
+        user: CurrentUser,
+        client: Annotated[Client, Depends(get_user_client)],
+    ) -> Hunt:
+        response = (
+            client.table("hunt_members")
+            .select("role")
+            .eq("hunt_id", hunt["id"])
+            .eq("user_id", user.id)
+            .limit(1)
+            .execute()
+        )
+        rows = response.data or []
+        if not rows:
+            raise NotHuntMember("Hunt not found")
+        role = HuntRole(rows[0]["role"])
+        if _ROLE_RANK[role] < _ROLE_RANK[minimum]:
+            raise InsufficientRole(f"This action requires the {minimum.value} role")
+        return hunt
+
+    return dependency
+
+
+require_member = require_role(HuntRole.MEMBER)
+require_curator = require_role(HuntRole.CURATOR)
+require_owner = require_role(HuntRole.OWNER)
 
 
 OwnedHunt = Annotated[Hunt, Depends(require_owner)]
+MemberHunt = Annotated[Hunt, Depends(require_member)]
+CuratedHunt = Annotated[Hunt, Depends(require_curator)]
