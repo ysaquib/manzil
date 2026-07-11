@@ -1,5 +1,5 @@
 // Route table (Phase 1 plan §5.2, DESIGN §13.1 subset). NOT /compare or
-// /invite/:token — those are Phase 2/3.
+// /compare remains Phase 3.
 import { createBrowserRouter, Navigate } from "react-router-dom";
 
 import { LoginPage } from "../auth/LoginPage";
@@ -7,6 +7,7 @@ import { RequireAuth } from "../auth/RequireAuth";
 import { AppLayout } from "../components/AppLayout";
 import { HuntSwitcherPage } from "../features/hunts/HuntSwitcherPage";
 import { HuntSettingsPage } from "../features/hunts/HuntSettingsPage";
+import { InviteAcceptPage } from "../features/invites/InviteAcceptPage";
 import { OverviewPage } from "../features/listings/OverviewPage";
 import { TasksActivePage } from "../features/jobs/TasksActivePage";
 import { RubricPage } from "../features/rubric/RubricPage";
@@ -15,6 +16,7 @@ const protectedRoute = (element: React.ReactNode) => <RequireAuth>{element}</Req
 
 export const router = createBrowserRouter([
   { path: "/login", element: <LoginPage /> },
+  { path: "/invite/:token", element: protectedRoute(<InviteAcceptPage />) },
   {
     path: "/",
     element: protectedRoute(<HuntSwitcherPage />),

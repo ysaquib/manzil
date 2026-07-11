@@ -8,8 +8,8 @@
 // (waiting on the user); status hues lean earthy (moss/olive/ochre) instead
 // of electric. Headings are Literata (serif), body is Source Sans 3 (sans);
 // both self-hosted via @fontsource-variable imports in main.tsx.
-import { createTheme, MantineColorsTuple, rem, type CSSVariablesResolver } from "@mantine/core";
-import { dusk, old_clay, gray, dark, green, lime, yellow, red, colors } from "./colors";
+import { createTheme, rem, type CSSVariablesResolver } from "@mantine/core";
+import { dusk, old_clay, gray, dark, green, lime, yellow, red } from "./colors";
 
 const fontStackSans =
   "'Source Sans 3 Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";

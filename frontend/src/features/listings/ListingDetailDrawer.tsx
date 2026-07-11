@@ -17,6 +17,9 @@ import { useMediaQuery } from "@mantine/hooks";
 import { useEffect, useState } from "react";
 
 import { Section } from "../../components/Section";
+import { CommentsSection } from "../collaboration/CommentsSection";
+import { RatingControl } from "../collaboration/RatingControl";
+import { useMembers } from "../collaboration/api";
 import { semantic } from "../../theme";
 import { useCatalog } from "../rubric/api";
 import { CriterionBreakdown } from "./CriterionBreakdown";
@@ -120,6 +123,7 @@ function DrawerShell({
   );
   const { data: overrides } = useOverrides(listing?.id ?? "");
   const { data: fees } = useFees(listing?.id ?? "");
+  const { data: members = [] } = useMembers(huntId);
 
   if (!listing) return null;
 
@@ -258,6 +262,14 @@ function DrawerShell({
 
             <Section title="Sources">
               <SourcesList sources={listing.property.sources} sourcePolicy={listing.source_policy} />
+            </Section>
+
+            <Section title="Ratings">
+              <RatingControl listingId={listing.id} />
+            </Section>
+
+            <Section title="Comments">
+              <CommentsSection listingId={listing.id} members={members} />
             </Section>
           </Stack>
         </Box>

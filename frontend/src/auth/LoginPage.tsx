@@ -2,7 +2,7 @@
 // or reset flow. Sends signInWithOtp; AuthProvider picks up the session on return.
 import { Button, Card, Center, Stack, Text, TextInput } from "@mantine/core";
 import { useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 
 import { PublicPageShell } from "../components/PublicPageShell";
 import { supabase } from "../lib/supabase";
@@ -10,15 +10,20 @@ import { useAuth } from "./useAuth";
 
 export function LoginPage() {
   const { session } = useAuth();
+  const location = useLocation();
+  const returnTo = (location.state as { from?: string } | null)?.from ?? "/";
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (session) return <Navigate to="/" replace />;
+  if (session) return <Navigate to={returnTo} replace />;
 
   async function sendLink() {
     setError(null);
-    const { error: authError } = await supabase.auth.signInWithOtp({ email });
+    const { error: authError } = await supabase.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: `${window.location.origin}${returnTo}` },
+    });
     if (authError) setError(authError.message);
     else setSent(true);
   }

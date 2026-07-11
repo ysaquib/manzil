@@ -1,12 +1,16 @@
-// Hunt settings (P1-5 consumer, §8.2): name/archive + the 4-key settings
-// form. Scoring-affecting keys (cost mode, min confidence) rescore for free;
-// the source-policy default affects future submissions only. Members/roles/
-// invites arrive with Phase 2. Archive is destructive-adjacent → confirm
-// modal, tucked at the bottom (frontend/AGENTS.md hierarchy).
+// Hunt settings (P1-5 + P2-8 consumer, §8.2 / §13.1): name/archive + the
+// 4-key settings form, plus the Phase 2 collaboration surface — Members &
+// roles, Invites, your profile (display name + color), and ownership transfer.
+// Scoring-affecting keys (cost mode, min confidence) rescore for free; the
+// source-policy default affects future submissions only. Destructive-adjacent
+// actions (archive, transfer) sit in the danger zone behind confirm modals
+// (frontend/AGENTS.md hierarchy). Role gating here is UX — RLS + the API are
+// the enforcement.
 import {
   Alert,
   Button,
   Center,
+  ColorInput,
   Group,
   Loader,
   Modal,
@@ -22,6 +26,16 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { PageHeader } from "../../components/PageHeader";
+import { useAuth } from "../../auth/useAuth";
+import {
+  useMembers,
+  useSetMemberColor,
+  useSetMemberDisplayName,
+  useTransferOwnership,
+} from "../collaboration/api";
+import { MembersSection } from "../collaboration/MembersSection";
+import { MEMBER_COLOR_TOKENS, memberColor } from "../collaboration/memberColors";
+import { InvitesSection } from "../invites/InvitesSection";
 import { Section } from "../../components/Section";
 import { ApiError } from "../../lib/apiClient";
 import { resolveSettings, SOURCE_POLICIES, type HuntSettings } from "../../lib/contracts";
@@ -38,6 +52,14 @@ function notifyError(title: string) {
 }
 
 function SettingsForm({ hunt }: { hunt: Hunt }) {
+  const { session } = useAuth();
+  const currentUserId = session?.user.id ?? "";
+  const isOwner = hunt.owner_id === currentUserId;
+  const { data: members = [] } = useMembers(hunt.id);
+  const currentMember = members.find((member) => member.user_id === currentUserId);
+  const setColor = useSetMemberColor(hunt.id, currentUserId);
+  const setDisplayName = useSetMemberDisplayName(hunt.id, currentUserId);
+  const transferOwnership = useTransferOwnership(hunt.id);
   const patchHunt = usePatchHunt(hunt.id);
   const patchSettings = usePatchHuntSettings(hunt.id);
   const navigate = useNavigate();
@@ -45,6 +67,25 @@ function SettingsForm({ hunt }: { hunt: Hunt }) {
   const [name, setName] = useState(hunt.name);
   const [settings, setSettings] = useState<HuntSettings>(() => resolveSettings(hunt.settings));
   const [confirmArchive, setConfirmArchive] = useState(false);
+  const [customColor, setCustomColor] = useState("#5C5CAA");
+  const [displayName, setDisplayNameInput] = useState("");
+  const [transferTarget, setTransferTarget] = useState<string | null>(null);
+  const [confirmTransfer, setConfirmTransfer] = useState(false);
+
+  // Seed the display-name editor from the loaded member row once it arrives,
+  // without clobbering in-progress edits.
+  const savedDisplayName = currentMember?.display_name ?? "";
+  const [seededName, setSeededName] = useState(false);
+  if (!seededName && currentMember) {
+    setDisplayNameInput(savedDisplayName);
+    setSeededName(true);
+  }
+
+  const transferOptions = members
+    .filter((member) => member.user_id !== currentUserId)
+    .map((member) => ({ value: member.user_id, label: member.display_name ?? "Member" }));
+  const transferTargetName =
+    members.find((member) => member.user_id === transferTarget)?.display_name ?? "this Member";
 
   const set = <K extends keyof HuntSettings>(key: K, value: HuntSettings[K]) =>
     setSettings((prev) => ({ ...prev, [key]: value }));
@@ -79,6 +120,24 @@ function SettingsForm({ hunt }: { hunt: Hunt }) {
         onError: notifyError("Couldn't archive hunt"),
       },
     );
+
+  const saveDisplayName = () =>
+    setDisplayName.mutate(displayName.trim(), {
+      onSuccess: () => notifications.show({ message: "Display name saved", color: "green" }),
+      onError: notifyError("Couldn't save display name"),
+    });
+
+  const transfer = () => {
+    if (!transferTarget) return;
+    transferOwnership.mutate(transferTarget, {
+      onSuccess: () => {
+        setConfirmTransfer(false);
+        setTransferTarget(null);
+        notifications.show({ message: "Ownership transferred", color: "green" });
+      },
+      onError: notifyError("Couldn't transfer ownership"),
+    });
+  };
 
   return (
     <Stack gap="xl" maw={520}>
@@ -189,8 +248,82 @@ function SettingsForm({ hunt }: { hunt: Hunt }) {
         </Stack>
       </Section>
 
+      <Section title="Your profile">
+        <Stack gap="sm">
+          <Group align="flex-end" gap="sm">
+            <TextInput
+              label="Display name"
+              description="How teammates see you on comments, ratings, and this roster."
+              value={displayName}
+              onChange={(e) => setDisplayNameInput(e.currentTarget.value)}
+              maxLength={80}
+              style={{ flex: 1 }}
+            />
+            <Button
+              variant="default"
+              onClick={saveDisplayName}
+              disabled={
+                !displayName.trim() ||
+                displayName.trim() === savedDisplayName ||
+                setDisplayName.isPending
+              }
+            >
+              Save
+            </Button>
+          </Group>
+          <Select
+            label="Palette color"
+            data={MEMBER_COLOR_TOKENS.map((token) => ({ value: token, label: token }))}
+            value={currentMember?.color && !currentMember.color.startsWith("#") ? currentMember.color : null}
+            onChange={(value) => value && setColor.mutate(value)}
+            renderOption={({ option }) => (
+              <Group gap="xs"><span style={{ width: 10, height: 10, borderRadius: "50%", background: memberColor(option.value), display: "inline-block" }} />{option.label}</Group>
+            )}
+          />
+          <Group align="flex-end">
+            <ColorInput label="Custom color" value={customColor} onChange={setCustomColor} format="hex" style={{ flex: 1 }} />
+            <Button variant="default" onClick={() => setColor.mutate(customColor)} loading={setColor.isPending}>Use custom</Button>
+          </Group>
+        </Stack>
+      </Section>
+
+      <MembersSection
+        huntId={hunt.id}
+        members={members}
+        currentUserId={currentUserId}
+        isOwner={isOwner}
+      />
+
+      {isOwner && <InvitesSection huntId={hunt.id} />}
+
       <Section title="Danger zone">
         <Stack gap="sm">
+          {isOwner && (
+            <Stack gap="xs">
+              <Text size="xs" c="dimmed">
+                Hand this hunt to another Member. You become a Curator; they take over as Owner.
+              </Text>
+              <Group align="flex-end" gap="sm">
+                <Select
+                  label="Transfer ownership to"
+                  placeholder={transferOptions.length ? "Choose a Member" : "No other Members yet"}
+                  data={transferOptions}
+                  value={transferTarget}
+                  onChange={setTransferTarget}
+                  disabled={transferOptions.length === 0}
+                  style={{ flex: 1 }}
+                />
+                <Button
+                  variant="light"
+                  color={semantic.danger}
+                  disabled={!transferTarget}
+                  onClick={() => setConfirmTransfer(true)}
+                >
+                  Transfer…
+                </Button>
+              </Group>
+            </Stack>
+          )}
           <Text size="xs" c="dimmed">
             Hides this hunt from the switcher; nothing is deleted.
           </Text>
@@ -216,6 +349,35 @@ function SettingsForm({ hunt }: { hunt: Hunt }) {
           </Group>
         </Stack>
       </Modal>
+
+      <Modal
+        opened={confirmTransfer}
+        onClose={() => setConfirmTransfer(false)}
+        title="Transfer ownership?"
+      >
+        <Stack>
+          <Text size="sm">
+            <Text span fw={600}>
+              {transferTargetName}
+            </Text>{" "}
+            becomes the Owner of <Text span fw={600}>{hunt.name}</Text>. You become a{" "}
+            <Text span fw={600}>Curator</Text> and lose owner-only controls. This can only be undone
+            by the new Owner.
+          </Text>
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setConfirmTransfer(false)}>
+              Cancel
+            </Button>
+            <Button
+              color={semantic.danger}
+              onClick={transfer}
+              loading={transferOwnership.isPending}
+            >
+              Transfer ownership
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </Stack>
   );
 }
@@ -226,7 +388,10 @@ export function HuntSettingsPage() {
 
   return (
     <Stack gap="lg">
-      <PageHeader title="Settings" description="Hunt name, scoring defaults, and archive" />
+      <PageHeader
+        title="Settings"
+        description="Members, invites, your profile, scoring defaults, and danger zone"
+      />
       {isLoading && (
         <Center py="xl">
           <Loader />

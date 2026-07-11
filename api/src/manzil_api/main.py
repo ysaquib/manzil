@@ -17,11 +17,13 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from manzil_api.collaboration.router import router as collaboration_router
 from manzil_api.config import Settings, get_settings
 from manzil_api.database import create_db_pool
 from manzil_api.exceptions import CatchAllMiddleware, register_exception_handlers
 from manzil_api.fees.router import router as fees_router
 from manzil_api.hunts.router import router as hunts_router
+from manzil_api.invites.router import router as invites_router
 from manzil_api.jobs.router import router as jobs_router
 from manzil_api.listings.router import router as listings_router
 from manzil_api.overrides.router import router as overrides_router
@@ -99,6 +101,8 @@ def create_app() -> FastAPI:
 
     for router in (
         hunts_router,
+        collaboration_router,
+        invites_router,
         rubric_router,
         listings_router,
         jobs_router,

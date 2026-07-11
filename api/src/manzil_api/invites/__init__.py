@@ -1,0 +1,1 @@
+"""Hunt invitations."""
