@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| **Version** | 2.8 |
+| **Version** | 2.9 |
 | **Status** | Living document — this is the source of truth during implementation |
 | **Supersedes** | `apartment-hunt-dashboard-design.md` draft v0.4 |
 | **Owner** | Yusuf |
@@ -238,7 +238,18 @@ Reads that the table renders continuously (listings, scores) go straight from th
 
 **Scheduling.** Three duties recur on timers: TTL-driven refresh scans ([§14](#14-caching-and-refresh-strategy)), the 24 h checkpoint-timeout sweep ([§10.10](#1010-user-checkpoints)), and the 120 d utility-baseline job ([§9.5](#95-utilities-and-all-in-monthly-cost)). All three are owned by a **scheduler tick inside the worker's main loop** (every ~5 min: run three SQL queries, insert due jobs / flip timed-out checkpoints to their defaults). No cron service, no scheduler infrastructure — the duties are just rows becoming due, which Postgres answers directly (NFR5). If the worker is down, ticks are missed and caught up on restart; nothing here is time-critical at minute granularity.
 
-**Worker deployment options:** (a) *recommended* — separate Render background worker (~$7/mo), isolating Playwright memory and pipeline latency from the API; (b) *budget option for Phase 1* — an asyncio worker loop started in the API process via FastAPI lifespan. Option (b) is tolerable early precisely because NFR3 makes interrupted jobs resume cleanly after a restart — but move to (a) before Playwright enters the picture (Phase 3), since browser memory spikes inside the API process are how you get mystery 502s.
+**Worker deployment posture:** the worker is a separate logical package and the
+pipeline always runs through the durable Postgres Job queue, but the default
+deployment is an asyncio worker loop inside the API process via FastAPI lifespan.
+That loop already runs the Tier-2 Playwright fetcher and is appropriate for this
+two-person Hunt: one process and one paid service until observed load justifies
+isolation. A separate worker process/service is an optional operational
+migration, not a Phase 3 prerequisite. Make that migration if browser Jobs
+repeatedly cause API memory pressure, restarts/502s, materially degraded API
+latency, or if Job concurrency/always-on scheduling becomes a real requirement.
+NFR3 makes either deployment safe: interrupted Jobs resume from the durable
+Stage boundary. Migration and rollback mechanics live in
+[IMPLEMENTATION §8](IMPLEMENTATION.md#8-runbooks).
 
 ---
 
@@ -287,7 +298,7 @@ manzil/
 ├── supabase/
 │   ├── migrations/              # 0001: global tables only (Phase 0 scope)
 │   └── seed.sql                 # generated FROM shared/catalog.py — never edited by hand
-├── infra/                       # render.yaml, .env.example
+├── infra/                       # environment template + deployment inputs
 └── docs/adr/                    # rationale too detailed for §20
 ```
 
@@ -401,7 +412,7 @@ Per hunt:
   Household keys (§20 2026-07-10): `cats`/`dogs` (0–10) — how many of each species move in; they multiply species-specific pet rent into the all-in composition ([§9.5](#95-utilities-and-all-in-monthly-cost)). `occupants` (1–20) — reserved reader is P3-9 utility-baseline scaling; named now so the settings shape doesn't churn twice.
 
   Edit effects follow from what each key feeds: `cost_estimate_mode`, `min_confidence`, `cats`, and `dogs` are **scoring inputs**, so editing them takes the exact rubric-mutation path ([§9.2](#92-rubric-system)) — bump `rubric_version`, enqueue the free hunt-level rescore; `rubric_version` is honestly "the version of how points are computed," and these settings are part of that. `proximity_mode` changes what ENRICH computes, so editing it enqueues a field-scoped refresh of location-class criteria ([§14](#14-caching-and-refresh-strategy)) — cheap Maps calls, no LLM. `default_source_policy` and `occupants` trigger nothing (yet).
-- **hunt_members** — `hunt_id, user_id, role hunt_role, color`. Every per-hunt RLS policy keys off this table.
+- **hunt_members** — `hunt_id, user_id, role hunt_role, color, display_name nullable`. `display_name` is the RLS-readable collaboration identity used on comments and rating tooltips; invite acceptance initializes it from the invited email's local part when available, otherwise `Member`, and pre-Phase-2 rows may remain NULL until edited. `color` is either one of the ordered palette tokens (`dusk`, `clay`, `moss`, `ochre`, `brick`, `olive`, `stone`, `plum`) or a canonical custom `#RRGGBB` value; invite acceptance assigns the first unused token, while members may later choose any valid hex color. Every per-hunt RLS policy keys off this table.
 - **invites** — `hunt_id, email nullable, token, role_granted, created_by, expires_at, accepted_by`.
 - **hunt_listings** — `hunt_id, property_id, added_by, status (active | archived), source_policy text, pins jsonb, created_at, unavailable_at`. `unavailable_at` is set when an ingest/refresh finds **no available floor plans** even after cross-validation — a legitimate result, not an error: the listing persists and renders as a **dimmed, null-score** row (distinct from a failed job and from a still-ingesting one), and the marker clears when a later refresh finds plans (reversible). It is orthogonal to `status` (a no-availability listing is still `active`). `source_policy` is the Source Policy chosen at submission ([§10.7](#107-fetching-subsystem)) — text + check constraint, defaulted from `hunts.settings.default_source_policy`; refresh jobs read it so a trusted-link listing never silently grows sibling sources. `pins` maps a Unit Group key (`"{beds}-{baths}"`) to a `floor_plan_id` — a pin is **per unit group**, not per listing, because one listing typically holds several groups.
 - **rubric_criteria** — `hunt_id, catalog_key nullable, custom_def jsonb nullable, enabled, options jsonb, unknown_delta numeric, non_negotiable jsonb nullable, is_bonus bool (derived), position`. Option shape (one of two places code snippets are warranted — this object is load-bearing):
@@ -415,7 +426,7 @@ Per hunt:
 - **overrides** — `hunt_listing_id, criterion_key, value jsonb, user_id, note, created_at`. Display precedence: override > extraction. Append-only history.
 - **fee_checklist** — `hunt_listing_id, fee_slot, amount, value_state, entered_by nullable, evidence_ref nullable, updated_at`.
 - **scores** — `hunt_listing_id, floor_plan_id, total numeric, breakdown jsonb, rubric_version, computed_at`. Breakdown records per criterion: matched option, delta, gate firings.
-- **comments** — `hunt_listing_id, user_id, body, created_at, deleted_at`.
+- **comments** — `hunt_listing_id, user_id, body, created_at, deleted_at`. Delete is author-only and soft: the row persists with `deleted_at`, while ordinary collaboration reads exclude it. Owner moderation is deferred unless real use demonstrates a need.
 - **ratings** — `hunt_listing_id, user_id, rating smallint`.
 
 Pipeline:
@@ -425,7 +436,7 @@ Pipeline:
 
 ### 8.3 RLS Strategy
 
-Global tables (`properties`, `extractions`, …) are readable by any authenticated user and writable only by the service role (worker/API) — regular clients never write facts. Per-hunt tables are readable/writable per the [permissions matrix](#42-roles-and-permissions), expressed as policies joining through `hunt_members`. Realtime respects RLS, so subscription security is automatic. The API runs with the user's JWT for user-initiated writes (RLS enforced) and the service role only inside the worker.
+Global tables (`properties`, `extractions`, …) are readable by any authenticated user and writable only by the service role (worker/API) — regular clients never write facts. Hunt-scoped custom-criterion `extractions` (`hunt_id is not null`) are the exception to global visibility: only that Hunt's members may read them, so custom facts never leak through the global namespace. Per-hunt tables are readable/writable per the [permissions matrix](#42-roles-and-permissions), expressed as policies through the security-definer `private.member_role(hunt_id)` helper to avoid recursive `hunt_members` policy evaluation. Hunt SELECT also admits the authenticated user recorded in `owner_id`, narrowly allowing PostgREST to return a newly inserted Hunt; the atomic Owner-membership trigger establishes ordinary authorization. Realtime respects RLS, so subscription security is automatic. The API runs with the user's JWT for user-initiated writes and the service role only inside the worker and explicitly named privileged operations.
 
 ---
 
@@ -433,7 +444,7 @@ Global tables (`properties`, `extractions`, …) are readable by any authenticat
 
 ### 9.1 Hunts, Membership, Invites
 
-Hunt creation makes the creator Owner and opens the rubric wizard (skippable; first URL submission is blocked until a rubric exists). Invites carry a role (`member` default; Owner may grant `curator`) via email or copy-link token; email delivery uses **Supabase Auth's built-in invite/magic-link email** — no third-party email provider enters the stack (NFR5), and the copy-link token path requires no email at all. Acceptance inserts into `hunt_members` and assigns the next unused color. Owner transfer is a single mutation; a hunt always has exactly one Owner.
+Hunt creation makes the creator Owner and opens the rubric wizard (skippable; first URL submission is blocked until a rubric exists). Invites carry a role (`member` default; Owner may grant `curator`) via email or copy-link token; email delivery uses **Supabase Auth's built-in invite/magic-link email** — no third-party email provider enters the stack (NFR5), and the copy-link token path requires no email at all. Acceptance inserts into `hunt_members` and assigns the first unused token from the ordered member palette; a member may later replace it with another token or any valid `#RRGGBB` color. Owner transfer is a single mutation; a hunt always has exactly one Owner.
 
 ### 9.2 Rubric System
 
@@ -844,7 +855,7 @@ RLS policies + permissions matrix (Curator role), invites, realtime sync, commen
 *Exit:* second real user active; permissions verified at the RLS layer by tests.
 
 **Phase 3 — Full agent system.**
-Planner manifests; DISCOVER multi-source + RECONCILE ladder; VISION with reference set; Maps/reviews/safety ENRICH; utility baselines job; custom-criteria routing; checkpoints incl. 24 h auto-resume; refresh TTLs + hash gating; compare view; separate paid worker; mobile sheet polish. Tier-3 adapters if — and only as much as — the Phase 0 gate demands.
+Planner manifests; DISCOVER multi-source + RECONCILE ladder; VISION with reference set; Maps/reviews/safety ENRICH; utility baselines job; custom-criteria routing; checkpoints incl. 24 h auto-resume; refresh TTLs + hash gating; compare view; optional worker-process isolation if the §5 operational triggers are observed; mobile sheet polish. Tier-3 adapters if — and only as much as — the Phase 0 gate demands.
 *Exit:* NFR1–NFR4 measured and met on the live hunt.
 
 **Learning Track (parallel, never blocking).** Gating rule: an L-milestone starts only after the shipping milestone it depends on is green, and must never delay the next shipping milestone — **the lease deadline wins every conflict** (R11).
@@ -915,6 +926,11 @@ Chronological. Dates before 2026-07-01 are reconstructed from the drafting sessi
 | 2026-07-10 | **Ratings source ladder (§10.12): Places first, apartmentratings.com second, general sites deferred.** Property reputation gathering is staged instead of built at once. Stage 1 — Google Places rating + review synthesis (structured, near-free, geocode-keyed cache) lands with the Maps tooling as the priority slice of ENRICH (P3-8). Stage 2 — apartmentratings.com as a dedicated second source (P3-15), appending a provenance-carrying `management_reviews` extraction; RECONCILE owns disagreement, no bespoke blending. Stage 3 — general ratings sites (Yelp et al.) go to §18, revisited only on demonstrated gaps. The ladder is additive per source; downstream shapes never change when a stage arrives. | Places covers nearly every complex for pennies before any scraping is attempted; renter-specific sites add signal but cost a lookup + fetch + extraction pipeline; general sites are hostile surfaces with duplicate signal — spend follows evidence of need | §10.3, §10.12, §18, §19 |
 | 2026-07-10 | **Property identity rides EXTRACT as a non-catalog block; `properties` refreshed at ingest persist.** Submit-time `properties` rows carried their URL-slug placeholder name/address forever. EXTRACT's schema gains an optional `property_identity` block (name, canonical address, official URL — copied from the page, never invented), following the `floor_plans` precedent: same single structured call, zero added LLM spend. The ingest projection updates the row with non-null-wins coalesce — Phase 1 single-source last-write-wins; DEDUPE/RECONCILE own identity once multi-source arrives (P3), and extracted name+address is exactly the input DEDUPE needs. Identity is unscored display metadata, deliberately NOT a catalog entry: no option deltas, not rubric-editable, outside the scoring engine and VERIFY's gates. The block is optional-with-default so recorded LLM fixtures and stored RunState snapshots that predate it keep validating. `place_id`/`lat`/`lng`, `image_urls`, `is_official` remain deferred per the 2026-07-09 audit. | The catalog is the pinned contract for *scoreable criteria* — identity has no delta semantics and would render as nonsense rubric cards; a sibling non-catalog block fixes the placeholder bug now and feeds the designed DEDUPE input instead of fighting it | §8.2, §10.3, §20 |
 | 2026-07-10 | **Overview filter bar: beds/baths bounds.** Extends the §13.2 filter registry with `minBeds`/`maxBeds` (integer, studio = 0) and `minBaths`/`maxBaths` (0.5 steps). Unit-group scalars compared inclusively; pending / no-group rows still pass (same posture as rent/sqft). | Beds/baths are the primary Unit Group identity — filtering them is the natural next bound after rent and sqft | §13.2, §20 |
+| 2026-07-11 | **RLS boundary activated for every table.** Per-hunt policies implement the §4.2 role matrix through `private.member_role(hunt_id)`; pre-RLS Hunts backfill their Owner membership before enforcement; a partial unique index guarantees one Owner per Hunt. Global facts remain authenticated-read/service-role-write, except hunt-scoped custom-criterion Extractions, which are visible only to that Hunt's members. Hunt SELECT additionally admits its authenticated `owner_id` so PostgREST can return the creation response before membership-backed visibility is available. | RLS, rather than frontend or API convention, must be the security boundary. The helper avoids membership-policy recursion; the backfill avoids locking out Phase 1 Hunts; custom facts are Hunt opinion and must not leak globally; the narrow Owner visibility branch is required for creation while the trigger atomically establishes canonical membership. | §4.2, §8.3, §16, §20 |
+| 2026-07-11 | **Atomic constrained database capabilities.** An `AFTER INSERT` trigger installs every Hunt's canonical Owner membership in the same transaction. `public.submit_listing`, exposed because Supabase's Data API serves `public` rather than `private` but executable only by authenticated users, verifies Hunt membership and atomically creates the URL-derived placeholder Property, Listing, and ingest Job; `added_by` always comes from `auth.uid()`. `public.answer_job_checkpoint` independently verifies Owner/Curator/own-Listing authority and atomically transitions the parked Job while appending its Job Event. Direct client writes to global facts and Job Events remain forbidden. | Sequential PostgREST writes can violate required invariants or leave an action without its audit record. Narrow database-atomic capabilities enforce the complete mutation for every writer. Explicit function grants and derived caller identity keep the surface narrower than table write policies or another service-role API operation. | §5.1, §8.3, §9.1, §10.10, §16, §20 |
+| 2026-07-11 | **Member colors support an ordered palette plus custom hex.** Automatic invite assignment uses `dusk, clay, moss, ochre, brick, olive, stone, plum` in order, choosing the first unused token. A member may later store any valid canonical `#RRGGBB` color instead. | Tokens provide deterministic, theme-aware defaults and visually distinct collaborators without setup; accepting hex values preserves user choice without reshaping `hunt_members.color` or coupling stored data to the current theme implementation. | §8.2, §9.1, §13.2, §20 |
+| 2026-07-11 | **Collaboration identity lives on Hunt membership; comment deletion is author-only.** `hunt_members.display_name` is the RLS-readable label for comments and rating tooltips, initialized from invite email when possible with a neutral fallback. Comments soft-delete only by their author; Owner moderation stays deferred. | Auth identities are not available to direct RLS-backed frontend reads, and privileged Auth lookups would turn ordinary rendering into a server dependency. A Hunt-scoped display name keeps collaboration reads direct. Author-only deletion matches the current permissions matrix without inventing an unrequested moderation power. | §4.2, §8.2, §9.1, §13.2, §20 |
+| 2026-07-11 | **v2.9: keep worker execution in-process by default; make P3-1 process/service isolation optional and evidence-triggered.** The `worker/` package, durable Postgres Job queue, resumable Stage contract, and `MANZIL_WORKER_INPROCESS` seam remain. Tier-2 Playwright already runs through the API lifespan loop. Split only after repeated API memory/restart/502 impact, material latency impact, a concurrency requirement, or an always-on scheduling requirement is observed. | This is a private two-person Hunt, so a second paid service and its operational surface are YAGNI without demonstrated contention. The durable queue preserves a low-risk migration path if browser load later requires isolation. | §5, §19; IMPLEMENTATION §7–8 |
 
 ---
 
