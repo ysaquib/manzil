@@ -41,6 +41,7 @@ def _row_to_response(row: dict[str, Any]) -> JobResponse:
         type=row["type"],
         state=row["state"],
         current_stage=row.get("current_stage"),
+        plan=row.get("plan"),
         attempts=row.get("attempts", 0),
         error=row.get("error"),
         cost_actual_usd=float(row.get("cost_actual_usd") or 0),

@@ -16,6 +16,7 @@ class JobResponse(BaseModel):
     type: JobType
     state: JobState
     current_stage: str | None
+    plan: dict[str, Any] | None = None
     attempts: int
     error: str | None
     cost_actual_usd: float

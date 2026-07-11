@@ -1,21 +1,18 @@
-// Tasks — Active tab (P1-13): job cards polled at 3s via the one apiClient
-// read (queued, running, waiting_user). Realtime replaces the polling in
-// P2-5; the History tab is P2-7.
+// Tasks — Active tab. P2-5 Realtime keeps the Jobs query current; the manual
+// refresh remains a user-controlled recovery action. History arrives in P2-7.
 import { Alert, Button, Card, Center, Flex, Loader, SimpleGrid, Stack, Text } from "@mantine/core";
 import { IconList, IconRefresh } from "@tabler/icons-react";
 import { Link, useParams } from "react-router-dom";
 
-import { PageHeader } from "../../components/PageHeader";
 import { semantic } from "../../theme";
 import { useListings } from "../listings/api";
 import { JobCard } from "./JobCard";
-import { useActiveJobs, useAnswerCheckpoint, useCancelJob, useJobs, useRetryJob } from "./api";
+import { useActiveJobs, useAnswerCheckpoint, useCancelJob, useRetryJob } from "./api";
 import { useEffect, useState } from "react";
 
 export function TasksActivePage() {
   const { huntId = "" } = useParams();
-  // const { data: jobs, isLoading, error } = useActiveJobs(huntId);
-  const { data: jobs, isLoading, error, refetch, isFetching, isRefetching } = useJobs(huntId);
+  const { data: jobs, isLoading, error, refetch, isFetching, isRefetching } = useActiveJobs(huntId);
   const { data: listings } = useListings(huntId);
   const cancelJob = useCancelJob(huntId);
   const retryJob = useRetryJob(huntId);
@@ -48,10 +45,6 @@ export function TasksActivePage() {
 
   return (
     <Stack gap="lg">
-      <PageHeader
-        title="Tasks"
-        description="Active jobs — updates every few seconds"
-      />
       <Flex
         justify="flex-end"
       >
