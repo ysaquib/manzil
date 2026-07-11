@@ -1,6 +1,8 @@
 # Phase 2 Implementation Plan — Collaboration
 
-Status: proposed plan, entered 2026-07-10 at Phase 1 exit. Written against DESIGN.md
+Status: active; P2-1..P2-8 landed, P2-9 automation is complete, and the
+permission gate is green. Manual P2-9/P2-10 acceptance remains. Entered
+2026-07-10 at Phase 1 exit. Written against DESIGN.md
 (working tree, 2026-07-10 — §4.2, §8.2, §8.3, §9.1, §13, §16, §19) and
 IMPLEMENTATION.md §7's provisional Phase 2 table (P2-1..P2-9), which this plan
 revises per the "entering a phase means revising its table first" rule. Code facts
@@ -20,7 +22,7 @@ invites, realtime sync, comments, ratings, member colors, Tasks History tab.
 
 **Explicitly out of scope** (per AGENTS.md phase discipline — do not build):
 - DISCOVER/RECONCILE multi-source, VISION, Maps/ENRICH, utility baselines, custom
-  criteria authoring, refresh/TTL machinery, Compare view, separate paid worker,
+  criteria authoring, refresh/TTL machinery, Compare view, optional worker isolation,
   mobile sheet polish, `resolve_dedupe`/`resolve_dispute` checkpoints, the 24 h
   auto-resume sweep (all Phase 3)
 - Anything in DESIGN §18 (Deferred/Backlog)
@@ -227,12 +229,13 @@ local stack is down (existing `db_pool` pattern), and CI gains a
 
 ### 1.8 Member colors
 
-`hunt_members.color` stores a **palette token** (e.g. `"dusk"`, `"clay"`,
-`"moss"`), not a hex — the frontend resolves tokens through `frontend/src/colors.ts`
-(Dusk & clay palette), so both color schemes render correctly. An ordered
-`MEMBER_COLOR_TOKENS` list lives with the invites service; acceptance assigns the
-first token unused in that hunt (§9.1 "next unused color"). Members change their own
-color in settings (RLS: self-row update that cannot touch `role` — §2 below).
+`hunt_members.color` stores either a named palette token or a canonical `#RRGGBB`
+custom color. Automatic assignment uses the ordered `MEMBER_COLOR_TOKENS` list
+`dusk, clay, moss, ochre, brick, olive, stone, plum`; acceptance assigns the first
+token unused in that Hunt (§9.1 "next unused color"). The frontend resolves tokens
+through `frontend/src/colors.ts` and uses custom hex directly. P2-6 lets members
+change their own color to any palette token or valid hex value (RLS: self-row
+update cannot touch `role` — §2 below).
 
 ---
 
@@ -245,7 +248,7 @@ worker/service-role bypasses RLS everywhere):
 
 | Table | SELECT | INSERT | UPDATE | DELETE |
 |---|---|---|---|---|
-| hunts | member | any authed, `with check (owner_id = auth.uid())` | O (rename/archive/settings) | O |
+| hunts | member, plus the authenticated `owner_id` creation-return path | any authed, `with check (owner_id = auth.uid())` | O (rename/archive/settings) | O |
 | hunt_members | member | self-as-owner on own hunt (keeps `create_hunt` working): `with check (user_id = auth.uid() and role = 'owner' and hunt_id in (select id from hunts where owner_id = auth.uid()))` | (a) self color: `using (user_id = auth.uid()) with check (user_id = auth.uid() and role = private.member_role(hunt_id))` — new role must equal current role, so self-promotion fails; (b) O on others' rows (role changes) | O, `using (... and role <> 'owner')` — removing the owner row is impossible; transfer is the only path |
 | invites | O | O, `with check (created_by = auth.uid())` | — (acceptance is privileged) | O (revoke) |
 | hunt_listings | member | member, `with check (added_by = auth.uid())` | O/C any row; M own rows (`added_by = auth.uid()`) — covers pins | O only (§4.2 "delete listings") |
@@ -273,6 +276,24 @@ custom-criterion SELECT refinement to §8.3).
 ---
 
 ## 3. P2-2 — API role matrix + test identity
+
+**Listing-submission resolution (2026-07-11):** authenticated clients retain no
+direct write policy on global tables. The authenticated-only, security-definer
+`public.submit_listing` RPC (explicit authenticated-only EXECUTE grant) verifies Hunt membership and atomically creates the
+URL-derived placeholder Property, Listing (`added_by = auth.uid()`), and ingest
+Job. This constrained database capability keeps `privileged.py` limited to its
+three pinned operations and prevents half-created submissions.
+
+Hunt creation installs the Owner membership with an `AFTER INSERT` trigger. The
+membership invariant is therefore atomic for API creation, seeds, and future
+writers; the API no longer performs a fallible second PostgREST request. The
+Hunt SELECT policy still admits `owner_id = auth.uid()` because PostgREST must
+return the inserted row before membership-backed visibility is available to the
+response; the trigger, not this visibility branch, establishes authorization.
+
+Checkpoint answering uses the equally constrained `public.answer_job_checkpoint`
+RPC so the authorized Job transition and its immutable `job_events` audit row
+commit atomically without granting clients general write access to Job Events.
 
 **Files:** `api/src/manzil_api/hunts/dependencies.py` (role family, §1.4),
 `api/src/manzil_api/dependencies.py` (unchanged chain), every router that loosens
@@ -376,7 +397,7 @@ outsider's subscription receives nothing (manual check — RLS on the socket).
 | POST | `/v1/listings/{id}/comments` | member | insert `{body}`; `user_id = caller` |
 | DELETE | `/v1/comments/{id}` | author | soft-delete (`deleted_at = now()`) |
 | PUT | `/v1/listings/{id}/rating` | member | upsert own `{rating: 1..5}`; DELETE to clear |
-| PATCH | `/v1/hunts/{id}/members/{user_id}` | self (color) / owner (role — P2-8) | `{color?: token}` validated against `MEMBER_COLOR_TOKENS` |
+| PATCH | `/v1/hunts/{id}/members/{user_id}` | self (color) / owner (role — P2-8) | color validated as a `MEMBER_COLOR_TOKENS` value or canonical `#RRGGBB` |
 
 Reads are direct supabase-js per the two-client rule: `useComments(listingId)`
 (filter `deleted_at is null` client-side rendering "deleted" tombstones only for
@@ -459,6 +480,11 @@ curator cannot touch rubric/settings/members/invites. Verified by the P2-3 suite
 
 **Done when:** matrix suite green + manual pass logged in the changelog entry.
 
+**Automation status (2026-07-11): complete.** The matrix now explicitly covers
+Curator retry, Hunt-settings mutation, and member-role mutation denials in
+addition to the allowed stewardship actions and cancel/checkpoint distinction.
+The UI pass and its changelog note remain human acceptance work.
+
 ---
 
 ## 11. P2-10 — Exit
@@ -468,6 +494,11 @@ listing, rates, comments, fills a fee slot after a leasing-office call. Permissi
 matrix green in CI. Then: revise the Phase 3 table on entry per the standing rule,
 with a fresh look at the P0-14 census/model decisions (which should be closed by
 then — they gate P3-14's tier-3 scope).
+
+**Repository-prep status (2026-07-11): complete.** Phase 3 readiness and
+dependency-wave tables are prepared in IMPLEMENTATION §7. Formal Phase 2 exit,
+the real-partner workflow, CI confirmation, and final Phase 3 entry revision
+remain human/external gates; P0-14 is still open, so P3-14 stays conditional.
 
 ---
 

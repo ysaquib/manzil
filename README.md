@@ -17,7 +17,13 @@ Manzil is also deliberately dual-purpose: a real tool on a real deadline, and a 
 | [`AGENTS.md`](AGENTS.md) | Instructions for coding agents (`CLAUDE.md` imports it). |
 | [`CHANGELOG.md`](CHANGELOG.md) | What has landed in the code, by task. |
 
-**Current phase: Phase 0 tail ∥ Phase 1 in progress** — Phase 0 closes out the CLI pipeline spine and bench; Phase 1 replaces the spreadsheet with API + frontend. See DESIGN §19 for scope and exit gates, IMPLEMENTATION §7 for the task-by-task plan.
+**Current phase: Phase 0 tail ∥ Phase 2 in progress** — Phase 1 has exited and
+the spreadsheet is retired. Phase 2 is adding collaboration; its RLS boundary,
+API role matrix, real-JWT fixtures, permission gate, invites, and Realtime
+consistency path, comments, ratings, member colors, and retained Task History
+(P2-1..P2-7) are live; P2-8 member management is implemented and P2-9
+automation is complete. Manual Phase 2 exit acceptance remains.
+See DESIGN §19 for scope and exit gates, IMPLEMENTATION §7 for the task plan.
 
 ## Repo layout
 
@@ -52,7 +58,7 @@ manzil/
 ├── frontend/                    # Vite + React + Mantine: auth shell + feature pages (P1-9..13)
 ├── scripts/dev_seed.py          # P1-1: seed 1 hunt / 3 listings via the real ingest path
 ├── supabase/                    # config, migrations/, seed.sql (generated — never hand-edit)
-├── infra/                       # .env.example, render.yaml (Phase 1+)
+├── infra/                       # environment template + deployment inputs
 └── docs/adr/                    # rationale too detailed for DESIGN §20
 ```
 
@@ -83,7 +89,7 @@ uv run mypy                # --strict on shared/ (the engine must be airtight)
 
 If all four are green, CI will be green — they are exactly the three CI jobs.
 
-### Phase 1 local dev loop
+### Local app loop
 
 Two terminals after setup (`uv sync --all-packages`, `cp infra/.env.example .env`,
 `supabase start`):
@@ -127,6 +133,24 @@ Key env vars: `DATABASE_URL` (local Supabase Postgres), `MANZIL_WORKER_INPROCESS
 (API, default `true`), `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` /
 `VITE_API_BASE_URL` (frontend) — full table in `infra/.env.example` and
 IMPLEMENTATION §1.
+
+The durable worker runs inside the API process by default, including Tier-2
+Playwright fetches. A separate worker service is optional; use the
+[worker-isolation runbook](docs/worker-isolation.md) only if the operational
+triggers in DESIGN §5 are observed.
+
+`MANZIL_FRONTEND_URL` is the public frontend base used for copy-link and email-
+invite redirects (`http://localhost:5173` locally). Supabase's local Mailpit
+inbox is at `http://127.0.0.1:54324` after `supabase start`.
+
+The frontend origin must exactly match `API_CORS_ORIGINS`; `localhost` and
+`127.0.0.1` are different browser origins. To allow either local spelling:
+
+```bash
+API_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+```
+
+Restart Uvicorn after changing `.env` so cached settings are reconstructed.
 
 ### Frontend (Phase 1+)
 
@@ -261,6 +285,22 @@ uv run --package manzil-shared pytest shared/tests  # engine goldens + catalog r
 uv run --package manzil-worker pytest worker/tests  # cleaner, classifier, ladder, fixtures
 uv run pytest -k classifier                         # one area, by keyword
 ```
+
+Phase 2 authorization tests require the local Supabase stack because they mint
+real users/JWTs and exercise PostgREST RLS directly:
+
+```bash
+supabase start
+supabase db reset
+MANZIL_WORKER_INPROCESS=false \
+  uv run --package manzil-api pytest api/tests/test_rls_matrix.py -q
+```
+
+Use `MANZIL_WORKER_INPROCESS=false` while running API tests if a development API
+is also connected to the same local database. Otherwise its worker can claim a
+test Job immediately after it is queued, making state-transition assertions race
+with legitimate worker activity. The CI `collaboration-security` job starts a
+fresh Supabase stack and runs this command on every change.
 
 LLM call modes (`MANZIL_LLM_MODE`):
 

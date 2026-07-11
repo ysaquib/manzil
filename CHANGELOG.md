@@ -5,6 +5,25 @@ IMPLEMENTATION.md §7 task IDs. Design changes go to DESIGN.md §20 (Decision
 Log); doc-mechanics changes go to IMPLEMENTATION.md §9 — this file tracks the
 repo itself.
 
+## Unreleased — Phase 2
+
+### 2026-07-11 — In-process worker retained; P3-1 conditional
+
+- Recorded DESIGN v2.9: the separate `worker/` package and durable Job queue
+  remain, while execution stays inside the API process by default.
+- P3-1 is now an evidence-triggered operational migration, not a Phase 3
+  prerequisite. Added the worker-isolation migration and rollback runbook.
+
+### 2026-07-11 — Curator automation + Phase 3 preparation (P2-9/P2-10 partial)
+
+- Completed the automated Curator boundary matrix: stewardship actions on
+  others' Listings remain allowed, while retrying others' Jobs, Hunt-settings
+  changes, member-role changes, invites, and rubric changes are denied.
+- Prepared Phase 3 readiness and dependency-wave tables without declaring the
+  phase entered. P0-14 still gates P3-14 and part of P3-15.
+- Still pending human acceptance: Curator UI pass, two-browser Realtime check,
+  second real user workflow, and CI confirmation.
+
 ## Unreleased — Phase 1
 
 ### 2026-07-09 — VERIFY `confirm_value` checkpoint (P1-14)
