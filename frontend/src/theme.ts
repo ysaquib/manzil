@@ -8,7 +8,8 @@
 // (waiting on the user); status hues lean earthy (moss/olive/ochre) instead
 // of electric. Headings are Literata (serif), body is Source Sans 3 (sans);
 // both self-hosted via @fontsource-variable imports in main.tsx.
-import { createTheme, rem, type CSSVariablesResolver } from "@mantine/core";
+import { createTheme, MantineColorsTuple, rem, type CSSVariablesResolver } from "@mantine/core";
+import { dusk, old_clay, gray, dark, green, lime, yellow, red, colors } from "./colors";
 
 const fontStackSans =
   "'Source Sans 3 Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
@@ -22,7 +23,7 @@ const hoverEase = {
 };
 
 export const theme = createTheme({
-  primaryColor: "dusk",
+  primaryColor: "red",
   primaryShade: { light: 6, dark: 5 },
   autoContrast: true,
   respectReducedMotion: true,
@@ -38,112 +39,30 @@ export const theme = createTheme({
   colors: {
     // Dusk indigo — primary. Muted violet-leaning indigo; shade 6 carries
     // light mode, shade 5 dark mode (primaryShade above).
-    dusk: [
-      "#F0F0F9",
-      "#E2E2F3",
-      "#CBCBE9",
-      "#AEAEDC",
-      "#9292CD",
-      "#7B7BBF",
-      "#5C5CAA",
-      "#4C4C90",
-      "#3D3D75",
-      "#30305C",
-    ],
-    // Clay — the supporting warm accent. Reserved for "waiting on the user"
-    // (checkpoints); deliberately more amber than red so it never reads as
-    // danger.
-    clay: [
-      "#FAF0EA",
-      "#F4DFD2",
-      "#EAC5AE",
-      "#DDA687",
-      "#D08B65",
-      "#C57749",
-      "#B96438",
-      "#9C512D",
-      "#7D4024",
-      "#5F311C",
-    ],
-    // Warm stone replaces Mantine's cool gray: borders, dimmed text, striped
-    // rows, and secondary chrome all warm up through this one scale.
-    gray: [
-      "#F8F6F2",
-      "#F0EDE7",
-      "#E6E2DA",
-      "#D6D1C7",
-      "#C0BAAE",
-      "#A39D90",
-      "#7E7869",
-      "#635D51",
-      "#453F36",
-      "#2B2721",
-    ],
-    // Warm charcoal replaces Mantine's blue-black dark scale. Same role
-    // indices as stock (6 = surfaces, 7 = body, 4 = borders, 0 = text).
-    dark: [
-      "#CDC9C3",
-      "#BBB6AF",
-      "#8B867E",
-      "#6F6A62",
-      "#48443E",
-      "#3D3933",
-      "#302C27",
-      "#262320",
-      "#201D1A",
-      "#161412",
-    ],
-    // Status hues re-tuned earthy, same names so `semantic` and component
-    // code stay untouched: green→moss, lime→olive, yellow→ochre, red stays
-    // alarming but loses the neon edge.
-    green: [
-      "#F2F6EC",
-      "#E3EDD6",
-      "#CBDDB3",
-      "#AECA8C",
-      "#93B96B",
-      "#7FAC54",
-      "#679441",
-      "#547B34",
-      "#44642A",
-      "#354E21",
-    ],
-    lime: [
-      "#F7F7E8",
-      "#EEEECC",
-      "#DEDFA5",
-      "#CCCE7C",
-      "#BCBF5B",
-      "#AAAE41",
-      "#8F9330",
-      "#767A27",
-      "#5F6220",
-      "#4A4C1A",
-    ],
-    yellow: [
-      "#FBF4E6",
-      "#F6E7C6",
-      "#EFD69D",
-      "#E6C170",
-      "#DEAF4B",
-      "#D9A233",
-      "#BC8A22",
-      "#9C711C",
-      "#7D5A17",
-      "#614613",
-    ],
-    red: [
-      "#FBEFEC",
-      "#F6DCD6",
-      "#EEBFB4",
-      "#E39D8C",
-      "#D77D67",
-      "#CE6249",
-      "#BF4B3B",
-      "#A23D30",
-      "#833125",
-      "#66261D",
-    ],
+    dusk: dusk,
+    clay: old_clay,
+    gray: gray,
+    dark: dark,
+    green: green,
+    lime: lime,
+    yellow: yellow,
+    red: red,
+
+    // gray: colors.warm_stone,
+    // dark: colors.dark_dusky,
+    // clay: colors.clay,
+    // red: colors.dusty_brick,
+    // orange: colors.burnt_clay,
+    // yellow: colors.muted_ochre,
+    // lime: colors.olive,
+    // green: colors.sage,
+    // teal: colors.weathered_teal,
+    // cyan: colors.fog_blue,
+    // blue: colors.slate_blue,
+    // indigo: colors.storm,
+    // violet: colors.dusty_lavender,
+    // grape: colors.muted_plum,
+    // pink: colors.dusty_rose,
   },
   white: "#FFFEFB",
   shadows: {
