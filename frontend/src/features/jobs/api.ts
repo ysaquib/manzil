@@ -1,7 +1,5 @@
-// Jobs data hooks (P1-13). The jobs list is THE one polled apiClient read
-// (Phase 1 plan §1.6): refetchInterval 3000 against the active states; P2-5
-// replaces the polling with Realtime. Assumptions: frontend/API_ASSUMPTIONS.md
-// — including conflict #2: JobResponse must grow the parked checkpoint prompt.
+// Jobs data hooks. P2-5 Realtime invalidates the shared ["jobs", huntId]
+// query prefix; no polling remains.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiFetch } from "../../lib/apiClient";
@@ -17,7 +15,6 @@ export function useActiveJobs(huntId: string) {
   return useQuery({
     queryKey: ["jobs", huntId, "active"],
     queryFn: () => apiFetch<Job[]>(`/v1/hunts/${huntId}/jobs?state=${ACTIVE_STATES}`),
-    refetchInterval: 30000, // 30 seconds
   });
 }
 
