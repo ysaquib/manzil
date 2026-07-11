@@ -33,9 +33,10 @@ class Settings(BaseSettings):
 
     # Comma-separated frontend dev origins for CORS.
     cors_origins: str = Field(default="http://localhost:5173", alias="API_CORS_ORIGINS")
+    frontend_url: str = Field(default="http://localhost:5173", alias="MANZIL_FRONTEND_URL")
 
-    # In-process worker loop toggle (§1.5). `true` in Phase 1; flips to `false`
-    # at P3-1 (separate paid worker service) with no code change.
+    # In-process worker loop toggle (DESIGN §5 default). Set false only after a
+    # separate worker process is deployed and validated per IMPLEMENTATION §8.
     worker_inprocess: bool = Field(default=True, alias="MANZIL_WORKER_INPROCESS")
 
     @property

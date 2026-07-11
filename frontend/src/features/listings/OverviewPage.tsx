@@ -102,6 +102,7 @@ export function OverviewPage() {
       )}
       {rows.length > 0 && (
         <OverviewTable
+          huntId={huntId}
           rows={rows}
           sort={sort}
           onSort={onSort}
