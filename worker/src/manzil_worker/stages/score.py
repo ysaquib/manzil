@@ -29,6 +29,7 @@ from manzil_shared.models import Confidence, FloorPlan
 from manzil_shared.scoring.engine import score, select_display_score
 
 from manzil_worker.stages.base import StageCtx
+from manzil_worker.stages.pet_costs import pet_monthly
 from manzil_worker.state import FloorPlanIn, PlanScore, RunState
 
 log = structlog.get_logger()
@@ -85,6 +86,18 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
     }
     state.effective_values = dict(base_values)
 
+    # §9.5 v1: pet rent folds into all_in_monthly. Counts are hunt settings (ctx);
+    # per-pet rents are this run's extracted pet_costs. Composed once — same for
+    # every plan on the page.
+    pc = state.pet_costs
+    pet_add = pet_monthly(
+        cats=ctx.cats,
+        dogs=ctx.dogs,
+        cat_rent=pc.cat_rent_monthly if pc else None,
+        dog_rent=pc.dog_rent_monthly if pc else None,
+        generic_rent=pc.pet_rent_monthly if pc else None,
+    )
+
     scorable = [(p, fp) for p in state.floor_plans if (fp := _to_floor_plan(p)) is not None]
     if scorable:
         breakdowns = []
@@ -92,7 +105,7 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
             values = dict(base_values)
             rent = conservative_rent(plan_in)
             if rent is not None:
-                values["all_in_monthly"] = rent
+                values["all_in_monthly"] = rent + pet_add
             breakdowns.append(
                 (
                     floor_plan.plan_name,

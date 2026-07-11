@@ -88,6 +88,8 @@ export const FEE_SLOTS: { slot: string; label: string }[] = [
   { slot: "valet_trash", label: "Valet trash" },
   { slot: "parking", label: "Parking" },
   { slot: "pet_rent", label: "Pet rent" },
+  { slot: "pet_rent_cat", label: "Pet rent (cat)" },
+  { slot: "pet_rent_dog", label: "Pet rent (dog)" },
   { slot: "insurance_program", label: "Insurance program" },
 ];
 

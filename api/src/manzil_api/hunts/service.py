@@ -16,11 +16,14 @@ from manzil_api.hunts.schemas import (
 from manzil_api.jobs.enqueue import enqueue_rescore
 from supabase import Client
 
-DEFAULT_SETTINGS: dict[str, str] = {
+DEFAULT_SETTINGS: dict[str, Any] = {
     "default_source_policy": "tiers_1_2_3",
     "cost_estimate_mode": "conservative",
     "min_confidence": "medium",
     "proximity_mode": "driving",
+    "occupants": 1,
+    "cats": 0,
+    "dogs": 0,
 }
 
 _SOURCE_POLICIES = frozenset(
@@ -29,7 +32,15 @@ _SOURCE_POLICIES = frozenset(
 _COST_MODES = frozenset({"conservative", "median"})
 _CONFIDENCE_LEVELS = frozenset({"low", "medium", "high"})
 _PROXIMITY_MODES = frozenset({"walking", "driving"})
-_SCORING_KEYS = frozenset({"cost_estimate_mode", "min_confidence"})
+# Household integer keys with inclusive [lo, hi] bounds (§9.5 v1).
+_HOUSEHOLD_BOUNDS: dict[str, tuple[int, int]] = {
+    "occupants": (1, 20),
+    "cats": (0, 10),
+    "dogs": (0, 10),
+}
+# Keys whose change bumps rubric_version + enqueues a rescore. `occupants` is
+# reserved for P3-9 utility scaling and triggers nothing yet.
+_SCORING_KEYS = frozenset({"cost_estimate_mode", "min_confidence", "cats", "dogs"})
 
 
 def _to_response(row: dict[str, Any]) -> HuntResponse:
@@ -49,6 +60,13 @@ def _merge_settings(current: dict[str, Any], patch: dict[str, Any]) -> dict[str,
         raise InvalidHuntSettings("Invalid min_confidence")
     if merged["proximity_mode"] not in _PROXIMITY_MODES:
         raise InvalidHuntSettings("Invalid proximity_mode")
+    for key, (lo, hi) in _HOUSEHOLD_BOUNDS.items():
+        value = merged[key]
+        # bool is an int subclass in Python — reject it explicitly.
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise InvalidHuntSettings(f"{key} must be an integer")
+        if not lo <= value <= hi:
+            raise InvalidHuntSettings(f"{key} must be between {lo} and {hi}")
     return merged
 
 

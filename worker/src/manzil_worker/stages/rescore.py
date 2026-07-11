@@ -16,6 +16,7 @@ import structlog
 from manzil_shared.models import Confidence, FloorPlan, RubricCriterion
 from manzil_shared.scoring.engine import criterion_key, score
 
+from manzil_worker.stages.pet_costs import pet_monthly
 from manzil_worker.stages.score import meets_confidence
 
 if True:  # TYPE_CHECKING without import cycle
@@ -104,6 +105,33 @@ def _resolve_effective_values(
     return values
 
 
+async def _latest_pet_rents(
+    conn: asyncpg.Connection, hunt_listing_id: UUID
+) -> tuple[float | None, float | None, float | None]:
+    """Per-pet rents from the listing's fee_checklist (§9.5 v1): the extracted
+    `pet_rent_cat`/`pet_rent_dog`/`pet_rent` slots, with any human `manual`
+    amount overriding — so a manual fee edit is genuinely rescore-effective. An
+    explicitly `unknown` slot contributes nothing. Returns (cat, dog, generic)."""
+    rows = await conn.fetch(
+        """
+        select fee_slot, amount from fee_checklist
+        where hunt_listing_id = $1
+          and fee_slot in ('pet_rent_cat', 'pet_rent_dog', 'pet_rent')
+          and value_state <> 'unknown'
+        """,
+        hunt_listing_id,
+    )
+    amounts = {
+        row["fee_slot"]: (float(row["amount"]) if row["amount"] is not None else None)
+        for row in rows
+    }
+    return (
+        amounts.get("pet_rent_cat"),
+        amounts.get("pet_rent_dog"),
+        amounts.get("pet_rent"),
+    )
+
+
 def _conservative_rent(rent_min: Decimal | None, rent_max: Decimal | None) -> float | None:
     if rent_max is not None:
         return float(rent_max)
@@ -119,6 +147,8 @@ async def rescore_hunt(
     rubric: list[RubricCriterion],
     rubric_version: int,
     min_confidence: Confidence,
+    cats: int = 0,
+    dogs: int = 0,
 ) -> int:
     """Rescore every active listing on the hunt. Returns the number of score rows upserted."""
     listings = await conn.fetch(
@@ -137,6 +167,14 @@ async def rescore_hunt(
         overrides = await _latest_overrides(conn, listing_id)
         base_values = _resolve_effective_values(
             rubric, catalog_ext, hunt_ext, overrides, min_confidence
+        )
+        cat_rent, dog_rent, generic_rent = await _latest_pet_rents(conn, listing_id)
+        pet_add = pet_monthly(
+            cats=cats,
+            dogs=dogs,
+            cat_rent=cat_rent,
+            dog_rent=dog_rent,
+            generic_rent=generic_rent,
         )
         floor_plans = await conn.fetch(
             "select * from floor_plans where property_id = $1",
@@ -161,7 +199,7 @@ async def rescore_hunt(
             values = dict(base_values)
             rent = _conservative_rent(fp["rent_min"], fp["rent_max"])
             if rent is not None:
-                values["all_in_monthly"] = rent
+                values["all_in_monthly"] = rent + pet_add
             breakdown = score(
                 rubric, values, floor_plan, rubric_version=rubric_version
             ).to_contract()

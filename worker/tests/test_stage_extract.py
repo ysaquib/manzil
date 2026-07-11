@@ -64,6 +64,41 @@ def test_extract_leaves_property_identity_none_when_block_absent() -> None:
     assert state.property_identity is None
 
 
+def test_extract_lands_pet_costs_and_utilities_when_present() -> None:
+    payload = maple_extraction()
+    payload["pet_costs"] = {
+        "cat_rent_monthly": 20.0,
+        "dog_rent_monthly": 35.0,
+        "pet_rent_monthly": None,
+        "evidence_quote": "Cat rent $20/mo, dog rent $35/mo",
+    }
+    payload["utilities"] = {
+        "included": ["water", "trash"],
+        "evidence_quote": "Water & trash included",
+    }
+    llm = FakeLLM({"extract": payload})
+    state = make_state(cleaned_text=CLEANED)
+    state = asyncio.run(extract_stage(state, StageCtx(call_structured=llm)))
+
+    assert state.pet_costs is not None
+    assert state.pet_costs.cat_rent_monthly == 20.0
+    assert state.pet_costs.dog_rent_monthly == 35.0
+    assert state.pet_costs.pet_rent_monthly is None
+    assert state.utilities is not None
+    assert state.utilities.included == ["water", "trash"]
+
+
+def test_extract_leaves_pet_costs_and_utilities_none_when_absent() -> None:
+    """Both §9.5 blocks are optional — a payload without them leaves the RunState
+    fields None so recorded fixtures predating the blocks keep working."""
+    llm = FakeLLM({"extract": extraction_payload()})
+    state = make_state(cleaned_text=CLEANED)
+    state = asyncio.run(extract_stage(state, StageCtx(call_structured=llm)))
+
+    assert state.pet_costs is None
+    assert state.utilities is None
+
+
 def test_invalid_first_response_gets_one_corrective_retry() -> None:
     bad = extraction_payload(beds=field_payload("two"))  # not an integer
     llm = FakeLLM({"extract": [bad, maple_extraction()]})
