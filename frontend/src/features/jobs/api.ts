@@ -4,12 +4,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiFetch } from "../../lib/apiClient";
 import type { components } from "../../lib/generated/api";
+import { supabase } from "../../lib/supabase";
 
 export type JobState = components["schemas"]["JobState"];
 export type JobType = components["schemas"]["JobType"];
 export type Job = components["schemas"]["JobResponse"];
 
 export const ACTIVE_STATES = "queued,running,waiting_user";
+export const HISTORY_STATES = "done,failed,cancelled";
 
 export function useActiveJobs(huntId: string) {
   return useQuery({
@@ -22,7 +24,38 @@ export function useJobs(huntId: string) {
   return useQuery({
     queryKey: ["jobs", huntId],
     queryFn: () => apiFetch<Job[]>(`/v1/hunts/${huntId}/jobs`),
-    refetchInterval: 15000, // 15 seconds
+  });
+}
+
+export function useHistoryJobs(huntId: string) {
+  return useQuery({
+    queryKey: ["jobs", huntId, "history"],
+    queryFn: () => apiFetch<Job[]>(`/v1/hunts/${huntId}/jobs?state=${HISTORY_STATES}`),
+  });
+}
+
+export interface JobEvent {
+  id: string;
+  job_id: string;
+  stage: string;
+  event: string;
+  detail: Record<string, unknown>;
+  at: string;
+}
+
+export function useJobEvents(jobId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["job_events", jobId],
+    queryFn: async (): Promise<JobEvent[]> => {
+      const { data, error } = await supabase
+        .from("job_events")
+        .select("*")
+        .eq("job_id", jobId)
+        .order("at");
+      if (error) throw error;
+      return (data ?? []) as JobEvent[];
+    },
+    enabled,
   });
 }
 
