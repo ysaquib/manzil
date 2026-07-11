@@ -105,12 +105,12 @@ Global handler in `main.py` catches `ManzilAPIError` (new base in
 with the right status code. Module exceptions (`HuntNotFound`, `RubricOptionInvalid`,
 `NotHuntOwner`, …) subclass it with a fixed `status_code` + `code`.
 
-### 1.5 Worker loop wiring (P1-3, DESIGN §5 budget option)
+### 1.5 Worker loop wiring (P1-3, DESIGN §5 default)
 
-New env var `MANZIL_WORKER_INPROCESS` (default `true` in Phase 1). API's `lifespan`
+New env var `MANZIL_WORKER_INPROCESS` (default `true`). API's `lifespan`
 starts an asyncio task running `manzil_worker.queue.run_worker_loop(pool, ...)` when
-true; Phase 3 (P3-1, separate Render worker service) flips it to `false` in that
-deployment's env without touching code. This makes `manzil-api` depend on
+true; optional P3-1 flips it to `false` only after a separate worker process is
+validated (DESIGN v2.9 supersedes this plan's original Phase 3 assumption). This makes `manzil-api` depend on
 `manzil-worker` for the first time — a new workspace edge, added only for this
 lifespan wiring, matching DESIGN §5's explicit sanction of the in-process option.
 
@@ -561,7 +561,7 @@ revisit if network-level mocking pain shows up.
 | Var | Used by | Notes |
 |---|---|---|
 | `SUPABASE_SERVICE_ROLE_KEY` | api (lifespan worker loop only) | *(already listed as worker-only — Phase 1 adds the api's in-process loop as a second legitimate holder; still never in frontend)* |
-| `MANZIL_WORKER_INPROCESS` | api | `true` in Phase 1; `false` from Phase 3 (P3-1) |
+| `MANZIL_WORKER_INPROCESS` | api | `true` by default; `false` only after optional P3-1 isolation (DESIGN v2.9) |
 | `API_CORS_ORIGINS` | api | frontend dev origin(s), comma-separated |
 | `API_ENVIRONMENT` | api | `local \| staging \| production` — gates OpenAPI docs exposure |
 | `VITE_SUPABASE_URL` | frontend | public |

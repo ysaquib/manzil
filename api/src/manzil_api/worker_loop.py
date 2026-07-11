@@ -1,9 +1,9 @@
 """In-process worker loop glue (Phase 1 plan §1.5, IMPLEMENTATION P1-3).
 
-DESIGN §5's budget option: the API runs the durable-queue worker loop as a
+DESIGN §5's default: the API runs the durable-queue worker loop as a
 `lifespan` asyncio task instead of a separate service. Gated by
-`MANZIL_WORKER_INPROCESS` (default `true`); P3-1 flips it to `false` in the
-deployment env, no code change.
+`MANZIL_WORKER_INPROCESS` (default `true`). Optional P3-1 isolation flips it to
+`false` only after a separate worker process is deployed and validated.
 """
 
 from __future__ import annotations
