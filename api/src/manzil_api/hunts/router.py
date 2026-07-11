@@ -8,7 +8,7 @@ from fastapi import APIRouter, status
 
 from manzil_api.dependencies import CurrentUser, UserClient
 from manzil_api.hunts import service
-from manzil_api.hunts.dependencies import OwnedHunt
+from manzil_api.hunts.dependencies import MemberHunt, OwnedHunt
 from manzil_api.hunts.schemas import HuntCreate, HuntResponse, HuntSettingsPatch, HuntUpdate
 
 router = APIRouter(tags=["hunts"])
@@ -25,7 +25,7 @@ async def list_hunts(user: CurrentUser, client: UserClient) -> list[HuntResponse
 
 
 @router.get("/hunts/{hunt_id}", response_model=HuntResponse)
-async def get_hunt(hunt_id: UUID, hunt: OwnedHunt) -> HuntResponse:
+async def get_hunt(hunt_id: UUID, hunt: MemberHunt) -> HuntResponse:
     return HuntResponse.model_validate(hunt)
 
 

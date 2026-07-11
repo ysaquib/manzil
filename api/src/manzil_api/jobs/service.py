@@ -9,7 +9,7 @@ from uuid import UUID
 
 from manzil_shared.models import CheckpointPrompt, JobState
 
-from manzil_api.hunts import service as hunts_service
+from manzil_api.hunts.exceptions import InsufficientRole
 from manzil_api.jobs.exceptions import (
     InvalidCheckpointAnswer,
     JobNotCancellable,
@@ -50,13 +50,36 @@ def _row_to_response(row: dict[str, Any]) -> JobResponse:
     )
 
 
-async def _assert_job_owner(client: Client, job: dict[str, Any], user_id: str) -> UUID:
-    """Return the hunt_id for this job after verifying the caller owns it."""
+async def _job_access(client: Client, job: dict[str, Any], user_id: str) -> tuple[str, bool]:
     hunt_id = UUID(job["hunt_id"])
-    hunt = await hunts_service.get_hunt_row(client, hunt_id)
-    if hunt is None or hunt.get("owner_id") != user_id:
-        raise NotJobOwner("Only the hunt owner may perform this action")
-    return hunt_id
+    role = (
+        client.table("hunt_members")
+        .select("role")
+        .eq("hunt_id", str(hunt_id))
+        .eq("user_id", user_id)
+        .single()
+        .execute()
+        .data["role"]
+    )
+    own = False
+    if job.get("hunt_listing_id"):
+        rows = (
+            client.table("hunt_listings")
+            .select("added_by")
+            .eq("id", job["hunt_listing_id"])
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        own = bool(rows and rows[0]["added_by"] == user_id)
+    return role, own
+
+
+async def _assert_manage_job(client: Client, job: dict[str, Any], user_id: str) -> None:
+    role, own = await _job_access(client, job, user_id)
+    if role != "owner" and not own:
+        raise NotJobOwner("Only the submitter or Hunt Owner may manage this Job")
 
 
 async def get_job_row(client: Client, job_id: UUID) -> dict[str, Any] | None:
@@ -78,7 +101,7 @@ async def cancel_job(client: Client, job_id: UUID, user_id: str) -> JobResponse:
     row = await get_job_row(client, job_id)
     if row is None:
         raise JobNotFound(f"Job {job_id} not found")
-    await _assert_job_owner(client, row, user_id)
+    await _assert_manage_job(client, row, user_id)
     if row["state"] not in {
         JobState.QUEUED.value,
         JobState.RUNNING.value,
@@ -97,7 +120,7 @@ async def retry_job(client: Client, job_id: UUID, user_id: str) -> JobResponse:
     row = await get_job_row(client, job_id)
     if row is None:
         raise JobNotFound(f"Job {job_id} not found")
-    await _assert_job_owner(client, row, user_id)
+    await _assert_manage_job(client, row, user_id)
     if row["state"] not in {JobState.FAILED.value, JobState.CANCELLED.value}:
         raise JobNotRetryable(f"Job in state {row['state']} cannot be retried")
     client.table("jobs").update(
@@ -121,7 +144,9 @@ async def answer_checkpoint(
     row = await get_job_row(client, job_id)
     if row is None:
         raise JobNotFound(f"Job {job_id} not found")
-    await _assert_job_owner(client, row, user_id)
+    role, own = await _job_access(client, row, user_id)
+    if role == "member" and not own:
+        raise InsufficientRole("Members may resolve checkpoints only on their own Listings")
     if row["state"] != JobState.WAITING_USER.value:
         raise InvalidCheckpointAnswer("Job is not waiting for a checkpoint answer")
 
@@ -134,9 +159,7 @@ async def answer_checkpoint(
 
     choice = body.answer.get("choice")
     if not isinstance(choice, str) or choice not in prompt.options:
-        raise InvalidCheckpointAnswer(
-            f"Answer must be one of {prompt.options}, got {choice!r}"
-        )
+        raise InvalidCheckpointAnswer(f"Answer must be one of {prompt.options}, got {choice!r}")
 
     payload["checkpoint_answer"] = {
         **body.answer,
@@ -146,18 +169,15 @@ async def answer_checkpoint(
     run_state["checkpoint"] = None
     payload["run_state"] = run_state
 
-    client.table("jobs").update(
-        {"state": JobState.QUEUED.value, "payload": payload}
-    ).eq("id", str(job_id)).execute()
-    client.table("job_events").insert(
+    response = client.rpc(
+        "answer_job_checkpoint",
         {
-            "job_id": str(job_id),
-            "stage": row.get("current_stage") or "checkpoint",
-            "event": "checkpoint_answered",
-            "detail": {"answer": body.answer},
-        }
+            "p_job_id": str(job_id),
+            "p_payload": payload,
+            "p_detail": {"answer": body.answer},
+        },
     ).execute()
-
-    updated = await get_job_row(client, job_id)
-    assert updated is not None
+    updated = (response.data or [None])[0]
+    if updated is None:
+        raise RuntimeError("checkpoint answer returned no Job")
     return _row_to_response(updated)

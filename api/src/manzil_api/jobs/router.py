@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends
 from manzil_shared.models import JobState
 
 from manzil_api.dependencies import CurrentUser, UserClient
-from manzil_api.hunts.dependencies import OwnedHunt
+from manzil_api.hunts.dependencies import MemberHunt
 from manzil_api.jobs import service
 from manzil_api.jobs.dependencies import parse_job_states
 from manzil_api.jobs.schemas import CheckpointAnswer, JobResponse
@@ -21,7 +21,7 @@ router = APIRouter(tags=["jobs"])
 @router.get("/hunts/{hunt_id}/jobs", response_model=list[JobResponse])
 async def list_jobs(
     hunt_id: UUID,
-    hunt: OwnedHunt,
+    hunt: MemberHunt,
     client: UserClient,
     state: Annotated[list[JobState] | None, Depends(parse_job_states)],
 ) -> list[JobResponse]:

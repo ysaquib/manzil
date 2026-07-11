@@ -8,6 +8,7 @@ from uuid import UUID
 
 from manzil_worker.fetching.slug_hint import search_hint
 
+from manzil_api.hunts.exceptions import InsufficientRole
 from manzil_api.listings.schemas import ListingCreate, ListingResponse, PinsPatch
 from supabase import Client
 
@@ -40,48 +41,20 @@ async def create_listing(
     hunt_settings: dict[str, Any],
     body: ListingCreate,
 ) -> ListingResponse:
-    source_policy = body.source_policy or hunt_settings.get(
-        "default_source_policy", "tiers_1_2_3"
-    )
-    prop = (
-        client.table("properties")
-        .insert(
-            {
-                "name": _placeholder_name(body.url),
-                "canonical_address": _placeholder_name(body.url),
-            }
-        )
-        .execute()
-    )
-    property_row = (prop.data or [None])[0]
-    if property_row is None:
-        raise RuntimeError("property insert returned no row")
-
-    listing = (
-        client.table("hunt_listings")
-        .insert(
-            {
-                "hunt_id": str(hunt_id),
-                "property_id": property_row["id"],
-                "added_by": user_id,
-                "source_policy": source_policy,
-            }
-        )
-        .execute()
-    )
+    source_policy = body.source_policy or hunt_settings.get("default_source_policy", "tiers_1_2_3")
+    listing = client.rpc(
+        "submit_listing",
+        {
+            "p_hunt_id": str(hunt_id),
+            "p_url": body.url,
+            "p_placeholder_name": _placeholder_name(body.url),
+            "p_source_policy": source_policy,
+        },
+    ).execute()
     listing_row = (listing.data or [None])[0]
     if listing_row is None:
         raise RuntimeError("listing insert returned no row")
 
-    client.table("jobs").insert(
-        {
-            "hunt_id": str(hunt_id),
-            "hunt_listing_id": listing_row["id"],
-            "type": "ingest",
-            "state": "queued",
-            "payload": {"url": body.url, "source_policy": source_policy},
-        }
-    ).execute()
     return _to_response(listing_row)
 
 
@@ -96,13 +69,31 @@ async def list_listings(client: Client, hunt_id: UUID) -> list[ListingResponse]:
     return [_to_response(row) for row in response.data or []]
 
 
-async def delete_listing(client: Client, listing_id: UUID) -> None:
-    client.table("hunt_listings").update({"status": "archived"}).eq(
-        "id", str(listing_id)
-    ).execute()
+def _role(client: Client, hunt_id: str, user_id: str) -> str:
+    response = (
+        client.table("hunt_members")
+        .select("role")
+        .eq("hunt_id", hunt_id)
+        .eq("user_id", user_id)
+        .single()
+        .execute()
+    )
+    return response.data["role"]
 
 
-async def patch_pins(client: Client, listing_id: UUID, body: PinsPatch) -> ListingResponse:
+async def delete_listing(client: Client, listing_id: UUID, user_id: str) -> None:
+    listing = await get_listing_row(client, listing_id)
+    if listing is None or _role(client, listing["hunt_id"], user_id) != "owner":
+        raise InsufficientRole("Only the Hunt Owner may delete Listings")
+    client.table("hunt_listings").update({"status": "archived"}).eq("id", str(listing_id)).execute()
+
+
+async def patch_pins(
+    client: Client, listing: dict[str, Any], user_id: str, body: PinsPatch
+) -> ListingResponse:
+    if _role(client, listing["hunt_id"], user_id) == "member" and listing["added_by"] != user_id:
+        raise InsufficientRole("Members may edit pins only on their own Listings")
+    listing_id = UUID(listing["id"])
     client.table("hunt_listings").update({"pins": body.pins}).eq("id", str(listing_id)).execute()
     row = await get_listing_row(client, listing_id)
     if row is None:
