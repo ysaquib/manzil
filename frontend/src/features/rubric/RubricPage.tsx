@@ -1,5 +1,5 @@
 // Rubric page (P1-12, §13.2): view mode default with single-page editor.
-// First-run hunts (no saved rubric) open directly in edit mode.
+// Hunts with no enabled criteria open directly in edit mode.
 import { Alert, Button, Center, Loader, Stack } from "@mantine/core";
 import { IconPencil } from "@tabler/icons-react";
 import { useState } from "react";
@@ -7,6 +7,7 @@ import { useParams } from "react-router-dom";
 
 import { PageHeader } from "../../components/PageHeader";
 import { useCatalog, useRubric } from "./api";
+import { hasEnabledCriterion } from "./CreateRubricPrompt";
 import { RubricEditor } from "./RubricEditor";
 import { RubricView } from "./RubricView";
 
@@ -15,7 +16,7 @@ export function RubricPage() {
   const { data: catalog, isLoading: catalogLoading, error: catalogError } = useCatalog();
   const { data: saved, isLoading: rubricLoading, error: rubricError } = useRubric(huntId);
 
-  const isFirstRun = saved !== undefined && saved.length === 0;
+  const isFirstRun = saved !== undefined && !hasEnabledCriterion(saved);
   const [mode, setMode] = useState<"view" | "edit">("view");
   const effectiveMode = isFirstRun ? "edit" : mode;
 

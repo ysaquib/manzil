@@ -213,6 +213,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/hunts/{hunt_id}/invitation-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Invitation Links */
+        get: operations["list_invitation_links_v1_hunts__hunt_id__invitation_links_get"];
+        put?: never;
+        /** Create Invitation Link */
+        post: operations["create_invitation_link_v1_hunts__hunt_id__invitation_links_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/invitation-links/{invitation_link_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Invitation Link */
+        delete: operations["delete_invitation_link_v1_invitation_links__invitation_link_id__delete"];
+        options?: never;
+        head?: never;
+        /** Patch Invitation Link */
+        patch: operations["patch_invitation_link_v1_invitation_links__invitation_link_id__patch"];
+        trace?: never;
+    };
+    "/v1/invitation-links/{token}/join": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Join Invitation Link */
+        post: operations["join_invitation_link_v1_invitation_links__token__join_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/hunts/{hunt_id}/rubric": {
         parameters: {
             query?: never;
@@ -557,6 +610,85 @@ export interface components {
             /** Archived */
             archived?: boolean | null;
         };
+        /** InvitationLinkCreate */
+        InvitationLinkCreate: {
+            /** Name */
+            name?: string | null;
+            /** Max Uses */
+            max_uses?: number | null;
+            /** Expires At */
+            expires_at?: string | null;
+        };
+        /** InvitationLinkJoinRecord */
+        InvitationLinkJoinRecord: {
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** Display Name */
+            display_name: string;
+            /**
+             * Joined At
+             * Format: date-time
+             */
+            joined_at: string;
+        };
+        /** InvitationLinkJoined */
+        InvitationLinkJoined: {
+            /**
+             * Hunt Id
+             * Format: uuid
+             */
+            hunt_id: string;
+        };
+        /** InvitationLinkPatch */
+        InvitationLinkPatch: {
+            /** Name */
+            name?: string | null;
+            /** Max Uses */
+            max_uses?: number | null;
+            /** Expires At */
+            expires_at?: string | null;
+        };
+        /** InvitationLinkResponse */
+        InvitationLinkResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Hunt Id
+             * Format: uuid
+             */
+            hunt_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Name */
+            name: string | null;
+            /** Max Uses */
+            max_uses: number | null;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Use Count */
+            use_count: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "expired" | "exhausted";
+            /** Link */
+            link: string;
+            /** Joins */
+            joins: components["schemas"]["InvitationLinkJoinRecord"][];
+        };
         /** InviteAccepted */
         InviteAccepted: {
             /**
@@ -568,7 +700,7 @@ export interface components {
         /** InviteCreate */
         InviteCreate: {
             /** Email */
-            email?: string | null;
+            email: string;
             /**
              * Role
              * @default member
@@ -589,7 +721,7 @@ export interface components {
              */
             hunt_id: string;
             /** Email */
-            email: string | null;
+            email: string;
             /** Role Granted */
             role_granted: string;
             /**
@@ -1443,6 +1575,167 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InviteAccepted"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_invitation_links_v1_hunts__hunt_id__invitation_links_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationLinkResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_invitation_link_v1_hunts__hunt_id__invitation_links_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationLinkCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationLinkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_invitation_link_v1_invitation_links__invitation_link_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invitation_link_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_invitation_link_v1_invitation_links__invitation_link_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invitation_link_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationLinkPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationLinkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    join_invitation_link_v1_invitation_links__token__join_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationLinkJoined"];
                 };
             };
             /** @description Validation Error */
