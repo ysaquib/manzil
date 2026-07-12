@@ -67,7 +67,7 @@ class MemberPatch(BaseModel):
 
     @model_validator(mode="after")
     def at_least_one_field(self) -> MemberPatch:
-        if self.color is None and self.display_name is None and self.role is None:
+        if not self.model_fields_set:
             raise ValueError("at least one of color, display_name, role is required")
         return self
 

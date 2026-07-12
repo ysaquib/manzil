@@ -100,11 +100,11 @@ async def patch_member(
         updates: dict[str, str] = {}
         if body.color is not None:
             updates["color"] = body.color
-        if body.display_name is not None:
+        if "display_name" in body.model_fields_set:
             updates["display_name"] = body.display_name
     else:
         # Another member's row: only the Owner may act, and only on the role.
-        if body.color is not None or body.display_name is not None:
+        if body.color is not None or "display_name" in body.model_fields_set:
             raise CannotEditMemberColor("You may only edit your own color and display name")
         if _role_of(client, hunt_id, current_user_id) != "owner":
             raise CannotEditMember("Only the Owner may change another member's role")

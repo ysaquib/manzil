@@ -143,6 +143,12 @@ triggers in DESIGN §5 are observed.
 invite redirects (`http://localhost:5173` locally). Supabase's local Mailpit
 inbox is at `http://127.0.0.1:54324` after `supabase start`.
 
+Local Auth requires email confirmation via `supabase/config.toml`. For hosted
+Supabase, also enable **Confirm email** in Authentication → Providers → Email,
+allow the deployed `/auth/callback` and `/auth/reset-password` redirect URLs,
+and keep both `{{ .ConfirmationURL }}` and `{{ .Token }}` in the magic-link
+email template so users can click the link or enter its six-digit code.
+
 The frontend origin must exactly match `API_CORS_ORIGINS`; `localhost` and
 `127.0.0.1` are different browser origins. To allow either local spelling:
 
