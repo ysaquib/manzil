@@ -11,14 +11,23 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Protocol
-from urllib.parse import urlparse
+from collections.abc import Awaitable, Callable
+from typing import Any, Protocol
+from urllib.parse import urljoin, urlparse
 
 import httpx
 import structlog
-from manzil_shared.config import TIER2_MIN_DELAY_SECONDS
+from manzil_shared.config import FETCH_MAX_REDIRECTS, TIER2_MIN_DELAY_SECONDS
+from manzil_shared.errors import PrivateAddressRefused
 
 from manzil_worker.fetching.results import FetchResult
+from manzil_worker.fetching.ssrf import (
+    Resolver,
+    is_blocked_ip_literal,
+    pin_target,
+    resolve_public_host,
+    screen_url,
+)
 
 log = structlog.get_logger()
 
@@ -43,30 +52,80 @@ class Fetcher(Protocol):
 
 
 class Tier1Fetcher:
-    """Plain HTTP with sane headers."""
+    """Plain HTTP with sane headers.
+
+    SSRF discipline (§16): redirects are followed manually
+    (``follow_redirects=False``) so the screen re-runs on every hop, and each hop
+    connects to the *vetted IP* (``pin_target``) — closing the DNS-rebinding TOCTOU
+    that a re-resolve-only check leaves open (see ``ssrf`` module docstring). A
+    public URL that 302s at an internal host is refused at the hop, not fetched.
+
+    Error taxonomy: ``PrivateAddressRefused`` (a security refusal) propagates — so
+    `fetch_page` surfaces it as a tool error and a submission fails the job cleanly.
+    A resolver/network failure (``OSError``/``gaierror`` on NXDOMAIN or transient
+    DNS, or ``httpx.HTTPError``) becomes a ``FetchResult`` with ``status_code=0`` so
+    the ladder classifies it ERROR → ``StageRetryable`` (retry with backoff),
+    preserving pre-guard behavior for dead/flaky hosts."""
 
     tier = 1
 
-    def __init__(self, timeout: float = 20.0) -> None:
+    def __init__(
+        self,
+        timeout: float = 20.0,
+        *,
+        resolver: Resolver | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,  # injected by tests
+    ) -> None:
         self._timeout = timeout
+        self._resolver = resolver  # None → real getaddrinfo; tests inject a fake
+        self._transport = transport
 
     async def fetch(self, url: str, *, capture_screenshot: bool = False) -> FetchResult:
+        current = url
         try:
             async with httpx.AsyncClient(
-                headers=_HEADERS, follow_redirects=True, timeout=self._timeout
+                headers=_HEADERS,
+                follow_redirects=False,
+                timeout=self._timeout,
+                transport=self._transport,
             ) as client:
-                response = await client.get(url)
-        except httpx.HTTPError as exc:
+                for _ in range(FETCH_MAX_REDIRECTS + 1):
+                    # Screen scheme + literal host + resolved IPs BEFORE connecting.
+                    # Raises PrivateAddressRefused (propagates past the handlers
+                    # below — a refusal must never masquerade as a retryable error).
+                    addresses = await screen_url(current, resolver=self._resolver)
+                    # Dial the screened IP; keep the hostname for Host/SNI/cert.
+                    pinned, host_header, sni = pin_target(current, addresses[0])
+                    response = await client.get(
+                        pinned,
+                        headers={"Host": host_header},
+                        extensions={"sni_hostname": sni},
+                    )
+                    if not response.is_redirect or not response.has_redirect_location:
+                        return FetchResult(
+                            url=url,
+                            final_url=current,  # hostname form, not the pinned IP
+                            status_code=response.status_code,
+                            headers={k.lower(): v for k, v in response.headers.items()},
+                            body=response.text,
+                            tier=self.tier,
+                        )
+                    # Relative targets resolve against the current URL.
+                    current = urljoin(current, response.headers["location"])
+        except PrivateAddressRefused:
+            raise  # security refusal: never mask as a retryable fetch error
+        except (httpx.HTTPError, OSError) as exc:
             return FetchResult(
-                url=url, final_url=url, status_code=0, tier=self.tier, error=repr(exc)
+                url=url, final_url=current, status_code=0, tier=self.tier, error=repr(exc)
             )
+        # Fell out of the loop: more than FETCH_MAX_REDIRECTS hops — a clean fetch
+        # error (a redirect chase, not a security refusal).
         return FetchResult(
             url=url,
-            final_url=str(response.url),
-            status_code=response.status_code,
-            headers={k.lower(): v for k, v in response.headers.items()},
-            body=response.text,
+            final_url=current,
+            status_code=0,
             tier=self.tier,
+            error=f"too many redirects (> {FETCH_MAX_REDIRECTS})",
         )
 
 
@@ -76,10 +135,42 @@ class Tier2Fetcher:
 
     tier = 2
 
-    def __init__(self, timeout: float = 45.0) -> None:
+    def __init__(self, timeout: float = 45.0, *, resolver: Resolver | None = None) -> None:
         self._timeout = timeout
+        self._resolver = resolver
         self._last_fetch: dict[str, float] = {}
         self._lock = asyncio.Lock()
+
+    def _route_guard(self) -> Callable[[Any], Awaitable[None]]:
+        """Playwright route handler enforcing the SSRF screen inside the browser.
+
+        Scope (proportionate, per §16): (1) EVERY request whose host is a non-global
+        IP *literal* is aborted — cheap, no DNS, stops a page fetching
+        ``http://169.254.169.254`` directly; (2) main-frame document navigations
+        (i.e. redirects to a *new* host) are DNS-re-screened and aborted if
+        non-global. Subresource *hostname* DNS resolution is intentionally NOT done
+        — it is optional hardening that would add a lookup per asset; the pre-nav
+        screen + post-load ``page.url`` backstop cover the main-frame threat."""
+
+        async def guard(route: Any) -> None:
+            request = route.request
+            if is_blocked_ip_literal(request.url):
+                await route.abort()
+                return
+            is_main_frame_nav = (
+                request.is_navigation_request() and request.frame.parent_frame is None
+            )
+            if is_main_frame_nav:
+                host = urlparse(request.url).hostname
+                if host is not None:
+                    try:
+                        await resolve_public_host(host, resolver=self._resolver)
+                    except PrivateAddressRefused:
+                        await route.abort()
+                        return
+            await route.continue_()
+
+        return guard
 
     async def _be_polite(self, domain: str) -> None:
         async with self._lock:
@@ -95,6 +186,10 @@ class Tier2Fetcher:
 
         await self._be_polite(site_domain(url))
         try:
+            # Pre-navigation screen (§16): refuse before launching a browser at all.
+            # PrivateAddressRefused propagates past both handlers below (a refusal is
+            # never a retryable fetch error); a DNS OSError is caught → retryable.
+            await screen_url(url, resolver=self._resolver)
             async with async_playwright() as pw:
                 browser = await pw.chromium.launch(headless=True)
                 try:
@@ -104,10 +199,14 @@ class Tier2Fetcher:
                         timezone_id="America/Detroit",
                         viewport={"width": 1440, "height": 900},
                     )
+                    await context.route("**/*", self._route_guard())
                     page = await context.new_page()
                     response = await page.goto(
                         url, timeout=self._timeout * 1000, wait_until="domcontentloaded"
                     )
+                    # Backstop: whatever the browser actually landed on (redirects,
+                    # meta-refresh, JS navigation) must still screen clean.
+                    await screen_url(page.url, resolver=self._resolver)
                     await page.wait_for_timeout(1500)  # settle JS-rendered content
                     body = await page.content()
                     screenshot = (
@@ -128,7 +227,9 @@ class Tier2Fetcher:
                     )
                 finally:
                     await browser.close()
-        except PlaywrightError as exc:
+        except PrivateAddressRefused:
+            raise  # security refusal: never mask as a retryable fetch error
+        except (PlaywrightError, OSError) as exc:
             log.warning("tier2_fetch_failed", url=url, error=str(exc))
             return FetchResult(
                 url=url, final_url=url, status_code=0, tier=self.tier, error=repr(exc)
