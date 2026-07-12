@@ -18,8 +18,10 @@ from typing import TYPE_CHECKING, Any
 import httpx
 import structlog
 from manzil_shared.config import TIER3_TIMEOUT_SECONDS
+from manzil_shared.errors import PrivateAddressRefused
 
 from manzil_worker.fetching.results import FetchResult
+from manzil_worker.fetching.ssrf import Resolver, screen_url
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -111,14 +113,24 @@ class Tier3Fetcher:
         self,
         timeout: float = TIER3_TIMEOUT_SECONDS,
         transport: httpx.AsyncBaseTransport | None = None,  # injected by tests
+        *,
+        resolver: Resolver | None = None,  # injected by tests; None → real getaddrinfo
     ) -> None:
         self._timeout = timeout
         self._transport = transport
+        self._resolver = resolver
 
     async def fetch(self, url: str, *, capture_screenshot: bool = False) -> FetchResult:
         provider = tier3_provider()
-        request = provider.build(url)
         try:
+            # Defense-in-depth screen (§16). The unblocker fetches from *its*
+            # network, so a private target is unreachable-from-there rather than an
+            # SSRF against us (a provider fetching 169.254.169.254 returns THEIR
+            # metadata, not ours); we screen anyway for consistency across tiers.
+            # PrivateAddressRefused propagates (refusal, not a retryable error); a
+            # DNS OSError is caught below → retryable, like any tier.
+            await screen_url(url, resolver=self._resolver)
+            request = provider.build(url)
             async with httpx.AsyncClient(
                 timeout=self._timeout, transport=self._transport
             ) as client:
@@ -129,7 +141,9 @@ class Tier3Fetcher:
                     json=request.json,
                     params=request.params,
                 )
-        except httpx.HTTPError as exc:
+        except PrivateAddressRefused:
+            raise  # security refusal: never mask as a retryable fetch error
+        except (httpx.HTTPError, OSError) as exc:
             log.warning("tier3_fetch_failed", url=url, provider=provider.name, error=repr(exc))
             return FetchResult(
                 url=url, final_url=url, status_code=0, tier=self.tier, error=repr(exc)

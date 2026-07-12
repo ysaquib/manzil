@@ -23,6 +23,12 @@ LISTING_HTML = (
 )
 
 
+async def _public_resolver(host: str) -> list[str]:
+    """Fake resolver: every host maps to a public IP so the tier-3 SSRF screen
+    passes without live DNS (no network in CI)."""
+    return ["93.184.216.34"]
+
+
 # ── provider selection ───────────────────────────────────────────────────────
 
 
@@ -70,7 +76,7 @@ def test_brightdata_request_shape_and_result(monkeypatch: pytest.MonkeyPatch) ->
         seen["payload"] = json.loads(request.content)
         return httpx.Response(200, text=LISTING_HTML)
 
-    fetcher = Tier3Fetcher(transport=httpx.MockTransport(handler))
+    fetcher = Tier3Fetcher(transport=httpx.MockTransport(handler), resolver=_public_resolver)
     result = asyncio.run(fetcher.fetch("https://www.zillow.com/detroit-mi/rentals/"))
 
     assert seen["url"] == "https://api.brightdata.com/request"
@@ -96,7 +102,7 @@ def test_scrapingbee_request_shape(monkeypatch: pytest.MonkeyPatch) -> None:
         assert request.url.params["render_js"] == "true"
         return httpx.Response(200, text=LISTING_HTML)
 
-    fetcher = Tier3Fetcher(transport=httpx.MockTransport(handler))
+    fetcher = Tier3Fetcher(transport=httpx.MockTransport(handler), resolver=_public_resolver)
     result = asyncio.run(fetcher.fetch("https://www.trulia.com/for_rent/Detroit,MI/"))
     assert result.tier == 3 and result.body == LISTING_HTML
 
@@ -110,7 +116,7 @@ def test_vendor_network_failure_is_a_fetch_error_not_a_crash(
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectTimeout("vendor down")
 
-    fetcher = Tier3Fetcher(transport=httpx.MockTransport(handler))
+    fetcher = Tier3Fetcher(transport=httpx.MockTransport(handler), resolver=_public_resolver)
     result = asyncio.run(fetcher.fetch("https://www.zillow.com/x"))
     assert result.status_code == 0
     assert result.error is not None
