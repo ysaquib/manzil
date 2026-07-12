@@ -5,6 +5,7 @@ import "@fontsource-variable/source-sans-3";
 
 import { localStorageColorSchemeManager, MantineProvider } from "@mantine/core";
 import "@mantine/core/styles.css";
+import "@mantine/dates/styles.css";
 import { Notifications } from "@mantine/notifications";
 import "@mantine/notifications/styles.css";
 import { QueryClientProvider } from "@tanstack/react-query";

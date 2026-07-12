@@ -9,31 +9,12 @@ from manzil_api import privileged
 
 
 @pytest.mark.asyncio
-async def test_copy_link_invite_accepts_curator(
-    collab_hunt, as_owner: AsyncClient, as_outsider: AsyncClient, db_pool, seeded_users
-) -> None:
-    created = await as_owner.post(
-        f"/v1/hunts/{collab_hunt['hunt_id']}/invites", json={"role": "curator"}
-    )
-    assert created.status_code == 201
-    token = created.json()["link"].rsplit("/", 1)[-1]
-    accepted = await as_outsider.post(f"/v1/invites/{token}/accept")
-    assert accepted.status_code == 200
-    assert accepted.json()["hunt_id"] == collab_hunt["hunt_id"]
-    row = await db_pool.fetchrow(
-        "select role, color from hunt_members where hunt_id = $1 and user_id = $2",
-        UUID(collab_hunt["hunt_id"]),
-        seeded_users["outsider"].user_id,
-    )
-    assert dict(row) == {"role": "curator", "color": "dusk"}
-
-
-@pytest.mark.asyncio
 async def test_accept_is_idempotent_for_existing_member(
     collab_hunt, as_owner: AsyncClient, as_member: AsyncClient
 ) -> None:
     created = await as_owner.post(
-        f"/v1/hunts/{collab_hunt['hunt_id']}/invites", json={"role": "curator"}
+        f"/v1/hunts/{collab_hunt['hunt_id']}/invites",
+        json={"email": "member@test.manzil", "role": "curator"},
     )
     token = created.json()["link"].rsplit("/", 1)[-1]
     accepted = await as_member.post(f"/v1/invites/{token}/accept")
@@ -47,8 +28,8 @@ async def test_expired_and_revoked_invites_are_gone(
 ) -> None:
     expired_token = "expired-test-token"
     await db_pool.execute(
-        """insert into invites (hunt_id, token, created_by, expires_at)
-           values ($1, $2, $3, $4)""",
+        """insert into invites (hunt_id, email, token, created_by, expires_at)
+           values ($1, 'expired@example.com', $2, $3, $4)""",
         UUID(collab_hunt["hunt_id"]),
         expired_token,
         "00000000-0000-0000-0000-000000000001",
@@ -57,7 +38,10 @@ async def test_expired_and_revoked_invites_are_gone(
     expired = await as_outsider.post(f"/v1/invites/{expired_token}/accept")
     assert expired.status_code == 410
 
-    created = await as_owner.post(f"/v1/hunts/{collab_hunt['hunt_id']}/invites", json={})
+    created = await as_owner.post(
+        f"/v1/hunts/{collab_hunt['hunt_id']}/invites",
+        json={"email": "revoked@example.com"},
+    )
     invite_id = created.json()["id"]
     token = created.json()["link"].rsplit("/", 1)[-1]
     revoked = await as_owner.delete(f"/v1/invites/{invite_id}")

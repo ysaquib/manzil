@@ -3,9 +3,8 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-const createMutate = vi.fn(
-  (_body: unknown, opts?: { onSuccess?: (invite: { link: string }) => void }) =>
-    opts?.onSuccess?.({ link: "https://manzil.app/invite/tok-123" }),
+const createMutate = vi.fn((_body: unknown, opts?: { onSuccess?: () => void }) =>
+  opts?.onSuccess?.(),
 );
 
 vi.mock("./api", () => ({
@@ -17,7 +16,7 @@ vi.mock("./api", () => ({
 import { InvitesSection } from "./InvitesSection";
 
 describe("InvitesSection", () => {
-  it("reveals the returned invite link after a successful create", async () => {
+  it("requires an email and sends a single-recipient invite", async () => {
     const user = userEvent.setup();
     render(
       <MantineProvider>
@@ -25,13 +24,14 @@ describe("InvitesSection", () => {
       </MantineProvider>,
     );
 
-    // No link before creating.
-    expect(screen.queryByDisplayValue("https://manzil.app/invite/tok-123")).not.toBeInTheDocument();
+    const send = screen.getByRole("button", { name: "Send invite" });
+    expect(send).toBeDisabled();
+    await user.type(screen.getByRole("textbox", { name: "Email" }), "partner@example.com");
+    await user.click(send);
 
-    await user.click(screen.getByRole("button", { name: "Create invite" }));
-
-    expect(createMutate).toHaveBeenCalled();
-    expect(screen.getByDisplayValue("https://manzil.app/invite/tok-123")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Copy link" })).toBeInTheDocument();
+    expect(createMutate).toHaveBeenCalledWith(
+      { email: "partner@example.com", role: "member" },
+      expect.any(Object),
+    );
   });
 });

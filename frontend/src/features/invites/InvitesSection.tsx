@@ -1,11 +1,8 @@
-// Invites surface (P2-8, DESIGN §13.1) — owner only. Create an invite (optional
-// email + role), then share the returned link; list and revoke pending invites.
+// Single-recipient email invites. Reusable links live in InvitationLinksSection.
 // Owner-gating here is UX; the API is owner-only regardless (frontend/AGENTS.md).
 import {
   ActionIcon,
-  Alert,
   Button,
-  CopyButton,
   Group,
   Select,
   Stack,
@@ -28,21 +25,6 @@ function notifyError(title: string) {
     });
 }
 
-function InviteLink({ link }: { link: string }) {
-  return (
-    <Group gap="xs" wrap="nowrap">
-      <TextInput readOnly value={link} style={{ flex: 1 }} aria-label="Invite link" />
-      <CopyButton value={link}>
-        {({ copied, copy }) => (
-          <Button variant="default" onClick={copy}>
-            {copied ? "Copied" : "Copy link"}
-          </Button>
-        )}
-      </CopyButton>
-    </Group>
-  );
-}
-
 function PendingInvite({ invite, huntId }: { invite: Invite; huntId: string }) {
   const revoke = useRevokeInvite(huntId);
   const expires = new Date(invite.expires_at).toLocaleDateString();
@@ -57,13 +39,6 @@ function PendingInvite({ invite, huntId }: { invite: Invite; huntId: string }) {
         </Text>
       </Stack>
       <Group gap="xs" wrap="nowrap">
-        <CopyButton value={invite.link}>
-          {({ copied, copy }) => (
-            <Button size="xs" variant="subtle" onClick={copy}>
-              {copied ? "Copied" : "Copy link"}
-            </Button>
-          )}
-        </CopyButton>
         <ActionIcon
           variant="subtle"
           color="red"
@@ -85,14 +60,12 @@ export function InvitesSection({ huntId }: { huntId: string }) {
   const createInvite = useCreateInvite(huntId);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<"member" | "curator">("member");
-  const [lastLink, setLastLink] = useState<string | null>(null);
 
   const submit = () =>
     createInvite.mutate(
-      { email: email.trim() || undefined, role },
+      { email: email.trim(), role },
       {
-        onSuccess: (invite) => {
-          setLastLink(invite.link);
+        onSuccess: () => {
           setEmail("");
           notifications.show({ message: "Invite created", color: "green" });
         },
@@ -101,11 +74,11 @@ export function InvitesSection({ huntId }: { huntId: string }) {
     );
 
   return (
-    <Section title="Invites">
+    <Section title="Invite by email">
       <Stack gap="sm">
         <Group align="flex-end" gap="sm">
           <TextInput
-            label="Email (optional)"
+            label="Email"
             placeholder="teammate@example.com"
             type="email"
             value={email}
@@ -123,21 +96,10 @@ export function InvitesSection({ huntId }: { huntId: string }) {
             allowDeselect={false}
             onChange={(value) => value && setRole(value as "member" | "curator")}
           />
-          <Button onClick={submit} loading={createInvite.isPending}>
-            Create invite
+          <Button onClick={submit} loading={createInvite.isPending} disabled={!email.trim()}>
+            Send invite
           </Button>
         </Group>
-
-        {lastLink && (
-          <Alert color="green" title="Invite ready — share this link">
-            <Stack gap="xs">
-              <Text size="xs" c="dimmed">
-                Anyone with this link can join. It expires; revoke it below if you change your mind.
-              </Text>
-              <InviteLink link={lastLink} />
-            </Stack>
-          </Alert>
-        )}
 
         {invites.length > 0 && (
           <Stack gap="xs">
