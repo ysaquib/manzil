@@ -38,6 +38,14 @@ class Recording:
     cache_read_tokens: int
     cache_write_tokens: int
     recorded_at: str
+    # Agent-turn recordings (P3-3 `call_agent`): a turn either emits tool calls or
+    # a final message. All three stay None on structured (`call_structured`)
+    # recordings, so every existing fixture on disk loads unchanged. The
+    # conversation-so-far is the hashed `content`, keeping the `{stage}--{hash16}`
+    # naming convention — one fixture per turn.
+    tool_calls: list[dict] | None = None  # [{"name": ..., "input": {...}}, …]
+    text: str | None = None  # the assistant's final (non-tool) message
+    stop_reason: str | None = None  # "tool_use" | "stop"
 
 
 def recorded_dir() -> Path:

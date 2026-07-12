@@ -27,6 +27,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from manzil_shared.config import AGENT_MAX_TURNS
 from pydantic import BaseModel
 
 from manzil_worker.llm.config import (
@@ -35,7 +36,7 @@ from manzil_worker.llm.config import (
     model_for_stage,
     openrouter_provider_order,
 )
-from manzil_worker.llm.prompt_loader import Prompt, load_prompt
+from manzil_worker.llm.prompt_loader import Prompt, PromptError, load_prompt
 from manzil_worker.llm.recording import (
     Recording,
     content_sha256,
@@ -43,6 +44,13 @@ from manzil_worker.llm.recording import (
     now_iso,
     request_hash,
     save_recording,
+)
+from manzil_worker.llm.tools import (
+    AgentResult,
+    ToolCall,
+    ToolSpec,
+    TurnResponse,
+    run_agent_loop,
 )
 
 if TYPE_CHECKING:
@@ -384,11 +392,251 @@ async def call_structured[T: BaseModel](stage: str, schema: type[T], content: st
     return schema.model_validate(response.output)
 
 
-async def call_agent(stage: str, task: str, tools: list[Any], max_turns: int = 8) -> Any:
-    """Bounded tool loop (§10.2 pattern P3). No Phase 0 stage uses tool loops —
-    only DISCOVER and location-type custom criteria do, and both land in
-    Phase 3. Defined here because the seam's surface is pinned (§11.1)."""
-    raise NotImplementedError("call_agent lands with its first consumer (P3-5 DISCOVER)")
+@dataclass(frozen=True)
+class _AgentTurnRaw:
+    """One live agent turn, normalized like ProviderResponse but tool-shaped."""
+
+    tool_calls: list[ToolCall]
+    text: str | None
+    stop_reason: str
+    input_tokens: int
+    output_tokens: int
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    reported_cost_usd: float | None = None
+
+
+def _optional_prompt(stage: str) -> Prompt | None:
+    """A stage's prompt file if one exists (tool-using stages may run prompt-less
+    on `task` alone until their prompt lands, e.g. DISCOVER before P3-5)."""
+    try:
+        return load_prompt(stage)
+    except PromptError:
+        return None
+
+
+def _agent_usage(model: str, raw: _AgentTurnRaw) -> CallUsage:
+    return CallUsage(
+        model=model,
+        input_tokens=raw.input_tokens,
+        output_tokens=raw.output_tokens,
+        cache_read_tokens=raw.cache_read_tokens,
+        cache_write_tokens=raw.cache_write_tokens,
+        cost_usd=cost_usd(
+            model,
+            input_tokens=raw.input_tokens,
+            output_tokens=raw.output_tokens,
+            cache_read_tokens=raw.cache_read_tokens,
+            cache_write_tokens=raw.cache_write_tokens,
+        ),
+    )
+
+
+async def _live_agent_turn_openrouter(
+    stage: str,
+    model: str,
+    prompt: Prompt | None,
+    messages: list[dict[str, Any]],
+    specs: list[ToolSpec],
+) -> _AgentTurnRaw:
+    from openai import AsyncOpenAI
+
+    if not os.environ.get("OPENROUTER_API_KEY"):
+        raise SeamConfigError("OPENROUTER_API_KEY unset — cannot make a live call")
+
+    convo: list[dict[str, Any]] = []
+    if prompt is not None:
+        system_parts: list[dict[str, Any]] = []
+        if prompt.cacheable_prefix:
+            system_parts.append(
+                {
+                    "type": "text",
+                    "text": prompt.cacheable_prefix,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            )
+        if prompt.per_call:
+            system_parts.append({"type": "text", "text": prompt.per_call})
+        if system_parts:
+            convo.append({"role": "system", "content": system_parts})
+    convo.extend(messages)
+
+    client = AsyncOpenAI(api_key=os.environ["OPENROUTER_API_KEY"], base_url=OPENROUTER_BASE_URL)
+    response = await client.chat.completions.create(
+        model=model,
+        max_tokens=max_tokens_for_stage(stage),
+        temperature=0.0,
+        messages=convo,  # type: ignore[arg-type]
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": s.name,
+                    "description": s.description,
+                    "parameters": s.parameters,
+                },
+            }
+            for s in specs
+        ],
+        tool_choice="auto",
+        extra_body={
+            "provider": {"order": openrouter_provider_order(model), "allow_fallbacks": False},
+        },
+    )
+
+    message = response.choices[0].message
+    tool_calls = [
+        ToolCall(name=tc.function.name, input=json.loads(tc.function.arguments or "{}"))
+        for tc in (message.tool_calls or [])
+    ]
+    usage = response.usage
+    if usage is None:
+        raise SeamConfigError(f"stage {stage!r}: OpenRouter response missing usage")
+    details = getattr(usage, "prompt_tokens_details", None)
+    cached = _usage_int(details, "cached_tokens")
+    cache_write = _usage_int(details, "cache_write_tokens")
+    uncached = max(0, (usage.prompt_tokens or 0) - cached - cache_write)
+    reported_cost = getattr(usage, "cost", None)
+    return _AgentTurnRaw(
+        tool_calls=tool_calls,
+        text=message.content,
+        stop_reason="tool_use" if tool_calls else "stop",
+        input_tokens=uncached,
+        output_tokens=usage.completion_tokens or 0,
+        cache_read_tokens=cached,
+        cache_write_tokens=cache_write,
+        reported_cost_usd=float(reported_cost) if reported_cost is not None else None,
+    )
+
+
+async def _traced_agent_turn(
+    stage: str,
+    model: str,
+    prompt: Prompt | None,
+    messages: list[dict[str, Any]],
+    specs: list[ToolSpec],
+) -> _AgentTurnRaw:
+    """One agent turn wrapped in its own Langfuse generation — every turn is
+    traced (NFR6: an untraced call is a bug)."""
+    _require_langfuse_configured()
+    ctx = _current_context()
+    from langfuse import Langfuse, propagate_attributes
+
+    lf: Langfuse = _langfuse()
+    metadata: dict[str, Any] = {
+        "mode": ctx.mode,
+        "model": model,
+        "prompt_version": prompt.version if prompt is not None else 0,
+        "listing_slug": ctx.listing_slug,
+        "llm_mode": llm_mode(),
+        "pattern": "agent_loop",
+    }
+    with (
+        propagate_attributes(trace_name=f"{ctx.job_type}/{stage}", session_id=ctx.job_id),
+        lf.start_as_current_observation(
+            name=f"{ctx.job_type}/{stage}",
+            model=model,
+            input=messages,
+            as_type="generation",
+            metadata=metadata,
+        ) as generation,
+    ):
+        raw = await _live_agent_turn_openrouter(stage, model, prompt, messages, specs)
+        if raw.reported_cost_usd is not None:
+            generation.update(metadata={**metadata, "openrouter_cost_usd": raw.reported_cost_usd})
+        generation.update(
+            output={
+                "text": raw.text,
+                "tool_calls": [{"name": c.name, "input": c.input} for c in raw.tool_calls],
+            },
+            usage_details={
+                "input": raw.input_tokens,
+                "output": raw.output_tokens,
+                "cache_read_input_tokens": raw.cache_read_tokens,
+                "cache_creation_input_tokens": raw.cache_write_tokens,
+            },
+            cost_details={"total": _agent_usage(model, raw).cost_usd},
+        )
+    lf.flush()
+    return raw
+
+
+async def _agent_turn(
+    stage: str,
+    model: str,
+    prompt: Prompt | None,
+    messages: list[dict[str, Any]],
+    specs: list[ToolSpec],
+) -> TurnResponse:
+    """One model turn with record/replay over the conversation-so-far (fixture per
+    turn, keyed by the same `{stage}--{hash16}` convention as structured calls).
+    The usage feeds the active cost tally in every mode, exactly like
+    `call_structured`."""
+    content = json.dumps(messages, sort_keys=True)
+    prompt_version = prompt.version if prompt is not None else 0
+    digest = request_hash(stage, model, prompt_version, content)
+    mode = llm_mode()
+
+    if mode == "replay":
+        rec = load_recording(stage, digest)
+        raw = _AgentTurnRaw(
+            tool_calls=[
+                ToolCall(name=tc["name"], input=tc["input"]) for tc in (rec.tool_calls or [])
+            ],
+            text=rec.text,
+            stop_reason=rec.stop_reason or "stop",
+            input_tokens=rec.input_tokens,
+            output_tokens=rec.output_tokens,
+            cache_read_tokens=rec.cache_read_tokens,
+            cache_write_tokens=rec.cache_write_tokens,
+        )
+    else:
+        raw = await _traced_agent_turn(stage, model, prompt, messages, specs)
+        if mode == "record":
+            save_recording(
+                digest,
+                Recording(
+                    stage=stage,
+                    model=model,
+                    prompt_version=prompt_version,
+                    content_sha256=content_sha256(content),
+                    output={},
+                    input_tokens=raw.input_tokens,
+                    output_tokens=raw.output_tokens,
+                    cache_read_tokens=raw.cache_read_tokens,
+                    cache_write_tokens=raw.cache_write_tokens,
+                    recorded_at=now_iso(),
+                    tool_calls=[{"name": c.name, "input": c.input} for c in raw.tool_calls],
+                    text=raw.text,
+                    stop_reason=raw.stop_reason,
+                ),
+            )
+
+    _tally(_agent_usage(model, raw))
+    return TurnResponse(tool_calls=raw.tool_calls, text=raw.text)
+
+
+async def call_agent(
+    stage: str,
+    task: str,
+    tools: list[Any],
+    max_turns: int = AGENT_MAX_TURNS,
+) -> AgentResult:
+    """Bounded tool loop (§10.2 pattern P3, IMPLEMENTATION §3 pinned signature).
+    Only DISCOVER and location-type custom criteria may run one — the per-stage
+    allow-list (`llm/config.STAGE_TOOLS`) is enforced inside `run_agent_loop`, not
+    in stage code, so this seam is where the §16 zero-tool rule bites. Each turn
+    routes through OpenRouter (traced, record/replay, usage → cost tally); budget
+    exhaustion raises `AgentBudgetExceeded`."""
+    model = model_for_stage(stage)
+    prompt = _optional_prompt(stage)
+
+    async def turn_fn(messages: list[dict[str, Any]], specs: list[ToolSpec]) -> TurnResponse:
+        return await _agent_turn(stage, model, prompt, messages, specs)
+
+    return await run_agent_loop(
+        stage=stage, task=task, tools=tools, turn_fn=turn_fn, max_turns=max_turns
+    )
 
 
 async def call_vision[T: BaseModel](stage: str, schema: type[T], images: list[Any]) -> T:
