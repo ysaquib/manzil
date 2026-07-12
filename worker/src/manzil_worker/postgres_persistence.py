@@ -29,6 +29,8 @@ from manzil_worker.state import RunState
 if TYPE_CHECKING:
     import asyncpg
 
+    from manzil_worker.llm.tools import ToolEventSink
+
 # jobs.state accepts these terminal values; the rest of JobState maps 1:1 too.
 _TERMINAL = (JobState.DONE, JobState.FAILED, JobState.CANCELLED)
 
@@ -76,7 +78,15 @@ class PostgresPersistence:
         if self._last_completed is None:
             self._last_completed = cursor
         snapshot = json.dumps(state.model_dump(mode="json"))
-        plan = json.dumps(state.plan) if state.plan is not None else None
+        # `plan` is the pinned §10.4 manifest column the Tasks UI renders (P3-2).
+        # `exclude_none` keeps the stored shape clean — fetch entries show `tier`,
+        # skip entries show `why`, neither carries the other's null slot. Written
+        # every save, so it appears the moment PLAN completes.
+        plan = (
+            json.dumps(state.plan.model_dump(mode="json", exclude_none=True))
+            if state.plan is not None
+            else None
+        )
         finished = state.status in _TERMINAL
         current_stage = self._current_stage(cursor)
 
@@ -117,9 +127,7 @@ class PostgresPersistence:
                 self._last_completed += 1
             if not self._terminal_emitted:
                 if state.status is JobState.FAILED:
-                    await self._emit(
-                        conn, current_stage or "run", "failed", {"error": state.error}
-                    )
+                    await self._emit(conn, current_stage or "run", "failed", {"error": state.error})
                     self._terminal_emitted = True
                 elif state.status is JobState.WAITING_USER and state.checkpoint is not None:
                     await self._emit(
@@ -154,3 +162,27 @@ class PostgresPersistence:
         if snapshot is None:
             raise LookupError(f"jobs row {job_id} has no persisted run_state to resume")
         return RunState.model_validate(snapshot)
+
+
+def make_tool_event_sink(
+    executor: asyncpg.Pool | asyncpg.Connection, job_id: UUID
+) -> ToolEventSink:
+    """A `tool_called` job-event sink for the agent loop (§10.2): every tool call
+    and its (already-truncated) result summary becomes one `job_events` row, so
+    the Tasks history can show "searched X, fetched Y". `executor` is any asyncpg
+    pool/connection. DISCOVER/CUSTOM_MATCH wire this into the `ToolContext`; CLI
+    runs pass no sink and the loop logs instead."""
+
+    async def sink(
+        stage: str, tool: str, tool_input: dict[str, object], result_summary: str
+    ) -> None:
+        detail = {"tool": tool, "input": tool_input, "result": result_summary}
+        await executor.execute(
+            "insert into job_events (job_id, stage, event, detail) "
+            "values ($1, $2, 'tool_called', $3::jsonb)",
+            job_id,
+            stage,
+            json.dumps(detail),
+        )
+
+    return sink

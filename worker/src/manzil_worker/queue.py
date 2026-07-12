@@ -47,18 +47,30 @@ from manzil_worker.fetching.registry import InMemoryRegistry, PostgresRegistry
 from manzil_worker.fetching.tiers import Fetcher, site_domain
 from manzil_worker.llm.config import model_for_stage
 from manzil_worker.postgres_persistence import PostgresPersistence
-from manzil_worker.runner import PHASE0_STAGES, run_job
+from manzil_worker.runner import (
+    INGEST_STAGE_NAMES,
+    INGEST_STAGES,
+    PHASE0_STAGE_NAMES,
+    PHASE0_STAGES,
+    run_job,
+)
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.rescore import rescore_hunt
-from manzil_worker.state import RunState
+from manzil_worker.state import DedupeCandidate, RunState, SourceFreshness
 
 if TYPE_CHECKING:
     import asyncpg
 
+    from manzil_worker.stages.base import (
+        CallStructured,
+        DedupeCandidates,
+        FreshSourceLookup,
+        GeocodeAddress,
+    )
+
 log = structlog.get_logger()
 
 JOB_ORPHAN_AFTER = timedelta(seconds=JOB_ORPHAN_AFTER_SECONDS)
-_STAGE_NAMES = [name for name, _ in PHASE0_STAGES]
 
 # A dispatcher runs one claimed job to a terminal state (raising only on
 # unexpected failure — the runner maps stage errors to `failed` itself).
@@ -278,6 +290,25 @@ async def _persist_ingest_results(
             identity.official_url,
         )
 
+    # DEDUPE's geocode → the properties forever-cache columns (§2.3, P3-4). Never
+    # overwrite an existing place_id: a geocode is paid once per property, ever, so
+    # a merge onto a property already geocoded keeps the cached coordinates.
+    geocode = state.geocode
+    if geocode is not None:
+        await conn.execute(
+            """
+            update properties set
+                place_id = coalesce(place_id, $2),
+                lat = coalesce(lat, $3),
+                lng = coalesce(lng, $4)
+            where id = $1
+            """,
+            property_id,
+            geocode.place_id,
+            geocode.lat,
+            geocode.lng,
+        )
+
     for key, ext in state.reconciled.items():
         await conn.execute(
             """
@@ -420,13 +451,73 @@ async def _persist_ingest_results(
         )
 
 
+async def _merge_into_canonical(
+    conn: asyncpg.Connection,
+    *,
+    hunt_listing_id: UUID,
+    placeholder_id: UUID,
+    canonical_id: UUID,
+) -> None:
+    """Apply a DEDUPE merge (P3-4): re-point this listing and every row that
+    references the placeholder property to the canonical one, then delete the
+    placeholder. Runs in the projection's terminal transaction BEFORE
+    `_persist_ingest_results`, so the run's own facts then land on the canonical
+    property.
+
+    Covers every FK to `properties` (migrations 0001/0002): `hunt_listings`,
+    `property_sources`, `extractions`, `floor_plans`, `property_images`. A fresh
+    placeholder has no child rows yet (its source/extractions are written by the
+    projection AFTER this), so the child re-points are defensive — they matter only
+    when a prior run had already persisted rows under the placeholder."""
+    await conn.execute(
+        "update hunt_listings set property_id = $2 where id = $1",
+        hunt_listing_id,
+        canonical_id,
+    )
+    for table in ("property_sources", "extractions", "floor_plans", "property_images"):
+        await conn.execute(
+            f"update {table} set property_id = $2 where property_id = $1",
+            placeholder_id,
+            canonical_id,
+        )
+    await conn.execute("delete from properties where id = $1", placeholder_id)
+    log.info(
+        "dedupe_merged",
+        hunt_listing_id=str(hunt_listing_id),
+        placeholder_id=str(placeholder_id),
+        canonical_id=str(canonical_id),
+    )
+
+
+def _make_dedupe_candidates(pool: asyncpg.Pool, exclude_property_id: UUID) -> DedupeCandidates:
+    """DEDUPE's DB seam (P3-4): every existing `properties` row except this run's
+    own placeholder, as the identity inputs the stage matches against. A dumb read
+    — distance + name-similarity live in the stage."""
+
+    async def candidates() -> list[DedupeCandidate]:
+        rows = await pool.fetch(
+            "select id, name, canonical_address, place_id, lat, lng "
+            "from properties where id <> $1",
+            exclude_property_id,
+        )
+        return [DedupeCandidate(**dict(row)) for row in rows]
+
+    return candidates
+
+
 def make_ingest_dispatcher(
     *,
     dsn: str | None,
     fetchers_factory: FetchersFactory,
+    call_structured: CallStructured | None = None,
+    geocode_address: GeocodeAddress | None = None,
 ) -> Dispatcher:
     """Build the `ingest` handler. `fetchers_factory` is the injection seam the
-    dev-seed uses to serve committed fixture pages instead of the live web."""
+    dev-seed uses to serve committed fixture pages instead of the live web;
+    `call_structured` is the parallel LLM seam tests use to drive a full run
+    without touching a provider; `geocode_address` is DEDUPE's geocode seam (P3-4)
+    tests inject so CI never touches Google (defaults to the live Maps call via
+    StageCtx)."""
 
     async def dispatch(pool: asyncpg.Pool, job: asyncpg.Record) -> None:
         job_id: UUID = job["id"]
@@ -451,22 +542,63 @@ def make_ingest_dispatcher(
         min_confidence = Confidence(settings.get("min_confidence", "medium"))
         cats = int(settings.get("cats", 0))
         dogs = int(settings.get("dogs", 0))
+
+        payload = json.loads(job["payload"])
+        # A resumed/retried job arrives with a prior RunState snapshot; a fresh
+        # submission does not — that distinction is the §10.4 manifest `trigger`.
+        resumed = payload.get("run_state") is not None
         state = _build_run_state(job)
+        # Seed property_id on a FRESH run only (PLAN reads it to look up persisted
+        # source freshness). CRITICAL resume-correctness fix (P3-4): a resumed
+        # snapshot already carries its property_id — and after a DEDUPE merge that
+        # is the CANONICAL property, not the placeholder. Unconditionally assigning
+        # listing["property_id"] here would clobber that merge back to the dead
+        # placeholder whenever a job parks AFTER DEDUPE (e.g. at VERIFY's
+        # confirm_value) and later resumes. So the snapshot's value always wins.
+        if state.property_id is None:
+            state.property_id = listing["property_id"]
 
         async def project(conn: asyncpg.Connection, done_state: RunState) -> None:
+            # The canonical property is where DEDUPE landed the run (the merge
+            # target, or the placeholder when nothing merged). On a merge, re-point
+            # everything onto it and drop the placeholder before the run's facts are
+            # written — so the projection persists against the surviving property.
+            placeholder_id: UUID = listing["property_id"]
+            canonical_id: UUID = done_state.property_id or placeholder_id
+            if canonical_id != placeholder_id:
+                await _merge_into_canonical(
+                    conn,
+                    hunt_listing_id=job["hunt_listing_id"],
+                    placeholder_id=placeholder_id,
+                    canonical_id=canonical_id,
+                )
             await _persist_ingest_results(
                 conn,
                 hunt_listing_id=job["hunt_listing_id"],
-                property_id=listing["property_id"],
+                property_id=canonical_id,
                 rubric_version=listing["rubric_version"],
                 state=done_state,
             )
 
+        # Walk + labels, selected by resume state (§2.1):
+        #  * plan set → a P3 job resumes by name from its own manifest (run_job
+        #    walks state.plan.stages; the passed list is unused);
+        #  * plan is None AND resumed → a PRE-P3 snapshot: its integer cursor
+        #    indexes the legacy 6-stage list, so it must walk PHASE0_STAGES with
+        #    the lowercase labels — prepending PLAN (INGEST_STAGES) would offset
+        #    the cursor by one and re-run an already-passed stage;
+        #  * plan is None AND fresh → the PLAN-first manifest walk.
+        if state.plan is not None:
+            walk_stages, stage_names = INGEST_STAGES, list(state.plan.stages)
+        elif resumed:
+            walk_stages, stage_names = PHASE0_STAGES, PHASE0_STAGE_NAMES
+        else:
+            walk_stages, stage_names = INGEST_STAGES, INGEST_STAGE_NAMES
         # The projection runs in the same transaction as the DONE flip (see
         # PostgresPersistence.on_done), so results and terminal state commit
         # atomically — no window where the job is `done` with no result rows.
         persistence = PostgresPersistence(
-            pool, job_id, _STAGE_NAMES, start_cursor=state.cursor, on_done=project
+            pool, job_id, stage_names, start_cursor=state.cursor, on_done=project
         )
         registry = PostgresRegistry(dsn) if dsn else InMemoryRegistry()
         ctx = StageCtx(
@@ -478,11 +610,44 @@ def make_ingest_dispatcher(
             cats=cats,
             dogs=dogs,
             persistence=persistence,
+            fresh_source_lookup=_make_fresh_source_lookup(pool),
+            dedupe_candidates=_make_dedupe_candidates(pool, listing["property_id"]),
+            plan_trigger="user:retry" if resumed else "user:submit",
+            **({} if call_structured is None else {"call_structured": call_structured}),
+            **({} if geocode_address is None else {"geocode_address": geocode_address}),
         )
 
-        await run_job(state, ctx)
+        await run_job(state, ctx, walk_stages)
 
     return dispatch
+
+
+def _make_fresh_source_lookup(pool: asyncpg.Pool) -> FreshSourceLookup:
+    """DB-backed PLAN seam: the persisted-source freshness inputs for
+    (property, url), or None when no row exists. The TTL decision itself stays in
+    PLAN (deterministic, tunable-driven) — this is a dumb read."""
+
+    async def lookup(property_id: UUID | None, url: str) -> SourceFreshness | None:
+        if property_id is None:
+            return None
+        row = await pool.fetchrow(
+            """
+            select cleaned_text_hash, cleaned_text, last_success_at
+            from property_sources
+            where property_id = $1 and url = $2
+            """,
+            property_id,
+            url,
+        )
+        if row is None:
+            return None
+        return SourceFreshness(
+            cleaned_text_hash=row["cleaned_text_hash"],
+            cleaned_text=row["cleaned_text"] or "",
+            last_success_at=row["last_success_at"],
+        )
+
+    return lookup
 
 
 def make_rescore_dispatcher() -> Dispatcher:

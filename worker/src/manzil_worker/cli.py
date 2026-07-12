@@ -112,6 +112,88 @@ def ingest(
     asyncio.run(run())
 
 
+@app.command("split-property")
+def split_property_cmd(
+    property_id: str = typer.Argument(..., help="Merged Property UUID to split"),
+    source_url: str = typer.Option(
+        ..., "--source-url", help="URL of the Source to peel onto a new Property"
+    ),
+    listing: list[str] = typer.Option(
+        [],
+        "--listing",
+        help="Listing UUID to move (repeatable). Omit to derive from ingest jobs' URL.",
+    ),
+) -> None:
+    """Unmerge a Property (P3-4, DESIGN §10.3, §17 R5): peel the Source at
+    --source-url off PROPERTY_ID onto a fresh Property, re-point its extractions/
+    floor plans/Listings, and enqueue a rescore per affected Hunt.
+
+    Admin-only, service-role: connects via DATABASE_URL below the RLS boundary,
+    like the worker. The reversal of a wrong DEDUPE merge — a false split is
+    re-mergeable, so this is the safe direction to correct in.
+    """
+    import uuid
+
+    import asyncpg
+    import structlog
+
+    from manzil_worker.ops.split_property import SplitError, split_property
+
+    log = structlog.get_logger()
+
+    async def run() -> None:
+        dsn = os.environ.get("DATABASE_URL")
+        if not dsn:
+            typer.echo(
+                "DATABASE_URL is not set — split-property needs the service-role DB URL",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        pid = uuid.UUID(property_id)
+        listing_ids = [uuid.UUID(item) for item in listing] or None
+
+        pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
+        try:
+            async with pool.acquire() as conn:
+                try:
+                    result = await split_property(
+                        conn, property_id=pid, source_url=source_url, listing_ids=listing_ids
+                    )
+                except SplitError as error:
+                    typer.echo(f"error: {error}", err=True)
+                    raise typer.Exit(code=1) from None
+        finally:
+            await pool.close()
+
+        log.info(
+            "split_property_done",
+            property_id=str(pid),
+            new_property_id=str(result.new_property_id),
+            source_url=source_url,
+        )
+        typer.echo(f"split property {pid} -> new property {result.new_property_id}")
+        typer.echo(f"  moved source: {result.moved_source_id}")
+        typer.echo(
+            f"  re-pointed {result.moved_extraction_count} extraction(s), "
+            f"{result.moved_floor_plan_count} floor plan(s)"
+        )
+        if result.moved_listing_ids:
+            typer.echo(f"  moved {len(result.moved_listing_ids)} listing(s):")
+            for lid in result.moved_listing_ids:
+                typer.echo(f"    {lid}")
+        else:
+            typer.echo(
+                "  WARNING: no listings moved — no ingest job carried this URL. "
+                "The global-fact split is still valid; move listings explicitly "
+                "with --listing if a Listing should follow this Source."
+            )
+        typer.echo(f"  rescored {len(result.rescored_hunt_ids)} hunt(s):")
+        for hid in result.rescored_hunt_ids:
+            typer.echo(f"    {hid}")
+
+    asyncio.run(run())
+
+
 @app.command("llm-smoke")
 def llm_smoke() -> None:
     """One structured call through the LLM seam (P0-7 gate: trace visible in Langfuse).
