@@ -13,6 +13,7 @@ import { Link, NavLink as RouterNavLink, Outlet, useLocation, useParams } from "
 
 import { supabase } from "../lib/supabase";
 import { useHuntRealtime } from "../lib/realtime";
+import { CreateRubricPrompt } from "../features/rubric/CreateRubricPrompt";
 import { ColorSchemeToggle } from "./ColorSchemeToggle";
 
 const NAV = [
@@ -83,6 +84,7 @@ export function AppLayout() {
           })}
       </AppShell.Navbar>
       <AppShell.Main>
+        {huntId && <CreateRubricPrompt huntId={huntId} />}
         <Outlet />
       </AppShell.Main>
     </AppShell>

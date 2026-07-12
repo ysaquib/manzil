@@ -29,6 +29,14 @@ comma-separated value (`state=queued,running,waiting_user`) — the form the Tas
 | `POST /v1/jobs/{id}/checkpoint` | `useAnswerCheckpoint` (`features/jobs/api.ts`) | generated `CheckpointAnswer` | P1-7 | implemented |
 | `POST /v1/listings/{id}/overrides` | `useCreateOverride` (`features/listings/api.ts`) | generated `OverrideCreate`/`OverrideResponse` | P1-8 | implemented |
 | `PUT /v1/listings/{id}/fees/{slot}` | `useUpsertFee` (`features/listings/api.ts`) | generated `FeeEntryUpsert`/`FeeEntryResponse` | P1-8 | implemented |
+| `POST/GET /v1/hunts/{id}/invitation-links` | `useCreateInvitationLink` / `useInvitationLinks` (`features/invites/api.ts`) | generated Invitation Link shapes (`name` optional on create/response) | P2-11 | implemented |
+| `PATCH/DELETE /v1/invitation-links/{id}` | `usePatchInvitationLink` / `useDeleteInvitationLink` (`features/invites/api.ts`) | generated Invitation Link shapes (`name` optional on patch) | P2-11 | implemented |
+| `POST /v1/invitation-links/{token}/join` | `useJoinInvitationLink` (`features/invites/api.ts`) | generated `InvitationLinkJoined` | P2-11 | implemented |
+
+Invitation Link responses carry an API-configured absolute `link`, but the frontend replaces its
+origin with `window.location.origin` before copying. Supabase Auth storage is origin-scoped, so a
+configured `www`/apex or localhost/LAN-host mismatch must not send a signed-in user to another
+origin that appears logged out.
 
 ## Direct Supabase reads (via `supabase-js`, RLS-guarded from P2-1)
 

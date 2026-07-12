@@ -10,7 +10,7 @@ import {
   Alert,
   Button,
   Center,
-  ColorInput,
+  Divider,
   Group,
   Loader,
   Modal,
@@ -33,9 +33,10 @@ import {
   useSetMemberDisplayName,
   useTransferOwnership,
 } from "../collaboration/api";
+import { MemberColorControl } from "../collaboration/MemberColorControl";
 import { MembersSection } from "../collaboration/MembersSection";
-import { MEMBER_COLOR_TOKENS, memberColor } from "../collaboration/memberColors";
 import { InvitesSection } from "../invites/InvitesSection";
+import { InvitationLinksSection } from "../invites/InvitationLinksSection";
 import { Section } from "../../components/Section";
 import { ApiError } from "../../lib/apiClient";
 import { resolveSettings, SOURCE_POLICIES, type HuntSettings } from "../../lib/contracts";
@@ -67,7 +68,6 @@ function SettingsForm({ hunt }: { hunt: Hunt }) {
   const [name, setName] = useState(hunt.name);
   const [settings, setSettings] = useState<HuntSettings>(() => resolveSettings(hunt.settings));
   const [confirmArchive, setConfirmArchive] = useState(false);
-  const [customColor, setCustomColor] = useState("#5C5CAA");
   const [displayName, setDisplayNameInput] = useState("");
   const [transferTarget, setTransferTarget] = useState<string | null>(null);
   const [confirmTransfer, setConfirmTransfer] = useState(false);
@@ -271,19 +271,11 @@ function SettingsForm({ hunt }: { hunt: Hunt }) {
               Save
             </Button>
           </Group>
-          <Select
-            label="Palette color"
-            data={MEMBER_COLOR_TOKENS.map((token) => ({ value: token, label: token }))}
-            value={currentMember?.color && !currentMember.color.startsWith("#") ? currentMember.color : null}
-            onChange={(value) => value && setColor.mutate(value)}
-            renderOption={({ option }) => (
-              <Group gap="xs"><span style={{ width: 10, height: 10, borderRadius: "50%", background: memberColor(option.value), display: "inline-block" }} />{option.label}</Group>
-            )}
+          <MemberColorControl
+            value={currentMember?.color ?? null}
+            loading={setColor.isPending}
+            onChange={(color) => setColor.mutate(color)}
           />
-          <Group align="flex-end">
-            <ColorInput label="Custom color" value={customColor} onChange={setCustomColor} format="hex" style={{ flex: 1 }} />
-            <Button variant="default" onClick={() => setColor.mutate(customColor)} loading={setColor.isPending}>Use custom</Button>
-          </Group>
         </Stack>
       </Section>
 
@@ -295,6 +287,9 @@ function SettingsForm({ hunt }: { hunt: Hunt }) {
       />
 
       {isOwner && <InvitesSection huntId={hunt.id} />}
+      {isOwner && <InvitationLinksSection huntId={hunt.id} />}
+
+      <Divider />
 
       <Section title="Danger zone">
         <Stack gap="sm">

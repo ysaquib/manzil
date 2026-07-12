@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| **Version** | 2.9 |
+| **Version** | 3.1 |
 | **Status** | Living document — this is the source of truth during implementation |
 | **Supersedes** | `apartment-hunt-dashboard-design.md` draft v0.4 |
 | **Owner** | Yusuf |
@@ -130,6 +130,7 @@ Precise terms. Code, schema, API routes, and UI copy must use these consistently
 | Term | Definition |
 |---|---|
 | **Hunt** | A named apartment search (e.g., "Apartment Search 2026") owning a rubric, members, and a set of listings. The top-level collaboration container. |
+| **Invitation Link** | A reusable, Owner-managed URL that grants the Member role in one Hunt. It may expire or have a successful-join limit; its join history is retained when the link is soft-deleted. Distinct from a single-recipient email invite. |
 | **Property** | A canonical, globally shared apartment complex/building — deduplicated by address + name. Extracted facts attach to properties, not hunts. |
 | **Listing** (`hunt_listing`) | The association of a Property with a Hunt. Scores, overrides, comments, ratings, pins, and the fees checklist live here. |
 | **Source** (`property_source`) | One known listing page (URL) for a Property on a specific site. Official complex sites are flagged `is_official`. |
@@ -160,13 +161,14 @@ Ownership chain: `Hunt → hunt_listings → Property → (sources, floor_plans,
 - **FR3 — Ingestion:** submit URL → pipeline per [§10](#10-agent-pipeline). Each submission carries a **Source Policy** ([§10.7](#107-fetching-subsystem)) — defaulting to full cross-check — controlling whether sibling sources are discovered and how high the fetch ladder may climb for them. Progress visible live; jobs cancellable by their submitter or the Owner.
 - **FR4 — Utilities intelligence:** determine included utilities; estimate excluded ones from winter-weighted metro baselines; compose all-in monthly cost with actual/estimated/unknown tagging ([§9.5](#95-utilities-and-all-in-monthly-cost)).
 - **FR5 — Table and detail:** sortable/filterable table, one row per Unit Group, detail panel (slide-up sheet on mobile) with full breakdown, evidence, images, floor plans, sources, comments, ratings.
-- **FR6 — Collaboration:** email + link invites, per-user colors, realtime sync, comments, ratings.
+- **FR6 — Collaboration:** single-recipient email invites plus reusable Invitation Links with Owner-managed expiration, usage limits, soft deletion, and join attribution; per-user colors, realtime sync, comments, ratings.
 - **FR7 — Overrides:** any extracted value overrideable per role matrix below; original value + provenance preserved and viewable; override badge in UI.
 - **FR8 — Refresh:** per-listing and hunt-wide refresh re-running only stale data classes ([§14](#14-caching-and-refresh-strategy)); field-scoped partial refresh.
 - **FR9 — Compare:** 2–4 listings side-by-side at criterion granularity.
 - **FR10 — Task history:** the Tasks view shows Active and History tabs. Every past job is retained and inspectable: plan manifest, per-stage timeline with outcomes, checkpoint Q&A (including auto-resolutions), errors, and actual LLM cost per run.
 - **FR11 — Dual-mode pipeline + eval harness:** the pipeline runs as `--mode=workflow` (baseline, ships) or `--mode=agents` ([§10.11](#1011-agents-mode-learning-track)); both share the RunState/persistence contract and the deterministic truth layer. An eval harness runs both modes against the bench set and reports accuracy (verification pass-rate, gate-criterion correctness), tokens, and latency.
 - **FR12 — Property investigation (agents mode, off critical path):** an on-demand "Investigate this property" action producing a structured brief — reviews and management reputation, scam signals and cross-listing price checks, area context — via a spawnable worker crew. Slow, costly, or occasionally dumb is acceptable here by design; nothing downstream depends on it.
+- **FR13 — Account identity:** email/password registration requires email confirmation; password, recovery email, magic link, and the email's six-digit OTP are supported. Every authenticated user completes default-display-name onboarding before entering a Hunt.
 
 ### 4.2 Roles and Permissions
 
@@ -186,7 +188,7 @@ Enforced via Supabase RLS at the database layer, mirrored by API checks. Never f
 | Overrides + fees-checklist entries | any listing | any listing | own listings |
 | View task history | yes | yes | yes |
 | Comments, ratings, own color | yes | yes | yes |
-| Invites, remove members, change roles, delete listings, archive hunt | yes | — | — |
+| Email invites and Invitation Links, remove members, change roles, delete listings, archive hunt | yes | — | — |
 
 ### 4.3 Non-Functional
 
@@ -233,6 +235,7 @@ REST, resource-oriented, versioned under `/v1`. The contract is intentionally bo
 | Overrides / fees / comments / ratings | nested under `/listings/{id}/…` | permissions per [§4.2](#42-roles-and-permissions) |
 | Jobs | `GET /hunts/{id}/jobs?state=…`, `POST /jobs/{id}/cancel|retry`, `POST /jobs/{id}/checkpoint` (answer) | reads also served by Realtime |
 | Refresh | `POST /listings/{id}/refresh`, `POST /hunts/{id}/refresh` (optional `fields`) | inserts refresh jobs |
+| Profile | `GET/PUT /profile` | self-only default display name; onboarding uses PUT |
 
 Reads that the table renders continuously (listings, scores) go straight from the frontend to Supabase (RLS-guarded selects + Realtime); the API exists for validated mutations and anything requiring the service role.
 
@@ -331,7 +334,7 @@ Conventions: the **scoring engine and Pydantic domain models live in `shared/`**
 
 ## 8. Database Design
 
-Postgres via Supabase migrations (`supabase/migrations/`). All timestamps UTC `timestamptz`. Soft deletes only where noted; everything else hard-deletes under RLS.
+Postgres via Supabase migrations (`supabase/migrations/`). All timestamps UTC `timestamptz`. Soft deletes only where noted (comments and Invitation Links); everything else hard-deletes under RLS.
 
 ### 8.1 Enums
 
@@ -412,8 +415,11 @@ Per hunt:
   Household keys (§20 2026-07-10): `cats`/`dogs` (0–10) — how many of each species move in; they multiply species-specific pet rent into the all-in composition ([§9.5](#95-utilities-and-all-in-monthly-cost)). `occupants` (1–20) — reserved reader is P3-9 utility-baseline scaling; named now so the settings shape doesn't churn twice.
 
   Edit effects follow from what each key feeds: `cost_estimate_mode`, `min_confidence`, `cats`, and `dogs` are **scoring inputs**, so editing them takes the exact rubric-mutation path ([§9.2](#92-rubric-system)) — bump `rubric_version`, enqueue the free hunt-level rescore; `rubric_version` is honestly "the version of how points are computed," and these settings are part of that. `proximity_mode` changes what ENRICH computes, so editing it enqueues a field-scoped refresh of location-class criteria ([§14](#14-caching-and-refresh-strategy)) — cheap Maps calls, no LLM. `default_source_policy` and `occupants` trigger nothing (yet).
-- **hunt_members** — `hunt_id, user_id, role hunt_role, color, display_name nullable`. `display_name` is the RLS-readable collaboration identity used on comments and rating tooltips; invite acceptance initializes it from the invited email's local part when available, otherwise `Member`, and pre-Phase-2 rows may remain NULL until edited. `color` is either one of the ordered palette tokens (`dusk`, `clay`, `moss`, `ochre`, `brick`, `olive`, `stone`, `plum`) or a canonical custom `#RRGGBB` value; invite acceptance assigns the first unused token, while members may later choose any valid hex color. Every per-hunt RLS policy keys off this table.
-- **invites** — `hunt_id, email nullable, token, role_granted, created_by, expires_at, accepted_by`.
+- **user_profiles** — `user_id, default_display_name, created_at, updated_at`. Created by mandatory onboarding; the default is inherited by every Hunt whose membership has no override. RLS permits self read/write and reads by users sharing a Hunt.
+- **hunt_members** — `hunt_id, user_id, role hunt_role, color, display_name nullable`. `display_name` is a Hunt-specific override; effective collaboration identity is `coalesce(hunt_members.display_name, user_profiles.default_display_name)`. Changing a Hunt override never changes the account default, while changing the default immediately affects only Hunts without overrides. Existing non-null values remain overrides. `color` is either one of the ordered palette tokens (`dusk`, `clay`, `moss`, `ochre`, `brick`, `olive`, `stone`, `plum`) or a canonical custom `#RRGGBB` value; invite acceptance assigns the first unused token, while members may later choose any valid hex color. Every per-hunt RLS policy keys off this table.
+- **invites** — `hunt_id, email, token, role_granted, created_by, expires_at, accepted_by`. Single-recipient email invitations; acceptance may grant Member or Curator.
+- **invitation_links** — `hunt_id, token, created_by, created_at, name nullable (1–80 trimmed chars), max_uses nullable, expires_at, deleted_at nullable, deleted_by nullable`. `name` is an optional Owner-facing label and is not unique. `max_uses = NULL` means unlimited. A link is active exactly when it is not deleted, has not expired, and its successful-join count is below its non-null limit. Deletion is soft and irreversible through the ordinary UI; deleted rows never appear in Owner lists and the token is refused.
+- **invitation_link_joins** — append-only `(invitation_link_id, user_id, display_name, joined_at)`, unique per link/user. This is both the atomic usage counter and the Owner-visible attribution ledger; `display_name` is snapshotted so removal from the Hunt does not erase who joined.
 - **hunt_listings** — `hunt_id, property_id, added_by, status (active | archived), source_policy text, pins jsonb, created_at, unavailable_at`. `unavailable_at` is set when an ingest/refresh finds **no available floor plans** even after cross-validation — a legitimate result, not an error: the listing persists and renders as a **dimmed, null-score** row (distinct from a failed job and from a still-ingesting one), and the marker clears when a later refresh finds plans (reversible). It is orthogonal to `status` (a no-availability listing is still `active`). `source_policy` is the Source Policy chosen at submission ([§10.7](#107-fetching-subsystem)) — text + check constraint, defaulted from `hunts.settings.default_source_policy`; refresh jobs read it so a trusted-link listing never silently grows sibling sources. `pins` maps a Unit Group key (`"{beds}-{baths}"`) to a `floor_plan_id` — a pin is **per unit group**, not per listing, because one listing typically holds several groups.
 - **rubric_criteria** — `hunt_id, catalog_key nullable, custom_def jsonb nullable, enabled, options jsonb, unknown_delta numeric, non_negotiable jsonb nullable, is_bonus bool (derived), position`. Option shape (one of two places code snippets are warranted — this object is load-bearing):
 
@@ -436,7 +442,7 @@ Pipeline:
 
 ### 8.3 RLS Strategy
 
-Global tables (`properties`, `extractions`, …) are readable by any authenticated user and writable only by the service role (worker/API) — regular clients never write facts. Hunt-scoped custom-criterion `extractions` (`hunt_id is not null`) are the exception to global visibility: only that Hunt's members may read them, so custom facts never leak through the global namespace. Per-hunt tables are readable/writable per the [permissions matrix](#42-roles-and-permissions), expressed as policies through the security-definer `private.member_role(hunt_id)` helper to avoid recursive `hunt_members` policy evaluation. Hunt SELECT also admits the authenticated user recorded in `owner_id`, narrowly allowing PostgREST to return a newly inserted Hunt; the atomic Owner-membership trigger establishes ordinary authorization. Realtime respects RLS, so subscription security is automatic. The API runs with the user's JWT for user-initiated writes and the service role only inside the worker and explicitly named privileged operations.
+Global tables (`properties`, `extractions`, …) are readable by any authenticated user and writable only by the service role (worker/API) — regular clients never write facts. Hunt-scoped custom-criterion `extractions` (`hunt_id is not null`) are the exception to global visibility: only that Hunt's members may read them, so custom facts never leak through the global namespace. Per-hunt tables are readable/writable per the [permissions matrix](#42-roles-and-permissions), expressed as policies through the security-definer `private.member_role(hunt_id)` helper to avoid recursive `hunt_members` policy evaluation. Invitation Links and their join ledgers are Owner-readable only; an authenticated token holder joins solely through the narrow service-role transaction, never by direct table access. Hunt SELECT also admits the authenticated user recorded in `owner_id`, narrowly allowing PostgREST to return a newly inserted Hunt; the atomic Owner-membership trigger establishes ordinary authorization. Realtime respects RLS, so subscription security is automatic. The API runs with the user's JWT for user-initiated writes and the service role only inside the worker and explicitly named privileged operations.
 
 ---
 
@@ -444,7 +450,11 @@ Global tables (`properties`, `extractions`, …) are readable by any authenticat
 
 ### 9.1 Hunts, Membership, Invites
 
-Hunt creation makes the creator Owner and opens the rubric wizard (skippable; first URL submission is blocked until a rubric exists). Invites carry a role (`member` default; Owner may grant `curator`) via email or copy-link token; email delivery uses **Supabase Auth's built-in invite/magic-link email** — no third-party email provider enters the stack (NFR5), and the copy-link token path requires no email at all. Acceptance inserts into `hunt_members` and assigns the first unused token from the ordered member palette; a member may later replace it with another token or any valid `#RRGGBB` color. Owner transfer is a single mutation; a hunt always has exactly one Owner.
+Email/password registration requires email confirmation. Password recovery, magic-link login, and six-digit email OTP verification use Supabase Auth; the link and OTP share the same email and return destination. Every authenticated user without `user_profiles` completes display-name onboarding before Hunt creation or invitation acceptance. Hunt creation makes the creator Owner and opens the rubric wizard (skippable; first URL submission is blocked until a rubric exists). Email invites are single-recipient, carry a role (`member` default; Owner may grant `curator`), and use **Supabase Auth's built-in invite/magic-link email** — no third-party email provider enters the stack (NFR5).
+
+Invitation Links are separate reusable resources and always grant Member. Creation defaults to a seven-day expiration and unlimited successful joins; the Owner may set and later edit either value, plus an optional non-unique display `name`. Expired or exhausted links remain visible in an inactive section and may be reactivated by extending expiration or raising/removing the limit. Lowering a limit to the existing join count or below exhausts the link immediately. Soft-deleted links stay in Postgres with their join ledger but are hidden from ordinary reads and can never be used again.
+
+Following an Invitation Link is auth-gated and automatically attempts the join after sign-in. The database locks the link, checks deleted/expired/exhausted state first, and only then checks membership: an active-link visit by an existing member redirects to the Hunt Overview without consuming a use, while any invalid link shows its appropriate error to everyone. A successful new membership and its ledger row commit atomically, preventing concurrent final-use requests from exceeding the limit. Acceptance assigns the first unused token from the ordered member palette; a member may later replace it with another token or any valid `#RRGGBB` color. Owner transfer is a single mutation; a hunt always has exactly one Owner.
 
 ### 9.2 Rubric System
 
@@ -507,13 +517,16 @@ Overrides display over extractions with a badge; the original value, its evidenc
 ### 10.1 Job Lifecycle
 
 ```
-RECEIVED → PLAN → VALIDATE_URL → DEDUPE → DISCOVER → FETCH
-        → VALIDATE → EXTRACT (×source) → VERIFY (×source) → RECONCILE
+RECEIVED → PLAN → VALIDATE_URL → FETCH → VALIDATE → EXTRACT → DEDUPE
+        → DISCOVER → FETCH → VALIDATE → EXTRACT (×sibling source)
+        → VERIFY (×source) → RECONCILE
         → VISION → ENRICH (maps · reviews · safety · utilities)
         → CUSTOM_MATCH → SCORE
         → DONE | FAILED | CANCELLED
    (any stage may pause into WAITING_USER — a checkpoint — and resume)
 ```
+
+Ordering note (§20 2026-07-12): DEDUPE consumes EXTRACT's `property_identity` block — a URL-only submission has no name/address until the submitted page is fetched and extracted — so the submitted source runs FETCH → VALIDATE → EXTRACT first, DEDUPE resolves canonical identity, and DISCOVER's sibling sources fan out behind it.
 
 Each stage is a function `(RunState) → RunState` that persists outputs *before* advancing `jobs.current_stage` — this single discipline yields resumability (NFR3), deploy-safety, and cheap checkpoints. Every transition writes a `job_events` row, which powers both the live Tasks view and the permanent History tab (FR10): plan manifest, per-stage timeline, checkpoint Q&A, tier escalations, errors, and actual cost.
 
@@ -552,18 +565,18 @@ Every tool invocation and result is a `job_events` row — this is how the Tasks
 
 **Tools.** A custom tool is an async Python function in a name→callable registry; a small `@tool` decorator derives its JSON schema from the signature and docstring, so registry and schemas cannot drift. Planned custom tools: `geocode`, `places_nearby`, `commute_time`, and `fetch_page` — the latter routes through the tier ladder ([§10.7](#107-fetching-subsystem)), so any tool-using agent inherits the adapter registry, rate limits, and politeness for free rather than fetching on its own. Provider-hosted tools (the server-side web-search tool) execute on the provider's side with no local handler and are the right choice for DISCOVER's searching. Tools available to a stage are explicitly allow-listed per stage; extraction stages get **none** — that zero-tool property is a security control ([§16](#16-security-and-privacy)), not an omission.
 
-**The runner.** Stages are async functions `(RunState) → RunState` over one Pydantic state object; the runner walks an ordered list from a resume cursor, and the single load-bearing rule is **persist before advance**:
+**The runner.** Stages are async functions `(RunState) → RunState` over one Pydantic state object; the runner walks the **plan manifest's stage list** by name from a resume cursor (§20 2026-07-12 — a state with no manifest, i.e. any pre-Phase-3 snapshot, resumes through the legacy fixed list, selected at the dispatcher so an old cursor is never reinterpreted against a longer list), and the single load-bearing rule is **persist before advance**:
 
 ```
-for stage in STAGES[state.cursor:]:
-    state = await stage(state)
+for name in plan.stages[state.cursor:]:   # legacy fixed list when plan is None
+    state = await REGISTRY[name](state)
     persist(state, job)        # ← resumability, deploy-safety, checkpoints
     state.cursor += 1
 ```
 
 The Phase 0 CLI and the Phase 1+ queue worker are two entry points calling the same `run_job` — the CLI is not throwaway work.
 
-**The client seam.** No pipeline code imports a provider SDK directly. Everything goes through the thin client ([§11.1](#111-provider-seam)) exposing `call_structured(stage, schema, content)`, `call_agent(stage, tools, task)`, and `call_vision(stage, schema, images)` — the one place where prompt caching, per-stage model pinning, cost accounting, and test-fixture record/replay live.
+**The client seam.** No pipeline code imports a provider SDK directly. Everything goes through the thin client ([§11.1](#111-provider-seam)) exposing `call_structured(stage, schema, content)`, `call_agent(stage, task, tools)`, and `call_vision(stage, schema, images)` — the one place where prompt caching, per-stage model pinning, cost accounting, and test-fixture record/replay live.
 
 ### 10.3 Stage Catalog
 
@@ -585,7 +598,7 @@ The Phase 0 CLI and the Phase 1+ queue worker are two entry points calling the s
 
 ### 10.4 Planner
 
-Deterministic-first: TTL lookups, hash checks, refresh-scope resolution, and adapter-registry reads are plain code; a single small-model call handles genuine judgment (ranking >3 candidate sources by trustworthiness). Output is an explicit manifest enabling three things: Tasks UI shows planned-vs-completed, debugging starts by reading the plan, and cost is estimated before spend. Its shape:
+Deterministic-first: TTL lookups, hash checks, refresh-scope resolution, and adapter-registry reads are plain code; a single small-model call handles genuine judgment (ranking >3 candidate sources by trustworthiness — unwired until DISCOVER can produce that many, so planner v1 is deterministic-only; §20 2026-07-12). Output is an explicit manifest enabling three things: Tasks UI shows planned-vs-completed, debugging starts by reading the plan, and cost is estimated before spend. Its shape:
 
 ```json
 { "job_type": "refresh", "trigger": "ttl:rent_expired",
@@ -729,6 +742,11 @@ Alternatives explicitly evaluated per Yusuf's request — indicative list pricin
 ### 13.1 Routes
 
 ```
+/login                  password sign-in/registration + magic link/email code
+/signout                clear this browser's session and return to login
+/auth/callback          email confirmation / magic-link callback
+/auth/reset-password    password recovery completion
+/onboarding             required default display-name setup
 /                       hunt switcher · create hunt
 /h/:huntId              Overview — table + detail panel
 /h/:huntId/rubric       Rubric (view default; single-page editor for Owner; read-only for others)
@@ -737,6 +755,7 @@ Alternatives explicitly evaluated per Yusuf's request — indicative list pricin
 /h/:huntId/settings     Members, roles, invites, colors, hunt settings (§8.2 — Owner-edited,
                         member-viewable), danger zone (Owner)
 /invite/:token          Invite acceptance (auth-gated)
+/join/:token            Invitation Link auto-join (auth-gated; post-login return)
 ```
 
 ### 13.2 Key Views (Mantine mapping)
@@ -799,7 +818,7 @@ Fixed monthly: Cloudflare Pages $0 · Supabase $0 (cleaned-text caching + image 
 
 - **RLS is the boundary.** Every per-hunt table policy joins through `hunt_members`; global fact tables are client-read-only. API mutations run under the user JWT; only the worker holds the service role.
 - **Prompt injection via scraped pages** (untrusted input into prompts): extraction agents have *zero tool access* — worst-case injection is a bad value, not an action; VERIFY's evidence audit rejects values without genuine page evidence; plausibility bands catch absurd numbers; the fields most worth lying about (rent, fees) are exactly the cross-source-reconciled ones. Reduces injection from "compromise" to "one bad field that other sources outvote." A `trust_link` Source Policy ([§10.7](#107-fetching-subsystem)) removes the outvoting layer by explicit user choice; the zero-tool, evidence-audit, and plausibility controls still apply in full, and the permanent single-source badge keeps the reduced assurance visible.
-- **Invite tokens:** random, expiring, single-role, revocable; accepting requires an authenticated session.
+- **Invite tokens:** random, expiring, single-role, revocable; accepting requires an authenticated session. Invitation Link tokens are Member-only bearer capabilities. Their database transaction locks the link, enforces deletion/expiration/use limits before revealing the Hunt, and commits membership plus attribution together; RLS prevents token enumeration and non-Owner management.
 - **Secrets:** all API keys server-side only (Render env); the frontend holds nothing but the Supabase anon key, which RLS renders safe.
 - **PII posture:** the system stores members' emails, names/colors, comments, and searched addresses (commute targets). No listing-agent PII is extracted or stored. Screenshots and cleaned text may embed page content — 30-day screenshot retention bounds this.
 
@@ -812,7 +831,7 @@ Fixed monthly: Cloudflare Pages $0 · Supabase $0 (cleaned-text caching + image 
 | R1 | Anti-bot blocking on major aggregators | High | Tier ladder + registry ([§10.7](#107-fetching-subsystem)); official-site preference; Phase 0 gate decides whether Tier 3 is needed at all. One good source suffices by design |
 | R2 | ToS exposure from scraping | Medium | Personal, low-volume, private tool; unblockers outsource the blocking fight, not the legal posture; never becomes a public service |
 | R3 | Hallucinated / wrong extractions poisoning decisions | High | Evidence quotes + VERIFY audit + plausibility bands + cross-source reconcile + override with provenance |
-| R4 | Prompt injection via listing pages | Medium | See [§16](#16-security-and-privacy) |
+| R4 | Prompt injection via listing pages (incl. steering a tool-loop `fetch_page` at internal hosts — read-SSRF) | Medium | See [§16](#16-security-and-privacy); zero-tool extraction + evidence audit; fetcher-layer SSRF guard with tier-1 IP-pinning closes the HTTP path ([§20](#20-decision-log) 2026-07-12), tier-2 browser residual gated on a manual smoke test before a live loop |
 | R5 | Dedupe false merges corrupting shared data | Medium | Dual-condition auto-merge; gray-zone checkpoints; `split_property` op from day one |
 | R6 | Extraction inconsistency / model drift wobbling scores | Medium | Hash gating; pinned models; migrations as reviewed diffs; versioned vision reference set |
 | R7 | Stale data presented as current | Medium | `last_fetched_at` on every row; TTL-based stale badges; conservative all-in defaults |
@@ -931,6 +950,13 @@ Chronological. Dates before 2026-07-01 are reconstructed from the drafting sessi
 | 2026-07-11 | **Member colors support an ordered palette plus custom hex.** Automatic invite assignment uses `dusk, clay, moss, ochre, brick, olive, stone, plum` in order, choosing the first unused token. A member may later store any valid canonical `#RRGGBB` color instead. | Tokens provide deterministic, theme-aware defaults and visually distinct collaborators without setup; accepting hex values preserves user choice without reshaping `hunt_members.color` or coupling stored data to the current theme implementation. | §8.2, §9.1, §13.2, §20 |
 | 2026-07-11 | **Collaboration identity lives on Hunt membership; comment deletion is author-only.** `hunt_members.display_name` is the RLS-readable label for comments and rating tooltips, initialized from invite email when possible with a neutral fallback. Comments soft-delete only by their author; Owner moderation stays deferred. | Auth identities are not available to direct RLS-backed frontend reads, and privileged Auth lookups would turn ordinary rendering into a server dependency. A Hunt-scoped display name keeps collaboration reads direct. Author-only deletion matches the current permissions matrix without inventing an unrequested moderation power. | §4.2, §8.2, §9.1, §13.2, §20 |
 | 2026-07-11 | **v2.9: keep worker execution in-process by default; make P3-1 process/service isolation optional and evidence-triggered.** The `worker/` package, durable Postgres Job queue, resumable Stage contract, and `MANZIL_WORKER_INPROCESS` seam remain. Tier-2 Playwright already runs through the API lifespan loop. Split only after repeated API memory/restart/502 impact, material latency impact, a concurrency requirement, or an always-on scheduling requirement is observed. | This is a private two-person Hunt, so a second paid service and its operational surface are YAGNI without demonstrated contention. The durable queue preserves a low-risk migration path if browser load later requires isolation. | §5, §19; IMPLEMENTATION §7–8 |
+| 2026-07-12 | **Manifest-driven runner; planner v1 deterministic-only (P3-2, landed ahead of formal Phase 3 entry).** The runner walks the plan manifest's stage list by name; PLAN is `stages[0]` and the cursor indexes that list. A RunState with no manifest — every pre-Phase-3 snapshot, including parked `waiting_user` jobs — resumes through the legacy fixed list, **selected at the dispatcher by resume state**, so an old integer cursor is never reinterpreted against the longer Phase 3 list (the off-by-one a review caught and a dispatcher-level regression test now pins). `jobs.plan` and `jobs.cost_actual_usd` are populated from the run (estimate vs actual visible per job). Planner v1 is fully deterministic: the §10.4 judgment call (ranking >3 candidate sources) stays unwired until DISCOVER can produce that many (P3-5); the skip rule — same-property source with fresh `cleaned_text_hash` within `PLAN_FRESH_TTL_HOURS` (24) → `skip: hash_fresh`, FETCH reads the persisted cleaned text. Cross-property reuse remains DEDUPE's job (P3-4). | Inserting Phase 3 stages into an index-cursor walk would mis-resume every parked job; a manifest that travels with the job means the stage set can evolve without reinterpreting history. Deterministic-first upholds the 2026-06-28 "planner = manifest builder, not open-ended agent" decision. | §10.2, §10.4, §14, §20 |
+| 2026-07-12 | **Tool mechanics landed (P3-3): seam-enforced allow-lists, tool events, Maps forever-cache in existing columns; residual SSRF gated.** `@tool` registry + turn-budgeted loop per §10.2 (`AgentBudgetExceeded` is a real outcome); the per-stage allow-list table has exactly two loop-capable stages — DISCOVER and location-type custom criteria — and is enforced inside `call_agent`, so stage code cannot widen it and callers can only offer a subset of a stage's row; extraction stages provably resolve to zero tools (§16 control, test-pinned). Every executed tool call/result is a `tool_called` Job Event (2 kB result cap; a hallucinated unknown-tool call returns an error to the model without an event — an accepted gap to close with the first live loop). Maps: three plain-httpx tools (no Google SDK); the geocode forever-cache is `properties.place_id/lat/lng` (columns wired at last, closing the 2026-07-09 deferral) and computed distances/ratings land as ordinary Extractions — no parallel cache store. **Gated follow-up:** the URL-validation gaps shared with submission (public hostname resolving to a private IP; redirects followed without re-validation) become a read-SSRF surface once a model-controlled loop holds `fetch_page`, because poisoned page content could steer fetches; a fetcher-layer guard (post-DNS-resolution IP check + per-redirect re-validation, pipeline-wide) **must land before P3-5/P3-10 wire the first live tool loop**. Dormant today — no stage passes live fetchers to a loop. | One enforcement point in the seam beats per-stage discipline; caching in columns and rows the design already owns avoids a second cache store; naming the SSRF gate converts a silent parity assumption into a scheduled control instead of blocking substrate work on a fetch-path redesign. | §10.2, §12, §16, §17, §20 |
+| 2026-07-12 | **SSRF gate closed for the HTTP fetch path; the fetcher, not URL validation, is the boundary.** One policy module (`fetching/ssrf.py`) resolves and screens every fetch before connecting: an IP-literal or any resolved address that is non-global (private, loopback, link-local — so cloud metadata `169.254.169.254` — multicast, reserved, unspecified, IPv6 ULA, v4-mapped/NAT64/6to4-embedded private, CGNAT, `0.0.0.0/8`) is refused, empty/failed resolution fails closed, and odd IPv4 encodings normalize through `getaddrinfo` to their real address. Tier 1 stops following redirects blindly — a manual capped loop (`FETCH_MAX_REDIRECTS` 5) re-screens each hop — and **pins the connection to the vetted resolved IP** while preserving `Host`/SNI and hostname certificate verification, which closes the DNS-rebinding TOCTOU: because there is no second `getaddrinfo` at connect time, the screened IP and the dialed IP are the same. `VALIDATE_URL` stays deterministic and literal-only (the resolving guard lives in the fetch layer, not the stage). **Residual, tracked not closed:** Tier 2 (Chromium owns its own DNS/connect) keeps a best-effort route-guard + post-load `page.url` backstop, so it carries a narrow rebinding window — a **manual browser smoke test is gated before any live loop wires Tier 2**, and one live-HTTPS smoke fetch should confirm the pin's cert path (unprovable under the mock transport used in CI). Tier 3 is provider-side (our internal hosts are unreachable from the vendor network) and screened pre-dispatch as defense-in-depth. | The read-SSRF trigger the P3-3 gate named becomes real the moment a model-controlled loop over untrusted page content can call `fetch_page`; re-resolving without pinning is *reliably* bypassable by the guard's own named adversary (a DNS-rebinding attacker), so pinning — not a second lookup — is what actually closes it. The boundary belongs at the fetcher because every path (`fetch_page` and user submission alike) funnels through it, and keeping `VALIDATE_URL` network-free preserves its zero-cost pre-fetch contract. | §10.3, §10.7, §16, §17, §20; IMPLEMENTATION §7 |
+| 2026-07-12 | **DEDUPE + `resolve_dedupe` + `split_property` landed (P3-4, Wave B); DEDUPE runs after EXTRACT, correcting §10.1's diagram order.** DEDUPE consumes EXTRACT's `property_identity` block (the input built for it, 2026-07-10): geocode the extracted address — a plain function call, zero tools; the loop allow-list keeps exactly two rows — then match existing `properties` by place_id equality or <100 m haversine (`DEDUPE_MAX_DISTANCE_METERS`) plus rapidfuzz name similarity. In-range and ≥90 name-similar → auto-merge; gray zone (60–90 in range, or place_id-equal with dissimilar names — Google says same place, the pages disagree) → `resolve_dedupe` checkpoint, options `[merge, keep_separate]`, **default `keep_separate`**: the conservative direction, since a false split re-merges cheaply while a false merge poisons shared facts (R5). A merge switches the run to the canonical Property; the terminal projection (atomic with the DONE flip) re-points the Listing and any children off the submit-time placeholder, deletes the placeholder row, and persists the run's geocode into `properties.place_id/lat/lng` only-when-null (the forever-cache). Missing identity/address or a Maps failure never fails the run — it proceeds `kept_separate` with the reason recorded (a duplicate is recoverable; a dead run is not). A parked job that already merged resumes with the canonical Property preserved (the dispatcher seeds `property_id` only into fresh state — snapshots win). The reversal shipped the same day: `manzil split-property` (admin, service-role CLI) peels a Source onto a fresh placeholder Property with null geocode (the old fix may belong to the other building), re-points its Extractions/Floor Plans and the Listings derived from ingest-job URLs, and enqueues a rescore per affected Hunt. §10.1 had drawn DEDUPE before FETCH — unimplementable for a URL-only submission, whose name+address exist only after EXTRACT; the diagram now shows submitted-source extraction → DEDUPE → (P3-5) sibling fan-out. | Global fact sharing is only safe if two URLs for one building become one Property, and only survivable if a wrong merge reverses cleanly; identity resolution belongs on extracted identity, not the URL — exactly what the 2026-07-10 identity block was added to feed | §10.1, §10.3, §10.10, §17, §20 |
+| 2026-07-12 | **v3.0: reusable Invitation Links are separate from email invites.** Invitation Links always grant Member, default to seven days with unlimited successful joins, expose editable expiration/limits and an append-only join ledger, and soft-delete irreversibly from the ordinary UI. Joining is one row-locked transaction: validity is checked before existing membership; only a newly inserted membership consumes a use; concurrent final-use requests cannot exceed the limit. Expired/exhausted links remain Owner-visible and editable, while deleted links remain stored but hidden and unusable. | Email invitations identify one recipient and may intentionally grant Curator; a shareable URL has different privilege and lifecycle risks. A separate resource keeps those contracts honest, least-privileged, auditable, and concurrency-safe. | §3, §4.1–4.2, §8.2–8.3, §9.1, §13.1, §16, §20 |
+| 2026-07-12 | **v3.1: confirmed email/password auth plus OTP-capable magic links; account defaults with Hunt overrides.** Registration requires email confirmation; password recovery and the magic email's link/code paths stay inside Supabase Auth. Mandatory onboarding creates `user_profiles.default_display_name`; nullable `hunt_members.display_name` is the Hunt-specific override and effective identity coalesces override over default. | Password users need a complete recovery/confirmation lifecycle, and copying a default into memberships would prevent later default changes from propagating without overwriting deliberate Hunt identities. | §4.1, §5.1, §8.2–8.3, §9.1, §13.1, §20 |
+| 2026-07-12 | **Invitation Links gain an optional Owner-facing `name`.** Nullable trimmed 1–80 character label on create/patch/response; blank normalizes to null; uniqueness is not enforced. UI may prefill `Invitation Link N` from the active-link count. | Owners need a human label when managing multiple links; join tokens and ledger semantics stay unchanged. | §8.2, §9.1, §13.1, §20 |
 
 ---
 
