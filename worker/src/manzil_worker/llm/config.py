@@ -36,6 +36,29 @@ STAGE_MODELS: dict[str, str] = {
     "discover": TASTE_MODEL,
 }
 
+# Per-stage tool allow-lists (DESIGN §10.2, §16). The zero-tool property of
+# extraction stages is a SECURITY CONTROL, not an omission: worst-case prompt
+# injection from a scraped page stays "one bad value", never an action. Exactly
+# two stages may run a bounded tool loop in workflow mode (AGENTS.md hard rule),
+# so this table has exactly two non-empty rows — it IS that rule's enforcement.
+# Every other stage (extract, verify, validate, …) resolves to an empty tuple,
+# and `call_agent` refuses any stage absent from this map.
+#   discover              — P3-5 DISCOVER. `web_search` (provider-hosted) is added
+#                           when P3-5 lands; `fetch_page` is available now.
+#   custom_match_location — P3-10 location-type custom-criteria dispatch (the
+#                           second, and last, allowed loop).
+STAGE_TOOLS: dict[str, tuple[str, ...]] = {
+    "discover": ("fetch_page",),
+    "custom_match_location": ("geocode", "places_nearby", "commute_time", "fetch_page"),
+}
+
+
+def allowed_tools(stage: str) -> tuple[str, ...]:
+    """The tool names `stage` may use. Empty for every stage not explicitly
+    allow-listed — extraction stages included. `call_agent` enforces this."""
+    return STAGE_TOOLS.get(stage, ())
+
+
 DEFAULT_MAX_TOKENS = 2048
 STAGE_MAX_TOKENS: dict[str, int] = {
     "smoke": 256,
