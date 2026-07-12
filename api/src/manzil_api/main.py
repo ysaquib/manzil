@@ -24,9 +24,11 @@ from manzil_api.exceptions import CatchAllMiddleware, register_exception_handler
 from manzil_api.fees.router import router as fees_router
 from manzil_api.hunts.router import router as hunts_router
 from manzil_api.invites.router import router as invites_router
+from manzil_api.invitation_links.router import router as invitation_links_router
 from manzil_api.jobs.router import router as jobs_router
 from manzil_api.listings.router import router as listings_router
 from manzil_api.overrides.router import router as overrides_router
+from manzil_api.profiles.router import router as profiles_router
 from manzil_api.rubric.router import router as rubric_router
 from manzil_api.worker_loop import run_inprocess_worker
 
@@ -103,11 +105,13 @@ def create_app() -> FastAPI:
         hunts_router,
         collaboration_router,
         invites_router,
+        invitation_links_router,
         rubric_router,
         listings_router,
         jobs_router,
         overrides_router,
         fees_router,
+        profiles_router,
     ):
         app.include_router(router, prefix="/v1")
 

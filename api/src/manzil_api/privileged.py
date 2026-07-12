@@ -1,4 +1,4 @@
-"""Auditable home for the three privileged Phase 2 operations.
+"""Auditable home for the narrowly-scoped privileged collaboration operations.
 
 The seam is established in P2-2; invite acceptance/email and ownership transfer
 are added by their owning tasks. Ordinary API mutations must not use it.
@@ -16,6 +16,13 @@ from supabase import Client
 def accept_invite(service_client: Client, token: str, user_id: str) -> dict[str, Any]:
     response = service_client.rpc(
         "accept_hunt_invite", {"p_token": token, "p_user_id": user_id}
+    ).execute()
+    return response.data
+
+
+def join_invitation_link(service_client: Client, token: str, user_id: str) -> dict[str, Any]:
+    response = service_client.rpc(
+        "join_hunt_invitation_link", {"p_token": token, "p_user_id": user_id}
     ).execute()
     return response.data
 

@@ -42,10 +42,9 @@ async def create_invite(
         .execute()
     )
     row = response.data[0]
-    if body.email:
-        privileged.send_invite_email(
-            create_service_client(settings), body.email, token, settings.frontend_url
-        )
+    privileged.send_invite_email(
+        create_service_client(settings), body.email, token, settings.frontend_url
+    )
     return _response(row, settings.frontend_url)
 
 
