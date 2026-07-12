@@ -24,7 +24,27 @@ log = structlog.get_logger()
 _PROCEED = (FetchOutcome.SUCCESS, FetchOutcome.NOT_LISTING)
 
 
+def _planned_skip(state: RunState) -> bool:
+    """True when PLAN marked this run's source `action: skip` (why: hash_fresh):
+    the persisted cleaned text is already on `state.sources`, so FETCH must use it
+    rather than hit the network (DESIGN §10.4, P3-2)."""
+    if state.plan is None:
+        return False
+    entry = next((s for s in state.plan.sources if s.url == state.url), None)
+    return entry is not None and entry.action == "skip" and bool(state.sources)
+
+
 async def fetch_stage(state: RunState, ctx: StageCtx) -> RunState:
+    if _planned_skip(state):
+        source = state.sources[0]
+        log.info(
+            "fetch_skipped",
+            job_id=str(state.job_id),
+            stage="fetch",
+            why="hash_fresh",
+            hash=source.cleaned_hash,
+        )
+        return state
     if ctx.registry is None:
         raise StageFatal("fetch: no adapter registry in StageCtx")
     ladder = await fetch_with_ladder(state.url, ctx.registry, ctx.fetchers)

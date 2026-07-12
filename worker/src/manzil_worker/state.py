@@ -11,6 +11,7 @@ fields added because the CLI and eval harness need run outcomes on the state).
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
@@ -123,6 +124,93 @@ class PlanScore(BaseModel):
     breakdown: dict[str, Any]
 
 
+class SourceFreshness(BaseModel):
+    """One persisted `property_sources` row's freshness inputs (P3-2), returned by
+    PLAN's `fresh_source_lookup` seam. PLAN applies `PLAN_FRESH_TTL_HOURS` against
+    `last_success_at`; the lookup itself is a dumb read so it fakes trivially in
+    golden-manifest tests without a database."""
+
+    cleaned_text_hash: str | None = None
+    cleaned_text: str = ""
+    last_success_at: datetime | None = None
+
+
+class GeocodeIn(BaseModel):
+    """A geocoded address (DEDUPE, P3-4): Google `place_id` + coordinates, as the
+    Maps Geocoding API returns them. DEDUPE stores this on `RunState.geocode`; the
+    terminal projection seeds `properties.place_id/lat/lng` from it (the §2.3
+    forever-cache — a geocode is paid once per property, ever)."""
+
+    place_id: str
+    lat: float
+    lng: float
+    formatted_address: str | None = None
+
+
+class DedupeCandidate(BaseModel):
+    """One existing `properties` row DEDUPE compares the incoming identity against
+    (P3-4), returned by the `dedupe_candidates` seam. A dumb read of the identity
+    columns — the match decision (distance + name similarity) lives in the stage,
+    so it fakes trivially without a database (SourceFreshness pattern)."""
+
+    id: UUID
+    name: str | None = None
+    canonical_address: str | None = None
+    place_id: str | None = None
+    lat: float | None = None
+    lng: float | None = None
+
+
+class DedupeDecision(BaseModel):
+    """DEDUPE's recorded outcome (P3-4, DESIGN §10.3). `action` names the branch
+    taken; the numbers behind a merge/keep-separate are retained for provenance
+    and the Tasks timeline. Lives on RunState only — DEDUPE never writes the DB;
+    the merge's DB effects happen in the queue projection."""
+
+    action: Literal[
+        "merged_auto",
+        "merged_user",
+        "kept_separate_user",
+        "kept_separate",
+        "no_identity",
+        "no_address",
+        "geocode_failed",
+        "no_candidates",
+    ]
+    candidate_property_id: str | None = None
+    distance_m: float | None = None
+    name_similarity: float | None = None
+    note: str | None = None
+
+
+class PlanSource(BaseModel):
+    """One source entry in the §10.4 manifest. Fetch entries carry `tier`; skip
+    entries carry `why`. `url` identifies a brand-new submission whose
+    `property_sources` row does not exist yet; `source_id` is used once the row
+    does (both are optional so the honest identifier is recorded either way)."""
+
+    source_id: str | None = None
+    url: str | None = None
+    action: Literal["fetch", "skip"]
+    tier: int | None = None
+    why: str | None = None
+
+
+class PlanManifest(BaseModel):
+    """The pinned §10.4 plan manifest — the runner's stage list travelling with
+    the job (P3-2, §2.1). Do not reshape the keys. `stages` are the live stage
+    names the runner walks; `skipped` maps a stage name to why it was dropped;
+    `est_cost_usd` is the planned estimate compared against `cost_actual_usd`."""
+
+    job_type: str
+    trigger: str
+    source_policy: str
+    sources: list[PlanSource] = Field(default_factory=list)
+    stages: list[str] = Field(default_factory=list)
+    skipped: dict[str, str] = Field(default_factory=dict)
+    est_cost_usd: float
+
+
 class RunState(BaseModel):
     job_id: UUID
     job_type: JobType
@@ -130,11 +218,18 @@ class RunState(BaseModel):
     url: str
     source_policy: str = "tiers_1_2_3"  # §10.7; read by PLAN + DISCOVER (P3), inert in Phase 0
     hunt_listing_id: UUID | None = None  # None in Phase 0 CLI runs
-    plan: dict[str, Any] | None = None  # §10.4 manifest shape (PLAN stage lands P3-2)
+    # §10.4 manifest (PLAN stage lands P3-2). Optional-with-default so pre-P3
+    # RunState snapshots and recorded fixtures (plan absent/null) keep validating.
+    plan: PlanManifest | None = None
     cursor: int = 0  # index into the stage list
     status: JobState = JobState.RUNNING
     error: str | None = None
     property_id: UUID | None = None
+    # DEDUPE (P3-4): the geocode of this property's address and the merge/keep
+    # decision. Optional-with-default so pre-P3 snapshots and recorded fixtures
+    # (dedupe/geocode absent) keep validating.
+    geocode: GeocodeIn | None = None
+    dedupe: DedupeDecision | None = None
     sources: list[SourceState] = Field(default_factory=list)
     extractions: dict[str, list[FieldExtraction]] = Field(default_factory=dict)
     reconciled: dict[str, FieldExtraction] = Field(default_factory=dict)
