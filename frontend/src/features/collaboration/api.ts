@@ -15,6 +15,7 @@ export interface HuntMember {
   role: "owner" | "curator" | "member";
   color: string | null;
   display_name: string | null;
+  display_name_override?: string | null;
 }
 
 export interface Comment {
@@ -41,7 +42,20 @@ export function useMembers(huntId: string) {
         .select("*")
         .eq("hunt_id", huntId);
       if (error) throw error;
-      return (data ?? []) as HuntMember[];
+      const rows = (data ?? []) as Omit<HuntMember, "display_name_override">[];
+      const userIds = rows.map((row) => row.user_id);
+      const profiles = userIds.length
+        ? await supabase.from("user_profiles").select("user_id, default_display_name").in("user_id", userIds)
+        : { data: [], error: null };
+      if (profiles.error) throw profiles.error;
+      const defaults = new Map(
+        (profiles.data ?? []).map((profile) => [profile.user_id, profile.default_display_name]),
+      );
+      return rows.map((row) => ({
+        ...row,
+        display_name_override: row.display_name,
+        display_name: row.display_name ?? defaults.get(row.user_id) ?? null,
+      }));
     },
     refetchOnWindowFocus: true,
   });
@@ -135,7 +149,7 @@ export function useSetMemberColor(huntId: string, userId: string) {
 export function useSetMemberDisplayName(huntId: string, userId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (display_name: string) =>
+    mutationFn: (display_name: string | null) =>
       apiFetch<MemberResponse>(`/v1/hunts/${huntId}/members/${userId}`, {
         method: "PATCH",
         body: { display_name } satisfies MemberPatch,
