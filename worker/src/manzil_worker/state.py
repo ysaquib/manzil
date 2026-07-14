@@ -103,6 +103,20 @@ class SourceState(BaseModel):
     cleaned_text: str = ""
     cleaned_hash: str = ""
     fee_tables_found: int = 0
+    image_urls: list[str] = Field(default_factory=list)
+
+
+class PropertyImageIn(BaseModel):
+    """One normalized, content-addressed image prepared by IMAGE_FETCH (P3-7a)."""
+
+    source_url: str
+    storage_path: str
+    content_hash: str
+    width: int
+    height: int
+    byte_size: int
+    kind: str | None = None
+    vision_assessment: dict[str, Any] | None = None
 
 
 class VerifyFlag(BaseModel):
@@ -133,6 +147,7 @@ class SourceFreshness(BaseModel):
     cleaned_text_hash: str | None = None
     cleaned_text: str = ""
     last_success_at: datetime | None = None
+    image_urls: list[str] = Field(default_factory=list)
 
 
 class GeocodeIn(BaseModel):
@@ -231,6 +246,8 @@ class RunState(BaseModel):
     geocode: GeocodeIn | None = None
     dedupe: DedupeDecision | None = None
     sources: list[SourceState] = Field(default_factory=list)
+    property_images: list[PropertyImageIn] = Field(default_factory=list)
+    image_fetch_completed: bool = False
     extractions: dict[str, list[FieldExtraction]] = Field(default_factory=dict)
     reconciled: dict[str, FieldExtraction] = Field(default_factory=dict)
     floor_plans: list[FloorPlanIn] = Field(default_factory=list)

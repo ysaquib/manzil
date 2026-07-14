@@ -62,6 +62,16 @@ async def _seed(pool: asyncpg.Pool, fx: _Fixture) -> None:
                 fx.property_id,
                 url,
             )
+        for url, suffix in ((URL1, "one"), (URL2, "two")):
+            await conn.execute(
+                "insert into property_images "
+                "(property_id, source_url, storage_path, content_hash) "
+                "values ($1, $2, $3, $4)",
+                fx.property_id,
+                url,
+                f"properties/{fx.property_id}/{suffix}.webp",
+                suffix,
+            )
         # Extractions split across the two source ids (catalog facts: hunt_id null).
         for source_id, key, value in (
             (fx.source1_id, "beds", "1"),
@@ -174,6 +184,19 @@ async def test_split_by_url_repoints_and_rescores(pg_pool: asyncpg.Pool) -> None
         )
         assert fp2_prop == result.new_property_id
         assert result.moved_floor_plan_count == 1
+        assert result.moved_image_count == 1
+        assert (
+            await pg_pool.fetchval(
+                "select property_id from property_images where source_url = $1", URL2
+            )
+            == result.new_property_id
+        )
+        assert (
+            await pg_pool.fetchval(
+                "select property_id from property_images where source_url = $1", URL1
+            )
+            == fx.property_id
+        )
 
         # URL2-derived Listing moved; URL1 Listing untouched.
         assert result.moved_listing_ids == [fx.listing2_id]

@@ -8,6 +8,7 @@ call is the user-run `manzil llm-smoke`.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from pathlib import Path
 
@@ -16,7 +17,9 @@ from manzil_worker.llm import client as client_mod
 from manzil_worker.llm.client import (
     ProviderResponse,
     SeamConfigError,
+    VisionImage,
     call_structured,
+    call_vision,
     cost_tally,
 )
 from manzil_worker.llm.config import (
@@ -26,7 +29,7 @@ from manzil_worker.llm.config import (
     openrouter_provider_order,
     provider_for_model,
 )
-from manzil_worker.llm.prompt_loader import PromptError, load_prompt
+from manzil_worker.llm.prompt_loader import Prompt, PromptError, load_prompt
 from manzil_worker.llm.recording import ReplayMissError, request_hash
 from manzil_worker.llm.smoke import SMOKE_TOKEN, SmokeResult, run_smoke
 
@@ -155,6 +158,41 @@ def test_record_then_replay_round_trip(monkeypatch: pytest.MonkeyPatch, tmp_path
             cache_write_tokens=10,
         )
     )
+
+
+def test_vision_recording_hashes_images_without_storing_bytes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("MANZIL_RECORDED_DIR", str(tmp_path))
+    monkeypatch.setenv("MANZIL_LLM_MODE", "record")
+    monkeypatch.setattr(
+        client_mod,
+        "load_prompt",
+        lambda stage: Prompt(id="vision", version=1, cacheable_prefix="anchored", per_call="rate"),
+    )
+    response = ProviderResponse(
+        output={"echo": "rated", "model_family": "stub"},
+        input_tokens=25,
+        output_tokens=5,
+    )
+
+    async def fake_call(plan, schema, images):  # type: ignore[no-untyped-def]
+        assert images[0].data == b"webp bytes"
+        return response
+
+    monkeypatch.setattr(client_mod, "_traced_live_vision_call", fake_call)
+    data = b"webp bytes"
+    image = VisionImage(content_hash=hashlib.sha256(data).hexdigest(), data=data)
+    result = asyncio.run(call_vision("vision", SmokeResult, [image]))
+    assert result.echo == "rated"
+
+    fixture = next(tmp_path.glob("vision--*.json"))
+    text = fixture.read_text()
+    assert image.content_hash in text
+    assert "webp bytes" not in text
+    monkeypatch.setenv("MANZIL_LLM_MODE", "replay")
+    monkeypatch.setattr(client_mod, "_traced_live_vision_call", None)
+    assert asyncio.run(call_vision("vision", SmokeResult, [image])) == result
 
 
 # ── NFR6 guard: an untraced live call is a bug, not a degraded mode ──────────

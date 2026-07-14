@@ -108,7 +108,10 @@ async def _seed_hunt_and_rubric(conn: asyncpg.Connection) -> None:
         json.dumps(DEFAULT_SETTINGS),
     )
     await conn.execute(
-        "insert into hunt_members (hunt_id, user_id, role) values ($1, $2, 'owner')",
+        # The hunts AFTER INSERT trigger (P2-2) already installs the Owner
+        # membership; keep the explicit insert for pre-trigger databases.
+        "insert into hunt_members (hunt_id, user_id, role) values ($1, $2, 'owner')"
+        " on conflict (hunt_id, user_id) do nothing",
         DEV_HUNT_ID,
         DEV_USER_ID,
     )
