@@ -23,12 +23,9 @@ What moves, and what does not:
 * `scores` are NOT touched: they key on `(hunt_listing_id, floor_plan_id)` and
   the moved floor plans keep their ids, so the rows stay valid and the enqueued
   rescore refreshes them.
-* `property_images` are NOT moved: the table carries no `source_id` (only
-  `property_id`) — there is no way to know which images came from the moved
-  Source's page, so they stay on the original Property. VISION (P3-7) re-derives
-  images per Source on the new Property's next run; moving an unattributable
-  blob would be a guess, and a false split is meant to be re-mergeable, not
-  lossy.
+* `property_images` whose `source_url` matches the moved Source → new Property.
+  Pre-P3-7 rows have NULL `source_url` and remain on the original Property rather
+  than being guessed at; the next IMAGE_FETCH re-derives them.
 
 Geocode is deliberately dropped: the new Property gets NULL `place_id/lat/lng`
 even though the original has them, because the split exists precisely because
@@ -69,6 +66,7 @@ class SplitResult:
     rescored_hunt_ids: list[UUID] = field(default_factory=list)
     moved_extraction_count: int = 0
     moved_floor_plan_count: int = 0
+    moved_image_count: int = 0
 
 
 def _placeholder_name(url: str) -> str:
@@ -186,6 +184,13 @@ async def split_property(
             new_property_id,
             source_id,
         )
+        image_status = await conn.execute(
+            "update property_images set property_id = $1 where property_id = $2 "
+            "and source_url = $3",
+            new_property_id,
+            property_id,
+            source_url,
+        )
 
         # 5. Re-point the affected Listings (scores ride along on floor_plan ids).
         if affected_listing_ids:
@@ -220,4 +225,5 @@ async def split_property(
         rescored_hunt_ids=rescored_hunt_ids,
         moved_extraction_count=_rowcount(ext_status),
         moved_floor_plan_count=_rowcount(fp_status),
+        moved_image_count=_rowcount(image_status),
     )

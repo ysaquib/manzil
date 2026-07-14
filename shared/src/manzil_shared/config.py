@@ -72,6 +72,8 @@ STAGE_COST_ESTIMATES_USD = {
     "VALIDATE": 0.005,
     "EXTRACT": 0.02,
     "DEDUPE": 0.0,  # geocode is a Maps call, not an LLM call; no LLM cost here
+    "IMAGE_FETCH": 0.0,
+    "VISION": 0.03,
     "VERIFY": 0.01,
     "SCORE": 0.0,
 }
@@ -92,6 +94,10 @@ CHECKPOINT_TIMEOUT_HOURS = 24
 # VISION input discipline
 MAX_IMAGES = 8
 IMAGE_MAX_DIM = 1024
+IMAGE_MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024
+IMAGE_MAX_PIXELS = 40_000_000
+IMAGE_WEBP_QUALITY = 82
+IMAGE_FETCH_TIMEOUT_SECONDS = 20.0
 
 # Fetch outcome classifier — body-size floor (bytes)
 FETCH_MIN_BODY_BYTES = 5_000

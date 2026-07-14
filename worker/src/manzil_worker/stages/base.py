@@ -19,11 +19,13 @@ from manzil_shared.models import Confidence, RubricCriterion
 from manzil_worker.llm import client as llm_client
 
 if TYPE_CHECKING:
+    from manzil_worker.enrich.images import DownloadImage, ImageObjectStore
     from manzil_worker.fetching.registry import AdapterRegistry
     from manzil_worker.fetching.tiers import Fetcher
     from manzil_worker.state import DedupeCandidate, GeocodeIn, RunState, SourceFreshness
 
 CallStructured = Callable[[str, type[Any], str], Awaitable[Any]]
+CallVision = Callable[[str, type[Any], list[Any]], Awaitable[Any]]
 
 # PLAN's DB seam (P3-2): given a property id and a source URL, return the
 # persisted source's freshness inputs, or None when no row exists. Injected like
@@ -40,6 +42,7 @@ DedupeCandidates = Callable[[], Awaitable[list["DedupeCandidate"]]]
 # gets zero tools, §16). Default wraps the live Maps Geocoding call; tests inject
 # a fake, and a fake raising `MapsError` exercises the geocode-failed path.
 GeocodeAddress = Callable[[str], Awaitable["GeocodeIn"]]
+ExistingImageHashes = Callable[[UUID], Awaitable[set[str]]]
 
 
 async def _no_fresh_source(property_id: UUID | None, url: str) -> SourceFreshness | None:
@@ -52,6 +55,10 @@ async def _no_dedupe_candidates() -> list[DedupeCandidate]:
     """Default: no database wired (CLI / unit runs) → no candidates, so DEDUPE
     no-ops to `no_candidates` and the run keeps its own placeholder property."""
     return []
+
+
+async def _no_existing_image_hashes(property_id: UUID) -> set[str]:
+    return set()
 
 
 async def _live_geocode_address(address: str) -> GeocodeIn:
@@ -85,6 +92,7 @@ class StageCtx:
     fetchers: dict[int, Fetcher] = field(default_factory=dict)
     registry: AdapterRegistry | None = None
     call_structured: CallStructured = llm_client.call_structured
+    call_vision: CallVision = llm_client.call_vision
     rubric: list[RubricCriterion] = field(default_factory=list)
     rubric_version: int = 0
     # Hunt setting (§8.2 contract, DESIGN v2.3): effective values below this
@@ -108,6 +116,12 @@ class StageCtx:
     # touch Google.
     dedupe_candidates: DedupeCandidates = _no_dedupe_candidates
     geocode_address: GeocodeAddress = _live_geocode_address
+    # IMAGE_FETCH inputs (P3-7a). Binary downloads and private Storage are
+    # injected so CI never touches the network; the queue wires production
+    # defaults when Supabase credentials exist.
+    download_image: DownloadImage | None = None
+    image_store: ImageObjectStore | None = None
+    existing_image_hashes: ExistingImageHashes = _no_existing_image_hashes
 
 
 Stage = Callable[["RunState", StageCtx], Awaitable["RunState"]]

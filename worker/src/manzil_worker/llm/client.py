@@ -20,6 +20,8 @@ JSON schema, `tool_choice` pinned to it — the model cannot answer in prose.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import os
 from contextlib import contextmanager
@@ -160,6 +162,16 @@ class ProviderResponse:
 
 
 @dataclass(frozen=True)
+class VisionImage:
+    """One P4 image block. Recordings hash ``data`` but never persist its bytes."""
+
+    content_hash: str
+    data: bytes
+    media_type: str = "image/webp"
+    label: str = "target"
+
+
+@dataclass(frozen=True)
 class _CallPlan:
     stage: str
     model: str
@@ -277,6 +289,137 @@ async def _live_call_openrouter(plan: _CallPlan, schema: type[BaseModel]) -> Pro
         cache_write_tokens=cache_write,
         reported_cost_usd=float(reported_cost) if reported_cost is not None else None,
     )
+
+
+async def _live_call_openrouter_vision(
+    plan: _CallPlan, schema: type[BaseModel], images: list[VisionImage]
+) -> ProviderResponse:
+    """One real P4 call. Image bytes exist only in the provider request."""
+    from openai import AsyncOpenAI
+
+    if not os.environ.get("OPENROUTER_API_KEY"):
+        raise SeamConfigError("OPENROUTER_API_KEY unset — cannot make a live call")
+    system_parts: list[dict[str, Any]] = []
+    if plan.prompt.cacheable_prefix:
+        system_parts.append(
+            {
+                "type": "text",
+                "text": plan.prompt.cacheable_prefix,
+                "cache_control": {"type": "ephemeral"},
+            }
+        )
+    if plan.prompt.per_call:
+        system_parts.append({"type": "text", "text": plan.prompt.per_call})
+    content: list[dict[str, Any]] = [{"type": "text", "text": plan.content}]
+    for image in images:
+        content.extend(
+            [
+                {
+                    "type": "text",
+                    "text": f"Image role: {image.label}; sha256: {image.content_hash}",
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": (
+                            f"data:{image.media_type};base64,"
+                            f"{base64.b64encode(image.data).decode('ascii')}"
+                        )
+                    },
+                },
+            ]
+        )
+    messages: list[dict[str, Any]] = []
+    if system_parts:
+        messages.append({"role": "system", "content": system_parts})
+    messages.append({"role": "user", "content": content})
+    client = AsyncOpenAI(api_key=os.environ["OPENROUTER_API_KEY"], base_url=OPENROUTER_BASE_URL)
+    response = await client.chat.completions.create(
+        model=plan.model,
+        max_tokens=max_tokens_for_stage(plan.stage),
+        temperature=0.0,
+        messages=messages,  # type: ignore[arg-type]
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": STRUCTURED_TOOL_NAME,
+                    "description": "Emit the structured result. Always call this tool.",
+                    "parameters": schema.model_json_schema(),
+                },
+            }
+        ],
+        tool_choice={"type": "function", "function": {"name": STRUCTURED_TOOL_NAME}},
+        extra_body={
+            "provider": {
+                "order": openrouter_provider_order(plan.model),
+                "allow_fallbacks": False,
+            }
+        },
+    )
+    message = response.choices[0].message
+    if not message.tool_calls:
+        raise SeamConfigError(f"stage {plan.stage!r}: vision model returned no tool_calls")
+    usage = response.usage
+    if usage is None:
+        raise SeamConfigError(f"stage {plan.stage!r}: OpenRouter response missing usage")
+    details = getattr(usage, "prompt_tokens_details", None)
+    cached = _usage_int(details, "cached_tokens")
+    cache_write = _usage_int(details, "cache_write_tokens")
+    prompt_tokens = usage.prompt_tokens or 0
+    return ProviderResponse(
+        output=json.loads(message.tool_calls[0].function.arguments),
+        input_tokens=max(0, prompt_tokens - cached - cache_write),
+        output_tokens=usage.completion_tokens or 0,
+        cache_read_tokens=cached,
+        cache_write_tokens=cache_write,
+        reported_cost_usd=float(usage.cost) if getattr(usage, "cost", None) is not None else None,
+    )
+
+
+async def _traced_live_vision_call(
+    plan: _CallPlan, schema: type[BaseModel], images: list[VisionImage]
+) -> ProviderResponse:
+    """Trace a live vision call without copying image bytes into Langfuse input."""
+    _require_langfuse_configured()
+    ctx = _current_context()
+    from langfuse import Langfuse, propagate_attributes
+
+    lf: Langfuse = _langfuse()
+    metadata = {
+        "mode": ctx.mode,
+        "model": plan.model,
+        "prompt_version": plan.prompt.version,
+        "image_hashes": [image.content_hash for image in images],
+        "llm_mode": llm_mode(),
+    }
+    with (
+        propagate_attributes(trace_name=f"{ctx.job_type}/{plan.stage}", session_id=ctx.job_id),
+        lf.start_as_current_observation(
+            name=f"{ctx.job_type}/{plan.stage}",
+            model=plan.model,
+            input=plan.content,
+            as_type="generation",
+            metadata=metadata,
+        ) as generation,
+    ):
+        response = await _live_call_openrouter_vision(plan, schema, images)
+        if response.reported_cost_usd is not None:
+            generation.update(
+                metadata={**metadata, "openrouter_cost_usd": response.reported_cost_usd}
+            )
+        generation.update(
+            output=response.output,
+            usage_details={
+                "input": response.input_tokens,
+                "output": response.output_tokens,
+                "cache_read_input_tokens": response.cache_read_tokens,
+                "cache_creation_input_tokens": response.cache_write_tokens,
+            },
+            cost_details={"total": _usage_from(plan.model, response).cost_usd},
+        )
+    lf.flush()
+    return response
 
 
 async def _traced_live_call(plan: _CallPlan, schema: type[BaseModel]) -> ProviderResponse:
@@ -640,5 +783,54 @@ async def call_agent(
 
 
 async def call_vision[T: BaseModel](stage: str, schema: type[T], images: list[Any]) -> T:
-    """Vision call (§10.2 pattern P4). First consumer is P3-7 IMAGES/VISION."""
-    raise NotImplementedError("call_vision lands with its first consumer (P3-7 VISION)")
+    """Vision call (§10.2 pattern P4), with hash-only record/replay fixtures."""
+    typed_images: list[VisionImage] = []
+    for image in images:
+        if not isinstance(image, VisionImage):
+            raise TypeError("call_vision images must be VisionImage instances")
+        if hashlib.sha256(image.data).hexdigest() != image.content_hash:
+            raise ValueError(f"vision image hash mismatch for {image.label!r}")
+        typed_images.append(image)
+    prompt = load_prompt(stage)
+    model = model_for_stage(stage)
+    content = json.dumps(
+        [
+            {"sha256": image.content_hash, "media_type": image.media_type, "label": image.label}
+            for image in typed_images
+        ],
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    digest = request_hash(stage, model, prompt.version, content)
+    plan = _CallPlan(stage=stage, model=model, prompt=prompt, content=content, digest=digest)
+    mode = llm_mode()
+    if mode == "replay":
+        recording = load_recording(stage, digest)
+        response = ProviderResponse(
+            output=dict(recording.output),
+            input_tokens=recording.input_tokens,
+            output_tokens=recording.output_tokens,
+            cache_read_tokens=recording.cache_read_tokens,
+            cache_write_tokens=recording.cache_write_tokens,
+        )
+    else:
+        response = await _traced_live_vision_call(plan, schema, typed_images)
+        if mode == "record":
+            save_recording(
+                digest,
+                Recording(
+                    stage=stage,
+                    model=model,
+                    prompt_version=prompt.version,
+                    content_sha256=content_sha256(content),
+                    output=response.output,
+                    input_tokens=response.input_tokens,
+                    output_tokens=response.output_tokens,
+                    cache_read_tokens=response.cache_read_tokens,
+                    cache_write_tokens=response.cache_write_tokens,
+                    recorded_at=now_iso(),
+                    image_hashes=[image.content_hash for image in typed_images],
+                ),
+            )
+    _tally(_usage_from(model, response))
+    return schema.model_validate(response.output)

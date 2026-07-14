@@ -13,6 +13,7 @@ import structlog
 from manzil_shared.errors import StageFatal, StageRetryable
 from manzil_shared.models import FetchOutcome
 
+from manzil_worker.enrich.images import discover_image_urls
 from manzil_worker.fetching.ladder import fetch_with_ladder
 from manzil_worker.fetching.registry import MAX_TIER
 from manzil_worker.fetching.slug_hint import search_hint
@@ -55,6 +56,7 @@ async def fetch_stage(state: RunState, ctx: StageCtx) -> RunState:
         cleaned_text=ladder.cleaned.text,
         cleaned_hash=ladder.cleaned.text_hash,
         fee_tables_found=ladder.cleaned.fee_tables_found,
+        image_urls=discover_image_urls(ladder.result.body, ladder.result.final_url),
     )
     state.sources = [source]
     log.info(

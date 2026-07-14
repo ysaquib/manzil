@@ -27,6 +27,8 @@ LIVE_STAGES = [
     "VALIDATE",
     "EXTRACT",
     "DEDUPE",
+    "IMAGE_FETCH",
+    "VISION",
     "VERIFY",
     "SCORE",
 ]
@@ -58,7 +60,7 @@ def test_manifest_new_submission() -> None:
         "source_policy": "tiers_1_2_3",
         "sources": [{"url": URL, "action": "fetch", "tier": 1}],
         "stages": LIVE_STAGES,
-        "skipped": {},
+        "skipped": {"VISION": "missing_reference_set"},
         "est_cost_usd": 0.035,
     }
     # Nothing pre-loaded — FETCH will fetch.
@@ -81,7 +83,7 @@ def test_manifest_same_property_reingest_skips_on_fresh_hash() -> None:
         "source_policy": "tiers_1_2_3",
         "sources": [{"url": URL, "action": "skip", "why": "hash_fresh"}],
         "stages": LIVE_STAGES,
-        "skipped": {},
+        "skipped": {"VISION": "missing_reference_set"},
         "est_cost_usd": 0.035,
     }
     # PLAN handed FETCH the persisted cleaned text so it skips the network.
@@ -189,6 +191,18 @@ def test_manifest_resume_skips_completed_stages_by_name(monkeypatch: pytest.Monk
     assert log == ["x2"]  # x1 already done, x3/x4 not in this job's manifest
 
 
+def test_manifest_skipped_stage_is_not_called(monkeypatch: pytest.MonkeyPatch) -> None:
+    log: list[str] = []
+    for name, stage in _recording_stages(log).items():
+        monkeypatch.setitem(STAGE_REGISTRY, name, stage)
+    plan = _plan(["x1", "x2", "x3"])
+    plan.skipped = {"x2": "images_unchanged"}
+    state = RunState(job_id=uuid4(), job_type=JobType.INGEST, url=URL, plan=plan)
+
+    asyncio.run(run_job(state, StageCtx()))
+    assert log == ["x1", "x3"]
+
+
 def test_legacy_fallback_when_plan_is_none() -> None:
     # A pre-P3 snapshot (plan=None) resumes through the caller's fixed list.
     log: list[str] = []
@@ -208,7 +222,7 @@ def test_legacy_fallback_when_plan_is_none() -> None:
 
 
 def test_est_cost_matches_live_stage_estimates() -> None:
-    # 0.005 (VALIDATE) + 0.02 (EXTRACT) + 0.01 (VERIFY); the rest are 0.
+    # VISION is fail-closed (reference set absent), so only text LLM stages count.
     state = asyncio.run(plan_stage(_state(), StageCtx()))
     assert state.plan is not None
     assert state.plan.est_cost_usd == 0.035

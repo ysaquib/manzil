@@ -28,6 +28,7 @@ from manzil_shared.models import FetchOutcome
 
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.state import PlanManifest, PlanSource, RunState, SourceState
+from manzil_worker.vision_refs import vision_references_ready
 
 log = structlog.get_logger()
 
@@ -42,8 +43,8 @@ def _est_cost(stages: list[str], skipped: dict[str, str]) -> float:
 async def plan_stage(state: RunState, ctx: StageCtx) -> RunState:
     """Build the §10.4 manifest for an ingest job. Runner-provided `INGEST_STAGES`
     is the single source of truth for the live stage list; PLAN records those
-    names verbatim (no RECONCILE/VISION/ENRICH exist yet — the manifest is honest
-    about what runs)."""
+    names verbatim. IMAGE_FETCH is live, VISION is explicitly skipped until its
+    reference/prompt gate passes, and not-yet-landed stages are absent."""
     from manzil_worker.runner import INGEST_STAGE_NAMES
 
     fresh = await ctx.fresh_source_lookup(state.property_id, state.url)
@@ -64,6 +65,7 @@ async def plan_stage(state: RunState, ctx: StageCtx) -> RunState:
                 outcome=FetchOutcome.SUCCESS,
                 cleaned_text=fresh.cleaned_text,
                 cleaned_hash=fresh.cleaned_text_hash or "",
+                image_urls=fresh.image_urls,
             )
         ]
     else:
@@ -72,7 +74,11 @@ async def plan_stage(state: RunState, ctx: StageCtx) -> RunState:
         source_entry = PlanSource(url=state.url, action="fetch", tier=1)
 
     stages = list(INGEST_STAGE_NAMES)
-    skipped: dict[str, str] = {}  # stage-level skips (VISION/ENRICH) arrive in P3-7/P3-8
+    # P3-7 is fail-closed until the complete, versioned human reference set is
+    # present. IMAGE_FETCH still runs so assets/hashes can be prepared safely.
+    skipped: dict[str, str] = (
+        {} if vision_references_ready() else {"VISION": "missing_reference_set"}
+    )
 
     state.plan = PlanManifest(
         job_type=state.job_type.value,

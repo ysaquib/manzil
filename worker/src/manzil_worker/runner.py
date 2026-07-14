@@ -30,11 +30,13 @@ from manzil_worker.stages.base import Stage, StageCtx
 from manzil_worker.stages.dedupe import dedupe_stage
 from manzil_worker.stages.extract import extract_stage
 from manzil_worker.stages.fetch import fetch_stage
+from manzil_worker.stages.image_fetch import image_fetch_stage
 from manzil_worker.stages.plan import plan_stage
 from manzil_worker.stages.score import score_stage
 from manzil_worker.stages.validate import validate_stage
 from manzil_worker.stages.validate_url import validate_url_stage
 from manzil_worker.stages.verify import verify_stage
+from manzil_worker.stages.vision import vision_stage
 from manzil_worker.state import RunState
 
 log = structlog.get_logger()
@@ -55,8 +57,9 @@ PHASE0_STAGE_NAMES: list[str] = [name for name, _ in PHASE0_STAGES]
 # The live ingest stage list (P3-2, §2.1) — the single source of truth PLAN
 # records into the manifest and the runner walks by name. UPPERCASE per the
 # pinned §10.4 manifest shape; PLAN is stages[0] (it builds the manifest, then
-# the walk continues at cursor 1). RECONCILE/VISION/ENRICH join as their tasks
-# land — a new stage is one list entry, never a resume-breaking cursor shift.
+# the walk continues at cursor 1). IMAGE_FETCH/VISION are P3-7a boundaries
+# (VISION fail-closed); RECONCILE/ENRICH join as their tasks land — a new stage
+# is one list entry, never a resume-breaking cursor shift.
 INGEST_STAGES: list[tuple[str, Stage]] = [
     ("PLAN", plan_stage),
     ("VALIDATE_URL", validate_url_stage),
@@ -64,6 +67,8 @@ INGEST_STAGES: list[tuple[str, Stage]] = [
     ("VALIDATE", validate_stage),
     ("EXTRACT", extract_stage),
     ("DEDUPE", dedupe_stage),
+    ("IMAGE_FETCH", image_fetch_stage),
+    ("VISION", vision_stage),
     ("VERIFY", verify_stage),
     ("SCORE", score_stage),
 ]
@@ -135,6 +140,20 @@ async def run_job(
         for index in range(state.cursor, len(walk)):
             name, stage = walk[index]
             log.info("stage_start", job_id=str(state.job_id), stage=name, cursor=index)
+            # The pinned manifest carries its full ordered stage list plus an
+            # explicit skipped map (§10.4). IMAGE_FETCH may add VISION here after
+            # comparing bytes; honoring it at dispatch is the zero-spend gate.
+            if state.plan is not None and name in state.plan.skipped:
+                log.info(
+                    "stage_skipped",
+                    job_id=str(state.job_id),
+                    stage=name,
+                    why=state.plan.skipped[name],
+                )
+                await ctx.persistence.save(state)
+                state.cursor = index + 1
+                await ctx.persistence.save(state)
+                continue
             try:
                 state = await _run_stage(name, stage, state, ctx)
             except CheckpointRaised as checkpoint:

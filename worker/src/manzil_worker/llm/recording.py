@@ -46,6 +46,8 @@ class Recording:
     tool_calls: list[dict] | None = None  # [{"name": ..., "input": {...}}, …]
     text: str | None = None  # the assistant's final (non-tool) message
     stop_reason: str | None = None  # "tool_use" | "stop"
+    # P4 recordings retain the exact input identity without committing image bytes.
+    image_hashes: list[str] | None = None
 
 
 def recorded_dir() -> Path:

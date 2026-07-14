@@ -43,6 +43,7 @@ from manzil_shared.models import (
     RubricOption,
 )
 
+from manzil_worker.enrich.images import SupabaseImageStore
 from manzil_worker.fetching.registry import InMemoryRegistry, PostgresRegistry
 from manzil_worker.fetching.tiers import Fetcher, site_domain
 from manzil_worker.llm.config import model_for_stage
@@ -252,11 +253,12 @@ async def _persist_ingest_results(
         """
         insert into property_sources
             (property_id, url, site_domain, cleaned_text_hash, cleaned_text,
-             last_fetched_at, last_success_at)
-        values ($1, $2, $3, $4, $5, now(), now())
+             image_urls, last_fetched_at, last_success_at)
+        values ($1, $2, $3, $4, $5, $6::jsonb, now(), now())
         on conflict (url) do update set
             cleaned_text_hash = excluded.cleaned_text_hash,
             cleaned_text = excluded.cleaned_text,
+            image_urls = excluded.image_urls,
             last_fetched_at = now(),
             last_success_at = now()
         returning id
@@ -266,7 +268,49 @@ async def _persist_ingest_results(
         site_domain(source.url),
         source.cleaned_hash,
         source.cleaned_text,
+        json.dumps(source.image_urls),
     )
+
+    # IMAGE_FETCH outputs are content-addressed. The later scheduler cleanup
+    # removes unreferenced Storage objects after the retention window.
+    current_hashes = [image.content_hash for image in state.property_images]
+    if state.image_fetch_completed and current_hashes:
+        await conn.execute(
+            "delete from property_images where property_id = $1 "
+            "and not (content_hash = any($2::text[]))",
+            property_id,
+            current_hashes,
+        )
+    elif state.image_fetch_completed:
+        await conn.execute("delete from property_images where property_id = $1", property_id)
+    for image in state.property_images:
+        await conn.execute(
+            """
+            insert into property_images
+                (property_id, source_url, storage_path, content_hash, width,
+                 height, byte_size, kind, vision_assessment)
+            values ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+            on conflict (property_id, content_hash) where content_hash is not null do update set
+                source_url = excluded.source_url,
+                storage_path = excluded.storage_path,
+                width = excluded.width,
+                height = excluded.height,
+                byte_size = excluded.byte_size,
+                kind = coalesce(excluded.kind, property_images.kind),
+                vision_assessment = coalesce(
+                    excluded.vision_assessment, property_images.vision_assessment
+                )
+            """,
+            property_id,
+            image.source_url,
+            image.storage_path,
+            image.content_hash,
+            image.width,
+            image.height,
+            image.byte_size,
+            image.kind,
+            json.dumps(image.vision_assessment) if image.vision_assessment is not None else None,
+        )
 
     # Project EXTRACT's identity block onto the global properties row, replacing the
     # URL-slug placeholders written at submit. Non-null-wins: an extracted value
@@ -474,12 +518,32 @@ async def _merge_into_canonical(
         hunt_listing_id,
         canonical_id,
     )
-    for table in ("property_sources", "extractions", "floor_plans", "property_images"):
+    for table in ("property_sources", "extractions", "floor_plans"):
         await conn.execute(
             f"update {table} set property_id = $2 where property_id = $1",
             placeholder_id,
             canonical_id,
         )
+    # Content-addressed duplicates may already exist on both Properties. Keep the
+    # canonical row/assessment, discard the placeholder duplicate, then re-point
+    # the remaining images without violating the Property/hash unique index.
+    await conn.execute(
+        """
+        delete from property_images incoming
+        using property_images canonical
+        where incoming.property_id = $1
+          and canonical.property_id = $2
+          and incoming.content_hash is not null
+          and incoming.content_hash = canonical.content_hash
+        """,
+        placeholder_id,
+        canonical_id,
+    )
+    await conn.execute(
+        "update property_images set property_id = $2 where property_id = $1",
+        placeholder_id,
+        canonical_id,
+    )
     await conn.execute("delete from properties where id = $1", placeholder_id)
     log.info(
         "dedupe_merged",
@@ -612,6 +676,8 @@ def make_ingest_dispatcher(
             persistence=persistence,
             fresh_source_lookup=_make_fresh_source_lookup(pool),
             dedupe_candidates=_make_dedupe_candidates(pool, listing["property_id"]),
+            image_store=SupabaseImageStore.from_env(),
+            existing_image_hashes=_make_existing_image_hashes(pool),
             plan_trigger="user:retry" if resumed else "user:submit",
             **({} if call_structured is None else {"call_structured": call_structured}),
             **({} if geocode_address is None else {"geocode_address": geocode_address}),
@@ -632,7 +698,7 @@ def _make_fresh_source_lookup(pool: asyncpg.Pool) -> FreshSourceLookup:
             return None
         row = await pool.fetchrow(
             """
-            select cleaned_text_hash, cleaned_text, last_success_at
+            select cleaned_text_hash, cleaned_text, image_urls, last_success_at
             from property_sources
             where property_id = $1 and url = $2
             """,
@@ -644,8 +710,26 @@ def _make_fresh_source_lookup(pool: asyncpg.Pool) -> FreshSourceLookup:
         return SourceFreshness(
             cleaned_text_hash=row["cleaned_text_hash"],
             cleaned_text=row["cleaned_text"] or "",
+            image_urls=(
+                json.loads(row["image_urls"])
+                if isinstance(row["image_urls"], str)
+                else (row["image_urls"] or [])
+            ),
             last_success_at=row["last_success_at"],
         )
+
+    return lookup
+
+
+def _make_existing_image_hashes(pool: asyncpg.Pool):  # type: ignore[no-untyped-def]
+    """IMAGE_FETCH's dumb DB seam: the currently stored content-hash set."""
+
+    async def lookup(property_id: UUID) -> set[str]:
+        rows = await pool.fetch(
+            "select content_hash from property_images where property_id = $1",
+            property_id,
+        )
+        return {row["content_hash"] for row in rows if row["content_hash"]}
 
     return lookup
 
