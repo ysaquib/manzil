@@ -9,11 +9,11 @@ describe("RatingDots", () => {
     render(
       <MantineProvider>
         <RatingDots
-          ratings={[{ hunt_listing_id: "l", user_id: "u", rating: 4 }]}
+          ratings={[{ hunt_listing_id: "l", unit_group_key: "2-1", user_id: "u", rating: 4 }]}
           members={[{ hunt_id: "h", user_id: "u", role: "member", color: "#123456", display_name: "Yusuf" }]}
         />
       </MantineProvider>,
     );
-    expect(screen.getByLabelText("4 of 5")).toHaveStyle({ background: "#123456" });
+    expect(screen.getByLabelText("4 of 5")).toHaveStyle({ "--rating-color": "#123456" });
   });
 });

@@ -323,11 +323,23 @@ function DrawerShell({
             </Section>
 
             <Section title="Ratings">
-              <RatingControl listingId={listing.id} color={membercolor} />
+              {group ? (
+                <RatingControl
+                  listingId={listing.id}
+                  unitGroupKey={group.key}
+                  color={membercolor}
+                />
+              ) : (
+                <Text size="sm" c="dimmed">Ratings become available with a Unit Group.</Text>
+              )}
             </Section>
 
             <Section title="Comments">
-              <CommentsSection listingId={listing.id} members={members} />
+              <CommentsSection
+                listingId={listing.id}
+                members={members}
+                currentUnitGroup={group ? { key: group.key, label: unitLabel ?? group.key } : null}
+              />
             </Section>
 
             <Section title="Sources">
