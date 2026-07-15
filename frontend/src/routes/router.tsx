@@ -10,6 +10,7 @@ import { RequireProfile } from "../auth/RequireProfile";
 import { ResetPasswordPage } from "../auth/ResetPasswordPage";
 import { SignOutPage } from "../auth/SignOutPage";
 import { AppLayout } from "../components/AppLayout";
+import { ColorsPage } from "../dev/ColorsPage";
 import { HuntSwitcherPage } from "../features/hunts/HuntSwitcherPage";
 import { HuntSettingsPage } from "../features/hunts/HuntSettingsPage";
 import { InviteAcceptPage } from "../features/invites/InviteAcceptPage";
@@ -20,8 +21,14 @@ import { RubricPage } from "../features/rubric/RubricPage";
 
 const authenticatedRoute = (element: React.ReactNode) => <RequireAuth>{element}</RequireAuth>;
 const protectedRoute = (element: React.ReactNode) => authenticatedRoute(<RequireProfile>{element}</RequireProfile>);
+// Deliberately omitted when Vite builds for production. Removing the color lab
+// permanently is one component file plus this small route block.
+const developmentRoutes = import.meta.env.DEV
+  ? [{ path: "/colors", element: <ColorsPage /> }]
+  : [];
 
 export const router = createBrowserRouter([
+  ...developmentRoutes,
   { path: "/login", element: <LoginPage /> },
   { path: "/signout", element: <SignOutPage /> },
   { path: "/auth/callback", element: <AuthCallbackPage /> },
