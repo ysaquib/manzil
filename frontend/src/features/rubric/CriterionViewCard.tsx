@@ -6,7 +6,6 @@ import { IconShieldCheck, IconSparkles } from "@tabler/icons-react";
 import type { ReactNode } from "react";
 
 import type { RubricOption } from "../../lib/contracts";
-import { semantic } from "../../theme";
 import type { CatalogEntry, RubricCriterion } from "./api";
 import { formatMatchLabel } from "./matchLabels";
 import { deriveIsBonus } from "./rubricDraft";
@@ -30,7 +29,7 @@ function DeltaText({ delta }: { delta: number }) {
 function OptionValue({ option }: { option: RubricOption }) {
   if (option.dealbreaker_set_score !== null) {
     return (
-      <Text size="sm" c={semantic.danger} fw={500}>
+      <Text size="sm" c={"red"} fw={500}>
         sets score to {option.dealbreaker_set_score}
       </Text>
     );
@@ -79,7 +78,7 @@ export function CriterionViewCard({
               <Badge
                 size="xs"
                 variant="light"
-                color={semantic.danger}
+                color={"red"}
                 leftSection={<IconShieldCheck size={12} stroke={1.5} />}
               >
                 non-negotiable
@@ -120,7 +119,7 @@ export function CriterionViewCard({
                   </Text>
                 </Table.Td>
                 <ValueCell>
-                  <Text size="sm" c={semantic.danger} fw={500}>
+                  <Text size="sm" c={"red"} fw={500}>
                     score set to {criterion.non_negotiable.set_score}
                   </Text>
                 </ValueCell>
