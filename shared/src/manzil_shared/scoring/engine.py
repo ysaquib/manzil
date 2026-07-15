@@ -23,7 +23,7 @@ Semantics recorded in DESIGN §3 (Gate), §9.3, and the v2.1 §20 entry:
   satisfied by missing data.
 - Object values (e.g. `management_reviews` `{rating, summary}`) compare on
   their `"rating"` field.
-- `range` matches are inclusive on both ends. `lt`/`gt`/`range` compare
+- `range` matches are inclusive on both ends. Ordered comparisons compare
   numbers, or strings pairwise (ISO dates order correctly as strings).
 """
 
@@ -89,8 +89,12 @@ def matches(match: OptionMatch, value: Any) -> bool:
         return isinstance(v, bool) and v is bool(mv)
     if op is MatchOp.LT:
         return _ordered(v, mv) and v < mv
+    if op is MatchOp.LTE:
+        return _ordered(v, mv) and v <= mv
     if op is MatchOp.GT:
         return _ordered(v, mv) and v > mv
+    if op is MatchOp.GTE:
+        return _ordered(v, mv) and v >= mv
     if op is MatchOp.RANGE:
         if not isinstance(mv, Sequence) or isinstance(mv, str) or len(mv) != 2:
             return False

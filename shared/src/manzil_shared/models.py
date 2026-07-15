@@ -108,7 +108,9 @@ class ListingStatus(StrEnum):
 class MatchOp(StrEnum):
     EQ = "eq"
     LT = "lt"
+    LTE = "lte"
     GT = "gt"
+    GTE = "gte"
     RANGE = "range"
     IN = "in"
     BOOL = "bool"

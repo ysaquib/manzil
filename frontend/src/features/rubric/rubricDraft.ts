@@ -9,7 +9,11 @@ import type { ValueSchema } from "./widgets/types";
 // A criterion is a pure bonus when nothing about it can dock points: every
 // option delta ≥ 0 and the unknown delta ≥ 0.
 export function deriveIsBonus(options: RubricOption[], unknownDelta: number): boolean {
-  return options.length > 0 && unknownDelta >= 0 && options.every((o) => o.delta >= 0);
+  return (
+    options.length > 0 &&
+    unknownDelta >= 0 &&
+    options.every((o) => o.delta >= 0 && o.dealbreaker_set_score === null)
+  );
 }
 
 // Seed the wizard: one draft criterion per catalog entry, keeping anything the
@@ -69,7 +73,9 @@ export function validateMatch(match: OptionMatch, schema: ValueSchema): string |
     case "eq":
       return scalarError(match.value, schema);
     case "lt":
+    case "lte":
     case "gt":
+    case "gte":
       if (schema.type === "boolean") return `${match.op} match on a boolean criterion`;
       return scalarError(match.value, schema);
     case "range": {
