@@ -4,7 +4,7 @@
 // pinned plan (§9.4). Sqft/all-in columns hide below md/sm — no horizontal
 // page scroll (frontend/AGENTS.md).
 import { ActionIcon, Group, Menu, Table, Text, UnstyledButton } from "@mantine/core";
-import { IconChevronDown, IconChevronUp, IconDotsVertical, IconTrash } from "@tabler/icons-react";
+import { IconChevronDown, IconChevronRight, IconChevronUp, IconDotsVertical, IconMessageCircle, IconTrash } from "@tabler/icons-react";
 
 import { ScoreCell } from "./ScoreCell";
 import { RatingDots } from "../collaboration/RatingDots";
@@ -16,6 +16,7 @@ import {
   type SortKey,
   type SortState,
 } from "./overviewRows";
+import { InfoCell } from "./InfoCell";
 
 // Effective all-in monthly cost: read from the persisted breakdown (never
 // recomputed client-side). Phase 1 carries the interim composition (advertised
@@ -26,6 +27,8 @@ export function allInValue(row: OverviewRow): number | null {
   const value = criteria.find((c) => c.key === "all_in_monthly")?.value;
   return typeof value === "number" ? value : null;
 }
+
+import classes from "./OverviewTable.module.css";
 
 function SortHeader({
   label,
@@ -39,14 +42,14 @@ function SortHeader({
   onSort: (key: SortKey) => void;
 }) {
   const active = sort.key === sortKey;
-  const SortIcon = active ? (sort.dir === "asc" ? IconChevronUp : IconChevronDown) : null;
+  const SortIcon = active ? (sort.dir === "asc" ? IconChevronUp : IconChevronDown) : IconChevronRight;
   return (
     <UnstyledButton onClick={() => onSort(sortKey)} aria-label={`sort by ${label}`}>
-      <Group gap={4} wrap="nowrap">
-        <Text size="sm" fw={active ? 700 : 500} span>
+      <Group gap={4} wrap="nowrap" className={active ? classes.activeheader : undefined}>
+        <Text size="sm" span fw={700}>
           {label}
         </Text>
-        {SortIcon && <SortIcon size={14} stroke={1.5} />}
+        <SortIcon size={14} stroke={1.5} />
       </Group>
     </UnstyledButton>
   );
@@ -66,9 +69,15 @@ function CollaborationCell({ listingId, huntId }: { listingId: string; huntId: s
   const { data: ratings = [] } = useRatings(listingId);
   const { data: comments = [] } = useComments(listingId);
   return (
-    <Group gap="xs" wrap="nowrap">
+    <Group gap="sm" wrap="nowrap">
       <RatingDots ratings={ratings} members={members} />
-      {comments.length > 0 && <Text size="xs" c="dimmed">{comments.length} comments</Text>}
+      {comments.length > 0 && (
+        <Group gap={4} wrap="nowrap">
+          <Text size="sm" c="default">{comments.length}</Text>
+          <IconMessageCircle size={16} stroke={1.5}/>
+        </Group>
+      )}
+      {/* {comments.length > 0 && <Text size="xs" c="dimmed">{comments.length} comments</Text>} */}
     </Group>
   );
 }
@@ -79,12 +88,15 @@ export function OverviewTable({ huntId, rows, sort, onSort, onOpen, onDelete }: 
       <Table.Thead>
         <Table.Tr>
           <Table.Th>
+            <SortHeader label="Score" sortKey="score" sort={sort} onSort={onSort} />
+          </Table.Th>
+          <Table.Th>
+            Info
+          </Table.Th>
+          <Table.Th>
             <SortHeader label="Property" sortKey="name" sort={sort} onSort={onSort} />
           </Table.Th>
           <Table.Th>Unit</Table.Th>
-          <Table.Th>
-            <SortHeader label="Score" sortKey="score" sort={sort} onSort={onSort} />
-          </Table.Th>
           <Table.Th>
             <SortHeader label="Rent" sortKey="rent" sort={sort} onSort={onSort} />
           </Table.Th>
@@ -107,6 +119,32 @@ export function OverviewTable({ huntId, rows, sort, onSort, onOpen, onDelete }: 
               style={{ cursor: "pointer", opacity: availability === "unavailable" ? 0.55 : 1 }}
             >
               <Table.Td>
+                {group?.displayScore ? (
+                  <ScoreCell
+                    total={group.displayScore.total}
+                    pinned={group.pinnedPlanId !== null}
+                  />
+                ) : (
+                  <Text size="sm" c="dimmed">
+                    {availability === "unavailable" ? "No availability" : "pending"}
+                  </Text>
+                )}
+              </Table.Td>
+              <Table.Td>
+                {group?.displayScore ? (
+                  <InfoCell
+                    scoredPlanCount={group.scoredPlanCount}
+                    // stale={group.stale}
+                    // autoResolved={group.autoResolved}
+                    // singleSource={group.singleSource}
+                  />
+                ) : (
+                  <Text size="sm" c="dimmed">
+                    {availability === "unavailable" ? "No availability" : "pending"}
+                  </Text>
+                )}
+              </Table.Td>
+              <Table.Td>
                 <Text size="sm" fw={600}>
                   {row.listing.property.name}
                 </Text>
@@ -115,24 +153,11 @@ export function OverviewTable({ huntId, rows, sort, onSort, onOpen, onDelete }: 
                 </Text>
               </Table.Td>
               <Table.Td>
-                <Text size="sm">
+                <Text size="sm" lh={1}>
                   {group === null
                     ? "—"
                     : `${group.beds === 0 ? "Studio" : `${group.beds} bd`} / ${group.baths} ba`}
                 </Text>
-              </Table.Td>
-              <Table.Td>
-                {group?.displayScore ? (
-                  <ScoreCell
-                    total={group.displayScore.total}
-                    scoredPlanCount={group.scoredPlanCount}
-                    pinned={group.pinnedPlanId !== null}
-                  />
-                ) : (
-                  <Text size="sm" c="dimmed">
-                    {availability === "unavailable" ? "No availability" : "pending"}
-                  </Text>
-                )}
               </Table.Td>
               <Table.Td>
                 <Text size="sm">
@@ -147,11 +172,13 @@ export function OverviewTable({ huntId, rows, sort, onSort, onOpen, onDelete }: 
               <Table.Td visibleFrom="sm">
                 <Text size="sm">{allIn === null ? "—" : `$${allIn.toLocaleString()}`}</Text>
               </Table.Td>
-              <Table.Td><CollaborationCell listingId={row.listing.id} huntId={huntId} /></Table.Td>
+              <Table.Td>
+                <CollaborationCell listingId={row.listing.id} huntId={huntId} />
+              </Table.Td>
               <Table.Td onClick={(e) => e.stopPropagation()} width={40}>
                 <Menu position="bottom-end" withinPortal>
                   <Menu.Target>
-                    <ActionIcon color="gray" aria-label="listing actions">
+                    <ActionIcon color="gray" c="dimmed" aria-label="listing actions">
                       <IconDotsVertical size={16} stroke={1.5} />
                     </ActionIcon>
                   </Menu.Target>
@@ -161,7 +188,7 @@ export function OverviewTable({ huntId, rows, sort, onSort, onOpen, onDelete }: 
                       leftSection={<IconTrash size={14} stroke={1.5} />}
                       onClick={() => onDelete(row)}
                     >
-                      Delete listing…
+                      Delete listing
                     </Menu.Item>
                   </Menu.Dropdown>
                 </Menu>
