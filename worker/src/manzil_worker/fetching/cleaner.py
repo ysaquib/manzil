@@ -9,6 +9,16 @@ marker section when the extractor lost them. Listing sites also ship their
 data as JSON in script tags (JSON-LD, __NEXT_DATA__, preloaded state) that no
 text extractor sees — the miner (structured.py, §20 v2.6) appends a pruned
 digest of it under [EMBEDDED DATA].
+
+Price-retention guard: generic extractors can silently discard the listing
+data itself — rentcafe wraps the page in class "main-content-before-contact",
+which trafilatura's body-detection xpaths match ("main-content"), flipping it
+into strict paragraph extraction that prunes floor-plan cards built from
+<b>/<span> inside plain <div>s (readability fares no better: "contact" hits
+its negative-class regex). An extraction that kept fewer than half of the
+distinct price tokens visibly rendered on the page is therefore rejected, and
+the cleaner degrades: trafilatura → readability → script-stripped visible
+text. Fewer tokens saved on such pages, but the facts survive.
 """
 
 from __future__ import annotations
@@ -32,6 +42,8 @@ _FEE_KEYWORDS = re.compile(
 )
 _WHITESPACE = re.compile(r"[ \t]+")
 _BLANK_LINES = re.compile(r"\n{3,}")
+_PRICE_TOKEN = re.compile(r"\$\s?\d{1,3}(?:,\d{3})+(?:\.\d{2})?|\$\s?\d{2,}(?:\.\d{2})?")
+_NON_TEXT_TAGS = ("script", "style", "noscript", "template", "svg", "iframe")
 
 
 def _normalize(text: str) -> str:
@@ -52,13 +64,31 @@ def _extract_primary(html: str) -> str | None:
 def _extract_fallback(html: str) -> str:
     try:
         summary_html = Document(html).summary(html_partial=True)
-        text = lxml.html.fromstring(summary_html).text_content()
+        return lxml.html.fromstring(summary_html).text_content()
     except Exception:
-        try:
-            text = lxml.html.fromstring(html).text_content()
-        except Exception:
-            return ""
-    return text
+        return ""
+
+
+def _visible_text(html: str) -> str:
+    """Rendered text of the whole page: everything except non-text subtrees."""
+    try:
+        tree = lxml.html.fromstring(html)
+    except Exception:
+        return ""
+    for element in [el for tag in _NON_TEXT_TAGS for el in tree.iter(tag)]:
+        element.drop_tree()
+    return tree.text_content()
+
+
+def _price_tokens(text: str) -> set[str]:
+    return {token.replace(" ", "") for token in _PRICE_TOKEN.findall(text)}
+
+
+def _keeps_prices(text: str, rendered_prices: set[str]) -> bool:
+    """Did an extraction retain at least half of the page's rendered prices?"""
+    if not rendered_prices:
+        return True
+    return len(_price_tokens(text) & rendered_prices) * 2 >= len(rendered_prices)
 
 
 def _fee_table_lines(html: str) -> list[str]:
@@ -84,9 +114,18 @@ def _fee_table_lines(html: str) -> list[str]:
 
 def clean_html(html: str) -> CleanedPage:
     """Extract readable text, preserving fee tables the extractor dropped."""
+    visible = _visible_text(html)
+    rendered_prices = _price_tokens(visible)
+
     primary = _extract_primary(html)
-    used_fallback = primary is None
-    text = _normalize(primary if primary is not None else _extract_fallback(html))
+    used_fallback = primary is None or not _keeps_prices(primary, rendered_prices)
+    if not used_fallback:
+        text = primary
+    else:
+        text = _extract_fallback(html)
+        if not text.strip() or not _keeps_prices(text, rendered_prices):
+            text = visible
+    text = _normalize(text)
 
     fee_lines = _fee_table_lines(html)
     # Only append rows the extractor actually lost — no duplication.
