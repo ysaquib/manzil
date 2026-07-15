@@ -17,6 +17,7 @@ export function RatingDots({ ratings, members }: { ratings: RatingType[]; member
 
             {/* <Text size="xs" lh={1}>{rating.rating}</Text> */}
             <Rating 
+              aria-label={`${rating.rating} of 5`}
               value={rating.rating} 
               count={5} 
               fractions={4} 

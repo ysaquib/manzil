@@ -3,11 +3,13 @@ import { Rating } from "@mantine/core";
 import { useAuth } from "../../auth/useAuth";
 import { useRatings, useSetRating } from "./api";
 
-export function RatingControl({ listingId, color="blue" }: { listingId: string, color?: string }) {
+export function RatingControl({ listingId, unitGroupKey, color="blue" }: { listingId: string, unitGroupKey: string, color?: string }) {
   const { session } = useAuth();
   const { data: ratings = [] } = useRatings(listingId);
-  const setRating = useSetRating(listingId);
-  const current = ratings.find((rating) => rating.user_id === session?.user.id)?.rating ?? null;
+  const setRating = useSetRating(listingId, unitGroupKey);
+  const current = ratings.find(
+    (rating) => rating.unit_group_key === unitGroupKey && rating.user_id === session?.user.id,
+  )?.rating ?? null;
 
   return (
     <Group gap={4}>
