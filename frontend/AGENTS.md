@@ -24,7 +24,7 @@ intent.
   actions behind a confirmation `Modal`. Nothing important lives only behind a hover; nothing rare
   occupies prime real estate.
 - **Mobile-friendly and responsive, always.** Every surface must work at phone width (~375px):
-  the detail panel is a bottom-sheet `Drawer` on mobile (DESIGN §13.2); tables hide secondary
+  the detail panel is a right `Drawer` on mobile and desktop (DESIGN §13.2); tables hide secondary
   columns at narrow breakpoints or degrade to stacked cards; forms and steppers stack vertically.
   Use Mantine breakpoints + `useMediaQuery` — no bespoke media queries. No horizontal page scroll,
   ever.

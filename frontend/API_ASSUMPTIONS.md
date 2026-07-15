@@ -20,6 +20,7 @@ declared at all · `implemented` = working · `no table` = table not yet in a mi
 | `POST /v1/hunts/{id}/listings` | `useCreateListing` (`features/listings/api.ts`) | generated `ListingCreate`/`ListingResponse` | P1-7 | implemented |
 | `DELETE /v1/listings/{id}` | `useDeleteListing` (`features/listings/api.ts`) | generated (204) | P1-7 | implemented |
 | `PATCH /v1/listings/{id}/pins` | `usePatchPins` (`features/listings/api.ts`) | generated `PinsPatch` | P1-11 mini-endpoint | implemented |
+| `PATCH /v1/listings/{id}/unit-groups/{unit_group_key}/state` | `usePatchUnitGroupState` (`features/listings/api.ts`) | generated `UnitGroupStatePatch`/`UnitGroupStateResponse` | DESIGN v3.5 | implemented |
 | `GET /v1/hunts/{id}/jobs?state=…` | `useActiveJobs` (`features/jobs/api.ts`) — the one polled read, 3s | generated `JobResponse` + optional `checkpoint` | P1-7 / P1-13 | implemented |
 
 `state` accepts repeated query params (`state=queued&state=running`) **and** a single
@@ -29,6 +30,10 @@ comma-separated value (`state=queued,running,waiting_user`) — the form the Tas
 | `POST /v1/jobs/{id}/checkpoint` | `useAnswerCheckpoint` (`features/jobs/api.ts`) | generated `CheckpointAnswer` | P1-7 | implemented |
 | `POST /v1/listings/{id}/overrides` | `useCreateOverride` (`features/listings/api.ts`) | generated `OverrideCreate`/`OverrideResponse` | P1-8 | implemented |
 | `PUT /v1/listings/{id}/fees/{slot}` | `useUpsertFee` (`features/listings/api.ts`) | generated `FeeEntryUpsert`/`FeeEntryResponse` | P1-8 | implemented |
+| `POST /v1/listings/{id}/comments` | `useCreateComment` (`features/collaboration/api.ts`) | generated `CommentCreate`/`CommentResponse`; optional `unit_group_key` | DESIGN v3.4 | implemented |
+| `PATCH /v1/comments/{id}` | `useUpdateComment` (`features/collaboration/api.ts`) | generated `CommentUpdate`/`CommentResponse`; author-only | DESIGN v3.4 | implemented |
+| `DELETE /v1/comments/{id}` | `useDeleteComment` (`features/collaboration/api.ts`) | generated (204); author-only soft delete | P2-6 | implemented |
+| `PUT/DELETE /v1/listings/{id}/unit-groups/{unit_group_key}/rating` | `useSetRating` (`features/collaboration/api.ts`) | generated `RatingUpsert`/`RatingResponse` | DESIGN v3.4 | implemented |
 | `POST/GET /v1/hunts/{id}/invitation-links` | `useCreateInvitationLink` / `useInvitationLinks` (`features/invites/api.ts`) | generated Invitation Link shapes (`name` optional on create/response) | P2-11 | implemented |
 | `PATCH/DELETE /v1/invitation-links/{id}` | `usePatchInvitationLink` / `useDeleteInvitationLink` (`features/invites/api.ts`) | generated Invitation Link shapes (`name` optional on patch) | P2-11 | implemented |
 | `POST /v1/invitation-links/{token}/join` | `useJoinInvitationLink` (`features/invites/api.ts`) | generated `InvitationLinkJoined` | P2-11 | implemented |
@@ -49,6 +54,11 @@ origin that appears logged out.
 | `extractions` latest-per-criterion for a property | `useExtractions` (`features/listings/api.ts`) | hand-typed | table exists (0001) |
 | `rubric_criteria` | `useRubric` (`features/rubric/api.ts`) | hand-typed `RubricCriterion` | exists (0002) |
 | `criteria_catalog` | `useCatalog` (`features/rubric/api.ts`) | hand-typed `CatalogEntry` | table exists (0001) + seed |
+| `hunt_members` (+ `user_profiles` for defaults) | `useMembers` (`features/collaboration/api.ts`) | hand-typed `HuntMember` | exists (0002+; profile coalesce P2) |
+| *(derived)* same as `useMembers` | `useCurrentMember` (`features/collaboration/api.ts`) | `HuntMember \| undefined` via session user id — no extra fetch | client-side only |
+| `comments` for one Listing | `useComments` (`features/collaboration/api.ts`) | hand-typed `Comment`; nullable Unit Group scope + `edited_at` | exists (0002 + 20260724000000) |
+| `ratings` for one Listing | `useRatings` (`features/collaboration/api.ts`) | hand-typed `Rating`; filtered per Unit Group by row consumers | exists (0002 + 20260724000000) |
+| `listing_unit_group_states` for one Hunt | `useUnitGroupStates` (`features/listings/api.ts`) | hand-typed `UnitGroupState` | exists (20260725000000) |
 
 ## Resolved contract conflicts (2026-07-08 decisions, fixed 2026-07-09)
 
@@ -68,4 +78,4 @@ origin that appears logged out.
 ## Not assumed (deliberately)
 
 No `GET /v1/catalog` — the wizard reads `criteria_catalog` directly (global table, migration
-0001). No Realtime (P2-4), no History-tab job events read (P2-6), no comments/ratings (P2).
+0001).
