@@ -1,5 +1,10 @@
-// Detail panel (P1-11, §13.2): side Drawer on desktop, bottom sheet on mobile.
+// Detail panel (P1-11, §13.2): right Drawer on desktop and mobile.
 // Edits (pins, overrides, fees) batch in draft state until Save.
+//
+// Drawer.Root stays mounted for the Overview page lifetime. Mantine's Transition
+// only animates on opened updates (useDidUpdate), so creating the Drawer on
+// first open with opened=true skips the enter slide. Close interception uses a
+// ref only — never child→parent setState (that caused a render loop).
 import {
   Badge,
   Box,
@@ -14,13 +19,12 @@ import {
   Title,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Section } from "../../components/Section";
 import { CommentsSection } from "../collaboration/CommentsSection";
 import { RatingControl } from "../collaboration/RatingControl";
-import { useMembers } from "../collaboration/api";
-import { semantic } from "../../theme";
+import { useCurrentMember, useMembers } from "../collaboration/api";
 import { useCatalog } from "../rubric/api";
 import { CriterionBreakdown } from "./CriterionBreakdown";
 import { FeeChecklist } from "./FeeChecklist";
@@ -31,11 +35,30 @@ import { SourcesList } from "./SourcesList";
 import { useExtractions, useFees, useListings, useOverrides } from "./api";
 import { resolveRow, resolveRowWithDraft } from "./unitGroups";
 import type { Extraction, Listing } from "./types";
+import { memberColor } from "../collaboration/memberColors";
 
 export interface DrawerSelection {
   listingId: string;
   groupKey: string | null;
 }
+
+const drawerStyles = {
+  content: {
+    display: "flex",
+    flexDirection: "column",
+    overflow: "hidden",
+    height: "calc(100dvh - var(--drawer-offset, 0px) * 2)",
+    maxHeight: "calc(100dvh - var(--drawer-offset, 0px) * 2)",
+  },
+  body: {
+    display: "flex",
+    flexDirection: "column",
+    flex: 1,
+    overflow: "hidden",
+    minHeight: 0,
+    padding: 0,
+  },
+} as const;
 
 // §9.5 utilities-included: the latest `utilities_included` extraction (hunt_id
 // NULL) rides in on the same useExtractions map the breakdown already reads.
@@ -54,23 +77,74 @@ export function ListingDetailDrawer({
   selection,
   opened,
   onClose,
+  onExited,
+}: {
+  huntId: string;
+  selection: DrawerSelection | null;
+  opened: boolean;
+  onClose: () => void;
+  onExited?: () => void;
+}) {
+  const isMobile = useMediaQuery("(max-width: 48em)");
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const closeHandlerRef = useRef<() => void>(() => onCloseRef.current());
+  const setCloseHandler = useCallback((fn: () => void) => {
+    closeHandlerRef.current = fn;
+  }, []);
+
+  return (
+    <Drawer.Root
+      opened={opened}
+      onClose={() => closeHandlerRef.current()}
+      position="right"
+      size={isMobile ? "100%" : "lg"}
+      transitionProps={{ duration: 220, timingFunction: "ease", onExited }}
+      styles={drawerStyles}
+    >
+      <Drawer.Overlay />
+      <Drawer.Content>
+        {selection ? (
+          <SelectionGate
+            huntId={huntId}
+            selection={selection}
+            opened={opened}
+            isMobile={!!isMobile}
+            onClose={onClose}
+            setCloseHandler={setCloseHandler}
+          />
+        ) : null}
+      </Drawer.Content>
+    </Drawer.Root>
+  );
+}
+
+function SelectionGate({
+  huntId,
+  selection,
+  opened,
+  isMobile,
+  onClose,
+  setCloseHandler,
 }: {
   huntId: string;
   selection: DrawerSelection;
   opened: boolean;
+  isMobile: boolean;
   onClose: () => void;
+  setCloseHandler: (fn: () => void) => void;
 }) {
   const { data: listings, isLoading: listingsLoading } = useListings(huntId);
-  const { listing } = resolveRow(
-    listings ?? [],
-    selection.listingId,
-    selection.groupKey,
-  );
+  const { listing } = resolveRow(listings ?? [], selection.listingId, selection.groupKey);
   const { data: fees } = useFees(listing?.id ?? "");
 
   useEffect(() => {
     if (opened && !listingsLoading && listings && !listing) onClose();
   }, [opened, listingsLoading, listings, listing, onClose]);
+
+  useEffect(() => {
+    return () => setCloseHandler(() => onClose());
+  }, [onClose, setCloseHandler]);
 
   if (!listing) return null;
 
@@ -85,8 +159,9 @@ export function ListingDetailDrawer({
         huntId={huntId}
         selection={selection}
         listings={listings ?? []}
-        opened={opened}
+        isMobile={isMobile}
         onClose={onClose}
+        setCloseHandler={setCloseHandler}
       />
     </ListingDetailDraftProvider>
   );
@@ -96,16 +171,17 @@ function DrawerShell({
   huntId,
   selection,
   listings,
-  opened,
+  isMobile,
   onClose,
+  setCloseHandler,
 }: {
   huntId: string;
   selection: DrawerSelection;
   listings: Listing[];
-  opened: boolean;
+  isMobile: boolean;
   onClose: () => void;
+  setCloseHandler: (fn: () => void) => void;
 }) {
-  const isMobile = useMediaQuery("(max-width: 48em)");
   const { draftPins, isDirty, saving, saveAll, resetDraft } = useListingDetailDraft();
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
 
@@ -124,6 +200,18 @@ function DrawerShell({
   const { data: overrides } = useOverrides(listing?.id ?? "");
   const { data: fees } = useFees(listing?.id ?? "");
   const { data: members = [] } = useMembers(huntId);
+  const { data: currentMember } = useCurrentMember(huntId);
+  const membercolor = memberColor(currentMember?.color ?? "");
+
+  useEffect(() => {
+    setCloseHandler(() => {
+      if (!isDirty) {
+        onClose();
+        return;
+      }
+      setConfirmCloseOpen(true);
+    });
+  }, [isDirty, onClose, setCloseHandler]);
 
   if (!listing) return null;
 
@@ -132,14 +220,6 @@ function DrawerShell({
     ? `${group.beds === 0 ? "Studio" : `${group.beds} bd`} / ${group.baths} ba`
     : null;
   const isUnavailable = group === null && listing.unavailable_at !== null;
-
-  const requestClose = () => {
-    if (!isDirty) {
-      onClose();
-      return;
-    }
-    setConfirmCloseOpen(true);
-  };
 
   const handleDiscard = () => {
     resetDraft();
@@ -158,7 +238,7 @@ function DrawerShell({
       <Title order={4}>{listing.property.name}</Title>
       <Group gap="sm">
         {unitLabel && (
-          <Badge variant="outline" color={semantic.surface}>
+          <Badge variant="outline" color={"surface"}>
             {unitLabel}
           </Badge>
         )}
@@ -171,7 +251,7 @@ function DrawerShell({
     <Group gap="sm" wrap="nowrap">
       <Title order={4}>{listing.property.name}</Title>
       {unitLabel && (
-        <Badge variant="outline" color={semantic.surface}>
+        <Badge variant="outline" color={"surface"}>
           {unitLabel}
         </Badge>
       )}
@@ -183,30 +263,12 @@ function DrawerShell({
 
   return (
     <>
-      <Drawer
-        opened={opened}
-        onClose={requestClose}
-        position={isMobile ? "bottom" : "right"}
-        size={isMobile ? "85%" : "lg"}
-        title={titleContent}
-        styles={{
-          content: {
-            display: "flex",
-            flexDirection: "column",
-            overflow: "hidden",
-            height: "calc(100dvh - var(--drawer-offset, 0px) * 2)",
-            maxHeight: "calc(100dvh - var(--drawer-offset, 0px) * 2)",
-          },
-          body: {
-            display: "flex",
-            flexDirection: "column",
-            flex: 1,
-            overflow: "hidden",
-            minHeight: 0,
-            padding: 0,
-          },
-        }}
-      >
+      <Drawer.Header>
+        <Drawer.Title>{titleContent}</Drawer.Title>
+        <Drawer.CloseButton />
+      </Drawer.Header>
+
+      <Drawer.Body>
         <Box component="div" style={{ flex: 1, overflow: "auto", minHeight: 0 }} px="md" pt="md">
           <Stack gap="xl" pb="xl">
             <Text size="sm" c="dimmed">
@@ -227,7 +289,7 @@ function DrawerShell({
                     catalog={catalog ?? []}
                     extractions={extractions ?? new Map()}
                     overrides={overrides ?? []}
-                    isMobile={!!isMobile}
+                    isMobile={isMobile}
                   />
                 )
               ) : isUnavailable ? (
@@ -260,16 +322,16 @@ function DrawerShell({
               </Stack>
             </Section>
 
-            <Section title="Sources">
-              <SourcesList sources={listing.property.sources} sourcePolicy={listing.source_policy} />
-            </Section>
-
             <Section title="Ratings">
-              <RatingControl listingId={listing.id} />
+              <RatingControl listingId={listing.id} color={membercolor} />
             </Section>
 
             <Section title="Comments">
               <CommentsSection listingId={listing.id} members={members} />
+            </Section>
+
+            <Section title="Sources">
+              <SourcesList sources={listing.property.sources} sourcePolicy={listing.source_policy} />
             </Section>
           </Stack>
         </Box>
@@ -294,7 +356,7 @@ function DrawerShell({
             </Group>
           </Box>
         )}
-      </Drawer>
+      </Drawer.Body>
 
       <Modal
         opened={confirmCloseOpen}

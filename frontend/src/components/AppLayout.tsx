@@ -74,6 +74,7 @@ export function AppLayout() {
                 variant="light"
                 leftSection={<Icon size={18} stroke={1.5} />}
                 onClick={close}
+                h={isMobile ? 64 : undefined}
                 style={{
                   borderInlineStart: active
                     ? "3px solid var(--mantine-primary-color-filled)"
