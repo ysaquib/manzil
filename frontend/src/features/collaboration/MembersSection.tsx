@@ -7,7 +7,6 @@ import { useState } from "react";
 
 import { Section } from "../../components/Section";
 import { ApiError } from "../../lib/apiClient";
-import { semantic } from "../../theme";
 import { useRemoveMember, useSetMemberRole, type HuntMember } from "./api";
 import { memberColor } from "./memberColors";
 
@@ -121,7 +120,7 @@ export function MembersSection({
                   <Button
                     size="xs"
                     variant="subtle"
-                    color={semantic.danger}
+                    color={"red"}
                     onClick={() => setPendingRemove(member)}
                   >
                     Remove
@@ -149,7 +148,7 @@ export function MembersSection({
             <Button variant="default" onClick={() => setPendingRemove(null)}>
               Cancel
             </Button>
-            <Button color={semantic.danger} onClick={confirmRemove} loading={removeMember.isPending}>
+            <Button color={"red"} onClick={confirmRemove} loading={removeMember.isPending}>
               Remove
             </Button>
           </Group>

@@ -16,13 +16,12 @@ import { IconPencil, IconUserEdit } from "@tabler/icons-react";
 import { useState } from "react";
 
 import { useListingDetailDraft } from "./ListingDetailDraft";
-import { semantic } from "../../theme";
 import { FEE_SLOTS, type FeeEntry } from "./types";
 
 const STATE_COLOR: Record<FeeEntry["value_state"], string> = {
   extracted: "green",
-  manual: semantic.manual,
-  estimated: semantic.estimated,
+  manual: "primary",
+  estimated: "yellow",
   unknown: "gray",
 };
 
@@ -65,7 +64,7 @@ function FeeRow({
             {displayAmount != null ? `$${displayAmount.toLocaleString()}/mo` : "unknown"}
           </Text>
           {isPending ? (
-            <Badge size="xs" color={semantic.manual} variant="light">
+            <Badge size="xs" color={"manual"} variant="light">
               pending
             </Badge>
           ) : (

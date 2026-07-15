@@ -8,12 +8,13 @@
 // (waiting on the user); status hues lean earthy (moss/olive/ochre) instead
 // of electric. Headings are Literata (serif), body is Source Sans 3 (sans);
 // both self-hosted via @fontsource-variable imports in main.tsx.
-import { createTheme, rem, type CSSVariablesResolver } from "@mantine/core";
-import { dusk, old_clay, gray, dark, green, lime, yellow, red } from "./colors";
+import { createTheme, rem, virtualColor, type CSSVariablesResolver } from "@mantine/core";
+import { colors } from "./colors";
 
 const fontStackSans =
   "'Source Sans 3 Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
 const fontStackSerif = "'Literata Variable', Georgia, 'Times New Roman', serif";
+const fontStackMono = "'JetBrains Mono', monospace";
 
 // Micro-interaction ease shared by hoverable chrome. Kept gentle; Mantine's
 // own transitions honor respectReducedMotion, and a 140ms color fade is inert
@@ -23,11 +24,12 @@ const hoverEase = {
 };
 
 export const theme = createTheme({
-  primaryColor: "red",
-  primaryShade: { light: 6, dark: 5 },
+  primaryColor: "dusky",
+  primaryShade: { light: 8, dark: 6 },
   autoContrast: true,
   respectReducedMotion: true,
   fontFamily: fontStackSans,
+  fontFamilyMonospace: fontStackMono,
   defaultRadius: "md",
   headings: {
     fontFamily: fontStackSerif,
@@ -39,30 +41,59 @@ export const theme = createTheme({
   colors: {
     // Dusk indigo — primary. Muted violet-leaning indigo; shade 6 carries
     // light mode, shade 5 dark mode (primaryShade above).
-    dusk: dusk,
-    clay: old_clay,
-    gray: gray,
-    dark: dark,
-    green: green,
-    lime: lime,
-    yellow: yellow,
-    red: red,
+    // dusk: dusk,
+    // clay: old_clay,
+    // gray: gray,
+    // dark: dark,
+    // green: green,
+    // lime: lime,
+    // yellow: yellow,
+    // red: red,
 
-    // gray: colors.warm_stone,
-    // dark: colors.dark_dusky,
-    // clay: colors.clay,
-    // red: colors.dusty_brick,
-    // orange: colors.burnt_clay,
-    // yellow: colors.muted_ochre,
-    // lime: colors.olive,
-    // green: colors.sage,
-    // teal: colors.weathered_teal,
-    // cyan: colors.fog_blue,
-    // blue: colors.slate_blue,
-    // indigo: colors.storm,
-    // violet: colors.dusty_lavender,
-    // grape: colors.muted_plum,
-    // pink: colors.dusty_rose,
+    dusky: colors.dusky,
+    gray: colors.warm_stone,
+    dark: colors.dark_dusky,
+    red: colors.dusty_brick,
+    orange: colors.burnt_clay,
+    yellow: colors.muted_ochre,
+    lime: colors.olive,
+    green: colors.sage,
+    teal: colors.weathered_teal,
+    cyan: colors.fog_blue,
+    blue: colors.slate_blue,
+    indigo: colors.storm,
+    violet: colors.dusty_lavender,
+    grape: colors.muted_plum,
+    pink: colors.dusty_rose,
+    
+    manual: colors.grape,
+
+    primary: virtualColor({
+      name: "primary",
+      light: "grape",
+      dark: "grape",
+    }),
+
+    accent: virtualColor({
+      name: "accent",
+      light: "orange",
+      dark: "orange",
+    }),
+
+    surface: virtualColor({
+      name: "surface",
+      light: "gray",
+      dark: "dark",
+    }),
+
+
+    scoreHighest: colors.teal,
+    scoreHigh: colors.sage,
+    scoreGood: colors.olive,
+    scoreMid: colors.muted_ochre,
+    scoreLow: colors.burnt_clay,
+    scorePoor: colors.dusty_brick,
+    scorePoorest: colors.dark_dusky,
   },
   white: "#FFFEFB",
   shadows: {
@@ -138,23 +169,23 @@ export const cssVariablesResolver: CSSVariablesResolver = () => ({
 
 // Semantic color roles (Mantine palette names). Components import these
 // instead of restating palette choices; swap the role here, not per usage.
-export const semantic = {
-  /** estimated / unverified figures (all-in cost est. portion, unknown fees) */
-  estimated: "yellow" as const,
-  /** human-entered values: overrides, manual fee entries */
-  manual: "grape" as const,
-  /** destructive actions and gate firings */
-  danger: "red" as const,
-  /** running/active state */
-  active: "dusk" as const,
-  /** waiting on the user (checkpoints) */
-  waiting: "clay" as const,
-  /** pinned/outline badges, secondary chrome */
-  surface: "gray" as const,
-  scoreBands: {
-    high: "green",
-    mid: "lime",
-    low: "yellow",
-    poor: "red",
-  } as const,
-};
+// export const semantic = {
+//   /** estimated / unverified figures (all-in cost est. portion, unknown fees) */
+//   estimated: "yellow" as const,
+//   /** human-entered values: overrides, manual fee entries */
+//   manual: "grape" as const,
+//   /** destructive actions and gate firings */
+//   danger: "red" as const,
+//   /** running/active state */
+//   active: "dusky" as const,
+//   /** waiting on the user (checkpoints) */
+//   waiting: "teal" as const,
+//   /** pinned/outline badges, secondary chrome */
+//   surface: "gray" as const,
+//   scoreBands: {
+//     high: "green",
+//     mid: "lime",
+//     low: "yellow",
+//     poor: "red",
+//   } as const,
+// };

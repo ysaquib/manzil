@@ -17,7 +17,6 @@ import { IconInfoCircle } from "@tabler/icons-react";
 import { useState } from "react";
 
 import type { ScoreBreakdown } from "../../lib/contracts";
-import { semantic } from "../../theme";
 import { displayValue as formatCriterionValue } from "./displayValue";
 import { useListingDetailDraft } from "./ListingDetailDraft";
 import { OverrideControl } from "./OverrideControl";
@@ -127,7 +126,7 @@ export function CriterionBreakdown({
 
   if (breakdown.gates.length > 0) {
     return (
-      <Alert color={semantic.danger} title="A gate fired — criteria were not scored">
+      <Alert color={"danger"} title="A gate fired — criteria were not scored">
         <Stack gap="xs">
           {breakdown.gates.map((gate) => (
             <Text size="sm" key={gate.key}>
@@ -222,12 +221,12 @@ function CriterionRow({
             {formatCriterionValue(value)}
           </Text>
           {isPending && (
-            <Badge size="xs" color={semantic.manual} variant="light">
+            <Badge size="xs" color={"manual"} variant="light">
               pending
             </Badge>
           )}
           {showOverrideBadge && (
-            <Badge size="xs" color={semantic.manual} variant="light">
+            <Badge size="xs" color={"manual"} variant="light">
               override
             </Badge>
           )}

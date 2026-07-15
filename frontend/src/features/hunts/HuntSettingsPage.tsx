@@ -28,6 +28,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { PageHeader } from "../../components/PageHeader";
 import { useAuth } from "../../auth/useAuth";
 import {
+  useCurrentMember,
   useMembers,
   useSetMemberColor,
   useSetMemberDisplayName,
@@ -40,7 +41,6 @@ import { InvitationLinksSection } from "../invites/InvitationLinksSection";
 import { Section } from "../../components/Section";
 import { ApiError } from "../../lib/apiClient";
 import { resolveSettings, SOURCE_POLICIES, type HuntSettings } from "../../lib/contracts";
-import { semantic } from "../../theme";
 import { useHunt, usePatchHunt, usePatchHuntSettings, type Hunt } from "./api";
 
 function notifyError(title: string) {
@@ -57,7 +57,7 @@ function SettingsForm({ hunt }: { hunt: Hunt }) {
   const currentUserId = session?.user.id ?? "";
   const isOwner = hunt.owner_id === currentUserId;
   const { data: members = [] } = useMembers(hunt.id);
-  const currentMember = members.find((member) => member.user_id === currentUserId);
+  const { data: currentMember } = useCurrentMember(hunt.id);
   const setColor = useSetMemberColor(hunt.id, currentUserId);
   const setDisplayName = useSetMemberDisplayName(hunt.id, currentUserId);
   const transferOwnership = useTransferOwnership(hunt.id);
@@ -310,7 +310,7 @@ function SettingsForm({ hunt }: { hunt: Hunt }) {
                 />
                 <Button
                   variant="light"
-                  color={semantic.danger}
+                  color={"red"}
                   disabled={!transferTarget}
                   onClick={() => setConfirmTransfer(true)}
                 >
@@ -322,7 +322,7 @@ function SettingsForm({ hunt }: { hunt: Hunt }) {
           <Text size="xs" c="dimmed">
             Hides this hunt from the switcher; nothing is deleted.
           </Text>
-          <Button variant="light" color={semantic.danger} onClick={() => setConfirmArchive(true)}>
+          <Button variant="light" color={"red"} onClick={() => setConfirmArchive(true)}>
             Archive hunt…
           </Button>
         </Stack>
@@ -338,7 +338,7 @@ function SettingsForm({ hunt }: { hunt: Hunt }) {
             <Button variant="default" onClick={() => setConfirmArchive(false)}>
               Cancel
             </Button>
-            <Button color={semantic.danger} onClick={archive} loading={patchHunt.isPending}>
+            <Button color={"red"} onClick={archive} loading={patchHunt.isPending}>
               Archive
             </Button>
           </Group>
@@ -364,7 +364,7 @@ function SettingsForm({ hunt }: { hunt: Hunt }) {
               Cancel
             </Button>
             <Button
-              color={semantic.danger}
+              color={"red"}
               onClick={transfer}
               loading={transferOwnership.isPending}
             >

@@ -2,16 +2,15 @@
 // retry, inline checkpoint prompt when the job waits on the user.
 import { Badge, Button, Card, Group, Paper, Stack, Text } from "@mantine/core";
 
-import { semantic } from "../../theme";
 import { CheckpointPromptCard } from "./CheckpointPromptCard";
 import type { Job, JobState } from "./api";
 
 export const STATE_COLOR: Record<JobState, string> = {
   queued: "gray",
-  running: semantic.active,
-  waiting_user: semantic.waiting,
+  running: "grape",
+  waiting_user: "yellow",
   done: "green",
-  failed: semantic.danger,
+  failed: "red",
   cancelled: "gray",
 };
 
@@ -61,7 +60,7 @@ export function JobCard({
           </Text>
         </Group>
         {job.error && (
-          <Text size="xs" c={semantic.danger}>
+          <Text size="xs" c={"red"}>
             {job.error}
           </Text>
         )}
@@ -77,7 +76,7 @@ export function JobCard({
             </Button>
           )}
           {isCancellable(job.state) && (
-            <Button size="xs" variant="subtle" color={semantic.danger} onClick={onCancel} disabled={busy}>
+            <Button size="xs" variant="subtle" color={"red"} onClick={onCancel} disabled={busy}>
               Cancel
             </Button>
           )}

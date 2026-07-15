@@ -4,7 +4,6 @@ import { Alert, Button, Card, Center, Flex, Loader, SimpleGrid, Stack, Text } fr
 import { IconList, IconRefresh } from "@tabler/icons-react";
 import { Link, useParams } from "react-router-dom";
 
-import { semantic } from "../../theme";
 import { useListings } from "../listings/api";
 import { JobCard } from "./JobCard";
 import { useActiveJobs, useAnswerCheckpoint, useCancelJob, useRetryJob } from "./api";
@@ -81,7 +80,7 @@ export function TasksActivePage() {
             <IconList size={28} stroke={1.5} color="var(--mantine-color-dimmed)" />
             <Text c="dimmed" size="sm" ta="center">
               All quiet — nothing running right now.{" "}
-              <Text component={Link} to={`/h/${huntId}`} span c={semantic.active} inherit>
+              <Text component={Link} to={`/h/${huntId}`} span c={"accent"} inherit>
                 Submit a listing from Overview
               </Text>{" "}
               and its progress lands here.
