@@ -214,6 +214,24 @@ def test_range_is_inclusive_and_date_strings_order() -> None:
     assert breakdown.criteria[0].delta == 0.5
 
 
+def test_one_sided_inclusive_comparisons_include_boundary() -> None:
+    monthly = crit(
+        "all_in_monthly",
+        [opt(MatchOp.LTE, 2000, 0.5), opt(MatchOp.GTE, 2200, -0.5)],
+    )
+    assert score([monthly], {"all_in_monthly": 2000}, rubric_version=1).criteria[0].delta == 0.5
+    assert score([monthly], {"all_in_monthly": 2200}, rubric_version=1).criteria[0].delta == -0.5
+    assert score([monthly], {"all_in_monthly": 2100}, rubric_version=1).criteria[0].delta == 0.0
+
+    available = crit("availability_date", [opt(MatchOp.LTE, "2026-09-01", 0.5)])
+    assert (
+        score([available], {"availability_date": "2026-09-01"}, rubric_version=1)
+        .criteria[0]
+        .delta
+        == 0.5
+    )
+
+
 def test_multi_plan_group_scores_independently_best_displayed() -> None:
     """§9.4: each floor plan scored independently; group displays best unless pinned."""
 

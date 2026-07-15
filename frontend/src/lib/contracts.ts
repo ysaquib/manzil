@@ -7,7 +7,7 @@
 
 // --- Rubric option (pinned, §8.2) ---
 
-export type MatchOp = "eq" | "lt" | "gt" | "range" | "in" | "bool";
+export type MatchOp = "eq" | "lt" | "lte" | "gt" | "gte" | "range" | "in" | "bool";
 
 export interface OptionMatch {
   op: MatchOp;

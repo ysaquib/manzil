@@ -13,7 +13,9 @@ import type { ValueSchema } from "./widgets/types";
 export const OP_LABEL: Record<MatchOp, string> = {
   eq: "equals",
   lt: "less than",
+  lte: "less than or equal to",
   gt: "greater than",
+  gte: "greater than or equal to",
   range: "between",
   in: "any of",
   bool: "is",
@@ -23,7 +25,9 @@ export const OP_LABEL: Record<MatchOp, string> = {
 export const OP_LABEL_SHORT: Record<MatchOp, string> = {
   eq: "equals",
   lt: "<",
+  lte: "≤",
   gt: ">",
+  gte: "≥",
   range: "between",
   in: "any of",
   bool: "is",
@@ -32,7 +36,7 @@ export const OP_LABEL_SHORT: Record<MatchOp, string> = {
 export function opsForSchema(schema: ValueSchema): MatchOp[] {
   if (schema.type === "boolean") return ["bool"];
   if (schema.enum) return ["eq", "in"];
-  return ["eq", "lt", "gt", "range"];
+  return ["eq", "lt", "lte", "gt", "gte", "range"];
 }
 
 function formatScalar(value: unknown): string {
@@ -51,8 +55,12 @@ export function formatMatchLabel(match: OptionMatch, _schema: ValueSchema): stri
       return formatScalar(match.value);
     case "lt":
       return `< ${formatScalar(match.value)}`;
+    case "lte":
+      return `≤ ${formatScalar(match.value)}`;
     case "gt":
       return `> ${formatScalar(match.value)}`;
+    case "gte":
+      return `≥ ${formatScalar(match.value)}`;
     case "range": {
       if (!Array.isArray(match.value) || match.value.length !== 2) return "between …";
       const [lo, hi] = match.value as unknown[];

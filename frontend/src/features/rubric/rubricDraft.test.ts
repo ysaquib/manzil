@@ -138,4 +138,17 @@ describe("draftToPayload", () => {
     expect(payload[1].is_bonus).toBe(true);
     expect(payload.map((c) => c.position)).toEqual([0, 1]);
   });
+
+  it("never labels a dealbreaker or negative unknown as a bonus", () => {
+    const draft = initDraft(catalog, []);
+    draft[1].options = [{
+      ...draft[1].options[0],
+      delta: 1,
+      dealbreaker_set_score: 0,
+    }];
+    expect(draftToPayload(draft)[1].is_bonus).toBe(false);
+    draft[1].options[0].dealbreaker_set_score = null;
+    draft[1].unknown_delta = -0.5;
+    expect(draftToPayload(draft)[1].is_bonus).toBe(false);
+  });
 });

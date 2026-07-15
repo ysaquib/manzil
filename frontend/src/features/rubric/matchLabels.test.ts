@@ -12,7 +12,9 @@ describe("formatMatchLabel", () => {
   it("formats scalar ops with view-label conventions", () => {
     expect(formatMatchLabel({ op: "eq", value: "2_br" }, enumSchema)).toBe("2 br");
     expect(formatMatchLabel({ op: "lt", value: 2000 }, numberSchema)).toBe("< 2,000");
+    expect(formatMatchLabel({ op: "lte", value: 2000 }, numberSchema)).toBe("≤ 2,000");
     expect(formatMatchLabel({ op: "gt", value: 800 }, numberSchema)).toBe("> 800");
+    expect(formatMatchLabel({ op: "gte", value: 800 }, numberSchema)).toBe("≥ 800");
     expect(formatMatchLabel({ op: "bool", value: true }, boolSchema)).toBe("yes");
     expect(formatMatchLabel({ op: "bool", value: false }, boolSchema)).toBe("no");
   });
@@ -38,6 +40,6 @@ describe("opsForSchema", () => {
   it("returns ops appropriate to schema type", () => {
     expect(opsForSchema(boolSchema)).toEqual(["bool"]);
     expect(opsForSchema(enumSchema)).toEqual(["eq", "in"]);
-    expect(opsForSchema(numberSchema)).toEqual(["eq", "lt", "gt", "range"]);
+    expect(opsForSchema(numberSchema)).toEqual(["eq", "lt", "lte", "gt", "gte", "range"]);
   });
 });
