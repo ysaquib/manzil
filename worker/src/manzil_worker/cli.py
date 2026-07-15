@@ -232,6 +232,19 @@ def clean_corpus() -> None:
         typer.echo(f"{slug}: {raw_bytes} B raw -> {cleaned_chars} chars cleaned")
     typer.echo(f"regenerated {len(report)} pages")
 
+@app.command("clean-corpus-page")
+def clean_corpus_page(
+    slug: str,
+) -> None:
+    """Clean a single corpus page."""
+    from manzil_worker.fetching.corpus import clean_page
+    from manzil_worker.fetching.corpus import CORPUS_DIR
+
+    cleaned = clean_page(slug, corpus_dir=CORPUS_DIR)
+    if not cleaned:
+        typer.echo(f"failed to clean {slug}", err=True)
+        raise typer.Exit(code=1)
+    typer.echo(f"cleaned {slug}")
 
 @app.command("save-page")
 def save_page_cmd(

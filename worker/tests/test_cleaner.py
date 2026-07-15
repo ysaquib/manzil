@@ -51,6 +51,53 @@ def test_fallback_used_when_trafilatura_extracts_nothing(monkeypatch) -> None:  
     assert "Maple Court" in cleaned.text
 
 
+# Reproduces the rentcafe.com failure: a wrapper class matching trafilatura's
+# main-content heuristics ("main-content") flips it into strict paragraph
+# extraction, which prunes listing cards whose facts live in <b>/<span> inside
+# plain <div>s. The cleaner must detect the price loss and fall back.
+_CARDS = "\n".join(
+    f"""<div class="fp-item">
+      <div class="fp-info">
+        <b class="fp-name">The Plan {i}</b>
+        <span>1 Bed</span><span> / 1 Bath</span><span> / 850 Sqft</span>
+        <span class="fp-price">$1,{600 + i} - $2,075</span>
+        <a href="#">Floor plan details</a>
+      </div>
+      <p>Check for available units</p>
+    </div>"""
+    for i in range(8)
+)
+CARD_LISTING_HTML = f"""<html><head><title>Uptown</title></head><body>
+<nav>Home | Floor Plans | Contact</nav>
+<div class="main-content-wrapper">
+  <h1>Uptown Apartments</h1>
+  <p>{"Spacious one and two bedroom apartments in Canton, Michigan. " * 30}</p>
+  <div class="floorplans">{_CARDS}</div>
+  <p>Contact the property for more information.</p>
+</div>
+</body></html>"""
+
+
+def test_listing_cards_survive_main_content_wrapper() -> None:
+    cleaned = clean_html(CARD_LISTING_HTML)
+    for fragment in ("The Plan 0", "The Plan 7", "$1,600", "$1,607", "850 Sqft"):
+        assert fragment in cleaned.text
+    assert cleaned.used_fallback is True
+
+
+def test_price_guard_does_not_fire_when_extraction_keeps_prices() -> None:
+    cleaned = clean_html(LISTING_HTML)
+    assert cleaned.used_fallback is False
+
+
+def test_visible_text_fallback_excludes_script_bodies() -> None:
+    html = CARD_LISTING_HTML.replace(
+        "</body>", "<script>var state = {secret: 'not page text'};</script></body>"
+    )
+    cleaned = clean_html(html)
+    assert "not page text" not in cleaned.text.split("[EMBEDDED DATA]")[0]
+
+
 def test_hash_is_deterministic_and_content_sensitive() -> None:
     a = clean_html(LISTING_HTML)
     b = clean_html(LISTING_HTML)
