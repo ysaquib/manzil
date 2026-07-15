@@ -76,6 +76,29 @@ def test_rls_hunt_visibility(case: MatrixCase, collab_hunt, seeded_users) -> Non
     assert bool(rows) is case.allowed
 
 
+def test_rls_rejects_nonexistent_unit_group_collaboration(collab_hunt, seeded_users) -> None:
+    listing_id = collab_hunt["member_listing_id"]
+    member = seeded_users["member"]
+    with pytest.raises(APIError):
+        member.supabase.table("ratings").insert(
+            {
+                "hunt_listing_id": listing_id,
+                "unit_group_key": "9-9",
+                "user_id": member.user_id,
+                "rating": 5,
+            }
+        ).execute()
+    with pytest.raises(APIError):
+        member.supabase.table("comments").insert(
+            {
+                "hunt_listing_id": listing_id,
+                "unit_group_key": "9-9",
+                "user_id": member.user_id,
+                "body": "Impossible group",
+            }
+        ).execute()
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("case", READ_MATRIX, ids=lambda c: c.actor)
 async def test_api_hunt_visibility(

@@ -7,15 +7,28 @@ from httpx import AsyncClient
 
 
 @pytest.mark.asyncio
-async def test_comment_create_and_author_soft_delete(
+async def test_comment_create_edit_and_author_soft_delete(
     collab_hunt, as_member: AsyncClient, as_curator: AsyncClient, db_pool
 ) -> None:
     listing_id = collab_hunt["member_listing_id"]
     created = await as_member.post(
-        f"/v1/listings/{listing_id}/comments", json={"body": "Worth touring"}
+        f"/v1/listings/{listing_id}/comments",
+        json={"body": "Worth touring", "unit_group_key": "2-1"},
     )
     assert created.status_code == 201
+    assert created.json()["unit_group_key"] == "2-1"
+    assert created.json()["edited_at"] is None
     comment_id = created.json()["id"]
+    denied_edit = await as_curator.patch(
+        f"/v1/comments/{comment_id}", json={"body": "Not my comment"}
+    )
+    assert denied_edit.status_code == 403
+    edited = await as_member.patch(
+        f"/v1/comments/{comment_id}", json={"body": "  Tour booked  "}
+    )
+    assert edited.status_code == 200
+    assert edited.json()["body"] == "Tour booked"
+    assert edited.json()["edited_at"] is not None
     denied = await as_curator.delete(f"/v1/comments/{comment_id}")
     assert denied.status_code == 403
     deleted = await as_member.delete(f"/v1/comments/{comment_id}")
@@ -28,17 +41,27 @@ async def test_comment_create_and_author_soft_delete(
 @pytest.mark.asyncio
 async def test_rating_upsert_and_clear(collab_hunt, as_member: AsyncClient, db_pool) -> None:
     listing_id = collab_hunt["owner_listing_id"]
-    rated = await as_member.put(f"/v1/listings/{listing_id}/rating", json={"rating": 4})
+    two_bed_path = f"/v1/listings/{listing_id}/unit-groups/2-1/rating"
+    one_bed_path = f"/v1/listings/{listing_id}/unit-groups/1-1/rating"
+    rated = await as_member.put(two_bed_path, json={"rating": 4})
     assert rated.status_code == 200
-    invalid = await as_member.put(f"/v1/listings/{listing_id}/rating", json={"rating": 6})
+    assert rated.json()["unit_group_key"] == "2-1"
+    second = await as_member.put(one_bed_path, json={"rating": 2})
+    assert second.status_code == 200
+    invalid = await as_member.put(two_bed_path, json={"rating": 6})
     assert invalid.status_code == 422
-    cleared = await as_member.delete(f"/v1/listings/{listing_id}/rating")
+    missing_group = await as_member.put(
+        f"/v1/listings/{listing_id}/unit-groups/3-2/rating", json={"rating": 5}
+    )
+    assert missing_group.status_code == 422
+    assert missing_group.json()["code"] == "invalid_unit_group"
+    cleared = await as_member.delete(two_bed_path)
     assert cleared.status_code == 204
     assert (
         await db_pool.fetchval(
             "select count(*) from ratings where hunt_listing_id = $1", UUID(listing_id)
         )
-        == 0
+        == 1
     )
 
 
