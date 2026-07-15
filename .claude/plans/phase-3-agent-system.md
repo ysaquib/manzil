@@ -7,7 +7,10 @@ green — see IMPLEMENTATION §9 2.0.36/2.0.37 and DESIGN §20 2026-07-12).
 verifier CONFIRMED — IMPLEMENTATION §9 2.0.41, DESIGN §20 2026-07-12; note the
 §20 correction: DEDUPE runs post-EXTRACT, not pre-FETCH as §10.1 once drew). A
 security follow-up from P3-3's review remains a **hard gate before P3-5**: see
-the SSRF row in §1 and the P3-5 prerequisite. Originally written 2026-07-11. Written against
+the SSRF row in §1 and the P3-5 prerequisite. **P3-5/P3-6 rescoped 2026-07-13**
+(DESIGN §20 v3.2 — tier-diverse slate, official site as stored link +
+escalation arbiter, syndication-family voting, bounded escalation ladder); §7
+and §8 below are rewritten to that decision. Originally written 2026-07-11. Written against
 DESIGN.md (working tree, 2026-07-11 — §5, §8.2, §9.5, §10, §11, §12, §14, §15,
 §16, §17, §18, §19, §20 v2.9) and IMPLEMENTATION.md §7's Phase 3
 implementation-prep draft (2026-07-11), which this plan elaborates and — per the
@@ -175,9 +178,10 @@ before fan-out/RECONCILE — because merging properties *after* multi-source
 extractions exist multiplies the split problem. RECONCILE finally writes
 `extractions.resolution_rule` (column exists, never written; single-source runs
 write `single_source` **from RECONCILE**, per the 2026-07-09 audit note that
-the projection must not forward-implement it). Disputed values follow §10.6
-R7: official value stored `disputed`, candidates retained in jsonb, and the
-gate-bearing case raises `resolve_dispute` — whose auto-resume default is
+the projection must not forward-implement it). Disputed values follow §10.6's
+final rung (ladder v2, §20 2026-07-13): conservative value stored `disputed`,
+candidates retained in jsonb, the listing derives the Problematic badge, and
+the gate-bearing case raises `resolve_dispute` — whose auto-resume default is
 DESIGN's **open question #1**: the first real dispute decides it, recorded in
 §20 (until then the sweep leaves `resolve_dispute` parked rather than guessing
 a default; `confirm_value`/`resolve_dedupe` defaults are declared per §10.10).
@@ -215,8 +219,8 @@ Full task detail in §4–§13; every task below carries its what/why.
 | P3-2 | A | Planner v1 (ingest manifests) + manifest-driven runner + cost persistence | resumable multi-stage runs need a stage list that travels with the job; debugging and NFR1 need the plan and the bill visible |
 | P3-3 | A | Maps tools + tool registry + forever-cache | geocode is the substrate for DEDUPE, ENRICH, and Places ratings; the tool registry is the §10.2 mechanics everything P3 shares |
 | P3-4 | B | DEDUPE + `resolve_dedupe` + `split_property` | shared global facts are only safe if two URLs for one building become one property — and a wrong merge must be reversible (R5) |
-| P3-5 | B | DISCOVER + Source Policy enforcement + single-source badge | cross-source outvoting is the core trust mechanism (R3/R4); policy caps keep the user in control of the cost/assurance trade |
-| P3-6 | B | Multi-source fan-out + RECONCILE ladder | conflicting sources need a deterministic, recorded resolution — this is where `resolution_rule` and `disputed` become real |
+| P3-5 | B | DISCOVER: official-link capture + tier-diverse slate + candidate pool + Source Policy enforcement + single-source badge | cross-source outvoting is the core trust mechanism (R3/R4); tier/family diversity is what makes the votes independent; policy caps keep the user in control of the cost/assurance trade |
+| P3-6 | B | Multi-source fan-out + RECONCILE ladder v2 + bounded escalation | conflicting sources need a deterministic, recorded resolution — this is where `resolution_rule`, `disputed`, and the escalation ladder become real |
 | P3-7 | C | Images + VISION with versioned reference set | kitchen/flooring quality are rubric criteria only vision can score; reference anchoring is the consistency control (R6) |
 | P3-8 | C | ENRICH: proximity, commute, Places ratings (priority slice), safety | location and reputation criteria are the remaining unscoreable catalog rows; Places is near-free and covers almost every complex |
 | P3-9 | C | Utility baselines job + full all-in composition | the all-in number is the tool's core promise; winter-weighted estimates make unlisted utilities honest instead of invisible |
@@ -310,12 +314,24 @@ both hunts' scores recompute.
 
 ## 7. P3-5 — DISCOVER + Source Policy enforcement (Wave B)
 
-**What/why:** the bounded tool loop that finds the official site + up to two
-sibling sources, with the same-property judgment, official-site preference,
-and §15's "third source only on disagreement" cap — plus plan-time enforcement
-of the Source Policy semantics pinned in §10.7. This is where the trust story
-(cross-source outvoting) becomes real, and where the user's per-link
-cost/assurance choice is honored exactly as designed.
+**What/why (rescoped 2026-07-13, DESIGN §20 v3.2):** the bounded tool loop
+that (a) finds the **official site and stores it as a link only** —
+`property_sources.is_official`, displayed in the drawer's sources section,
+never fetched by default (official pages are the least standardized extraction
+surface; they enter later as escalation's arbiter, §10.6), and (b) builds the
+**slate**: the submitted URL plus one same-property sibling per permitted
+census fetch tier (other than the submitted domain's), each from a distinct
+**syndication family**, plus a **ranked candidate pool** that P3-6's
+escalation round draws from without re-searching (this pool is what finally
+activates §10.4's >3-candidate planner judgment call). Tier/family diversity
+is what makes reconciliation votes independent — the census aggregators
+cluster into feed-sharing networks (Zillow/Trulia/HotPads; CoStar's
+Apartments.com/ForRent), and three echoes of one feed must not read as a
+majority. Plan-time Source Policy enforcement stays exactly as pinned in
+§10.7: `trust_link` removes DISCOVER entirely; a tier above the cap
+contributes no slot (`skip: policy_tier_cap`); the tier-3 slot also requires a
+configured provider key (census gate); a missing tier substitutes from the
+next cheaper one, recorded in the manifest.
 
 **Prerequisite (hard):** the fetcher-layer SSRF guard from the §1 gate table
 **landed 2026-07-12** (HTTP path closed with tier-1 IP-pinning). Before this task
@@ -324,45 +340,83 @@ browser smoke test of tier-2's route-guard/`page.url` backstop, and one
 live-HTTPS fetch confirming the pin's cert path (both unprovable in CI).
 
 **Files:** `stages/discover.py` (P3 pattern — search tool + `fetch_page`,
-turn-budgeted, `DISCOVER_MAX_TURNS` tunable); `stages/plan.py` (policy caps:
-`trust_link` removes DISCOVER from the manifest entirely — zero events; over-
-cap siblings recorded `skip: policy_tier_cap`; `tier_1_plus_official`
-carve-out); search provider per §2.2 (§20 entry at landing); frontend:
-fill the `SingleSourceBadge` slot (`ListingBadges.tsx`) + the drawer's sources
-section gains the policy (changeable — relaxing enqueues a refresh that
-discovers newly allowed sources, per §13.2). The submit `Select` already
-ships (§2.10). `property_sources.is_official` finally gets written (DISCOVER
-classifies it; the 2026-07-09 audit named this the arrival point).
+turn-budgeted, `DISCOVER_MAX_TURNS` tunable; emits slate + official link +
+ranked candidate pool into RunState); `stages/plan.py` (policy caps as above;
+pool ranking via the pinned `plan_assist` call when >3 candidates);
+`docs/hostile-domain-census.csv` gains a **`syndication_family`** column
+(slate-building never picks two same-family sources; RECONCILE counts one
+vote per family); search provider per §2.2 (§20 entry at landing); frontend:
+fill the `SingleSourceBadge` slot (`ListingBadges.tsx`) — two recorded
+reasons, `trust_link` ("not cross-checked — by choice") and
+`discover_exhausted` ("only one site lists this property") — and the drawer's
+sources section gains the policy (changeable — relaxing enqueues a refresh
+that discovers newly allowed sources, per §13.2) plus the always-shown
+official link. The submit `Select` already ships (§2.10).
+`property_sources.is_official` finally gets written (DISCOVER classifies it;
+the 2026-07-09 audit named this the arrival point) — with `last_fetched_at`
+null until escalation ever fetches it.
 
-**Done when:** official site found for ≥70% of local bench complexes;
-`trust_link` run has zero DISCOVER job events and wears the permanent badge;
-an over-cap sibling appears in the manifest as skipped; the census-named
-hostile domains are *not* fetched at sibling positions when the policy caps
-below their registry tier.
+**Done when:** official link stored + displayed for ≥70% of local bench
+complexes **with zero fetches of it**; the slate holds one sibling per
+permitted tier with no syndication family twice; `trust_link` run has zero
+DISCOVER job events and wears the permanent badge; a DISCOVER that finds no
+siblings completes single-source with reason `discover_exhausted`; an
+over-cap sibling appears in the manifest as skipped; the census-named hostile
+domains are *not* fetched at sibling positions when the policy caps below
+their registry tier.
 
-## 8. P3-6 — Multi-source fan-out + RECONCILE (Wave B)
+## 8. P3-6 — Multi-source fan-out + RECONCILE ladder v2 (Wave B)
 
-**What/why:** FETCH/EXTRACT/VERIFY run per source; RECONCILE merges via the
-§10.6 deterministic ladder (LLM only for semantic equivalence), stamping
-`resolution_rule` on every reconciled extraction and handling `disputed` +
-`resolve_dispute`. Conflicting sources are the normal case, not the edge case
-— and the ladder is what makes a suspicious score traceable weeks later
-without re-running anything (NFR4).
+**What/why (rescoped 2026-07-13, DESIGN §20 v3.2):** FETCH/EXTRACT/VERIFY run
+per slate source; RECONCILE merges via the rewritten §10.6 ladder (LLM only
+for semantic equivalence), stamping `resolution_rule` on every reconciled
+extraction and handling `disputed` + `resolve_dispute`. Ladder v2, per
+criterion: override → conservative-in-band tolerance collapse (3% rent / 5%
+sqft) → supermajority (≥2/3 of **family-deduped** votes; freshest fetch
+speaks for its family) → *escalation, decision-relevant fields only* —
+official-site fetch+extract as arbiter (medium-or-better verified confidence
+settles; once per job, policy-tier-permitting), then **one** sibling round (≤3
+new pool sources, tier-diverse, family-distinct; rungs re-run over the
+widened votes) → majority >50% (ties: higher verify confidence, then fresher
+fetch) → conservative value stored `disputed` with candidates in jsonb.
+Decision-relevant = gate-bearing in any using hunt, any option/unknown delta
+< 0, or an all-in component. Round sources extract the full catalog
+(append-only, reusable) but vote only on still-unresolved fields — settled
+fields never reopen within a run. Worst case: ~7 extractions (~$0.20) against
+the ≤3 baseline.
 
-**Files:** `stages/reconcile.py` (new; ladder R1–R7 as plain code;
+**Escalation mechanics:** RECONCILE appends the round's stages to
+`plan.stages` and records it under `plan.escalation` (trigger fields, sources
+added, rung reached) — persist-before-advance, so an escalated run resumes
+mid-round and the Tasks UI shows what the run bought and why. Escalation state
+(rounds used, sources tried) lives in RunState. Tunables:
+`ESCALATION_MAX_SIBLING_ROUNDS` (1), `RECONCILE_SUPERMAJORITY` (2/3), numeric
+tolerances.
+
+**Files:** `stages/reconcile.py` (new; ladder as plain code;
 `reconcile_equivalence` LLM call already pinned); `runner.py`/`stages/fetch.py`
 /`extract.py`/`verify.py` (per-source iteration — RunState.sources already a
 list; each source carries its own cleaned text, extractions, verify flags);
-projection writes reconciled values + rule + `disputed` candidates jsonb.
+projection writes reconciled values + rule + `disputed` candidates jsonb;
+frontend: `ProblematicBadge` derived from any `disputed` field (table row +
+drawer), drawer provenance shows the winning rule and candidates.
 Single-source runs emit `resolution_rule: single_source` from RECONCILE
-(§2.8). Numeric tolerances (3% rent / 5% sqft) are tunables.
+(§2.8), both reasons.
 
-**Done when:** a conflicting fixture pair (official says $1,850, aggregator
-says $1,795) resolves per R2/R3 with the rule recorded; a fabricated three-way
-gate-bearing conflict raises `resolve_dispute` with one-click candidates; the
-detail drawer shows the winning rule in provenance.
+**Done when:** a conflicting fixture pair resolves per the tolerance/
+supermajority rungs with the rule recorded; a fabricated no-supermajority case
+on a gate-bearing field escalates official-first, then exactly one sibling
+round, then raises `resolve_dispute` with one-click candidates and the
+Problematic badge; settled fields provably keep their round-1 resolution when
+round sources disagree; a worst-case run shows ≤7 extractions and its
+`plan.escalation` record in the Tasks history; the detail drawer shows the
+winning rule in provenance.
 
 ## 9. P3-7 — Images + VISION (Wave C)
+
+**Status 2026-07-13:** P3-7a deterministic substrate landed; P3-7b remains
+fail-closed on the human reference asset. See
+`docs/p3-7-vision-guide.md` for the exact completion and rollout gates.
 
 **What/why:** download listing images (≤10, WebP, ~1024 px) into Storage,
 wire `property_images` + screenshot capture/retention (§2.9), and run the P4
@@ -370,8 +424,9 @@ vision call anchored by the versioned reference set — because
 `kitchen_quality`/`flooring_quality` are catalog criteria nothing else can
 score, and un-anchored vision ratings drift (R6).
 
-**Files:** `stages/vision.py` + `enrich/images.py` (download, hash, convert,
-cap); `llm/client.py` `call_vision` implemented (images as content blocks,
+**Files:** `stages/image_fetch.py` + `stages/vision.py` + `enrich/images.py`
+(discover, SSRF-screened download, hash, convert, cap); `llm/client.py`
+`call_vision` implemented (images as content blocks,
 same record/replay discipline — fixtures store image hashes, not bytes);
 reference set under `worker/prompts/vision_refs/` (versioned with the prompt;
 changing it is a reviewed migration: re-run, diff, accept); tier-2 fetcher
@@ -381,9 +436,11 @@ deletes screenshots >30 d. Per-image detail → `property_images
 contributing image paths as evidence. Frontend: drawer gains the image gallery
 with per-image assessments (§13.2).
 
-**Skip discipline:** unchanged image URL hashes → VISION absent from the
-manifest (`skipped: images_unchanged`) — that, not prompt cleverness, is the
-cost control (§15 lever 3).
+**Skip discipline:** IMAGE_FETCH compares the complete set of normalized-byte
+hashes after FETCH. Equality → the manifest's `skipped.VISION =
+images_unchanged`, which the runner honors before dispatch/cost; stable URL with
+changed bytes reruns, changed URL with identical bytes skips. That, not prompt
+cleverness, is the cost control (§15 lever 3).
 
 **Done when:** two consecutive runs with unchanged images → zero vision spend
 (manifest shows the skip); vision ratings for a bench property land within ±1
@@ -600,13 +657,18 @@ is first builds it; the other two add queries).
   hash-keyed naming.
 - **Golden manifests:** planner tests assert exact manifest JSON for the
   canonical cases (new property, known-property re-add, trust_link, policy
-  tier-cap, unchanged-hash refresh) — the manifest is a pinned contract
-  (§10.4), so it gets golden treatment like score breakdowns.
+  tier-cap, unchanged-hash refresh, **escalation append with its
+  `plan.escalation` record**, missing-tier substitution) — the manifest is a
+  pinned contract (§10.4), so it gets golden treatment like score breakdowns.
 - **Resume tests:** every new stage gets the park/resume test (kill after
   stage N, resume, assert no re-run) — persist-before-advance is only true if
   tested per stage; plus the pre-P3 snapshot fallback case (§2.1).
-- **Ladder/RECONCILE:** table-driven tests over the R1–R7 ladder with
-  synthetic source pairs; equivalence-normalization cases recorded.
+- **Ladder/RECONCILE:** table-driven tests over the v2 ladder with synthetic
+  source sets; equivalence-normalization cases recorded; family-dedup cases
+  (three same-family sources = one vote, never a supermajority);
+  settled-field immunity (round sources cannot reopen a settled field);
+  escalation-order cases (official arbiter before the sibling round;
+  non-decision-relevant fields skip the spend rungs entirely).
 - **Tool-loop discipline:** tests assert extraction stages have empty
   allow-lists, budgets raise `AgentBudgetExceeded`, and every tool call left a
   `job_events` row.
@@ -626,8 +688,10 @@ is first builds it; the other two add queries).
 
 - **NFR1 (cost):** per-listing ingest cost from `jobs.cost_actual_usd` +
   Langfuse over ≥10 real submissions: <$0.15 new, <$0.01 refresh, $0 re-score.
-- **NFR2 (latency):** submit-to-score <3 min single-source, measured on live
-  submissions (`started_at`→`finished_at`); UI updates via Realtime only.
+- **NFR2 (latency):** submit-to-score <3 min single-source and <5 min
+  baseline-slate multi-source (escalated runs exempt but visible in the
+  manifest), measured on live submissions (`started_at`→`finished_at`); UI
+  updates via Realtime only.
 - **NFR3 (resumability):** kill-mid-run drill on a live multi-source job:
   resume completes with no stage re-run and no duplicate rows; deploy during a
   running job loses nothing.
