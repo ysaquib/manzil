@@ -189,6 +189,27 @@ async def collab_hunt(db_pool, seeded_users):  # type: ignore[no-untyped-def]
         property_ids[1]["id"],
         owner.user_id,
     )
+    source_ids = await db_pool.fetch(
+        """
+        insert into property_sources (property_id, url, site_domain)
+        values ($1::uuid, 'https://member.example/listing/' || $1::uuid::text, 'member.example'),
+               ($2::uuid, 'https://owner.example/listing/' || $2::uuid::text, 'owner.example')
+        returning id
+        """,
+        property_ids[0]["id"],
+        property_ids[1]["id"],
+    )
+    await db_pool.executemany(
+        """
+        insert into floor_plans (property_id, source_id, plan_name, beds, baths)
+        values ($1, $2, $3, $4, $5)
+        """,
+        [
+            (property_ids[0]["id"], source_ids[0]["id"], "Member Two Bed", 2, 1),
+            (property_ids[1]["id"], source_ids[1]["id"], "Owner Two Bed", 2, 1),
+            (property_ids[1]["id"], source_ids[1]["id"], "Owner One Bed", 1, 1),
+        ],
+    )
     yield {
         "hunt_id": str(hunt_id),
         "member_listing_id": str(member_listing),

@@ -11,6 +11,26 @@ from manzil_api.invites.service import MEMBER_COLOR_TOKENS
 
 class CommentCreate(BaseModel):
     body: str = Field(min_length=1, max_length=4000)
+    unit_group_key: str | None = Field(
+        default=None, pattern=r"^[0-9]+-[0-9]+(?:\.[0-9]+)?$"
+    )
+
+    @field_validator("body")
+    @classmethod
+    def validate_body(cls, value: str) -> str:
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("body must not be blank")
+        return trimmed
+
+
+class CommentUpdate(BaseModel):
+    body: str = Field(min_length=1, max_length=4000)
+
+    @field_validator("body")
+    @classmethod
+    def validate_body(cls, value: str) -> str:
+        return CommentCreate.validate_body(value)
 
 
 class CommentResponse(BaseModel):
@@ -18,7 +38,9 @@ class CommentResponse(BaseModel):
     hunt_listing_id: UUID
     user_id: UUID
     body: str
+    unit_group_key: str | None
     created_at: datetime
+    edited_at: datetime | None
     deleted_at: datetime | None
 
 
@@ -28,6 +50,7 @@ class RatingUpsert(BaseModel):
 
 class RatingResponse(BaseModel):
     hunt_listing_id: UUID
+    unit_group_key: str
     user_id: UUID
     rating: int
 

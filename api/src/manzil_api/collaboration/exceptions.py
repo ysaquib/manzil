@@ -13,6 +13,11 @@ class NotCommentAuthor(ManzilAPIError):
     code = "not_comment_author"
 
 
+class InvalidUnitGroup(ManzilAPIError):
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    code = "invalid_unit_group"
+
+
 class CannotEditMemberColor(ManzilAPIError):
     status_code = status.HTTP_403_FORBIDDEN
     code = "cannot_edit_member_color"

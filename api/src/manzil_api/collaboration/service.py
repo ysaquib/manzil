@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from manzil_api import privileged
@@ -10,6 +12,7 @@ from manzil_api.collaboration.exceptions import (
     CannotEditMemberColor,
     CannotRemoveOwner,
     CommentNotFound,
+    InvalidUnitGroup,
     MemberNotFound,
     NotCommentAuthor,
     TransferTargetNotMember,
@@ -17,6 +20,7 @@ from manzil_api.collaboration.exceptions import (
 from manzil_api.collaboration.schemas import (
     CommentCreate,
     CommentResponse,
+    CommentUpdate,
     MemberPatch,
     MemberResponse,
     RatingResponse,
@@ -30,12 +34,62 @@ from supabase import Client
 _ROLE_RANK = {"owner": 0, "curator": 1, "member": 2}
 
 
+def _unit_group_key(beds: Any, baths: Any) -> str:
+    return f"{int(beds)}-{format(Decimal(str(baths)).normalize(), 'f')}"
+
+
+def _require_unit_group(client: Client, listing: dict[str, Any], unit_group_key: str) -> None:
+    rows = (
+        client.table("floor_plans")
+        .select("beds,baths")
+        .eq("property_id", listing["property_id"])
+        .execute()
+        .data
+        or []
+    )
+    if unit_group_key not in {_unit_group_key(row["beds"], row["baths"]) for row in rows}:
+        raise InvalidUnitGroup(f"Unit Group {unit_group_key!r} does not exist on this Listing")
+
+
 async def create_comment(
-    client: Client, listing_id: UUID, user_id: str, body: CommentCreate
+    client: Client, listing: dict[str, Any], user_id: str, body: CommentCreate
 ) -> CommentResponse:
+    if body.unit_group_key is not None:
+        _require_unit_group(client, listing, body.unit_group_key)
     response = (
         client.table("comments")
-        .insert({"hunt_listing_id": str(listing_id), "user_id": user_id, "body": body.body.strip()})
+        .insert(
+            {
+                "hunt_listing_id": listing["id"],
+                "unit_group_key": body.unit_group_key,
+                "user_id": user_id,
+                "body": body.body,
+            }
+        )
+        .execute()
+    )
+    return CommentResponse.model_validate(response.data[0])
+
+
+async def update_comment(
+    client: Client, comment_id: UUID, user_id: str, body: CommentUpdate
+) -> CommentResponse:
+    rows = (
+        client.table("comments")
+        .select("user_id,deleted_at")
+        .eq("id", str(comment_id))
+        .execute()
+        .data
+        or []
+    )
+    if not rows or rows[0]["deleted_at"] is not None:
+        raise CommentNotFound("Comment not found")
+    if rows[0]["user_id"] != user_id:
+        raise NotCommentAuthor("Only the comment author may edit it")
+    response = (
+        client.table("comments")
+        .update({"body": body.body, "edited_at": datetime.now(UTC).isoformat()})
+        .eq("id", str(comment_id))
         .execute()
     )
     return CommentResponse.model_validate(response.data[0])
@@ -53,23 +107,41 @@ async def delete_comment(client: Client, comment_id: UUID, user_id: str) -> None
 
 
 async def upsert_rating(
-    client: Client, listing_id: UUID, user_id: str, body: RatingUpsert
+    client: Client,
+    listing: dict[str, Any],
+    unit_group_key: str,
+    user_id: str,
+    body: RatingUpsert,
 ) -> RatingResponse:
+    _require_unit_group(client, listing, unit_group_key)
     response = (
         client.table("ratings")
         .upsert(
-            {"hunt_listing_id": str(listing_id), "user_id": user_id, "rating": body.rating},
-            on_conflict="hunt_listing_id,user_id",
+            {
+                "hunt_listing_id": listing["id"],
+                "unit_group_key": unit_group_key,
+                "user_id": user_id,
+                "rating": body.rating,
+            },
+            on_conflict="hunt_listing_id,unit_group_key,user_id",
         )
         .execute()
     )
     return RatingResponse.model_validate(response.data[0])
 
 
-async def delete_rating(client: Client, listing_id: UUID, user_id: str) -> None:
-    client.table("ratings").delete().eq("hunt_listing_id", str(listing_id)).eq(
-        "user_id", user_id
-    ).execute()
+async def delete_rating(
+    client: Client, listing: dict[str, Any], unit_group_key: str, user_id: str
+) -> None:
+    _require_unit_group(client, listing, unit_group_key)
+    (
+        client.table("ratings")
+        .delete()
+        .eq("hunt_listing_id", listing["id"])
+        .eq("unit_group_key", unit_group_key)
+        .eq("user_id", user_id)
+        .execute()
+    )
 
 
 async def list_members(client: Client, hunt_id: UUID) -> list[MemberResponse]:
