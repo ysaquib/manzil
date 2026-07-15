@@ -57,9 +57,9 @@ export function SubmitUrlControl({
         value={policy}
         onChange={(next) => next && setPolicy(next as SourcePolicy)}
         allowDeselect={false}
-        w={170}
+        // w={170}
       />
-      <Button onClick={submit} disabled={!url.trim() || createListing.isPending}>
+      <Button onClick={submit} disabled={!url.trim() || createListing.isPending} flex={1}>
         Add listing
       </Button>
     </Group>

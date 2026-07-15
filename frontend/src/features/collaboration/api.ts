@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { useAuth } from "../../auth/useAuth";
 import { apiFetch } from "../../lib/apiClient";
 import type { components } from "../../lib/generated/api";
 import { supabase } from "../../lib/supabase";
@@ -59,6 +60,19 @@ export function useMembers(huntId: string) {
     },
     refetchOnWindowFocus: true,
   });
+}
+
+/** Signed-in user's HuntMember for this hunt; derives from useMembers (same cache). */
+export function useCurrentMember(huntId: string) {
+  const { session } = useAuth();
+  const membersQuery = useMembers(huntId);
+  const userId = session?.user.id;
+  return {
+    ...membersQuery,
+    data: userId
+      ? membersQuery.data?.find((member) => member.user_id === userId)
+      : undefined,
+  };
 }
 
 export function useComments(listingId: string) {

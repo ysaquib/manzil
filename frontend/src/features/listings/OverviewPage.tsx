@@ -44,14 +44,16 @@ export function OverviewPage() {
   const [filters, setFilters] = useState<OverviewFilterState>(DEFAULT_OVERVIEW_FILTERS);
   const [sort, setSort] = useState<SortState>({ key: "score", dir: "desc" });
   const [selected, setSelected] = useState<DrawerSelection | null>(null);
+  const [drawerOpened, setDrawerOpened] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<OverviewRow | null>(null);
 
-  const onSort = (key: SortKey) =>
+  const onSort = (key: SortKey) => {
     setSort((prev) =>
       prev.key === key
         ? { key, dir: prev.dir === "desc" ? "asc" : "desc" }
         : { key, dir: key === "name" ? "asc" : "desc" },
     );
+  };
 
   const allRows = buildRows(listings ?? []);
   const rows = sortRows(applyOverviewFilters(allRows, filters), sort);
@@ -106,21 +108,21 @@ export function OverviewPage() {
           rows={rows}
           sort={sort}
           onSort={onSort}
-          onOpen={(row) =>
-            setSelected({ listingId: row.listing.id, groupKey: row.group?.key ?? null })
-          }
+          onOpen={(row) => {
+            setSelected({ listingId: row.listing.id, groupKey: row.group?.key ?? null });
+            setDrawerOpened(true);
+          }}
           onDelete={setDeleteTarget}
         />
       )}
 
-      {selected && (
-        <ListingDetailDrawer
-          huntId={huntId}
-          selection={selected}
-          opened
-          onClose={() => setSelected(null)}
-        />
-      )}
+      <ListingDetailDrawer
+        huntId={huntId}
+        selection={selected}
+        opened={drawerOpened}
+        onClose={() => setDrawerOpened(false)}
+        onExited={() => setSelected(null)}
+      />
 
       <Modal
         opened={deleteTarget !== null}
