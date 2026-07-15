@@ -15,7 +15,6 @@ import { useState } from "react";
 
 import { PageHeader } from "../../components/PageHeader";
 import { ApiError } from "../../lib/apiClient";
-import { semantic } from "../../theme";
 import type { CatalogEntry, RubricCriterion } from "./api";
 import { usePutRubric } from "./api";
 import { CriterionCard } from "./CriterionCard";
@@ -102,7 +101,7 @@ export function RubricEditor({
       </Text>
 
       {issues.length > 0 && (
-        <Alert color={semantic.danger} title="Fix before saving">
+        <Alert color={"red"} title="Fix before saving">
           <Stack gap={4}>
             {issues.map((issue, i) => (
               <Text size="sm" key={i}>

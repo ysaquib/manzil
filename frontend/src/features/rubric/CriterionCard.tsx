@@ -24,7 +24,6 @@ import {
 } from "@tabler/icons-react";
 
 import type { RubricOption } from "../../lib/contracts";
-import { semantic } from "../../theme";
 import type { CatalogEntry, RubricCriterion } from "./api";
 import { GateControls } from "./GateControls";
 import { OptionMatchEditor } from "./OptionMatchEditor";
@@ -161,7 +160,7 @@ export function CriterionCard({
                   <Badge
                     size="xs"
                     variant="light"
-                    color={semantic.danger}
+                    color={"red"}
                     leftSection={<IconShieldCheck size={12} stroke={1.5} />}
                   >
                     non-negotiable
