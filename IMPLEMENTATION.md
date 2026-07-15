@@ -158,7 +158,9 @@ The single-home rule itself is **settled**; every *value* in this table is a sta
 | `JOB_ORPHAN_AFTER` | 5 min without heartbeat | queue reclaim |
 | `AGENT_MAX_TURNS` | 8 | P3 loops |
 | `CHECKPOINT_TIMEOUT` | 24 h | scheduler sweep |
-| `MAX_IMAGES` / `IMAGE_MAX_DIM` | 8 / 1024 px | VISION |
+| `MAX_IMAGES` / `IMAGE_MAX_DIM` | 8 / 1024 px | IMAGE_FETCH / VISION |
+| `IMAGE_MAX_DOWNLOAD_BYTES` / `IMAGE_MAX_PIXELS` | 20 MiB / 40 Mpx | IMAGE_FETCH rejection bounds |
+| `IMAGE_WEBP_QUALITY` / `IMAGE_FETCH_TIMEOUT_SECONDS` | 82 / 20 s | IMAGE_FETCH normalization/download |
 | `FETCH_MIN_BODY_BYTES` | 5 000 | outcome classifier |
 | `RENT_PLAUSIBLE_MIN` / `RENT_PLAUSIBLE_MAX` | 400 / 10 000 | VERIFY check 3 cold-start static band |
 | `SQFT_PER_BED_MIN` / `SQFT_PER_BED_MAX` | 250 / 2 500 | VERIFY check 3 sqft-per-bed ratio band |
@@ -300,7 +302,10 @@ at entry. Wave A (P3-2, P3-3) and Wave B's P3-4 (DEDUPE + `resolve_dedupe` +
 `split_property`; 2.0.41) landed 2026-07-12 **ahead of formal entry** at
 Yusuf's direction (the Phase-0-tail precedent) — this does not declare Phase 2
 exited; P2-10 manual acceptance remains pending. Wave B continues with P3-5,
-which is gated on the two SSRF smoke checks below.*
+which is gated on the two SSRF smoke checks below. **P3-5/P3-6 were rescoped
+2026-07-13** (DESIGN §20 v3.2): tier-diverse slate, official site as stored
+link + escalation arbiter, syndication-family voting, bounded escalation
+ladder.*
 
 #### Entry readiness
 
@@ -312,7 +317,7 @@ which is gated on the two SSRF smoke checks below.*
 | Optional worker isolation trigger | P3-1 ⚠ | Not observed; Tier-2 Playwright already runs in-process successfully | Start only after a DESIGN §5 trigger is demonstrated; follow §8's migration runbook |
 | Google Maps project/key + billing | P3-3, P3-4, P3-8, metro input for P3-9 | External credential gate | Configure restricted server-side key and local/hosted env |
 | DISCOVER web-search provider | P3-5 | Design detail not yet selected | Choose provider/tool and record cost/security implications before implementation |
-| Versioned Vision reference set | P3-7 quality gate | Human asset not yet present | Assemble and version the reference images/anchors before prompt validation |
+| Versioned Vision reference set | P3-7b quality gate | **P3-7a substrate landed; human asset absent, so PLAN fail-closes VISION.** | Follow `docs/p3-7-vision-guide.md`: assemble/approve hashed anchors, add version-matched prompt, bench, then enable ratings |
 | Fetcher-layer SSRF guard | ~~First live tool loop~~ — **HTTP path landed 2026-07-12** (2.0.40; tier-1 IP-pinning closes the rebinding TOCTOU). Two pre-live checks remain: a **manual browser smoke test** of tier-2's route-guard/backstop, and **one live-HTTPS smoke fetch** confirming the pin's cert path — both before P3-5/P3-10 wire Chromium into a live loop | Closed for the fetch path (DESIGN §20 2026-07-12); tier-2 residual is inherent to Chromium owning its own connect | Run the two smoke checks at the start of Wave B, before `stages/discover.py` wires live fetchers |
 
 #### Dependency waves
@@ -321,7 +326,7 @@ which is gated on the two SSRF smoke checks below.*
 |---|---|---|---|
 | A — foundations | P3-2 ingest Planner · P3-3 Maps/cache; P3-1 ⚠ only if triggered | Phase 2 exits; each task's external gate above is satisfied | P3-2/P3-3 are independent; worker isolation is not on the critical path |
 | B — identity and sources | P3-4 DEDUPE → P3-5 DISCOVER → P3-6 multi-source/RECONCILE | P3-2 + P3-3 for DEDUPE; provider chosen for DISCOVER | Keep this order: canonical identity before sibling discovery, then fan-out/reconciliation |
-| C — evidence/enrichment | P3-7 VISION · P3-8 ENRICH/Places · P3-9 utilities · P3-10 custom criteria | Relevant Wave A/B truth layers exist | P3-8 depends on Maps; P3-7 needs reference set; P3-9 needs metro identity; P3-10 needs Planner dispatch |
+| C — evidence/enrichment | P3-7 VISION · P3-8 ENRICH/Places · P3-9 utilities · P3-10 custom criteria | Relevant Wave A/B truth layers exist | P3-7a deterministic image substrate is landed; P3-7b still needs the reference set. P3-8 depends on Maps; P3-9 needs metro identity; P3-10 needs Planner dispatch |
 | D — lifecycle and UX | P3-11 checkpoints · P3-12 refresh Planner · P3-13 compare/mobile · P3-16 Account Settings | Producing stages and persistence shapes are stable | P3-12 follows the stages whose TTL/hash inputs it plans; P3-16 builds on the landed profile contract |
 | E — conditional sources | P3-14 Tier 3 · P3-15 apartmentratings.com | Named gates and dependencies satisfied | P3-14 is retained only if P0-14 says so; P3-15 follows P3-6 reconciliation and P3-8 Places |
 
@@ -331,9 +336,9 @@ which is gated on the two SSRF smoke checks below.*
 | P3-2 | Planner v1, **scoped to ingest manifests** (cache/TTL-aware refresh planning completes in P3-12, which builds the inputs it reads) | §10.4 | ingest of a known property plans skip-refetch correctly |
 | P3-3 | Maps tools + forever-cache: geocode, Places, Routes (pulled ahead of its consumers — DEDUPE and ENRICH both read geocode) | §10.9, §12 | cached second geocode is $0 and instant |
 | P3-4 | DEDUPE full: geocode + name similarity, gray-zone `resolve_dedupe` checkpoint, `split_property` admin op | §8.2, §10.3 | seeded near-duplicate pair → checkpoint; split restores cleanly |
-| P3-5 | DISCOVER: provider web-search tool, same-property judgment, official-site preference; source cap logic ("third only on disagreement"); Source Policy enforcement — skip stage under `trust_link`, plan-time tier caps on siblings (`skip: policy_tier_cap`), `tier_1_plus_official` carve-out; policy `Select` on the submit control + single-source badge | §10.2 P3, §10.3, §10.7, §15 | finds official site for ≥70% of bench complexes; `trust_link` run produces zero DISCOVER events; over-cap sibling recorded as skipped in the manifest |
-| P3-6 | Multi-source fan-out: FETCH per source, EXTRACT/VERIFY per source, RECONCILE ladder + `resolution_rule` + `disputed` handling | §10.6 | conflicting fixture pair resolves per ladder; rule recorded |
-| P3-7 | Images: download, WebP, ≤10 cap → VISION with versioned reference set; skip-on-unchanged-hashes | §10.8, §14 | two runs, no image change → zero vision spend |
+| P3-5 | DISCOVER: provider web-search tool, same-property judgment; official-site capture (link stored `is_official` + displayed, **not fetched**); tier-diverse, family-distinct slate + ranked candidate pool (activates the planner's >3-candidate ranking); census gains `syndication_family`; Source Policy enforcement — skip stage under `trust_link`, plan-time tier caps on siblings (`skip: policy_tier_cap`), `tier_1_plus_official` carve-out, missing-tier substitution recorded; single-source badge (both reasons: `trust_link`, `discover_exhausted`) | §10.2 P3, §10.3, §10.6, §10.7, §15 | official link stored + displayed for ≥70% of bench complexes with zero fetches of it; slate holds one sibling per permitted tier with no family twice; `trust_link` run produces zero DISCOVER events; over-cap sibling recorded as skipped in the manifest |
+| P3-6 | Multi-source fan-out: FETCH/EXTRACT/VERIFY per slate source; RECONCILE ladder v2 — family-deduped votes, conservative-in-band collapse, supermajority, bounded escalation (official arbiter → one sibling round, appended to the manifest under `plan.escalation`, decision-relevant fields only), majority, conservative fallback — + `resolution_rule`, `disputed` candidates, Problematic badge | §10.6 | conflicting fixture pair resolves per ladder with rule recorded; fabricated no-supermajority case escalates official-first, then one round; settled fields provably not reopened by round sources; worst-case run ≤7 extractions |
+| P3-7 ◐ | **P3-7a landed:** IMAGE_FETCH discovery/download/normalized WebP/Storage metadata + complete-hash skip; manifest-aware runner skip; hash-only `call_vision` record/replay. **P3-7b gated:** approved references/prompt, ratings/aggregation/Extractions, gallery, retention | §10.8, §14; `docs/p3-7-vision-guide.md` | two runs, no image change → zero vision spend; anchored bench within ±1; gallery + cleanup live |
 | P3-8 | ENRICH remainder: grocery + commute criteria live (honoring `settings.proximity_mode`; edit → field-scoped location refresh); **ratings stage 1 — Places rating + review synthesis (§10.12, the priority slice, built first)**; safety synthesis (low-confidence framing) | §8.2, §10.3, §10.9, §10.12, R8 | Places rating populates `management_reviews` with provenance; safety renders with confidence labeling, not as fact; proximity-mode flip re-enriches without LLM spend |
 | P3-9 | Utility baselines job + all-in composition (conservative default via `settings.cost_estimate_mode`, tagged components, "fees unverified" badge) | §8.2, §9.5 | winter-weighted estimate visible and overrideable; mode flip to median rescores without refetch |
 | P3-10 | Custom criteria: authoring flow w/ routing classification + confirm, CUSTOM_MATCH dispatch | §9.2, §10.9 | commute-to-address criterion authored → scored end-to-end |
@@ -384,6 +389,11 @@ invariant is exactly one active claimant. Validate the standalone process in
 staging first; in production, disable the API claimant before enabling the new
 claimant. The resulting short no-claimant interval is safe because queued Jobs
 are durable.
+
+**Complete P3-7 VISION:** the deterministic image substrate is live but ratings
+are fail-closed until the human reference asset is approved. Follow the full
+[P3-7 VISION completion guide](docs/p3-7-vision-guide.md) for the manifest,
+prompt/schema, bench, migration, gallery, retention, and rollout gates.
 
 ---
 
@@ -442,3 +452,5 @@ Ascending chronological (matching DESIGN §20's convention); same-day entries or
 | 2.0.43 | 2026-07-12 | **Invitation Link origin fix.** Copy actions now retain the API-provided `/join/{token}` path but replace the configured origin with `window.location.origin`. This prevents `MANZIL_FRONTEND_URL` hostname aliases (www/apex, localhost/LAN) from crossing Supabase Auth's origin-scoped session boundary and incorrectly redirecting an already signed-in user to Login. |
 | 2.0.44 | 2026-07-12 | **Invitation Link redirect fix.** `/join/:token` now navigates to `/h/{hunt_id}` directly from the successful join mutation callback, making the committed membership response and Overview redirect one explicit UI transition instead of relying on a follow-up render effect. |
 | 2.0.45 | 2026-07-12 | **Invitation Link optional `name` + settings UX polish.** Nullable trimmed 1–80 `invitation_links.name` on create/patch/response (DESIGN §20); create UI moves into a modal with Mantine `DatePickerInput`; member color picker gated behind palette "Custom color"; Owner empty-rubric prompt on hunt open; Danger-zone divider. |
+| 2.0.46 | 2026-07-13 | **P3-7a landed; P3-7b deliberately fail-closed (DESIGN v3.3).** FETCH discovers ordered image URLs (metadata/markup/JSON-LD) and preserves them through fresh-source skips. New deterministic IMAGE_FETCH after DEDUPE: injected/download-tested binary path inherits SSRF screen + IP pinning, rejects unsafe/oversized/invalid images, EXIF-orients, resizes to ≤1024, WebP-encodes, de-duplicates/caps, writes content-addressed private Storage objects and RunState metadata. Migration `20260723000000_property_images_pipeline.sql` adds source/hash/dimensions/bytes + unique Property/hash and the private `property-images` bucket; terminal projection upserts current rows; DEDUPE handles hash collisions and `split_property` moves source-attributed images. Planner fail-closes VISION without an approved reference manifest + matching prompt; IMAGE_FETCH compares complete normalized hash sets and writes `images_unchanged`; runner now honors pinned `plan.skipped` before dispatch/cost. `call_vision` is implemented with forced-schema OpenRouter, Langfuse/cost and hash-only record/replay (no image bytes). Pillow added/locked. Live rating/aggregation, Extractions, gallery and cleanup remain P3-7b; exact completion runbook is `docs/p3-7-vision-guide.md`. Local migration plus full DB-backed worker suite green (355 passed); shared 18 passed. |
+| 2.0.47 | 2026-07-14 | **Cleaner price-retention guard (DESIGN §20 2026-07-14).** Bug: rentcafe's `main-content-before-contact` wrapper class matches trafilatura's body-detection xpaths (`main-content`), flipping it into strict paragraph extraction that pruned every floor-plan card (name/beds/baths/sqft/rent live in `<b>`/`<span>` inside plain `<div>`s); readability fails the same page via `contact` in its negative-class regex, and the data lives in `data-*` attributes so the JSON miner can't recover it. `clean_html` now counts distinct rendered price tokens in the script-stripped visible text and rejects any extraction layer that kept fewer than half, degrading trafilatura → readability → visible text (`used_fallback` marks any degradation). New `_visible_text` strips script/style/noscript/template/svg/iframe. Synthetic regression test reproduces the wrapper-class trap in CI; corpus regenerated (guard fires on 8/23 pages, all price-lossy). Worker suite green (359 passed), ruff clean. |

@@ -51,6 +51,7 @@ export interface ScoreBreakdown {
 
 // Engine clamp range (§9.3): scores land in [0, 15], base 10.
 export const SCORE_MAX = 15;
+export const SCORE_BASE = 10;
 
 // --- Checkpoint prompt (pinned, §10.10) ---
 
