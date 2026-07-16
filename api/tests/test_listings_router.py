@@ -81,3 +81,21 @@ async def test_delete_listing_soft_archives(client: AsyncClient, db_pool) -> Non
         assert job_exists is not None
     finally:
         await db_pool.execute("delete from hunts where id = $1", hunt_id)
+
+
+@pytest.mark.asyncio
+async def test_curator_updates_unit_group_state_and_member_cannot(
+    collab_hunt, as_curator: AsyncClient, as_member: AsyncClient
+) -> None:
+    path = (
+        f"/v1/listings/{collab_hunt['member_listing_id']}"
+        "/unit-groups/2-1/state"
+    )
+    payload = {"interest_status": "applied", "visited": True}
+    curator_response = await as_curator.patch(path, json=payload)
+    assert curator_response.status_code == 200
+    assert curator_response.json()["interest_status"] == "applied"
+    assert curator_response.json()["visited"] is True
+
+    member_response = await as_member.patch(path, json=payload)
+    assert member_response.status_code == 403

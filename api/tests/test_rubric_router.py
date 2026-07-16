@@ -71,3 +71,31 @@ async def test_put_rubric_bumps_version_and_enqueues_rescore(client: AsyncClient
         assert rescore == 1
     finally:
         await db_pool.execute("delete from hunts where id = $1", hunt_id)
+
+
+@pytest.mark.asyncio
+async def test_put_rubric_derives_dealbreaker_as_not_bonus(client: AsyncClient, db_pool) -> None:
+    hunt_id = uuid4()
+    await db_pool.execute(
+        "insert into hunts (id, name, owner_id) values ($1, 'Bonus', $2)", hunt_id, FAKE_USER.id
+    )
+    try:
+        response = await client.put(
+            f"/v1/hunts/{hunt_id}/rubric",
+            json={
+                "criteria": [{
+                    "catalog_key": "beds",
+                    "options": [{
+                        "match": {"op": "gte", "value": 2},
+                        "delta": 1,
+                        "dealbreaker_set_score": 0,
+                    }],
+                    "unknown_delta": 0,
+                    "is_bonus": True,
+                }]
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()[0]["is_bonus"] is False
+    finally:
+        await db_pool.execute("delete from hunts where id = $1", hunt_id)

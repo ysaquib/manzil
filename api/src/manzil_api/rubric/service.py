@@ -18,8 +18,11 @@ from supabase import Client
 _CATALOG_BY_KEY = {entry.key: entry for entry in CATALOG}
 
 
-def _derive_is_bonus(options: list[RubricOption]) -> bool:
-    return all(o.delta >= 0 for o in options)
+def _derive_is_bonus(options: list[RubricOption], unknown_delta: float) -> bool:
+    """A pure bonus can never dock points or fire a dealbreaker Gate."""
+    return bool(options) and unknown_delta >= 0 and all(
+        option.delta >= 0 and option.dealbreaker_set_score is None for option in options
+    )
 
 
 def _validate_option(catalog_key: str, option: RubricOption) -> None:
@@ -81,7 +84,7 @@ async def put_rubric(client: Client, hunt_id: UUID, body: RubricPut) -> list[Rub
 
     rows: list[dict[str, Any]] = []
     for crit in body.criteria:
-        is_bonus = _derive_is_bonus(crit.options)
+        is_bonus = _derive_is_bonus(crit.options, crit.unknown_delta)
         row = {
             "hunt_id": str(hunt_id),
             "catalog_key": crit.catalog_key,
