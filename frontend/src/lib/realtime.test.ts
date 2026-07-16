@@ -9,6 +9,8 @@ describe("Realtime invalidation map", () => {
     ["hunt_listings", [["hunt_listings", huntId]]],
     ["scores", [["hunt_listings", huntId]]],
     ["comments", [["comments"], ["hunt_listings", huntId]]],
+    ["ratings", [["ratings"]]],
+    ["listing_unit_group_states", [["listing_unit_group_states", huntId]]],
     ["jobs", [["jobs", huntId]]],
     ["job_events", [["jobs", huntId]]],
   ] as const)("maps %s events", (table, expected) => {

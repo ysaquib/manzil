@@ -88,10 +88,11 @@ export interface paths {
         delete: operations["delete_comment_v1_comments__comment_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Update Comment */
+        patch: operations["update_comment_v1_comments__comment_id__patch"];
         trace?: never;
     };
-    "/v1/listings/{listing_id}/rating": {
+    "/v1/listings/{listing_id}/unit-groups/{unit_group_key}/rating": {
         parameters: {
             query?: never;
             header?: never;
@@ -100,10 +101,10 @@ export interface paths {
         };
         get?: never;
         /** Upsert Rating */
-        put: operations["upsert_rating_v1_listings__listing_id__rating_put"];
+        put: operations["upsert_rating_v1_listings__listing_id__unit_groups__unit_group_key__rating_put"];
         post?: never;
         /** Delete Rating */
-        delete: operations["delete_rating_v1_listings__listing_id__rating_delete"];
+        delete: operations["delete_rating_v1_listings__listing_id__unit_groups__unit_group_key__rating_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -336,6 +337,23 @@ export interface paths {
         patch: operations["patch_pins_v1_listings__listing_id__pins_patch"];
         trace?: never;
     };
+    "/v1/listings/{listing_id}/unit-groups/{unit_group_key}/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Unit Group State */
+        patch: operations["patch_unit_group_state_v1_listings__listing_id__unit_groups__unit_group_key__state_patch"];
+        trace?: never;
+    };
     "/v1/hunts/{hunt_id}/jobs": {
         parameters: {
             query?: never;
@@ -438,6 +456,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Profile */
+        get: operations["get_profile_v1_profile_get"];
+        /** Put Profile */
+        put: operations["put_profile_v1_profile_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/health": {
         parameters: {
             query?: never;
@@ -493,6 +529,8 @@ export interface components {
         CommentCreate: {
             /** Body */
             body: string;
+            /** Unit Group Key */
+            unit_group_key?: string | null;
         };
         /** CommentResponse */
         CommentResponse: {
@@ -513,13 +551,22 @@ export interface components {
             user_id: string;
             /** Body */
             body: string;
+            /** Unit Group Key */
+            unit_group_key: string | null;
             /**
              * Created At
              * Format: date-time
              */
             created_at: string;
+            /** Edited At */
+            edited_at: string | null;
             /** Deleted At */
             deleted_at: string | null;
+        };
+        /** CommentUpdate */
+        CommentUpdate: {
+            /** Body */
+            body: string;
         };
         /** FeeEntryResponse */
         FeeEntryResponse: {
@@ -812,7 +859,7 @@ export interface components {
          * MatchOp
          * @enum {string}
          */
-        MatchOp: "eq" | "lt" | "gt" | "range" | "in" | "bool";
+        MatchOp: "eq" | "lt" | "lte" | "gt" | "gte" | "range" | "in" | "bool";
         /** MemberPatch */
         MemberPatch: {
             /** Color */
@@ -895,6 +942,31 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** ProfileResponse */
+        ProfileResponse: {
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** Default Display Name */
+            default_display_name: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** ProfileUpsert */
+        ProfileUpsert: {
+            /** Default Display Name */
+            default_display_name: string;
+        };
         /** RatingResponse */
         RatingResponse: {
             /**
@@ -902,6 +974,8 @@ export interface components {
              * Format: uuid
              */
             hunt_listing_id: string;
+            /** Unit Group Key */
+            unit_group_key: string;
             /**
              * User Id
              * Format: uuid
@@ -1020,6 +1094,37 @@ export interface components {
              * @constant
              */
             status: "ok";
+        };
+        /** UnitGroupStatePatch */
+        UnitGroupStatePatch: {
+            /** Interest Status */
+            interest_status: ("interested" | "not_interested" | "applied" | "application_rejected" | "application_withdrawn" | "offer_received" | "offer_accepted" | "offer_declined" | "offer_rescinded" | "unavailable") | null;
+            /** Visited */
+            visited: boolean;
+        };
+        /** UnitGroupStateResponse */
+        UnitGroupStateResponse: {
+            /** Interest Status */
+            interest_status: ("interested" | "not_interested" | "applied" | "application_rejected" | "application_withdrawn" | "offer_received" | "offer_accepted" | "offer_declined" | "offer_rescinded" | "unavailable") | null;
+            /** Visited */
+            visited: boolean;
+            /**
+             * Hunt Listing Id
+             * Format: uuid
+             */
+            hunt_listing_id: string;
+            /** Unit Group Key */
+            unit_group_key: string;
+            /**
+             * Updated By
+             * Format: uuid
+             */
+            updated_by: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -1266,12 +1371,48 @@ export interface operations {
             };
         };
     };
-    upsert_rating_v1_listings__listing_id__rating_put: {
+    update_comment_v1_comments__comment_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommentUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upsert_rating_v1_listings__listing_id__unit_groups__unit_group_key__rating_put: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 listing_id: string;
+                unit_group_key: string;
             };
             cookie?: never;
         };
@@ -1301,12 +1442,13 @@ export interface operations {
             };
         };
     };
-    delete_rating_v1_listings__listing_id__rating_delete: {
+    delete_rating_v1_listings__listing_id__unit_groups__unit_group_key__rating_delete: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 listing_id: string;
+                unit_group_key: string;
             };
             cookie?: never;
         };
@@ -1945,6 +2087,42 @@ export interface operations {
             };
         };
     };
+    patch_unit_group_state_v1_listings__listing_id__unit_groups__unit_group_key__state_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: string;
+                unit_group_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UnitGroupStatePatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnitGroupStateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_jobs_v1_hunts__hunt_id__jobs_get: {
         parameters: {
             query?: {
@@ -2133,6 +2311,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FeeEntryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_profile_v1_profile_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileResponse"] | null;
+                };
+            };
+        };
+    };
+    put_profile_v1_profile_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileUpsert"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProfileResponse"];
                 };
             };
             /** @description Validation Error */

@@ -199,7 +199,13 @@ CATALOG: tuple[CatalogEntry, ...] = (
         domain=CriterionDomain.RENT,
         value_schema={"type": "string", "format": "date"},
         default_options=[],  # date thresholds are hunt-specific; owners set options in the rubric
-        extraction_hint="Earliest stated move-in date for the unit, as an ISO date.",
+        extraction_hint=(
+            "Earliest stated move-in date for the unit, as an ISO date "
+            "(YYYY-MM-DD). If availability is stated as 'Available Now', "
+            "'Now', 'Immediately', or similar with no calendar date, emit "
+            "the literal sentinel available_now (not an invented date). The "
+            "pipeline rewrites the sentinel to the run date."
+        ),
         requires_tool=None,
         refresh_class=RefreshClass.PRICING,
     ),

@@ -24,12 +24,15 @@ export interface Comment {
   hunt_listing_id: string;
   user_id: string;
   body: string;
+  unit_group_key: string | null;
   created_at: string;
+  edited_at: string | null;
   deleted_at: string | null;
 }
 
 export interface Rating {
   hunt_listing_id: string;
+  unit_group_key: string;
   user_id: string;
   rating: number;
 }
@@ -112,11 +115,20 @@ export function useRatings(listingId: string) {
 export function useCreateComment(listingId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: string) =>
+    mutationFn: (body: { body: string; unit_group_key: string | null }) =>
       apiFetch<Comment>(`/v1/listings/${listingId}/comments`, {
         method: "POST",
-        body: { body },
+        body,
       }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["comments", listingId] }),
+  });
+}
+
+export function useUpdateComment(listingId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ commentId, body }: { commentId: string; body: string }) =>
+      apiFetch<Comment>(`/v1/comments/${commentId}`, { method: "PATCH", body: { body } }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["comments", listingId] }),
   });
 }
@@ -130,17 +142,20 @@ export function useDeleteComment(listingId: string) {
   });
 }
 
-export function useSetRating(listingId: string) {
+export function useSetRating(listingId: string, unitGroupKey: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (rating: number | null) => {
       if (rating === null) {
-        await apiFetch<void>(`/v1/listings/${listingId}/rating`, { method: "DELETE" });
+        await apiFetch<void>(
+          `/v1/listings/${listingId}/unit-groups/${encodeURIComponent(unitGroupKey)}/rating`,
+          { method: "DELETE" },
+        );
       } else {
-        await apiFetch<Rating>(`/v1/listings/${listingId}/rating`, {
-          method: "PUT",
-          body: { rating },
-        });
+        await apiFetch<Rating>(
+          `/v1/listings/${listingId}/unit-groups/${encodeURIComponent(unitGroupKey)}/rating`,
+          { method: "PUT", body: { rating } },
+        );
       }
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["ratings", listingId] }),
