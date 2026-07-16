@@ -201,10 +201,17 @@ CATALOG: tuple[CatalogEntry, ...] = (
         default_options=[],  # date thresholds are hunt-specific; owners set options in the rubric
         extraction_hint=(
             "Earliest stated move-in date for the unit, as an ISO date "
-            "(YYYY-MM-DD). If availability is stated as 'Available Now', "
-            "'Now', 'Immediately', or similar with no calendar date, emit "
-            "the literal sentinel available_now (not an invented date). The "
-            "pipeline rewrites the sentinel to the run date."
+            "(YYYY-MM-DD). Search prose and [EMBEDDED DATA]. If the target "
+            "Property/Floor Plan has an explicit availability date, emit the "
+            "earliest explicit ISO date even when the UI also says 'Available "
+            "Now', 'Now', or 'Immediately'. Emit the literal sentinel "
+            "available_now only when that target has immediate wording and no "
+            "explicit availability date — never invent a calendar date. Ignore "
+            "similar/nearby Properties, page update timestamps, promotions, "
+            "and unrelated dates. Property-level availability is the earliest "
+            "relevant date across the target Property's plans. The pipeline "
+            "rewrites available_now to the run date (live) or corpus "
+            "saved_at date (bench)."
         ),
         requires_tool=None,
         refresh_class=RefreshClass.PRICING,
