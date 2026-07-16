@@ -7,7 +7,24 @@ export interface Property {
   id: string;
   name: string;
   canonical_address: string;
+  city: string | null;
   official_url: string | null;
+}
+
+export const INTEREST_STATUSES = [
+  "interested", "not_interested", "applied", "application_rejected",
+  "application_withdrawn", "offer_received", "offer_accepted", "offer_declined",
+  "offer_rescinded", "unavailable",
+] as const;
+export type InterestStatus = (typeof INTEREST_STATUSES)[number];
+
+export interface UnitGroupState {
+  hunt_listing_id: string;
+  unit_group_key: string;
+  interest_status: InterestStatus | null;
+  visited: boolean;
+  updated_by: string;
+  updated_at: string;
 }
 
 export interface PropertySource {

@@ -40,7 +40,8 @@ export interface ScoreCellProps {
 export function ScoreCell({ total, pinned = false }: ScoreCellProps) {
   return (
     <Group wrap="nowrap" gap={6}>
-      <Text ff={"monospace"} fz="sm" fw={400} c={scoreColor(total)}>
+      <Text ff={"monospace"} fz="xs" fw={600} c={scoreColor(total)}>
+        {/* c="black" p={4} bdrs={4} miw="2.5rem" ta="center"> */}
         {formatScore(total)}
       </Text>
       {pinned && (

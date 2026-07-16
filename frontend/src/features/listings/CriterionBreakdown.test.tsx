@@ -93,6 +93,7 @@ const listingFixture: Listing = {
     id: "prop-1",
     name: "Test",
     canonical_address: "1 Main",
+    city: null,
     official_url: null,
     floor_plans: [],
     sources: [],

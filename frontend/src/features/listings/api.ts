@@ -7,7 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/apiClient";
 import type { components } from "../../lib/generated/api";
 import { supabase } from "../../lib/supabase";
-import type { Extraction, FeeEntry, Listing, Override } from "./types";
+import type { Extraction, FeeEntry, Listing, Override, UnitGroupState } from "./types";
 
 type ListingResponse = components["schemas"]["ListingResponse"];
 type ListingCreate = components["schemas"]["ListingCreate"];
@@ -30,6 +30,43 @@ export function useListings(huntId: string) {
         .eq("status", "active");
       if (error) throw error;
       return (data ?? []) as unknown as Listing[];
+    },
+  });
+}
+
+export function useUnitGroupStates(huntId: string) {
+  return useQuery({
+    queryKey: ["listing_unit_group_states", huntId],
+    queryFn: async (): Promise<UnitGroupState[]> => {
+      const { data, error } = await supabase
+        .from("listing_unit_group_states")
+        .select("*, hunt_listing:hunt_listings!inner(hunt_id)")
+        .eq("hunt_listing.hunt_id", huntId);
+      if (error) throw error;
+      return (data ?? []).map(({ hunt_listing: _listing, ...row }) => row) as UnitGroupState[];
+    },
+  });
+}
+
+export function usePatchUnitGroupState(huntId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ listingId, unitGroupKey, interest_status, visited }: {
+      listingId: string; unitGroupKey: string;
+      interest_status: UnitGroupState["interest_status"]; visited: boolean;
+    }) => apiFetch<UnitGroupState>(
+      `/v1/listings/${listingId}/unit-groups/${unitGroupKey}/state`,
+      { method: "PATCH", body: { interest_status, visited } },
+    ),
+    onSuccess: (saved) => {
+      qc.setQueryData<UnitGroupState[]>(["listing_unit_group_states", huntId], (current = []) => [
+        ...current.filter((state) => !(
+          state.hunt_listing_id === saved.hunt_listing_id &&
+          state.unit_group_key === saved.unit_group_key
+        )),
+        saved,
+      ]);
+      void qc.invalidateQueries({ queryKey: ["listing_unit_group_states", huntId] });
     },
   });
 }
