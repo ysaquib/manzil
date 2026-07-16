@@ -175,6 +175,22 @@ def test_extraction_hints_ride_in_field_descriptions() -> None:
     assert "a studio is 0" in description
 
 
+def test_availability_date_hint_states_explicit_date_precedence() -> None:
+    """Available Now must not override an explicit Property/Floor Plan date."""
+    avail = next(e for e in CATALOG if e.key == "availability_date")
+    description = field_model(avail).model_fields["value"].description
+    assert description is not None
+    assert "available_now" in description
+    assert "explicit" in description.casefold()
+    assert "EMBEDDED DATA" in description
+
+    floor_plans_desc = build_extraction_schema().model_fields["floor_plans"].description
+    assert floor_plans_desc is not None
+    assert "available_now" in floor_plans_desc
+    assert "explicit" in floor_plans_desc.casefold()
+    assert "EMBEDDED DATA" in floor_plans_desc
+
+
 def test_stringified_field_object_is_coerced() -> None:
     """Some models emit a nested field as a JSON string instead of an object
     (observed on availability_date with haiku); the schema parses it back rather
@@ -217,6 +233,29 @@ def test_stringified_floor_plans_array_is_coerced() -> None:
     parsed = build_extraction_schema().model_validate(extraction_payload(floor_plans=plans))
     assert parsed.floor_plans[0].plan_name == "A1"
     assert parsed.floor_plans[0].rent_min == 1443.0
+
+
+def test_null_criterion_wrapper_is_normalized_to_unknown() -> None:
+    """Gemini emits null for the whole wrapper when the fact is unknown.
+    Normalize that provider-shaped equivalent without weakening missing-key
+    validation."""
+    payload = extraction_payload()
+    payload["parking"] = None
+
+    parsed = build_extraction_schema().model_validate(payload)
+
+    assert parsed.parking.value is None
+    assert parsed.parking.confidence == "not_found"
+    assert parsed.parking.evidence_quote is None
+
+
+def test_null_floor_plan_entries_are_removed() -> None:
+    """Gemini 3 occasionally pads its Floor Plan array with a null item."""
+    payload = extraction_payload(floor_plans=[None, {"plan_name": "A1", "beds": 1}])
+
+    parsed = build_extraction_schema().model_validate(payload)
+
+    assert [plan.plan_name for plan in parsed.floor_plans] == ["A1"]
 
 
 def test_object_not_string_instruction_rides_in_the_tool_schema() -> None:

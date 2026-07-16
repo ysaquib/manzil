@@ -51,12 +51,31 @@ def _parse_stringified_field(cls: type[BaseModel], data: Any) -> Any:
     return _maybe_decode_container(data)
 
 
-def _parse_stringified_top_level(cls: type[BaseModel], data: Any) -> Any:
-    """Same rescue one level up: a criterion field or the floor_plans array
-    emitted as a JSON string inside the tool payload. Top-level fields are all
-    objects/lists — never legitimate strings — so decoding is unambiguous."""
+def _normalize_top_level(cls: type[BaseModel], data: Any) -> Any:
+    """Normalize provider-shaped equivalents of the pinned extraction contract.
+
+    Besides JSON-encoded containers, Gemini tool calls have been observed to
+    emit a criterion wrapper itself as null for an unknown fact and to pad a
+    floor_plans array with null. Both have one unambiguous semantic form in
+    Manzil: the canonical not_found wrapper and no Floor Plan, respectively.
+    Missing criterion keys still fail validation; this only normalizes values
+    the model explicitly emitted.
+    """
     if isinstance(data, dict):
-        return {key: _maybe_decode_container(value) for key, value in data.items()}
+        normalized = {key: _maybe_decode_container(value) for key, value in data.items()}
+        criterion_keys = {entry.key for entry in extractable_entries()}
+        for key in criterion_keys & normalized.keys():
+            if normalized[key] is None:
+                normalized[key] = {
+                    "value": None,
+                    "confidence": "not_found",
+                    "evidence_quote": None,
+                }
+        if isinstance(normalized.get("floor_plans"), list):
+            normalized["floor_plans"] = [
+                plan for plan in normalized["floor_plans"] if plan is not None
+            ]
+        return normalized
     return data
 
 
@@ -163,8 +182,15 @@ def build_extraction_schema(
             default_factory=list,
             description="Every distinct floor plan / unit type advertised on the page, "
             "with its rent range, sqft range, deposit, and earliest availability "
-            "(ISO date). Empty if the page lists a single unit without named plans — "
-            "then put its figures in a single unnamed plan.",
+            "as an ISO date (YYYY-MM-DD). Search prose and [EMBEDDED DATA] for "
+            "that plan: if it has an explicit availability date, emit the "
+            "earliest explicit ISO date even when the UI also says 'Available "
+            "Now', 'Now', or 'Immediately'. Emit the literal sentinel "
+            "available_now only when that plan has immediate wording and no "
+            "explicit availability date (the pipeline rewrites it to the run "
+            "date / corpus saved_at). Ignore similar/nearby Properties and "
+            "unrelated dates. Empty if the page lists a single unit without "
+            "named plans — then put its figures in a single unnamed plan.",
         ),
     )
     fields["pet_costs"] = (
@@ -192,9 +218,7 @@ def build_extraction_schema(
         "ListingExtraction",
         __config__=ConfigDict(extra="forbid"),
         __validators__={
-            "_parse_stringified_top_level": model_validator(mode="before")(
-                _parse_stringified_top_level
-            )
+            "_normalize_top_level": model_validator(mode="before")(_normalize_top_level)
         },
         **fields,
     )
