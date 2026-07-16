@@ -44,6 +44,7 @@ function HistoryCard({ job, listingName, memberName }: {
   memberName: string;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [planExpanded, setPlanExpanded] = useState(false);
   const duration = jobDuration(job);
   return (
     <Card>
@@ -59,15 +60,22 @@ function HistoryCard({ job, listingName, memberName }: {
           {memberName}{duration ? ` · ${duration}` : ""} · ${Number(job.cost_actual_usd).toFixed(4)} USD
         </Text>
         {job.error && <Alert color="red" title="Run failed">{job.error}</Alert>}
-        {job.plan && (
+        <Group gap="xs">
+          {job.plan && (
+            <Button variant="subtle" size="xs" onClick={() => setPlanExpanded((value) => !value)}>
+              {planExpanded ? "Hide plan" : "Inspect plan"}
+            </Button>
+          )}
+          <Button variant="subtle" size="xs" onClick={() => setExpanded((value) => !value)}>
+            {expanded ? "Hide timeline" : "Inspect timeline"}
+          </Button>
+        </Group>
+        {job.plan && planExpanded && (
           <div>
             <Text size="xs" fw={600} mb={4}>Plan manifest</Text>
             <Code block>{JSON.stringify(job.plan, null, 2)}</Code>
           </div>
         )}
-        <Button variant="subtle" size="xs" onClick={() => setExpanded((value) => !value)}>
-          {expanded ? "Hide timeline" : "Inspect timeline"}
-        </Button>
         {expanded && <EventTimeline jobId={job.id} expanded={expanded} />}
       </Stack>
     </Card>
