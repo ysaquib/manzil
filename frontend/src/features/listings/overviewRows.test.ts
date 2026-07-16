@@ -61,6 +61,7 @@ function makeListing(
       id: `${id}-prop`,
       name,
       canonical_address: "1 Main St",
+      city: null,
       official_url: null,
       floor_plans: floorPlans,
       sources: [],
@@ -111,6 +112,45 @@ describe("applyOverviewFilters (hide score < N)", () => {
 
   it("is a no-op when off", () => {
     expect(applyOverviewFilters(buildRows(listings), DEFAULT_OVERVIEW_FILTERS)).toHaveLength(3);
+  });
+});
+
+describe("applyOverviewFilters (curation and locality)", () => {
+  it("attaches Unit Group state and composes city/status/visited filters", () => {
+    const listing = makeListing(
+      "c1",
+      "City Place",
+      [{ beds: 2, baths: 2 }],
+      { "c1-plan-0": 9 },
+    );
+    listing.property.city = "Detroit";
+    const rows = buildRows([listing], [{
+      hunt_listing_id: "c1",
+      unit_group_key: "2-2",
+      interest_status: "interested",
+      visited: true,
+      updated_by: "u1",
+      updated_at: "2026-07-15T00:00:00Z",
+    }]);
+    expect(rows[0].state?.interest_status).toBe("interested");
+    expect(applyOverviewFilters(rows, {
+      ...DEFAULT_OVERVIEW_FILTERS,
+      cities: ["Detroit"],
+      statuses: ["interested"],
+      visited: true,
+    })).toHaveLength(1);
+    expect(applyOverviewFilters(rows, {
+      ...DEFAULT_OVERVIEW_FILTERS,
+      visited: false,
+    })).toHaveLength(0);
+  });
+
+  it("applies an inclusive score ceiling", () => {
+    const rows = buildRows(listings);
+    expect(applyOverviewFilters(rows, {
+      ...DEFAULT_OVERVIEW_FILTERS,
+      maxScore: 4,
+    }).map((row) => row.listing.id)).toEqual(["l2", "l3"]);
   });
 });
 

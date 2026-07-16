@@ -99,6 +99,23 @@ def test_rls_rejects_nonexistent_unit_group_collaboration(collab_hunt, seeded_us
         ).execute()
 
 
+def test_rls_unit_group_curation_requires_curator(collab_hunt, seeded_users) -> None:
+    row = {
+        "hunt_listing_id": collab_hunt["member_listing_id"],
+        "unit_group_key": "2-1",
+        "interest_status": "interested",
+        "visited": True,
+    }
+    with pytest.raises(APIError):
+        seeded_users["member"].supabase.table("listing_unit_group_states").insert(
+            {**row, "updated_by": seeded_users["member"].user_id}
+        ).execute()
+    response = seeded_users["curator"].supabase.table("listing_unit_group_states").insert(
+        {**row, "updated_by": seeded_users["curator"].user_id}
+    ).execute()
+    assert response.data[0]["interest_status"] == "interested"
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("case", READ_MATRIX, ids=lambda c: c.actor)
 async def test_api_hunt_visibility(

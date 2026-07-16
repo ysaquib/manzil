@@ -1,7 +1,9 @@
 // Overview row building, filtering, sorting (P1-10). Pure and unit-tested;
 // the table component stays declarative.
-import type { Listing } from "./types";
+import type { InterestStatus, Listing, UnitGroupState } from "./types";
 import { deriveUnitGroups, type UnitGroupRow } from "./unitGroups";
+
+export type StatusFilter = InterestStatus | "undecided";
 
 export interface OverviewRow {
   listing: Listing;
@@ -9,15 +11,23 @@ export interface OverviewRow {
   // because it is still ingesting (pending) or because ingest found no available
   // floor plans (no-availability, §8.2). See `rowAvailability`.
   group: UnitGroupRow | null;
+  state: UnitGroupState | null;
 }
 
-export function buildRows(listings: Listing[]): OverviewRow[] {
+export function buildRows(listings: Listing[], states: UnitGroupState[] = []): OverviewRow[] {
+  const stateByKey = new Map(
+    states.map((state) => [`${state.hunt_listing_id}:${state.unit_group_key}`, state]),
+  );
   return listings.flatMap((listing): OverviewRow[] => {
     const groups = deriveUnitGroups(listing);
     // A listing with no scorable plans still gets exactly one row so it stays
     // visible — dimmed for no-availability, "pending" while it ingests.
-    if (groups.length === 0) return [{ listing, group: null }];
-    return groups.map((group) => ({ listing, group }));
+    if (groups.length === 0) return [{ listing, group: null, state: null }];
+    return groups.map((group) => ({
+      listing,
+      group,
+      state: stateByKey.get(`${listing.id}:${group.key}`) ?? null,
+    }));
   });
 }
 
@@ -33,6 +43,7 @@ export function rowAvailability(row: OverviewRow): RowAvailability {
 
 export interface OverviewFilterState {
   minScore: number | null;
+  maxScore: number | null;
   minRent: number | null;
   maxRent: number | null;
   minSqft: number | null;
@@ -41,10 +52,15 @@ export interface OverviewFilterState {
   maxBeds: number | null;
   minBaths: number | null;
   maxBaths: number | null;
+  cities: string[];
+  statuses: StatusFilter[];
+  visited: boolean | null;
+  availabilities: RowAvailability[];
 }
 
 export const DEFAULT_OVERVIEW_FILTERS: OverviewFilterState = {
   minScore: null,
+  maxScore: null,
   minRent: null,
   maxRent: null,
   minSqft: null,
@@ -53,10 +69,14 @@ export const DEFAULT_OVERVIEW_FILTERS: OverviewFilterState = {
   maxBeds: null,
   minBaths: null,
   maxBaths: null,
+  cities: [],
+  statuses: [],
+  visited: null,
+  availabilities: [],
 };
 
 export function hasActiveFilters(filters: OverviewFilterState): boolean {
-  return Object.values(filters).some((v) => v !== null);
+  return Object.values(filters).some((v) => (Array.isArray(v) ? v.length > 0 : v !== null));
 }
 
 function rangeOverlaps(
@@ -77,9 +97,9 @@ function rangeOverlaps(
 // without deleting the "why we rejected it" record. Unscored rows stay
 // visible — pending ingestion is not a verdict.
 function scorePredicate(row: OverviewRow, filters: OverviewFilterState): boolean {
-  if (filters.minScore === null) return true;
+  if (filters.minScore === null && filters.maxScore === null) return true;
   if (row.group?.displayScore == null) return true;
-  return row.group.displayScore.total >= filters.minScore;
+  return scalarInBounds(row.group.displayScore.total, filters.minScore, filters.maxScore);
 }
 
 function rentPredicate(row: OverviewRow, filters: OverviewFilterState): boolean {
@@ -126,6 +146,24 @@ function bathsPredicate(row: OverviewRow, filters: OverviewFilterState): boolean
   return scalarInBounds(row.group.baths, filters.minBaths, filters.maxBaths);
 }
 
+function cityPredicate(row: OverviewRow, filters: OverviewFilterState): boolean {
+  return filters.cities.length === 0 || filters.cities.includes(row.listing.property.city ?? "Unknown");
+}
+
+function statusPredicate(row: OverviewRow, filters: OverviewFilterState): boolean {
+  if (filters.statuses.length === 0) return true;
+  const status = row.state?.interest_status ?? "undecided";
+  return filters.statuses.includes(status);
+}
+
+function visitedPredicate(row: OverviewRow, filters: OverviewFilterState): boolean {
+  return filters.visited === null || (row.state?.visited ?? false) === filters.visited;
+}
+
+function availabilityPredicate(row: OverviewRow, filters: OverviewFilterState): boolean {
+  return filters.availabilities.length === 0 || filters.availabilities.includes(rowAvailability(row));
+}
+
 type RowPredicate = (row: OverviewRow, filters: OverviewFilterState) => boolean;
 
 // Registry — adding a future filter appends one predicate here.
@@ -135,6 +173,10 @@ const FILTER_PREDICATES: RowPredicate[] = [
   sqftPredicate,
   bedsPredicate,
   bathsPredicate,
+  cityPredicate,
+  statusPredicate,
+  visitedPredicate,
+  availabilityPredicate,
 ];
 
 export function applyOverviewFilters(
@@ -156,6 +198,9 @@ export function filterPills(filters: OverviewFilterState): FilterPill[] {
   const pills: FilterPill[] = [];
   if (filters.minScore !== null) {
     pills.push({ key: "minScore", label: `Score ≥ ${filters.minScore}` });
+  }
+  if (filters.maxScore !== null) {
+    pills.push({ key: "maxScore", label: `Score ≤ ${filters.maxScore}` });
   }
   if (filters.minRent !== null) {
     pills.push({ key: "minRent", label: `Rent ≥ $${filters.minRent.toLocaleString()}` });
@@ -180,6 +225,16 @@ export function filterPills(filters: OverviewFilterState): FilterPill[] {
   }
   if (filters.maxBaths !== null) {
     pills.push({ key: "maxBaths", label: `Baths ≤ ${filters.maxBaths}` });
+  }
+  for (const city of filters.cities) pills.push({ key: "cities", label: `City: ${city}` });
+  for (const status of filters.statuses) {
+    pills.push({ key: "statuses", label: `Status: ${status.replaceAll("_", " ")}` });
+  }
+  if (filters.visited !== null) {
+    pills.push({ key: "visited", label: filters.visited ? "Visited" : "Not visited" });
+  }
+  for (const availability of filters.availabilities) {
+    pills.push({ key: "availabilities", label: `Availability: ${availability}` });
   }
   return pills;
 }

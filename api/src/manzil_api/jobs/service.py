@@ -95,6 +95,11 @@ async def list_jobs(
     query = client.table("jobs").select("*").eq("hunt_id", str(hunt_id))
     if states:
         query = query.in_("state", [s.value for s in states])
+    query = (
+        query.order("finished_at", desc=True, nullsfirst=False)
+        .order("created_at", desc=True)
+        .order("id", desc=True)
+    )
     return [_row_to_response(row) for row in query.execute().data or []]
 
 
