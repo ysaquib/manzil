@@ -18,7 +18,7 @@ import { useParams } from "react-router-dom";
 import { PageHeader } from "../../components/PageHeader";
 import { resolveSettings } from "../../lib/contracts";
 import { useHunt } from "../hunts/api";
-import { useDeleteListing, useListings } from "./api";
+import { useDeleteListing, useListings, useUnitGroupStates } from "./api";
 import { ListingDetailDrawer, type DrawerSelection } from "./ListingDetailDrawer";
 import { OverviewFilterBar } from "./OverviewFilterBar";
 import { OverviewTable } from "./OverviewTable";
@@ -39,6 +39,7 @@ export function OverviewPage() {
   const { huntId = "" } = useParams();
   const { data: hunt } = useHunt(huntId);
   const { data: listings, isLoading, error } = useListings(huntId);
+  const { data: unitGroupStates = [] } = useUnitGroupStates(huntId);
   const deleteListing = useDeleteListing(huntId);
 
   const [filters, setFilters] = useState<OverviewFilterState>(DEFAULT_OVERVIEW_FILTERS);
@@ -55,8 +56,10 @@ export function OverviewPage() {
     );
   };
 
-  const allRows = buildRows(listings ?? []);
+  const allRows = buildRows(listings ?? [], unitGroupStates);
   const rows = sortRows(applyOverviewFilters(allRows, filters), sort);
+  const cities = [...new Set((listings ?? []).map((listing) => listing.property.city ?? "Unknown"))]
+    .sort((a, b) => a.localeCompare(b));
 
   return (
     <Stack gap="lg">
@@ -71,7 +74,7 @@ export function OverviewPage() {
         )}
       </Group>
 
-      <OverviewFilterBar filters={filters} onChange={setFilters} />
+      <OverviewFilterBar filters={filters} onChange={setFilters} cities={cities} />
 
       {isLoading && (
         <Center py="xl">
