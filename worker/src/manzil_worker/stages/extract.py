@@ -31,6 +31,21 @@ from manzil_worker.state import (
 
 log = structlog.get_logger()
 
+# Transient EXTRACT token for immediate-availability phrasing ("Available Now",
+# "Now", "Immediately"). Rewritten to ctx.today() before VERIFY/persist —
+# never stored or scored (DESIGN §20 2026-07-16).
+AVAILABLE_NOW_SENTINEL = "available_now"
+
+
+def normalize_availability_dates(state: RunState, today_iso: str) -> None:
+    """Rewrite available_now sentinels to the run date in place."""
+    for extraction in state.extractions.get("availability_date", []):
+        if extraction.value == AVAILABLE_NOW_SENTINEL:
+            extraction.value = today_iso
+    for plan in state.floor_plans:
+        if plan.availability_date == AVAILABLE_NOW_SENTINEL:
+            plan.availability_date = today_iso
+
 
 async def extract_stage(state: RunState, ctx: StageCtx) -> RunState:
     source = state.sources[0]
@@ -98,6 +113,7 @@ async def extract_stage(state: RunState, ctx: StageCtx) -> RunState:
         if utilities is not None
         else None
     )
+    normalize_availability_dates(state, ctx.today().isoformat())
     log.info(
         "extracted",
         job_id=str(state.job_id),

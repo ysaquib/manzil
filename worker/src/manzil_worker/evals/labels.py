@@ -50,9 +50,16 @@ Labeling rules (learned the hard way):
    is no single property-level truth for unit-scoped fields when plans span
    studio→3BR; their ground truth lives in `floor_plans`. Keep those keys only
    for single-unit listings.
-3. **`availability_date` = the earliest date the page states** (property level:
-   earliest across plans; plan level: earliest for that plan). Never today's
-   date. Delete the key if the page states no dates.
+3. **`availability_date` = earliest stated date for that scope** (property
+   level: earliest across the target Property's plans; plan level: earliest
+   for that plan). If the target Property/Floor Plan has an explicit
+   availability date in prose or `[EMBEDDED DATA]`, label that ISO date even
+   when the UI also says Available Now / Now / Immediately. Label the
+   sentinel `"available_now"` only for phrase-only immediate wording with no
+   explicit availability date at that scope — the harness resolves it to the
+   UTC date of that listing's corpus `meta.json` `saved_at`, never invent a
+   calendar date in the label. Delete the key if the page states no
+   availability at all.
 
 Column guide:
 

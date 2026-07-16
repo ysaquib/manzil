@@ -56,7 +56,7 @@ class FloorPlanIn(BaseModel):
     rent_min: float | None = None
     rent_max: float | None = None
     deposit: float | None = None
-    availability_date: str | None = None  # ISO date
+    availability_date: str | None = None  # ISO date; available_now rewritten in EXTRACT
     evidence_quote: str | None = None
 
 
@@ -160,6 +160,7 @@ class GeocodeIn(BaseModel):
     lat: float
     lng: float
     formatted_address: str | None = None
+    city: str | None = None
 
 
 class DedupeCandidate(BaseModel):

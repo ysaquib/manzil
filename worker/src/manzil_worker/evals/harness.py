@@ -9,6 +9,10 @@ listing's job_id so spend/latency can be audited in Langfuse (replay runs are
 untraced by design and carry tally figures only — same price table either
 way, `llm/config.py`).
 
+Phrase-only `available_now` normalizes against the corpus page's
+`meta.json.saved_at` (UTC date), not the wall-clock bench run day — DESIGN
+§20 2026-07-16 follow-up. Live ingest still uses wall-clock `StageCtx.today`.
+
 Model choice rides the normal pins; a P0-13 sweep is three runs with
 `MANZIL_MODEL_EXTRACT` / `MANZIL_MODEL_VERIFY` overrides and `bench-compare`
 over the reports.
@@ -16,8 +20,10 @@ over the reports.
 
 from __future__ import annotations
 
+import dataclasses
+import json
 import time
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
@@ -33,7 +39,7 @@ from manzil_worker.llm.config import model_for_stage
 from manzil_worker.llm.prompt_loader import load_prompt
 from manzil_worker.llm.recording import ReplayMissError
 from manzil_worker.stages.base import StageCtx
-from manzil_worker.stages.extract import extract_stage
+from manzil_worker.stages.extract import AVAILABLE_NOW_SENTINEL, extract_stage
 from manzil_worker.stages.verify import verify_stage
 from manzil_worker.state import FloorPlanIn, RunState, SourceState
 
@@ -66,6 +72,8 @@ class ListingResult(BaseModel):
     slug: str
     job_id: str  # Langfuse session id for live/record runs
     error: str | None = None
+    # UTC date of corpus meta.saved_at — the clock EXTRACT/VERIFY/grading used.
+    as_of_date: str | None = None
     criteria: dict[str, CriterionResult] = Field(default_factory=dict)
     gate_keys: list[str] = Field(default_factory=list)
     criterion_accuracy: float | None = None
@@ -96,7 +104,42 @@ def gate_keys_from(rubric: list[RubricCriterion]) -> list[str]:
     return [c.catalog_key for c in rubric if c.non_negotiable is not None and c.catalog_key]
 
 
-def _values_equal(expected: Any, got: Any) -> bool:
+def _corpus_as_of_date(page_dir: Path) -> date:
+    """UTC calendar date of the corpus page's freeze time (`meta.json.saved_at`).
+
+    Fail closed: missing meta, missing/unparseable `saved_at`, or a timezone-
+    naive timestamp are listing errors — never fall back to wall clock.
+    """
+    meta_path = page_dir / "meta.json"
+    if not meta_path.exists():
+        raise ValueError(f"invalid corpus metadata at {meta_path}: missing meta.json")
+    try:
+        meta = json.loads(meta_path.read_text())
+    except json.JSONDecodeError as error:
+        raise ValueError(f"invalid corpus metadata at {meta_path}: {error}") from error
+    if not isinstance(meta, dict):
+        raise ValueError(f"invalid corpus metadata at {meta_path}: expected a JSON object")
+    raw = meta.get("saved_at")
+    if not isinstance(raw, str) or not raw.strip():
+        raise ValueError(f"invalid corpus metadata at {meta_path}: missing saved_at")
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError as error:
+        raise ValueError(
+            f"invalid corpus metadata at {meta_path}: unparseable saved_at {raw!r}"
+        ) from error
+    if parsed.utcoffset() is None:
+        raise ValueError(
+            f"invalid corpus metadata at {meta_path}: saved_at must be timezone-aware"
+        )
+    return parsed.astimezone(UTC).date()
+
+
+def _values_equal(expected: Any, got: Any, *, today: date | None = None) -> bool:
+    # Labels use available_now for phrase-only immediate availability; EXTRACT
+    # rewrites the sentinel to the corpus as-of date before grading sees it.
+    if expected == AVAILABLE_NOW_SENTINEL and today is not None:
+        return got == today.isoformat()
     if isinstance(expected, bool) or isinstance(got, bool):
         return expected == got
     if isinstance(expected, int | float) and isinstance(got, int | float):
@@ -109,7 +152,8 @@ def _norm_name(name: str | None) -> str:
 
 
 # Plan fields compared when the label states them (availability compared as
-# the ISO string; evidence_quote is provenance, never graded).
+# the ISO string, or available_now → corpus as-of date; evidence_quote is
+# provenance, never graded).
 _PLAN_FIELDS = (
     "beds",
     "baths",
@@ -122,7 +166,9 @@ _PLAN_FIELDS = (
 )
 
 
-def _grade_plans(expected: list[FloorPlanIn], got: list[FloorPlanIn]) -> PlanGrade:
+def _grade_plans(
+    expected: list[FloorPlanIn], got: list[FloorPlanIn], *, today: date
+) -> PlanGrade:
     got_by_name = {_norm_name(p.plan_name): p for p in got}
     grade = PlanGrade(expected=len(expected), matched=0)
     for want in expected:
@@ -136,14 +182,21 @@ def _grade_plans(expected: list[FloorPlanIn], got: list[FloorPlanIn]) -> PlanGra
             if want_value is None:
                 continue
             grade.field_checks += 1
-            if _values_equal(want_value, getattr(have, field)):
+            if _values_equal(want_value, getattr(have, field), today=today):
                 grade.field_ok += 1
     grade.extra = [p.plan_name or "<unnamed>" for p in got_by_name.values()]
     return grade
 
 
-def _grade(state: RunState, label: BenchLabel, gate_keys: list[str]) -> ListingResult:
-    result = ListingResult(slug=label.slug, job_id=str(state.job_id), gate_keys=gate_keys)
+def _grade(
+    state: RunState, label: BenchLabel, gate_keys: list[str], *, today: date
+) -> ListingResult:
+    result = ListingResult(
+        slug=label.slug,
+        job_id=str(state.job_id),
+        gate_keys=gate_keys,
+        as_of_date=today.isoformat(),
+    )
     for key, expected in label.criteria.items():
         extraction = state.extractions.get(key, [None])[0]
         got = extraction.value if extraction else None
@@ -152,7 +205,7 @@ def _grade(state: RunState, label: BenchLabel, gate_keys: list[str]) -> ListingR
             expected=expected,
             got=got,
             got_confidence=extraction.confidence if extraction else None,
-            ok=got is not None and _values_equal(expected, got),
+            ok=got is not None and _values_equal(expected, got, today=today),
         )
     for key in label.unknown:
         extraction = state.extractions.get(key, [None])[0]
@@ -174,13 +227,21 @@ def _grade(state: RunState, label: BenchLabel, gate_keys: list[str]) -> ListingR
     result.verify_flags = len(state.verify_flags)
     result.evidence_flags = sum(1 for f in state.verify_flags if f.check == "evidence")
     if label.floor_plans is not None:
-        result.plans = _grade_plans(label.floor_plans, state.floor_plans)
+        result.plans = _grade_plans(label.floor_plans, state.floor_plans, today=today)
     return result
 
 
 async def _run_listing(
-    label: BenchLabel, cleaned_text: str, ctx: StageCtx, gate_keys: list[str]
+    label: BenchLabel,
+    cleaned_text: str,
+    ctx: StageCtx,
+    gate_keys: list[str],
+    *,
+    as_of: date,
 ) -> ListingResult:
+    # Freeze EXTRACT/VERIFY to the corpus snapshot date without mutating the
+    # shared StageCtx the caller passed into run_bench.
+    listing_ctx = dataclasses.replace(ctx, today=lambda: as_of)
     state = RunState(job_id=uuid4(), job_type=JobType.INGEST, url=label.url)
     state.sources = [
         SourceState(
@@ -193,9 +254,9 @@ async def _run_listing(
     trace = RunContext(job_type="bench", job_id=str(state.job_id), listing_slug=label.slug)
     started = time.perf_counter()
     with run_context(trace), cost_tally() as tally:
-        state = await extract_stage(state, ctx)
-        state = await verify_stage(state, ctx)
-    result = _grade(state, label, gate_keys)
+        state = await extract_stage(state, listing_ctx)
+        state = await verify_stage(state, listing_ctx)
+    result = _grade(state, label, gate_keys, today=as_of)
     result.latency_s = round(time.perf_counter() - started, 3)
     result.calls = tally.calls
     result.input_tokens = tally.input_tokens + tally.cache_read_tokens + tally.cache_write_tokens
@@ -245,18 +306,29 @@ async def run_bench(
     a partial report beats no report."""
     listings: list[ListingResult] = []
     for label in labels:
-        cleaned_path = corpus_dir / label.slug / "cleaned.txt"
+        page_dir = corpus_dir / label.slug
+        cleaned_path = page_dir / "cleaned.txt"
         if not cleaned_path.exists():
             listings.append(
                 ListingResult(
                     slug=label.slug,
                     job_id="",
-                    error=f"no corpus page at {cleaned_path.parent} — run `manzil save-page`",
+                    error=f"no corpus page at {page_dir} — run `manzil save-page`",
                 )
             )
             continue
         try:
-            listings.append(await _run_listing(label, cleaned_path.read_text(), ctx, gate_keys))
+            as_of = _corpus_as_of_date(page_dir)
+        except ValueError as error:
+            listings.append(ListingResult(slug=label.slug, job_id="", error=str(error)))
+            log.info("bench_listing", slug=label.slug, error=listings[-1].error)
+            continue
+        try:
+            listings.append(
+                await _run_listing(
+                    label, cleaned_path.read_text(), ctx, gate_keys, as_of=as_of
+                )
+            )
         except ReplayMissError as error:
             listings.append(
                 ListingResult(
@@ -289,6 +361,7 @@ def report_text(report: BenchReport) -> str:
         "| slug | crit acc | gate acc | ev flags | cost $ | latency s |",
         "|---|---|---|---|---|---|",
     ]
+
     for r in report.listings:
         if r.error:
             lines.append(f"| {r.slug} | FAILED: {r.error} | | | | |")
