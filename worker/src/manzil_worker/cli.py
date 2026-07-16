@@ -10,11 +10,23 @@ import os
 from pathlib import Path
 
 import typer
+from rich.console import Console
+from logging import getLogger, basicConfig, INFO
+from rich.logging import RichHandler
+from rich.markdown import Markdown
 from dotenv import load_dotenv
 
 load_dotenv()  # .env keys are read lazily inside commands, so loading here is early enough
-
+console = Console()
 app = typer.Typer(no_args_is_help=True)
+
+logging_config = basicConfig(
+    level=INFO,
+    format="%(message)s",
+    datefmt="[%X]",
+    handlers=[RichHandler(console=console, rich_tracebacks=True)],
+)
+logger = getLogger()
 
 DEFAULT_CENSUS_URLS = Path("infra/census_urls.txt")
 DEFAULT_CENSUS_OUT = Path("docs/hostile-domain-census.csv")
@@ -339,11 +351,12 @@ def bench_run(
         run_bench(labels, corpus_dir=CORPUS_DIR, ctx=ctx, gate_keys=gate_keys_from(rubric))
     )
 
-    stem = name or (datetime.now(UTC).strftime("%Y%m%d-%H%M%S") + "--" + model_for_stage("extract"))
+    model_name = model_for_stage("extract").replace("/", "_")
+    stem = name or (datetime.now(UTC).strftime("%Y%m%d-%H%M%S") + "--" + model_name)
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / f"{stem}.json"
     out.write_text(report.model_dump_json(indent=2) + "\n")
-    typer.echo(report_text(report))
+    console.print(Markdown(report_text(report)))
     typer.echo(f"\nreport written to {out}")
     if all(listing.error is not None for listing in report.listings):
         raise typer.Exit(code=1)

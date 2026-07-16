@@ -119,3 +119,43 @@ def test_second_invalid_response_is_a_job_error_not_a_retry() -> None:
     with pytest.raises(ExtractionInvalid, match="twice"):
         asyncio.run(extract_stage(state, StageCtx(call_structured=llm)))
     assert len(llm.calls) == 2
+
+
+def test_available_now_sentinel_rewrites_to_run_date() -> None:
+    """Immediate-availability phrasing extracts as available_now; EXTRACT
+    rewrites criterion + floor-plan dates to ctx.today before VERIFY."""
+    from datetime import date
+
+    from manzil_worker.stages.extract import AVAILABLE_NOW_SENTINEL
+
+    quote = "Available Now"
+    payload = maple_extraction()
+    payload["availability_date"] = field_payload(AVAILABLE_NOW_SENTINEL, quote)
+    payload["floor_plans"][0]["availability_date"] = AVAILABLE_NOW_SENTINEL
+    payload["floor_plans"][0]["evidence_quote"] = quote
+    llm = FakeLLM({"extract": payload})
+    state = make_state(cleaned_text=CLEANED)
+    frozen = date(2026, 7, 16)
+    state = asyncio.run(
+        extract_stage(state, StageCtx(call_structured=llm, today=lambda: frozen))
+    )
+
+    assert state.extractions["availability_date"][0].value == "2026-07-16"
+    assert state.extractions["availability_date"][0].evidence_quote == quote
+    assert state.floor_plans[0].availability_date == "2026-07-16"
+    assert state.floor_plans[0].evidence_quote == quote
+
+
+def test_iso_availability_date_is_left_untouched() -> None:
+    llm = FakeLLM({"extract": maple_extraction()})
+    state = make_state(cleaned_text=CLEANED)
+    from datetime import date
+
+    state = asyncio.run(
+        extract_stage(
+            state, StageCtx(call_structured=llm, today=lambda: date(2026, 7, 16))
+        )
+    )
+
+    assert state.extractions["availability_date"][0].value == "2026-08-01"
+    assert state.floor_plans[0].availability_date == "2026-08-01"

@@ -275,6 +275,27 @@ def test_live_call_routes_all_models_through_openrouter(
     assert calls == ["openrouter", "openrouter"]
 
 
+def test_tool_schema_inlines_nested_pydantic_refs() -> None:
+    """Gemini's OpenRouter function adapter flattened $ref objects to strings;
+    the provider-facing schema must carry the full nested shape inline."""
+    from pydantic import BaseModel
+
+    class Nested(BaseModel):
+        value: int | None
+
+    class Outer(BaseModel):
+        nested: Nested
+        many: list[Nested]
+
+    schema = client_mod._tool_schema(Outer)
+    serialized = json.dumps(schema)
+
+    assert "$ref" not in serialized
+    assert "$defs" not in serialized
+    assert schema["properties"]["nested"]["properties"]["value"]["anyOf"]
+    assert schema["properties"]["many"]["items"]["properties"]["value"]["anyOf"]
+
+
 def test_bad_llm_mode_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MANZIL_LLM_MODE", "yolo")
     with pytest.raises(SeamConfigError, match="expected live"):
