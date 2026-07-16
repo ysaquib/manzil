@@ -344,13 +344,15 @@ async def _persist_ingest_results(
             update properties set
                 place_id = coalesce(place_id, $2),
                 lat = coalesce(lat, $3),
-                lng = coalesce(lng, $4)
+                lng = coalesce(lng, $4),
+                city = coalesce(city, $5)
             where id = $1
             """,
             property_id,
             geocode.place_id,
             geocode.lat,
             geocode.lng,
+            geocode.city,
         )
 
     for key, ext in state.reconciled.items():
