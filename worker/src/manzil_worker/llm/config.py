@@ -75,6 +75,8 @@ MODEL_PRICES: dict[str, tuple[float, float]] = {
     TASTE_MODEL: (3.00, 15.00),
     "google/gemini-2.5-flash-lite": (0.10, 0.40),
     "google/gemini-2.5-flash": (0.30, 2.50),
+    "google/gemini-3-flash-preview": (0.50, 3.00),
+    "google/gemini-3.1-flash-lite": (0.25, 1.50),
 }
 
 # Cache economics differ per upstream family: Anthropic bills explicit cache

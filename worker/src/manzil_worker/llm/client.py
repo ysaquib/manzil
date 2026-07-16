@@ -205,6 +205,52 @@ def _usage_int(details: Any, field: str) -> int:
     return int(getattr(details, field, 0) or 0)
 
 
+def _inline_local_schema_refs(schema: dict[str, Any]) -> dict[str, Any]:
+    """Inline Pydantic's local ``$defs`` references for provider tool schemas.
+
+    OpenRouter accepts JSON Schema for function parameters, but Gemini's
+    function-calling adapter has been observed to flatten referenced objects
+    into primitive strings. Sending the equivalent inline schema preserves the
+    nested Extraction/Floor Plan shapes across providers. Recursive schemas are
+    not used by Manzil and fail closed rather than expanding forever.
+    """
+    definitions = schema.get("$defs", {})
+
+    def expand(node: Any, stack: tuple[str, ...] = ()) -> Any:
+        if isinstance(node, list):
+            return [expand(item, stack) for item in node]
+        if not isinstance(node, dict):
+            return node
+        reference = node.get("$ref")
+        if reference is not None:
+            prefix = "#/$defs/"
+            if not isinstance(reference, str) or not reference.startswith(prefix):
+                raise SeamConfigError(f"unsupported non-local schema reference: {reference!r}")
+            name = reference.removeprefix(prefix).replace("~1", "/").replace("~0", "~")
+            if name in stack:
+                raise SeamConfigError(f"recursive tool schema reference is unsupported: {name}")
+            try:
+                target = definitions[name]
+            except KeyError:
+                raise SeamConfigError(f"unresolved tool schema reference: {reference}") from None
+            expanded = expand(target, (*stack, name))
+            siblings = {key: expand(value, stack) for key, value in node.items() if key != "$ref"}
+            return {**expanded, **siblings}
+        return {
+            key: expand(value, stack)
+            for key, value in node.items()
+            if key != "$defs"
+        }
+
+    result = expand(schema)
+    assert isinstance(result, dict)
+    return result
+
+
+def _tool_schema(schema: type[BaseModel]) -> dict[str, Any]:
+    return _inline_local_schema_refs(schema.model_json_schema())
+
+
 async def _live_call(plan: _CallPlan, schema: type[BaseModel]) -> ProviderResponse:
     """One real OpenRouter call: cached prefix + per-call system, forced tool."""
     return await _live_call_openrouter(plan, schema)
@@ -247,7 +293,7 @@ async def _live_call_openrouter(plan: _CallPlan, schema: type[BaseModel]) -> Pro
                 "function": {
                     "name": STRUCTURED_TOOL_NAME,
                     "description": "Emit the structured result. Always call this tool.",
-                    "parameters": schema.model_json_schema(),
+                    "parameters": _tool_schema(schema),
                 },
             }
         ],
@@ -345,7 +391,7 @@ async def _live_call_openrouter_vision(
                 "function": {
                     "name": STRUCTURED_TOOL_NAME,
                     "description": "Emit the structured result. Always call this tool.",
-                    "parameters": schema.model_json_schema(),
+                    "parameters": _tool_schema(schema),
                 },
             }
         ],
