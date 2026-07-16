@@ -19,6 +19,13 @@ async def test_legacy_job_history_reads_api_and_rls_events(
         collab_hunt["member_listing_id"],
         json.dumps(plan),
     )
+    older_job_id = await db_pool.fetchval(
+        """insert into jobs
+           (hunt_id, hunt_listing_id, type, state, finished_at)
+           values ($1, $2, 'refresh', 'done', now() - interval '1 day') returning id""",
+        collab_hunt["hunt_id"],
+        collab_hunt["member_listing_id"],
+    )
     await db_pool.executemany(
         """insert into job_events (job_id, stage, event, detail)
            values ($1, $2, $3, $4::jsonb)""",
@@ -33,9 +40,13 @@ async def test_legacy_job_history_reads_api_and_rls_events(
         f"/v1/hunts/{collab_hunt['hunt_id']}/jobs?state=done,failed,cancelled"
     )
     assert response.status_code == 200
-    job = next(row for row in response.json() if row["id"] == str(job_id))
+    history = response.json()
+    job = next(row for row in history if row["id"] == str(job_id))
     assert job["plan"] == plan
     assert job["cost_actual_usd"] == 0.0123
+    assert next(i for i, row in enumerate(history) if row["id"] == str(job_id)) < next(
+        i for i, row in enumerate(history) if row["id"] == str(older_job_id)
+    )
 
     events = (
         seeded_users["member"]

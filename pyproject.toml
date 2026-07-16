@@ -5,6 +5,7 @@ requires-python = ">=3.12"
 dependencies = [
     "playwright>=1.61.0",
     "pytest-playwright>=0.8.0",
+    "rich>=15.0.0",
 ]
 
 [tool.uv.workspace]
