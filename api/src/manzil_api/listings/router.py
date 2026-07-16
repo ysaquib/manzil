@@ -10,7 +10,13 @@ from manzil_api.dependencies import CurrentUser, UserClient
 from manzil_api.hunts.dependencies import MemberHunt
 from manzil_api.listings import service
 from manzil_api.listings.dependencies import ValidListing
-from manzil_api.listings.schemas import ListingCreate, ListingResponse, PinsPatch
+from manzil_api.listings.schemas import (
+    ListingCreate,
+    ListingResponse,
+    PinsPatch,
+    UnitGroupStatePatch,
+    UnitGroupStateResponse,
+)
 
 router = APIRouter(tags=["listings"])
 
@@ -59,3 +65,20 @@ async def patch_pins(
     client: UserClient,
 ) -> ListingResponse:
     return await service.patch_pins(client, listing, user.id, body)
+
+
+@router.patch(
+    "/listings/{listing_id}/unit-groups/{unit_group_key}/state",
+    response_model=UnitGroupStateResponse,
+)
+async def patch_unit_group_state(
+    listing_id: UUID,
+    unit_group_key: str,
+    body: UnitGroupStatePatch,
+    listing: ValidListing,
+    user: CurrentUser,
+    client: UserClient,
+) -> UnitGroupStateResponse:
+    return await service.patch_unit_group_state(
+        client, listing, unit_group_key, user.id, body
+    )

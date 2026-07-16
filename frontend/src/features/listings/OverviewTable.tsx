@@ -3,12 +3,14 @@
 // set is small). One row per Unit Group; score cell shows the group's best or
 // pinned plan (§9.4). Sqft/all-in columns hide below md/sm — no horizontal
 // page scroll (frontend/AGENTS.md).
-import { ActionIcon, Group, Menu, Table, Text, UnstyledButton } from "@mantine/core";
+import { ActionIcon, Checkbox, Group, Menu, Select, Table, Text, UnstyledButton } from "@mantine/core";
 import { IconChevronDown, IconChevronRight, IconChevronUp, IconDotsVertical, IconMessageCircle, IconTrash } from "@tabler/icons-react";
 
 import { ScoreCell } from "./ScoreCell";
 import { RatingDots } from "../collaboration/RatingDots";
-import { useComments, useMembers, useRatings } from "../collaboration/api";
+import { useComments, useCurrentMember, useMembers, useRatings } from "../collaboration/api";
+import { usePatchUnitGroupState } from "./api";
+import { INTEREST_STATUSES, type InterestStatus } from "./types";
 import {
   formatRange,
   rowAvailability,
@@ -64,21 +66,71 @@ export interface OverviewTableProps {
   onDelete: (row: OverviewRow) => void;
 }
 
-function CollaborationCell({ listingId, huntId }: { listingId: string; huntId: string }) {
+function CollaborationCell({ listingId, huntId, unitGroupKey }: { listingId: string; huntId: string; unitGroupKey: string | null }) {
   const { data: members = [] } = useMembers(huntId);
   const { data: ratings = [] } = useRatings(listingId);
   const { data: comments = [] } = useComments(listingId);
+  const rowRatings = ratings.filter((rating) => rating.unit_group_key === unitGroupKey);
+  const rowComments = comments.filter(
+    (comment) => comment.unit_group_key === null || comment.unit_group_key === unitGroupKey,
+  );
   return (
     <Group gap="sm" wrap="nowrap">
-      <RatingDots ratings={ratings} members={members} />
-      {comments.length > 0 && (
+      <RatingDots ratings={rowRatings} members={members} />
+      {rowComments.length > 0 && (
         <Group gap={4} wrap="nowrap">
-          <Text size="sm" c="default">{comments.length}</Text>
+          <Text size="sm" c="default">{rowComments.length}</Text>
           <IconMessageCircle size={16} stroke={1.5}/>
         </Group>
       )}
       {/* {comments.length > 0 && <Text size="xs" c="dimmed">{comments.length} comments</Text>} */}
     </Group>
+  );
+}
+
+function CurationCells({ row, huntId }: { row: OverviewRow; huntId: string }) {
+  const { data: currentMember } = useCurrentMember(huntId);
+  const patchState = usePatchUnitGroupState(huntId);
+  const canCurate = currentMember?.role === "owner" || currentMember?.role === "curator";
+  const group = row.group;
+  const save = (interest_status: InterestStatus | null, visited: boolean) => {
+    if (!group) return;
+    patchState.mutate({
+      listingId: row.listing.id,
+      unitGroupKey: group.key,
+      interest_status,
+      visited,
+    });
+  };
+  return (
+    <>
+      <Table.Td onClick={(event) => event.stopPropagation()}>
+        {group ? (
+          <Select
+            aria-label="interest status"
+            placeholder="Undecided"
+            data={INTEREST_STATUSES.map((status) => ({
+              value: status,
+              label: status.replaceAll("_", " "),
+            }))}
+            value={row.state?.interest_status ?? null}
+            onChange={(value) => save(value as InterestStatus | null, row.state?.visited ?? false)}
+            disabled={!canCurate || patchState.isPending}
+            clearable
+            size="xs"
+            w={155}
+          />
+        ) : <Text size="sm" c="dimmed">—</Text>}
+      </Table.Td>
+      <Table.Td onClick={(event) => event.stopPropagation()}>
+        <Checkbox
+          aria-label="visited"
+          checked={row.state?.visited ?? false}
+          disabled={!group || !canCurate || patchState.isPending}
+          onChange={(event) => save(row.state?.interest_status ?? null, event.currentTarget.checked)}
+        />
+      </Table.Td>
+    </>
   );
 }
 
@@ -102,6 +154,8 @@ export function OverviewTable({ huntId, rows, sort, onSort, onOpen, onDelete }: 
           </Table.Th>
           <Table.Th visibleFrom="md">Sqft</Table.Th>
           <Table.Th visibleFrom="sm">All-in / mo</Table.Th>
+          <Table.Th>Status</Table.Th>
+          <Table.Th>Visited</Table.Th>
           <Table.Th>People</Table.Th>
           <Table.Th aria-label="row actions" />
         </Table.Tr>
@@ -172,8 +226,13 @@ export function OverviewTable({ huntId, rows, sort, onSort, onOpen, onDelete }: 
               <Table.Td visibleFrom="sm">
                 <Text size="sm">{allIn === null ? "—" : `$${allIn.toLocaleString()}`}</Text>
               </Table.Td>
+              <CurationCells row={row} huntId={huntId} />
               <Table.Td>
-                <CollaborationCell listingId={row.listing.id} huntId={huntId} />
+                <CollaborationCell
+                  listingId={row.listing.id}
+                  huntId={huntId}
+                  unitGroupKey={group?.key ?? null}
+                />
               </Table.Td>
               <Table.Td onClick={(e) => e.stopPropagation()} width={40}>
                 <Menu position="bottom-end" withinPortal>

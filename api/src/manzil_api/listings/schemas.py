@@ -9,6 +9,18 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 SourcePolicy = Literal["trust_link", "tier_1", "tiers_1_2", "tiers_1_2_3", "tier_1_plus_official"]
+InterestStatus = Literal[
+    "interested",
+    "not_interested",
+    "applied",
+    "application_rejected",
+    "application_withdrawn",
+    "offer_received",
+    "offer_accepted",
+    "offer_declined",
+    "offer_rescinded",
+    "unavailable",
+]
 
 
 class ListingCreate(BaseModel):
@@ -34,3 +46,15 @@ class PinsPatch(BaseModel):
     """Per-Unit-Group pinned floor plan (DESIGN §8.2 `hunt_listings.pins`)."""
 
     pins: dict[str, Any]
+
+
+class UnitGroupStatePatch(BaseModel):
+    interest_status: InterestStatus | None
+    visited: bool
+
+
+class UnitGroupStateResponse(UnitGroupStatePatch):
+    hunt_listing_id: UUID
+    unit_group_key: str
+    updated_by: UUID
+    updated_at: datetime

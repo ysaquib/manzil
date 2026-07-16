@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -9,7 +10,13 @@ from uuid import UUID
 from manzil_worker.fetching.slug_hint import search_hint
 
 from manzil_api.hunts.exceptions import InsufficientRole
-from manzil_api.listings.schemas import ListingCreate, ListingResponse, PinsPatch
+from manzil_api.listings.schemas import (
+    ListingCreate,
+    ListingResponse,
+    PinsPatch,
+    UnitGroupStatePatch,
+    UnitGroupStateResponse,
+)
 from supabase import Client
 
 
@@ -99,3 +106,33 @@ async def patch_pins(
     if row is None:
         raise RuntimeError("listing missing after pins patch")
     return _to_response(row)
+
+
+async def patch_unit_group_state(
+    client: Client,
+    listing: dict[str, Any],
+    unit_group_key: str,
+    user_id: str,
+    body: UnitGroupStatePatch,
+) -> UnitGroupStateResponse:
+    if _role(client, listing["hunt_id"], user_id) == "member":
+        raise InsufficientRole("Only Hunt Curators and the Owner may curate Unit Groups")
+    response = (
+        client.table("listing_unit_group_states")
+        .upsert(
+            {
+                "hunt_listing_id": listing["id"],
+                "unit_group_key": unit_group_key,
+                "interest_status": body.interest_status,
+                "visited": body.visited,
+                "updated_by": user_id,
+                "updated_at": datetime.now(UTC).isoformat(),
+            },
+            on_conflict="hunt_listing_id,unit_group_key",
+        )
+        .execute()
+    )
+    row = (response.data or [None])[0]
+    if row is None:
+        raise RuntimeError("Unit Group state upsert returned no row")
+    return UnitGroupStateResponse.model_validate(row)
