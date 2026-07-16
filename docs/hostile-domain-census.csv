@@ -5,7 +5,7 @@ rent.com,https://www.rent.com/michigan/detroit-apartments,success,,,1,tier1_ok
 apartmentguide.com,https://www.apartmentguide.com/apartments/Michigan/Detroit/,success,,,1,tier1_ok
 zumper.com,https://www.zumper.com/apartments-for-rent/detroit-mi,shell,success,,2,tier2_ok
 padmapper.com,https://www.padmapper.com/apartments/detroit-mi,shell,success,,2,tier2_ok
-forrent.com,https://www.forrent.com/find/MI/metro-Detroit/Detroit,blocked,blocked,shell,3,hostile_unfetchable
+forrent.com,https://www.forrent.com/find/MI/metro-Detroit/Detroit,blocked,blocked,success,3,tier3_ok
 realtor.com,https://www.realtor.com/apartments/Detroit_MI,blocked,blocked,success,3,tier3_ok
 hotpads.com,https://hotpads.com/detroit-mi/apartments-for-rent,blocked,success,,2,tier2_ok
 trulia.com,"https://www.trulia.com/for_rent/Detroit,MI/",blocked,blocked,success,3,tier3_ok
@@ -13,6 +13,6 @@ apartmentlist.com,https://www.apartmentlist.com/mi/detroit,success,,,1,tier1_ok
 apartmentfinder.com,https://www.apartmentfinder.com/Michigan/Detroit-Apartments,blocked,blocked,success,3,tier3_ok
 rentable.co,https://www.rentable.co/detroit-mi,success,,,1,tier1_ok
 rentcafe.com,https://www.rentcafe.com/apartments-for-rent/detroit-mi/,blocked,success,,2,tier2_ok
-renthop.com,https://www.renthop.com/apartments-for-rent/detroit-mi,blocked,not_listing,,2,not_listing
+renthop.com,https://www.renthop.com/apartments-for-rent/detroit-mi,blocked,success,,2,tier2_ok
 rentberry.com,https://rentberry.com/apartments/s/detroit-mi?mapView=true,success,,,1,tier1_ok
 redfin.com,https://www.redfin.com/city/5665/MI/Detroit/rentals,success,,,1,tier1_ok
