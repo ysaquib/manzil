@@ -182,3 +182,31 @@ def test_extract_blocks_absent_stay_none() -> None:
     state = asyncio.run(extract_stage(state, StageCtx(call_structured=llm)))
     assert state.mandatory_fees is None
     assert state.heating is None
+    assert state.one_time_fees is None
+
+
+def test_extract_lands_one_time_fees_block() -> None:
+    # §9.5 one-time fees (§20 2026-07-18): move-in costs with a payment basis,
+    # optional-with-default like the other blocks.
+    payload = maple_extraction()
+    payload["one_time_fees"] = {
+        "fees": [
+            {"name": "application fee", "amount": 50.0, "basis": "per_person"},
+            {"name": "admin fee", "amount": 150.0, "basis": "per_application"},
+            {"name": "pet deposit", "amount": 300.0, "basis": "per_pet", "refundable": True},
+        ],
+        "evidence_quote": "App fee $50/applicant; $150 admin; $300 refundable pet deposit",
+    }
+    llm = FakeLLM({"extract": payload})
+    state = make_state(cleaned_text=CLEANED)
+    state = asyncio.run(extract_stage(state, StageCtx(call_structured=llm)))
+
+    assert state.one_time_fees is not None
+    fees = state.one_time_fees.fees
+    assert [(f.name, f.amount, f.basis) for f in fees] == [
+        ("application fee", 50.0, "per_person"),
+        ("admin fee", 150.0, "per_application"),
+        ("pet deposit", 300.0, "per_pet"),
+    ]
+    assert fees[2].refundable is True
+    assert fees[0].refundable is None  # page silent → never invented

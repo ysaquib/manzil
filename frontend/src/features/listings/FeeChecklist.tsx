@@ -1,5 +1,7 @@
-// Fees checklist (P1-11, §9.5): fee slots with extracted / manual / unknown states.
-// Manual fill-ins stage in the drawer draft until Save.
+// Fees checklist (P1-11, §9.5): fee slots with extracted / manual / unknown
+// states, split into monthly (composes into all-in) and one-time / move-in
+// (display-only, §20 2026-07-18) sections. Manual fill-ins stage in the
+// drawer draft until Save.
 import {
   ActionIcon,
   Badge,
@@ -16,7 +18,13 @@ import { IconPencil, IconUserEdit } from "@tabler/icons-react";
 import { useState } from "react";
 
 import { useListingDetailDraft } from "./ListingDetailDraft";
-import { FEE_SLOTS, type FeeEntry } from "./types";
+import { basisLabel, feeForSlot, moveInEstimate, type Household } from "./oneTimeFees";
+import {
+  MONTHLY_FEE_SLOTS,
+  ONE_TIME_FEE_SLOTS,
+  type FeeEntry,
+  type OneTimeFee,
+} from "./types";
 
 const STATE_COLOR: Record<FeeEntry["value_state"], string> = {
   extracted: "green",
@@ -28,11 +36,17 @@ const STATE_COLOR: Record<FeeEntry["value_state"], string> = {
 function FeeRow({
   slot,
   label,
+  subtitle,
   entry,
+  monthly,
+  enteredByName,
 }: {
   slot: string;
   label: string;
+  subtitle?: string;
   entry: FeeEntry | undefined;
+  monthly: boolean;
+  enteredByName?: string;
 }) {
   const { draftFees, setDraftFee } = useListingDetailDraft();
   const [opened, setOpened] = useState(false);
@@ -57,11 +71,18 @@ function FeeRow({
     <Table.Tr>
       <Table.Td>
         <Text size="sm">{label}</Text>
+        {subtitle && (
+          <Text size="xs" c="dimmed">
+            {subtitle}
+          </Text>
+        )}
       </Table.Td>
       <Table.Td>
         <Group gap="xs" wrap="nowrap">
           <Text size="sm" fw={600} c={displayAmount == null ? "dimmed" : undefined}>
-            {displayAmount != null ? `$${displayAmount.toLocaleString()}/mo` : "unknown"}
+            {displayAmount != null
+              ? `$${displayAmount.toLocaleString()}${monthly ? "/mo" : ""}`
+              : "unknown"}
           </Text>
           {isPending ? (
             <Badge size="xs" color={"manual"} variant="light">
@@ -69,13 +90,15 @@ function FeeRow({
             </Badge>
           ) : (
             <>
-              <Badge size="xs" variant="light" color={STATE_COLOR[state]}>
-                {state}
-              </Badge>
+              {/* "unknown" already reads as the amount — a badge repeating it
+                  is noise, so badge only the states that add information. */}
+              {state !== "unknown" && (
+                <Badge size="xs" variant="light" color={STATE_COLOR[state]}>
+                  {state}
+                </Badge>
+              )}
               {state === "manual" && (
-                <Tooltip
-                  label={`Entered manually${entry?.entered_by ? ` by ${entry.entered_by}` : ""}`}
-                >
+                <Tooltip label={`Entered manually${enteredByName ? ` by ${enteredByName}` : ""}`}>
                   <IconUserEdit
                     size={14}
                     stroke={1.5}
@@ -106,7 +129,7 @@ function FeeRow({
           <Popover.Dropdown>
             <Stack gap="xs">
               <NumberInput
-                label="Monthly amount"
+                label={monthly ? "Monthly amount" : "One-time amount"}
                 prefix="$"
                 min={0}
                 value={amount}
@@ -123,15 +146,76 @@ function FeeRow({
   );
 }
 
-export function FeeChecklist({ fees }: { fees: FeeEntry[] }) {
-  const bySlot = new Map(fees.map((entry) => [entry.fee_slot, entry]));
+function SectionLabel({ children }: { children: string }) {
   return (
-    <Table verticalSpacing="xs" withRowBorders={false}>
-      <Table.Tbody>
-        {FEE_SLOTS.map(({ slot, label }) => (
-          <FeeRow key={slot} slot={slot} label={label} entry={bySlot.get(slot)} />
-        ))}
-      </Table.Tbody>
-    </Table>
+    <Table.Tr>
+      <Table.Td colSpan={3} pb={2} pt="xs">
+        <Text size="xs" fw={700} c="dimmed" tt="uppercase">
+          {children}
+        </Text>
+      </Table.Td>
+    </Table.Tr>
+  );
+}
+
+export function FeeChecklist({
+  fees,
+  oneTimeFees = [],
+  household,
+  memberNames,
+}: {
+  fees: FeeEntry[];
+  /** the `one_time_fees` extraction's fee list, for basis subtitles + estimate */
+  oneTimeFees?: OneTimeFee[];
+  /** hunt household settings, for the per-person / per-pet move-in estimate */
+  household?: Household;
+  /** user_id → display name, for the manual-entry attribution tooltip */
+  memberNames?: Map<string, string>;
+}) {
+  const bySlot = new Map(fees.map((entry) => [entry.fee_slot, entry]));
+  const nameFor = (entry: FeeEntry | undefined) =>
+    entry?.entered_by
+      ? (memberNames?.get(entry.entered_by) ?? entry.entered_by)
+      : undefined;
+  const estimate = household ? moveInEstimate(oneTimeFees, household) : null;
+  return (
+    <Stack gap={4}>
+      <Table verticalSpacing="xs" withRowBorders={false}>
+        <Table.Tbody>
+          <SectionLabel>Monthly</SectionLabel>
+          {MONTHLY_FEE_SLOTS.map(({ slot, label }) => (
+            <FeeRow
+              key={slot}
+              slot={slot}
+              label={label}
+              entry={bySlot.get(slot)}
+              monthly
+              enteredByName={nameFor(bySlot.get(slot))}
+            />
+          ))}
+          <SectionLabel>One-time / move-in</SectionLabel>
+          {ONE_TIME_FEE_SLOTS.map(({ slot, label }) => {
+            const extracted = feeForSlot(oneTimeFees, slot);
+            return (
+              <FeeRow
+                key={slot}
+                slot={slot}
+                label={label}
+                subtitle={extracted ? basisLabel(extracted) || undefined : undefined}
+                entry={bySlot.get(slot)}
+                monthly={false}
+                enteredByName={nameFor(bySlot.get(slot))}
+              />
+            );
+          })}
+        </Table.Tbody>
+      </Table>
+      {estimate !== null && (
+        <Text size="xs" c="dimmed">
+          Est. move-in fees for your household: ${estimate.toLocaleString()} (excludes
+          security deposit)
+        </Text>
+      )}
+    </Stack>
   );
 }

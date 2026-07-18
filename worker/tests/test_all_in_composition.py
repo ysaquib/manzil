@@ -4,7 +4,12 @@ Pure function, exact assertions (§15 golden discipline)."""
 
 from __future__ import annotations
 
-from manzil_worker.stages.pet_costs import beds_bucket, compose_all_in, slot_for_fee
+from manzil_worker.stages.pet_costs import (
+    beds_bucket,
+    compose_all_in,
+    slot_for_fee,
+    slot_for_one_time_fee,
+)
 
 BASELINES = {
     "electric": (120.0, 80.0),
@@ -140,3 +145,12 @@ def test_slot_mapping_and_bucket() -> None:
     assert slot_for_fee("Required renters insurance program") == "insurance_program"
     assert slot_for_fee("Amenity fee") is None
     assert [beds_bucket(b) for b in (0, 1, 2, 3, 5)] == [0, 1, 2, 3, 3]
+
+
+def test_one_time_slot_mapping() -> None:
+    assert slot_for_one_time_fee("Application Fee") == "application_fee"
+    assert slot_for_one_time_fee("admin fee") == "admin"
+    assert slot_for_one_time_fee("Administrative fee") == "admin"
+    assert slot_for_one_time_fee("Pet Deposit (refundable)") == "pet_deposit"
+    assert slot_for_one_time_fee("Non-refundable pet fee") == "pet_fee"
+    assert slot_for_one_time_fee("Elevator reservation") is None

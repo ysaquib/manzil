@@ -49,6 +49,7 @@ def test_schema_has_one_field_per_criterion_plus_floor_plans() -> None:
         "utilities",
         "mandatory_fees",  # §9.5 P3-9
         "heating",  # §9.5 P3-9
+        "one_time_fees",  # §9.5 §20 2026-07-18
     }
 
 

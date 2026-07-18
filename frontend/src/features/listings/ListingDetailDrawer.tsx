@@ -25,12 +25,14 @@ import { Section } from "../../components/Section";
 import { CommentsSection } from "../collaboration/CommentsSection";
 import { RatingControl } from "../collaboration/RatingControl";
 import { useCurrentMember, useMembers } from "../collaboration/api";
+import { useHunt } from "../hunts/api";
 import { useCatalog } from "../rubric/api";
 import { AllInBreakdown } from "./AllInCost";
 import { CriterionBreakdown } from "./CriterionBreakdown";
 import { FeeChecklist } from "./FeeChecklist";
 import { FloorPlanPins } from "./FloorPlanPins";
 import { ListingDetailDraftProvider, useListingDetailDraft } from "./ListingDetailDraft";
+import { parseOneTimeFees } from "./oneTimeFees";
 import { ScoreCell } from "./ScoreCell";
 import { SourcesList } from "./SourcesList";
 import { useExtractions, useFees, useListings, useOverrides } from "./api";
@@ -203,6 +205,16 @@ function DrawerShell({
   const { data: members = [] } = useMembers(huntId);
   const { data: currentMember } = useCurrentMember(huntId);
   const membercolor = memberColor(currentMember?.color ?? "");
+  const { data: hunt } = useHunt(huntId);
+  // Household settings drive the per-person / per-pet move-in estimate (§9.5).
+  const household = {
+    occupants: Number(hunt?.settings.occupants ?? 1),
+    cats: Number(hunt?.settings.cats ?? 0),
+    dogs: Number(hunt?.settings.dogs ?? 0),
+  };
+  const memberNames = new Map(
+    members.map((m) => [m.user_id, m.display_name ?? m.user_id] as const),
+  );
 
   useEffect(() => {
     setCloseHandler(() => {
@@ -326,7 +338,12 @@ function DrawerShell({
 
             <Section title="Fees checklist">
               <Stack gap="sm">
-                <FeeChecklist fees={fees ?? []} />
+                <FeeChecklist
+                  fees={fees ?? []}
+                  oneTimeFees={parseOneTimeFees(extractions?.get("one_time_fees")?.value)}
+                  household={household}
+                  memberNames={memberNames}
+                />
                 <UtilitiesIncludedLine extraction={extractions?.get("utilities_included")} />
               </Stack>
             </Section>

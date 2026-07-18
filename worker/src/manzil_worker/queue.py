@@ -58,7 +58,7 @@ from manzil_worker.runner import (
     run_job,
 )
 from manzil_worker.stages.base import StageCtx
-from manzil_worker.stages.pet_costs import slot_for_fee
+from manzil_worker.stages.pet_costs import slot_for_fee, slot_for_one_time_fee
 from manzil_worker.stages.rescore import rescore_hunt
 from manzil_worker.state import DedupeCandidate, RunState, SourceFreshness
 
@@ -483,6 +483,47 @@ async def _persist_ingest_results(
                 slot,
                 Decimal(str(fee.amount_monthly)),
                 mandatory.evidence_quote,
+            )
+    one_time = state.one_time_fees
+    if one_time is not None and one_time.fees:
+        model = next((e.model for e in state.reconciled.values()), None) or model_for_stage(
+            "extract"
+        )
+        await conn.execute(
+            """
+            insert into extractions
+                (property_id, hunt_id, criterion_key, value, confidence,
+                 evidence_quote, source_id, model)
+            values ($1, null, 'one_time_fees', $2::jsonb, 'high'::confidence, $3, $4, $5)
+            """,
+            property_id,
+            json.dumps([f.model_dump(mode="json") for f in one_time.fees]),
+            one_time.evidence_quote,
+            source_id,
+            model,
+        )
+        # One-time fees fill the move-in checklist slots (§9.5) — display
+        # only, never composed. `manual` entries are never overwritten.
+        for fee in one_time.fees:
+            slot = slot_for_one_time_fee(fee.name)
+            if slot is None:
+                continue
+            await conn.execute(
+                """
+                insert into fee_checklist
+                    (hunt_listing_id, fee_slot, amount, value_state, evidence_ref, updated_at)
+                values ($1, $2, $3, 'extracted', $4, now())
+                on conflict (hunt_listing_id, fee_slot) do update set
+                    amount = excluded.amount,
+                    value_state = excluded.value_state,
+                    evidence_ref = excluded.evidence_ref,
+                    updated_at = now()
+                where fee_checklist.value_state <> 'manual'
+                """,
+                hunt_listing_id,
+                slot,
+                Decimal(str(fee.amount)),
+                one_time.evidence_quote,
             )
     heating = state.heating
     if heating is not None and heating.heating is not None:

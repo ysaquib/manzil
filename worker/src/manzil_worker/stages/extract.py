@@ -25,6 +25,7 @@ from manzil_worker.state import (
     FloorPlanIn,
     HeatingIn,
     MandatoryFeesIn,
+    OneTimeFeesIn,
     PetCostsIn,
     PropertyIdentityIn,
     RunState,
@@ -125,6 +126,12 @@ async def extract_stage(state: RunState, ctx: StageCtx) -> RunState:
     heating = getattr(extraction, "heating", None)
     state.heating = (
         HeatingIn.model_validate(heating, from_attributes=True) if heating is not None else None
+    )
+    one_time = getattr(extraction, "one_time_fees", None)
+    state.one_time_fees = (
+        OneTimeFeesIn.model_validate(one_time, from_attributes=True)
+        if one_time is not None
+        else None
     )
     normalize_availability_dates(state, ctx.today().isoformat())
     log.info(

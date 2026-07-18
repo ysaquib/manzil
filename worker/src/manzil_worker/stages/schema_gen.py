@@ -27,6 +27,7 @@ from manzil_worker.state import (
     FloorPlanIn,
     HeatingIn,
     MandatoryFeesIn,
+    OneTimeFeesIn,
     PetCostsIn,
     PropertyIdentityIn,
     UtilitiesIn,
@@ -231,6 +232,21 @@ def build_extraction_schema(
             "monthly amounts. EXCLUDE one-time fees (admin, application, deposits), "
             "optional add-ons, and pet rent (its own block). Null the whole block if the "
             "page states no such fees. Never invent.",
+        ),
+    )
+    fields["one_time_fees"] = (
+        OneTimeFeesIn | None,
+        Field(
+            default=None,
+            description="ONE-TIME move-in fees as stated on the page: application fees, "
+            "admin/administrative fees, one-time pet deposits or pet fees, and other "
+            "single-payment move-in charges. Numbers only. For each fee set `basis`: "
+            "'per_person' when charged per applicant/occupant, 'per_application' when one "
+            "charge covers the whole application, 'per_pet' when charged per animal, else "
+            "'flat'. Set `refundable` only when the page says refundable or non-refundable. "
+            "EXCLUDE security deposits (floor-plan field), recurring monthly fees (their "
+            "own block), and optional add-ons. Null the whole block if the page states no "
+            "such fees. Never invent.",
         ),
     )
     fields["heating"] = (
