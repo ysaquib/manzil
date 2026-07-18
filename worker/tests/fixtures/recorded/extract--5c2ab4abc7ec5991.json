@@ -1,0 +1,92 @@
+{
+  "cache_read_tokens": 4914,
+  "cache_write_tokens": 0,
+  "content_sha256": "06f57e8ba2ceb88fc0d082b30eaca1c12fe71536ea50aada79db95aaad0839e5",
+  "input_tokens": 887,
+  "model": "anthropic/claude-haiku-4.5",
+  "output": {
+    "availability_date": {
+      "confidence": "high",
+      "evidence_quote": "Available August 1, 2026",
+      "value": "2026-08-01"
+    },
+    "baths": {
+      "confidence": "high",
+      "evidence_quote": "2 bedroom, 1.5 bathroom apartment home",
+      "value": 1.5
+    },
+    "beds": {
+      "confidence": "high",
+      "evidence_quote": "The Maple, is a 2 bedroom, 1.5 bathroom apartment home",
+      "value": 2
+    },
+    "cooling": {
+      "confidence": "high",
+      "evidence_quote": "Central air conditioning and forced-air heating",
+      "value": "central"
+    },
+    "dishwasher": {
+      "confidence": "high",
+      "evidence_quote": "Dishwasher, garbage disposal, and frost-free refrigerator",
+      "value": true
+    },
+    "floor_plans": [
+      {
+        "availability_date": "2026-08-01",
+        "baths": 1.5,
+        "beds": 2,
+        "deposit": 500,
+        "evidence_quote": "The Maple, is a 2 bedroom, 1.5 bathroom apartment home with 950 square feet of thoughtfully designed living space. Rent from $1,700 to $1,750 per month depending on floor level and view. Available August 1, 2026.",
+        "plan_name": "The Maple",
+        "rent_max": 1750,
+        "rent_min": 1700,
+        "sqft_max": 950,
+        "sqft_min": 950
+      }
+    ],
+    "in_unit_laundry": {
+      "confidence": "high",
+      "evidence_quote": "Full-size washer and dryer in every home",
+      "value": "in_unit"
+    },
+    "min_lease_months": {
+      "confidence": "high",
+      "evidence_quote": "Minimum lease term | 12 months",
+      "value": 12
+    },
+    "parking": {
+      "confidence": "high",
+      "evidence_quote": "Dedicated parking lot with one assigned space per apartment",
+      "value": "dedicated_lot"
+    },
+    "patio_balcony": {
+      "confidence": "high",
+      "evidence_quote": "Private balcony or ground-floor patio with storage closet",
+      "value": true
+    },
+    "pets_policy": {
+      "confidence": "high",
+      "evidence_quote": "Cats and small dogs welcome!",
+      "value": "cats_and_dogs"
+    },
+    "private_entry": {
+      "confidence": "not_found",
+      "evidence_quote": null,
+      "value": null
+    },
+    "security_deposit": {
+      "confidence": "high",
+      "evidence_quote": "Security deposit | $500 with approved credit",
+      "value": 500
+    },
+    "sqft": {
+      "confidence": "high",
+      "evidence_quote": "950 square feet of thoughtfully designed living space",
+      "value": 950
+    }
+  },
+  "output_tokens": 945,
+  "prompt_version": 3,
+  "recorded_at": "2026-07-09T02:22:22.002658+00:00",
+  "stage": "extract"
+}

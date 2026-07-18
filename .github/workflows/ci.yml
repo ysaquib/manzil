@@ -12,8 +12,8 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v8
       - run: uv sync --all-packages
       - run: uv run ruff check .
       - run: uv run ruff format --check .
@@ -21,8 +21,8 @@ jobs:
   typecheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v8
       - run: uv sync --all-packages
       - run: uv run mypy
 
@@ -32,9 +32,9 @@ jobs:
       MANZIL_LLM_MODE: replay
       MANZIL_WORKER_INPROCESS: "false"
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - uses: supabase/setup-cli@v1
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v8
+      - uses: supabase/setup-cli@v3
         with:
           version: 2.98.2
       - run: uv sync --all-packages
@@ -59,9 +59,9 @@ jobs:
       MANZIL_LLM_MODE: replay
       MANZIL_WORKER_INPROCESS: "false"
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
-      - uses: supabase/setup-cli@v1
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v8
+      - uses: supabase/setup-cli@v3
         with:
           version: 2.98.2
       - run: uv sync --all-packages
@@ -84,11 +84,11 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           version: 11
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
