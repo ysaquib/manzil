@@ -15,29 +15,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from dotenv import load_dotenv
+from local_supabase import LOCAL_ANON_KEY, LOCAL_SERVICE_ROLE_KEY, LOCAL_SUPABASE_URL
 
 load_dotenv(Path(__file__).resolve().parents[2] / "infra" / ".env", override=False)
 load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=False)
 
-# Supabase CLI local stack defaults (public demo JWTs — not production secrets).
-_LOCAL_SUPABASE_URL = "http://127.0.0.1:54321"
-_LOCAL_ANON_KEY = (
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
-    "eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9."
-    "CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0"
-)
-
 if not os.environ.get("SUPABASE_URL", "").strip():
-    os.environ["SUPABASE_URL"] = _LOCAL_SUPABASE_URL
-_LOCAL_SERVICE_KEY = (
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
-    "eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6OjE5ODM4MTI5OTZ9."
-    "EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU"
-)
+    os.environ["SUPABASE_URL"] = LOCAL_SUPABASE_URL
 if not os.environ.get("SUPABASE_ANON_KEY", "").strip():
-    os.environ["SUPABASE_ANON_KEY"] = _LOCAL_ANON_KEY
+    os.environ["SUPABASE_ANON_KEY"] = LOCAL_ANON_KEY
 if not os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip():
-    os.environ["SUPABASE_SERVICE_ROLE_KEY"] = _LOCAL_SERVICE_KEY
+    os.environ["SUPABASE_SERVICE_ROLE_KEY"] = LOCAL_SERVICE_ROLE_KEY
 os.environ.setdefault("DATABASE_URL", "postgresql://postgres:postgres@127.0.0.1:54322/postgres")
 os.environ.setdefault("API_ENVIRONMENT", "local")
 os.environ.setdefault("MANZIL_WORKER_INPROCESS", "false")

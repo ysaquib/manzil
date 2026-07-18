@@ -14,6 +14,7 @@ from pathlib import Path
 
 import asyncpg
 import pytest
+from worker_helpers import seed_recorded_llm
 
 # Inline (not imported from conftest) to avoid a same-named sibling conftest
 # shadowing it during full-suite collection — see test_migration_0002_schema.py.
@@ -39,7 +40,7 @@ async def test_dev_seed_leaves_one_hunt_three_listings_nonzero_scores() -> None:
         pytest.skip(f"Postgres unreachable at {DATABASE_URL}: {exc}")
     try:
         dev_seed = _load_dev_seed()
-        hunts, listings, scores = await dev_seed.seed(pool)
+        hunts, listings, scores = await dev_seed.seed(pool, call_structured=seed_recorded_llm)
         assert hunts == 1
         assert listings == 3
         assert scores >= 1

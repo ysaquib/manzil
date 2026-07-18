@@ -11,9 +11,7 @@ from manzil_api.invites.service import MEMBER_COLOR_TOKENS
 
 class CommentCreate(BaseModel):
     body: str = Field(min_length=1, max_length=4000)
-    unit_group_key: str | None = Field(
-        default=None, pattern=r"^[0-9]+-[0-9]+(?:\.[0-9]+)?$"
-    )
+    unit_group_key: str | None = Field(default=None, pattern=r"^[0-9]+-[0-9]+(?:\.[0-9]+)?$")
 
     @field_validator("body")
     @classmethod

@@ -159,9 +159,7 @@ async def test_orphaned_job_resumes_from_current_stage(pg_pool: asyncpg.Pool) ->
             await run_job(state, StageCtx(persistence=first), _stages(executed, crash_at=2))
         assert executed == ["a", "b"]
 
-        row = await pg_pool.fetchrow(
-            "select state, current_stage from jobs where id = $1", job_id
-        )
+        row = await pg_pool.fetchrow("select state, current_stage from jobs where id = $1", job_id)
         assert row["state"] == "running"  # still locked — a real crash leaves it so
         assert row["current_stage"] == "c"  # persisted resume point
 

@@ -311,9 +311,7 @@ async def test_explicit_listing_not_on_property_errors(pg_pool: asyncpg.Pool) ->
                 )
         # The failed op wrote nothing — no new Property was created (rollback whole).
         assert (
-            await pg_pool.fetchval(
-                "select property_id from property_sources where url = $1", URL2
-            )
+            await pg_pool.fetchval("select property_id from property_sources where url = $1", URL2)
             == fx.property_id
         )
     finally:

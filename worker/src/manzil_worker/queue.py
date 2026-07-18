@@ -562,8 +562,7 @@ def _make_dedupe_candidates(pool: asyncpg.Pool, exclude_property_id: UUID) -> De
 
     async def candidates() -> list[DedupeCandidate]:
         rows = await pool.fetch(
-            "select id, name, canonical_address, place_id, lat, lng "
-            "from properties where id <> $1",
+            "select id, name, canonical_address, place_id, lat, lng from properties where id <> $1",
             exclude_property_id,
         )
         return [DedupeCandidate(**dict(row)) for row in rows]
@@ -814,13 +813,16 @@ def build_dispatch(
     *,
     dsn: str | None = None,
     fetchers_factory: FetchersFactory | None = None,
+    call_structured: CallStructured | None = None,
 ) -> dict[JobType, Dispatcher]:
     """The `job_type -> dispatcher` table. `ingest` and `rescore` (P1-6).
     `dsn` (when given) backs the per-domain adapter registry."""
     dsn = dsn or os.environ.get("DATABASE_URL")
     return {
         JobType.INGEST: make_ingest_dispatcher(
-            dsn=dsn, fetchers_factory=fetchers_factory or _default_fetchers
+            dsn=dsn,
+            fetchers_factory=fetchers_factory or _default_fetchers,
+            call_structured=call_structured,
         ),
         JobType.RESCORE: make_rescore_dispatcher(),
     }

@@ -136,9 +136,7 @@ def test_available_now_sentinel_rewrites_to_run_date() -> None:
     llm = FakeLLM({"extract": payload})
     state = make_state(cleaned_text=CLEANED)
     frozen = date(2026, 7, 16)
-    state = asyncio.run(
-        extract_stage(state, StageCtx(call_structured=llm, today=lambda: frozen))
-    )
+    state = asyncio.run(extract_stage(state, StageCtx(call_structured=llm, today=lambda: frozen)))
 
     assert state.extractions["availability_date"][0].value == "2026-07-16"
     assert state.extractions["availability_date"][0].evidence_quote == quote
@@ -152,9 +150,7 @@ def test_iso_availability_date_is_left_untouched() -> None:
     from datetime import date
 
     state = asyncio.run(
-        extract_stage(
-            state, StageCtx(call_structured=llm, today=lambda: date(2026, 7, 16))
-        )
+        extract_stage(state, StageCtx(call_structured=llm, today=lambda: date(2026, 7, 16)))
     )
 
     assert state.extractions["availability_date"][0].value == "2026-08-01"

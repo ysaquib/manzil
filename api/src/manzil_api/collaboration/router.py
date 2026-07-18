@@ -76,9 +76,7 @@ async def delete_rating(
 
 
 @router.get("/hunts/{hunt_id}/members", response_model=list[MemberResponse])
-async def list_members(
-    hunt_id: UUID, hunt: MemberHunt, client: UserClient
-) -> list[MemberResponse]:
+async def list_members(hunt_id: UUID, hunt: MemberHunt, client: UserClient) -> list[MemberResponse]:
     return await service.list_members(client, hunt_id)
 
 
@@ -94,9 +92,7 @@ async def patch_member(
     return await service.patch_member(client, hunt_id, target_user_id, user.id, body)
 
 
-@router.delete(
-    "/hunts/{hunt_id}/members/{target_user_id}", status_code=status.HTTP_204_NO_CONTENT
-)
+@router.delete("/hunts/{hunt_id}/members/{target_user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_member(
     hunt_id: UUID, target_user_id: UUID, hunt: OwnedHunt, client: UserClient
 ) -> None:

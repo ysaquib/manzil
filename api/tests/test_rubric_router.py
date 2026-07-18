@@ -83,16 +83,20 @@ async def test_put_rubric_derives_dealbreaker_as_not_bonus(client: AsyncClient, 
         response = await client.put(
             f"/v1/hunts/{hunt_id}/rubric",
             json={
-                "criteria": [{
-                    "catalog_key": "beds",
-                    "options": [{
-                        "match": {"op": "gte", "value": 2},
-                        "delta": 1,
-                        "dealbreaker_set_score": 0,
-                    }],
-                    "unknown_delta": 0,
-                    "is_bonus": True,
-                }]
+                "criteria": [
+                    {
+                        "catalog_key": "beds",
+                        "options": [
+                            {
+                                "match": {"op": "gte", "value": 2},
+                                "delta": 1,
+                                "dealbreaker_set_score": 0,
+                            }
+                        ],
+                        "unknown_delta": 0,
+                        "is_bonus": True,
+                    }
+                ]
             },
         )
         assert response.status_code == 200

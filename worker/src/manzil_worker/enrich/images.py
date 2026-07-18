@@ -70,9 +70,7 @@ def _srcset_urls(value: str | None) -> Iterable[str]:
     if not value:
         return ()
     candidates = [
-        candidate.strip().split()[0]
-        for candidate in value.split(",")
-        if candidate.strip()
+        candidate.strip().split()[0] for candidate in value.split(",") if candidate.strip()
     ]
     # srcset is conventionally ordered from smaller to larger. Keep the best
     # variant instead of spending the Property cap on multiple resolutions of

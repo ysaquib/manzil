@@ -81,9 +81,7 @@ class CatchAllMiddleware(BaseHTTPMiddleware):
     through ServerErrorMiddleware, which sits outside CORSMiddleware.
     """
 
-    async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint
-    ) -> Response:
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         try:
             return await call_next(request)
         except Exception:

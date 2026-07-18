@@ -47,7 +47,7 @@ function formatScalar(value: unknown): string {
 }
 
 /** Human-readable match label for rubric view cards. See file-header conventions. */
-export function formatMatchLabel(match: OptionMatch, _schema: ValueSchema): string {
+export function formatMatchLabel(match: OptionMatch): string {
   switch (match.op) {
     case "eq":
       return formatScalar(match.value);

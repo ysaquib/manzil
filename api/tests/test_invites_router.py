@@ -10,8 +10,9 @@ from manzil_api import privileged
 
 @pytest.mark.asyncio
 async def test_accept_is_idempotent_for_existing_member(
-    collab_hunt, as_owner: AsyncClient, as_member: AsyncClient
+    collab_hunt, as_owner: AsyncClient, as_member: AsyncClient, monkeypatch
 ) -> None:
+    monkeypatch.setattr(privileged, "send_invite_email", lambda *args: None)
     created = await as_owner.post(
         f"/v1/hunts/{collab_hunt['hunt_id']}/invites",
         json={"email": "member@test.manzil", "role": "curator"},

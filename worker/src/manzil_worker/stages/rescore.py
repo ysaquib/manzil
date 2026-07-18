@@ -68,9 +68,7 @@ async def _latest_hunt_extractions(
     }
 
 
-async def _latest_overrides(
-    conn: asyncpg.Connection, hunt_listing_id: UUID
-) -> dict[str, Any]:
+async def _latest_overrides(conn: asyncpg.Connection, hunt_listing_id: UUID) -> dict[str, Any]:
     rows = await conn.fetch(
         """
         select distinct on (criterion_key) criterion_key, value

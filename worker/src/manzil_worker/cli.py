@@ -7,14 +7,14 @@ The CLI and the Phase 1+ queue worker are two entry points calling the same
 
 import asyncio
 import os
+from logging import INFO, basicConfig, getLogger
 from pathlib import Path
 
 import typer
+from dotenv import load_dotenv
 from rich.console import Console
-from logging import getLogger, basicConfig, INFO
 from rich.logging import RichHandler
 from rich.markdown import Markdown
-from dotenv import load_dotenv
 
 load_dotenv()  # .env keys are read lazily inside commands, so loading here is early enough
 console = Console()
@@ -244,19 +244,20 @@ def clean_corpus() -> None:
         typer.echo(f"{slug}: {raw_bytes} B raw -> {cleaned_chars} chars cleaned")
     typer.echo(f"regenerated {len(report)} pages")
 
+
 @app.command("clean-corpus-page")
 def clean_corpus_page(
     slug: str,
 ) -> None:
     """Clean a single corpus page."""
-    from manzil_worker.fetching.corpus import clean_page
-    from manzil_worker.fetching.corpus import CORPUS_DIR
+    from manzil_worker.fetching.corpus import CORPUS_DIR, clean_page
 
     cleaned = clean_page(slug, corpus_dir=CORPUS_DIR)
     if not cleaned:
         typer.echo(f"failed to clean {slug}", err=True)
         raise typer.Exit(code=1)
     typer.echo(f"cleaned {slug}")
+
 
 @app.command("save-page")
 def save_page_cmd(

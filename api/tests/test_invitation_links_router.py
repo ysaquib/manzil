@@ -55,9 +55,7 @@ async def test_limit_edit_exhausts_and_reactivates_link(
 
     exhausted = await as_owner.get(collection)
     assert exhausted.json()[0]["status"] == "exhausted"
-    raised = await as_owner.patch(
-        f"/v1/invitation-links/{link['id']}", json={"max_uses": 2}
-    )
+    raised = await as_owner.patch(f"/v1/invitation-links/{link['id']}", json={"max_uses": 2})
     assert raised.status_code == 200
     assert raised.json()["status"] == "active"
 

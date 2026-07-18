@@ -27,6 +27,7 @@ def corpus_pages(corpus_dir: Path = CORPUS_DIR) -> list[Path]:
         return []
     return sorted(p for p in corpus_dir.iterdir() if (p / "raw.html").exists())
 
+
 def clean_page(slug: str, corpus_dir: Path = CORPUS_DIR) -> None:
     """Clean a single corpus page."""
     page_dir = corpus_dir / slug
@@ -36,6 +37,7 @@ def clean_page(slug: str, corpus_dir: Path = CORPUS_DIR) -> None:
     cleaned = clean_html(raw)
     (page_dir / "cleaned.txt").write_text(cleaned.text)
     return cleaned
+
 
 def regenerate_cleaned(corpus_dir: Path = CORPUS_DIR) -> list[tuple[str, int, int]]:
     """Re-run the cleaner over every corpus page (runbook: regenerate when the

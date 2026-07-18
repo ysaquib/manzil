@@ -19,6 +19,7 @@ from manzil_worker.fetching.ssrf import (
     is_private_literal,
     resolve_public_host,
     screen_url,
+    screen_urls,
 )
 from manzil_worker.fetching.tiers import Tier1Fetcher
 from manzil_worker.llm.tools import ToolContext, fetch_page, tool_context
@@ -131,6 +132,82 @@ def test_is_blocked_ip_literal_route_predicate(url: str, blocked: bool) -> None:
 async def test_screen_url_rejects_non_http_scheme() -> None:
     with pytest.raises(PrivateAddressRefused):
         await screen_url("file:///etc/passwd", resolver=one(PUBLIC_V4))
+
+
+# ── screen_urls: the CI-testable seam for tier 2's redirect-chain screen ──────
+# Models the tier-2 threat without a browser: a fake resolver plays getaddrinfo
+# for each hop host, so an intermediate (not just final) private hop is provable.
+
+
+def resolver_by_host(mapping: dict[str, list[str]]):
+    """Fake resolver keyed by hostname (each hop URL has a distinct host)."""
+    return resolver_for(mapping)
+
+
+async def test_screen_urls_passes_when_every_hop_is_global() -> None:
+    resolver = resolver_by_host(
+        {"a.example": [PUBLIC_V4], "b.example": [PUBLIC_V6], "c.example": [PUBLIC_V4]}
+    )
+    # No raise == pass.
+    await screen_urls(
+        ["https://a.example/1", "https://b.example/2", "https://c.example/3"],
+        resolver=resolver,
+    )
+
+
+async def test_screen_urls_refuses_a_private_MIDDLE_hop() -> None:
+    """The intermediate hop — not the final landing URL — resolves private. This is
+    the exact ``public → private(reachable) → public`` chain the tier-2 fix targets:
+    the final URL is clean, but the middle host must still refuse."""
+    resolver = resolver_by_host(
+        {
+            "start.example": [PUBLIC_V4],
+            "internal.example": ["10.0.0.9"],  # the transited private hop
+            "landing.example": [PUBLIC_V4],  # final URL screens clean on its own
+        }
+    )
+    with pytest.raises(PrivateAddressRefused):
+        await screen_urls(
+            [
+                "https://start.example/a",
+                "https://internal.example/b",
+                "https://landing.example/c",
+            ],
+            resolver=resolver,
+        )
+
+
+async def test_screen_urls_refuses_a_private_ip_literal_hop() -> None:
+    resolver = resolver_by_host({"start.example": [PUBLIC_V4]})
+    with pytest.raises(PrivateAddressRefused):
+        await screen_urls(
+            ["https://start.example/a", "http://169.254.169.254/latest/meta-data/"],
+            resolver=resolver,
+        )
+
+
+async def test_screen_urls_refuses_a_disallowed_scheme_hop() -> None:
+    resolver = resolver_by_host({"start.example": [PUBLIC_V4]})
+    with pytest.raises(PrivateAddressRefused):
+        await screen_urls(
+            ["https://start.example/a", "file:///etc/passwd"],
+            resolver=resolver,
+        )
+
+
+async def test_screen_urls_dedupe_does_not_drop_a_distinct_private_hop() -> None:
+    """Dedupe collapses repeated hops but must not let a distinct private hop slip:
+    a repeated public host precedes a private one, and the private one still refuses."""
+    resolver = resolver_by_host({"pub.example": [PUBLIC_V4], "internal.example": ["192.168.1.5"]})
+    with pytest.raises(PrivateAddressRefused):
+        await screen_urls(
+            [
+                "https://pub.example/x",
+                "https://pub.example/x",  # duplicate — screened once
+                "https://internal.example/y",  # distinct private — must still refuse
+            ],
+            resolver=resolver,
+        )
 
 
 # ── Tier 1: pre-connect screen + manual redirect discipline ──────────────────

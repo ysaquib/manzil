@@ -36,9 +36,7 @@ def send_invite_email(service_client: Client, email: str, token: str, frontend_u
         raise InviteEmailFailed("Supabase could not send the invite email") from exc
 
 
-def transfer_ownership(
-    service_client: Client, hunt_id: UUID, new_owner_id: UUID
-) -> dict[str, Any]:
+def transfer_ownership(service_client: Client, hunt_id: UUID, new_owner_id: UUID) -> dict[str, Any]:
     """Move the 'owner' role atomically via the service-role RPC.
 
     Returns the RPC status jsonb (`{"status": "ok" | "not_member"}`) so the

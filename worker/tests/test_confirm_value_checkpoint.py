@@ -47,9 +47,7 @@ def test_gate_relevant_demotion_raises_confirm_value() -> None:
 def test_checkpoint_answer_yes_upgrades_confidence_for_score() -> None:
     state = make_state(cleaned_text=PAGE_TEXT)
     state.extractions["beds"] = [fe(2, "this quote is not on the page at all")]
-    state.extractions["in_unit_laundry"] = [
-        fe("in_unit", "washer and dryer hookups in every unit")
-    ]
+    state.extractions["in_unit_laundry"] = [fe("in_unit", "washer and dryer hookups in every unit")]
     state.checkpoint_answer = {"choice": "yes", "context_ref": "beds"}
 
     asyncio.run(verify_stage(state, _ctx()))
@@ -62,9 +60,7 @@ def test_checkpoint_answer_yes_upgrades_confidence_for_score() -> None:
 def test_checkpoint_answer_no_leaves_demoted() -> None:
     state = make_state(cleaned_text=PAGE_TEXT)
     state.extractions["beds"] = [fe(2, "this quote is not on the page at all")]
-    state.extractions["in_unit_laundry"] = [
-        fe("in_unit", "washer and dryer hookups in every unit")
-    ]
+    state.extractions["in_unit_laundry"] = [fe("in_unit", "washer and dryer hookups in every unit")]
     state.checkpoint_answer = {"choice": "no", "context_ref": "beds"}
 
     asyncio.run(verify_stage(state, _ctx()))

@@ -115,9 +115,7 @@ async def test_scorable_plan_clears_marker_and_upserts_stable_id(pg_pool: asyncp
 
         # Re-ingest the same source/plan: upsert keeps the id (scores stay attached).
         await project()
-        ids = await pg_pool.fetch(
-            "select id from floor_plans where property_id = $1", property_id
-        )
+        ids = await pg_pool.fetch("select id from floor_plans where property_id = $1", property_id)
         assert len(ids) == 1
         assert ids[0]["id"] == first_id
         score_count = await pg_pool.fetchval(

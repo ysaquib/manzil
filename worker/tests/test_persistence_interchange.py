@@ -43,9 +43,7 @@ def _sample_state(job_id) -> RunState:  # type: ignore[no-untyped-def]
         )
     ]
     state.extractions = {
-        "beds": [
-            FieldExtraction(value=2, confidence=Confidence.HIGH, model="m", prompt_version=1)
-        ]
+        "beds": [FieldExtraction(value=2, confidence=Confidence.HIGH, model="m", prompt_version=1)]
     }
     return state
 

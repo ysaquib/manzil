@@ -79,6 +79,4 @@ async def patch_unit_group_state(
     user: CurrentUser,
     client: UserClient,
 ) -> UnitGroupStateResponse:
-    return await service.patch_unit_group_state(
-        client, listing, unit_group_key, user.id, body
-    )
+    return await service.patch_unit_group_state(client, listing, unit_group_key, user.id, body)

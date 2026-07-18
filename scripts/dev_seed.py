@@ -39,6 +39,7 @@ if os.environ.get("MANZIL_LLM_MODE") != "record":
 from manzil_worker.fetching.results import FetchResult  # noqa: E402
 from manzil_worker.phase0_rubric import phase0_rubric  # noqa: E402
 from manzil_worker.queue import build_dispatch, run_worker_loop  # noqa: E402
+from manzil_worker.stages.base import CallStructured  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PAGES_DIR = REPO_ROOT / "worker" / "tests" / "fixtures" / "pages"
@@ -81,9 +82,7 @@ class FixtureFetcher:
         self._bodies = bodies
 
     async def fetch(self, url: str, *, capture_screenshot: bool = False) -> FetchResult:
-        return FetchResult(
-            url=url, final_url=url, status_code=200, body=self._bodies[url], tier=1
-        )
+        return FetchResult(url=url, final_url=url, status_code=200, body=self._bodies[url], tier=1)
 
 
 def _fixture_bodies() -> dict[str, str]:
@@ -182,7 +181,9 @@ async def _report(conn: asyncpg.Connection) -> tuple[int, int, int]:
     return hunts, listings, scores
 
 
-async def seed(pool: asyncpg.Pool) -> tuple[int, int, int]:
+async def seed(
+    pool: asyncpg.Pool, *, call_structured: CallStructured | None = None
+) -> tuple[int, int, int]:
     """Seed idempotently and drain the ingest jobs. Returns
     (hunts, listings, non-zero scores) so callers can assert the P1-1 done-when."""
     async with pool.acquire() as conn, conn.transaction():
@@ -190,7 +191,11 @@ async def seed(pool: asyncpg.Pool) -> tuple[int, int, int]:
         await _seed_hunt_and_rubric(conn)
         await _seed_listings_and_jobs(conn)
 
-    dispatch = build_dispatch(pool, fetchers_factory=lambda: {1: FixtureFetcher(_fixture_bodies())})
+    dispatch = build_dispatch(
+        pool,
+        fetchers_factory=lambda: {1: FixtureFetcher(_fixture_bodies())},
+        call_structured=call_structured,
+    )
     await run_worker_loop(pool, asyncio.Event(), dispatch=dispatch, until_empty=True)
 
     async with pool.acquire() as conn:

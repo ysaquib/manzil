@@ -69,9 +69,7 @@ async def conn() -> AsyncIterator[asyncpg.Connection]:
 
 
 async def test_tables_exist(conn: asyncpg.Connection) -> None:
-    rows = await conn.fetch(
-        "select tablename from pg_tables where schemaname = 'public'"
-    )
+    rows = await conn.fetch("select tablename from pg_tables where schemaname = 'public'")
     present = {r["tablename"] for r in rows}
     assert present >= EXPECTED_TABLES, f"missing tables: {EXPECTED_TABLES - present}"
 
@@ -92,9 +90,7 @@ async def test_enums_and_values(conn: asyncpg.Connection) -> None:
 
 
 async def test_indexes_exist(conn: asyncpg.Connection) -> None:
-    rows = await conn.fetch(
-        "select indexname from pg_indexes where schemaname = 'public'"
-    )
+    rows = await conn.fetch("select indexname from pg_indexes where schemaname = 'public'")
     present = {r["indexname"] for r in rows}
     assert present >= EXPECTED_INDEXES, f"missing indexes: {EXPECTED_INDEXES - present}"
 

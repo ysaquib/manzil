@@ -87,10 +87,7 @@ async def test_delete_listing_soft_archives(client: AsyncClient, db_pool) -> Non
 async def test_curator_updates_unit_group_state_and_member_cannot(
     collab_hunt, as_curator: AsyncClient, as_member: AsyncClient
 ) -> None:
-    path = (
-        f"/v1/listings/{collab_hunt['member_listing_id']}"
-        "/unit-groups/2-1/state"
-    )
+    path = f"/v1/listings/{collab_hunt['member_listing_id']}/unit-groups/2-1/state"
     payload = {"interest_status": "applied", "visited": True}
     curator_response = await as_curator.patch(path, json=payload)
     assert curator_response.status_code == 200

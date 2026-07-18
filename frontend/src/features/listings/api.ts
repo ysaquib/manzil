@@ -43,7 +43,11 @@ export function useUnitGroupStates(huntId: string) {
         .select("*, hunt_listing:hunt_listings!inner(hunt_id)")
         .eq("hunt_listing.hunt_id", huntId);
       if (error) throw error;
-      return (data ?? []).map(({ hunt_listing: _listing, ...row }) => row) as UnitGroupState[];
+      return (data ?? []).map((record) => {
+        const row = { ...record };
+        Reflect.deleteProperty(row, "hunt_listing");
+        return row;
+      }) as UnitGroupState[];
     },
   });
 }

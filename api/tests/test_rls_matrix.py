@@ -110,9 +110,12 @@ def test_rls_unit_group_curation_requires_curator(collab_hunt, seeded_users) -> 
         seeded_users["member"].supabase.table("listing_unit_group_states").insert(
             {**row, "updated_by": seeded_users["member"].user_id}
         ).execute()
-    response = seeded_users["curator"].supabase.table("listing_unit_group_states").insert(
-        {**row, "updated_by": seeded_users["curator"].user_id}
-    ).execute()
+    response = (
+        seeded_users["curator"]
+        .supabase.table("listing_unit_group_states")
+        .insert({**row, "updated_by": seeded_users["curator"].user_id})
+        .execute()
+    )
     assert response.data[0]["interest_status"] == "interested"
 
 

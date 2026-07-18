@@ -75,9 +75,7 @@ async def test_list_jobs_comma_separated_states(client: AsyncClient, db_pool) ->
         listing_id,
     )
     try:
-        resp = await client.get(
-            f"/v1/hunts/{hunt_id}/jobs?state=queued,running,waiting_user"
-        )
+        resp = await client.get(f"/v1/hunts/{hunt_id}/jobs?state=queued,running,waiting_user")
         assert resp.status_code == 200
         states = {j["state"] for j in resp.json()}
         assert "queued" in states

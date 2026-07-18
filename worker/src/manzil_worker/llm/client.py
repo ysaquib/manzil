@@ -236,11 +236,7 @@ def _inline_local_schema_refs(schema: dict[str, Any]) -> dict[str, Any]:
             expanded = expand(target, (*stack, name))
             siblings = {key: expand(value, stack) for key, value in node.items() if key != "$ref"}
             return {**expanded, **siblings}
-        return {
-            key: expand(value, stack)
-            for key, value in node.items()
-            if key != "$defs"
-        }
+        return {key: expand(value, stack) for key, value in node.items() if key != "$defs"}
 
     result = expand(schema)
     assert isinstance(result, dict)

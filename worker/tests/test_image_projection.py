@@ -22,8 +22,7 @@ async def test_image_projection_upserts_and_prunes_complete_set(pg_pool: asyncpg
         property_id,
     )
     await pg_pool.execute(
-        "insert into hunt_listings (id, hunt_id, property_id, added_by) "
-        "values ($1, $2, $3, $4)",
+        "insert into hunt_listings (id, hunt_id, property_id, added_by) values ($1, $2, $3, $4)",
         listing_id,
         hunt_id,
         property_id,
@@ -32,7 +31,9 @@ async def test_image_projection_upserts_and_prunes_complete_set(pg_pool: asyncpg
     try:
         state = RunState(job_id=uuid4(), job_type=JobType.INGEST, url=url)
         state.sources = [
-            SourceState(url=url, cleaned_hash="page-1", image_urls=["https://cdn/a", "https://cdn/b"])
+            SourceState(
+                url=url, cleaned_hash="page-1", image_urls=["https://cdn/a", "https://cdn/b"]
+            )
         ]
         state.property_images = [
             PropertyImageIn(
@@ -66,9 +67,12 @@ async def test_image_projection_upserts_and_prunes_complete_set(pg_pool: asyncpg
             "select image_urls from property_sources where url = $1", url
         )
         assert json.loads(image_urls) == ["https://cdn/a", "https://cdn/b"]
-        assert await pg_pool.fetchval(
-            "select count(*) from property_images where property_id = $1", property_id
-        ) == 2
+        assert (
+            await pg_pool.fetchval(
+                "select count(*) from property_images where property_id = $1", property_id
+            )
+            == 2
+        )
 
         # A complete second set contains only hash a. Row a is updated in place,
         # its prior assessment survives a null pre-VISION projection, and b prunes.

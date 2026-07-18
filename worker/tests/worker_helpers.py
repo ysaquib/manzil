@@ -5,16 +5,36 @@ imports collide across suites in a root-level pytest run."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from manzil_shared.models import Confidence, FetchOutcome, JobType
 from manzil_worker.fetching.results import FetchResult
+from manzil_worker.llm.client import call_structured
 from manzil_worker.stages.schema_gen import extractable_entries
 from manzil_worker.state import FieldExtraction, RunState, SourceState
 
 PAGES = Path(__file__).parent / "fixtures" / "pages"
+RECORDED = Path(__file__).parent / "fixtures" / "recorded"
+
+_SEED_EXTRACT_RECORDINGS = {
+    "https://maple-court.seed.example/floorplans": "extract--5c2ab4abc7ec5991.json",
+    "https://oakwood.seed.example/apartments": "extract--e4eff37208aec8e0.json",
+    "https://willow-bend.seed.example/apartments": "extract--2ffad86017282b67.json",
+}
+
+
+async def seed_recorded_llm(stage: str, schema: type[Any], content: str) -> Any:
+    """Pin seed EXTRACT outputs while replaying every other LLM stage."""
+    if stage != "extract":
+        return await call_structured(stage, schema, content)
+    filename = next(
+        name for url, name in _SEED_EXTRACT_RECORDINGS.items() if f"URL: {url}" in content
+    )
+    recording = json.loads((RECORDED / filename).read_text())
+    return schema.model_validate(recording["output"])
 
 
 class FakeFetcher:
