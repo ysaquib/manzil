@@ -33,10 +33,15 @@ connect target are the *same* IP — the TOCTOU window is closed for tier 1. The
 is re-applied on every redirect hop.
 
 Tier 2 (Chromium) cannot be pinned this way — the browser owns its own DNS/connect.
-Its route-guard (abort non-global IP-literal requests; DNS-re-screen main-frame
-navigations) plus the ``page.url`` post-load backstop is the accepted best-effort;
-the residual rebinding window there is real and requires a manual browser smoke test
-before a live loop wires it (recorded as a doc gate).
+Its route-guard (abort non-global IP-literal requests; DNS-re-screen client-initiated
+main-frame navigations — Playwright follows server 3xx redirects internally, without
+re-invoking the handler) plus a post-load screen of the *whole* redirect chain
+(``response.request.redirected_from`` walked back, plus ``page.url``) is the accepted
+best-effort: an intermediate private hop the browser transited is refused before the
+body is read, even when the final landing URL is public. The residual DNS-rebinding
+window (public at screen, private at the browser's own connect) is real and inherent
+to tier 2; the manual browser smoke test that confirmed this posture is the recorded
+doc gate before a live loop wires it.
 
 Tier 3 caveat: tier-3 requests originate from the *provider's* network, so our
 internal hosts are unreachable from there and a provider fetching ``169.254...``
