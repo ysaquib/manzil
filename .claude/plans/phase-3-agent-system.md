@@ -1,6 +1,8 @@
 # Phase 3 Implementation Plan — Full Agent System
 
-Status: Waves A and B active; formal entry still pending P2-10 confirmation.
+Status: **formally entered 2026-07-18** (Phase 2 exited same day; the §7 table
+this plan finalizes at entry is finalized — IMPLEMENTATION 2.0.56, DESIGN §20
+2026-07-18). Waves A and B active.
 **P3-2 and P3-3 landed 2026-07-12** (ahead of entry, Yusuf-directed; reviews
 green — see IMPLEMENTATION §9 2.0.36/2.0.37 and DESIGN §20 2026-07-12).
 **P3-4 landed 2026-07-12** (DEDUPE + `resolve_dedupe` + `split_property`;
