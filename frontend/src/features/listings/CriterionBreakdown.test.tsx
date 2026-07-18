@@ -89,6 +89,7 @@ const listingFixture: Listing = {
   pins: {},
   created_at: "2026-07-08T00:00:00Z",
   unavailable_at: null,
+  all_in_components: null,
   property: {
     id: "prop-1",
     name: "Test",
@@ -142,5 +143,32 @@ describe("CriterionBreakdown", () => {
   it("shows no override badge without overrides", () => {
     renderBreakdown(normalBreakdown);
     expect(screen.queryByText("override")).not.toBeInTheDocument();
+  });
+
+  // P3-8 (DESIGN §20 2026-07-18): location_safety is an override-first
+  // placeholder — an unknown renders as "awaiting grade", never bare.
+  it("frames unknown location_safety as awaiting a grade", () => {
+    const withSafety: ScoreBreakdown = {
+      ...normalBreakdown,
+      criteria: [
+        ...normalBreakdown.criteria,
+        { key: "location_safety", value: null, matched: null, delta: 0, unknown: true },
+      ],
+    };
+    renderBreakdown(withSafety);
+    expect(screen.getByText("awaiting grade")).toBeInTheDocument();
+  });
+
+  it("does not show the awaiting-grade badge once safety has a value", () => {
+    const graded: ScoreBreakdown = {
+      ...normalBreakdown,
+      criteria: [
+        ...normalBreakdown.criteria,
+        { key: "location_safety", value: "B+", matched: { op: "eq", value: "B+" }, delta: 0.25 },
+      ],
+    };
+    renderBreakdown(graded);
+    expect(screen.queryByText("awaiting grade")).not.toBeInTheDocument();
+    expect(screen.getByText("B+")).toBeInTheDocument();
   });
 });

@@ -26,6 +26,7 @@ import { CommentsSection } from "../collaboration/CommentsSection";
 import { RatingControl } from "../collaboration/RatingControl";
 import { useCurrentMember, useMembers } from "../collaboration/api";
 import { useCatalog } from "../rubric/api";
+import { AllInBreakdown } from "./AllInCost";
 import { CriterionBreakdown } from "./CriterionBreakdown";
 import { FeeChecklist } from "./FeeChecklist";
 import { FloorPlanPins } from "./FloorPlanPins";
@@ -313,6 +314,10 @@ function DrawerShell({
                     : "No floor plans yet — ingestion may still be running."}
                 </Text>
               )}
+            </Section>
+
+            <Section title="All-in cost">
+              <AllInBreakdown composition={listing.all_in_components} />
             </Section>
 
             <Section title="Fees checklist">

@@ -65,6 +65,78 @@ async def test_settings_min_confidence_bumps_version_and_rescore(
 
 
 @pytest.mark.asyncio
+async def test_settings_proximity_flip_enqueues_enrich_refresh(
+    client: AsyncClient, db_pool
+) -> None:
+    """P3-8: a proximity_mode change enqueues a `refresh` job (scope: enrich),
+    with no rubric bump and no rescore job — the refresh dispatcher rescores."""
+    hunt_id = uuid4()
+    settings = {
+        "default_source_policy": "tiers_1_2_3",
+        "cost_estimate_mode": "conservative",
+        "min_confidence": "medium",
+        "proximity_mode": "driving",
+    }
+    await db_pool.execute(
+        """
+        insert into hunts (id, name, owner_id, settings, rubric_version)
+        values ($1, 'S', $2, $3::jsonb, 0)
+        """,
+        hunt_id,
+        FAKE_USER.id,
+        json.dumps(settings),
+    )
+    try:
+        resp = await client.patch(
+            f"/v1/hunts/{hunt_id}/settings",
+            json={"settings": {"proximity_mode": "walking"}},
+        )
+        assert resp.status_code == 200
+        version = await db_pool.fetchval("select rubric_version from hunts where id = $1", hunt_id)
+        assert version == 0  # not a scoring key — no rubric bump
+        refresh = await db_pool.fetchrow(
+            "select payload from jobs where type = 'refresh' and payload->>'hunt_id' = $1",
+            str(hunt_id),
+        )
+        assert refresh is not None
+        assert json.loads(refresh["payload"])["scope"] == "enrich"
+        rescore = await db_pool.fetchval(
+            "select count(*) from jobs where type = 'rescore' and payload->>'hunt_id' = $1",
+            str(hunt_id),
+        )
+        assert rescore == 0
+    finally:
+        await db_pool.execute("delete from hunts where id = $1", hunt_id)
+
+
+@pytest.mark.asyncio
+async def test_settings_proximity_unchanged_no_refresh(client: AsyncClient, db_pool) -> None:
+    hunt_id = uuid4()
+    await db_pool.execute(
+        """
+        insert into hunts (id, name, owner_id, settings, rubric_version)
+        values ($1, 'S', $2, $3::jsonb, 0)
+        """,
+        hunt_id,
+        FAKE_USER.id,
+        json.dumps({"proximity_mode": "driving"}),
+    )
+    try:
+        resp = await client.patch(
+            f"/v1/hunts/{hunt_id}/settings",
+            json={"settings": {"proximity_mode": "driving"}},
+        )
+        assert resp.status_code == 200
+        refresh = await db_pool.fetchval(
+            "select count(*) from jobs where type = 'refresh' and payload->>'hunt_id' = $1",
+            str(hunt_id),
+        )
+        assert refresh == 0
+    finally:
+        await db_pool.execute("delete from hunts where id = $1", hunt_id)
+
+
+@pytest.mark.asyncio
 async def test_settings_unknown_key_rejected(client: AsyncClient, db_pool) -> None:
     hunt_id = uuid4()
     await db_pool.execute(
@@ -164,7 +236,11 @@ async def test_settings_cats_change_bumps_version_and_rescore(client: AsyncClien
 
 
 @pytest.mark.asyncio
-async def test_settings_occupants_change_no_rescore(client: AsyncClient, db_pool) -> None:
+async def test_settings_occupants_change_bumps_version_and_rescore(
+    client: AsyncClient, db_pool
+) -> None:
+    # P3-9: occupants scales the per-person utility estimates in the §9.5
+    # composition, so it joined the scoring keys (was reserved/no-op before).
     hunt_id = await _seed_hunt(db_pool, _FULL_SETTINGS)
     try:
         resp = await client.patch(
@@ -172,12 +248,12 @@ async def test_settings_occupants_change_no_rescore(client: AsyncClient, db_pool
         )
         assert resp.status_code == 200
         version = await db_pool.fetchval("select rubric_version from hunts where id = $1", hunt_id)
-        assert version == 0
+        assert version == 1
         rescore = await db_pool.fetchval(
             "select count(*) from jobs where type = 'rescore' and payload->>'hunt_id' = $1",
             hunt_id,
         )
-        assert rescore == 0
+        assert rescore == 1
     finally:
         await db_pool.execute("delete from hunts where id = $1", hunt_id)
 

@@ -12,6 +12,7 @@ import {
   Stack,
   Table,
   Text,
+  Tooltip,
 } from "@mantine/core";
 import { IconInfoCircle } from "@tabler/icons-react";
 import { useState } from "react";
@@ -53,6 +54,13 @@ function EvidenceContent({
           “{extraction.evidence_quote}”
         </Text>
       )}
+      {/* management_reviews carries a synthesized summary alongside the rating
+          (P3-8 ratings stage 1) — show it where provenance already lives. */}
+      {typeof extraction.value === "object" &&
+        extraction.value !== null &&
+        typeof (extraction.value as { summary?: unknown }).summary === "string" && (
+          <Text size="xs">{(extraction.value as { summary: string }).summary}</Text>
+        )}
       <Text size="xs" c="dimmed">
         {extraction.model} · {extraction.confidence} confidence
         {extraction.extracted_at
@@ -229,6 +237,20 @@ function CriterionRow({
             <Badge size="xs" color={"manual"} variant="light">
               override
             </Badge>
+          )}
+          {/* location_safety is an override-first placeholder (DESIGN §20
+              2026-07-18): no pipeline stage grades it, so an unknown here is
+              expected, not missing data — say so instead of a bare dash. */}
+          {criterion.key === "location_safety" && criterion.unknown && !isPending && (
+            <Tooltip
+              label="No automated safety source yet — grade it yourself (A+ to F) via override."
+              multiline
+              w={240}
+            >
+              <Badge size="xs" color="gray" variant="light">
+                awaiting grade
+              </Badge>
+            </Tooltip>
           )}
         </Group>
       </Table.Td>
