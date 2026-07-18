@@ -111,6 +111,28 @@ class MandatoryFeesIn(BaseModel):
     evidence_quote: str | None = None
 
 
+class OneTimeFeeIn(BaseModel):
+    """One one-time move-in cost as stated on the page (§9.5, §20 2026-07-18):
+    application fee, admin fee, pet deposit/fee, other move-in charges.
+    Never composes into all_in_monthly — all-in is a monthly figure; these are
+    display metadata for the fees checklist's move-in section. `basis` states
+    what one payment covers; `refundable` only when the page says so."""
+
+    name: str
+    amount: float
+    basis: Literal["per_application", "per_person", "per_pet", "flat"] = "flat"
+    refundable: bool | None = None
+
+
+class OneTimeFeesIn(BaseModel):
+    """The page's one-time move-in fees (§9.5) — a non-catalog EXTRACT block.
+    Persisted as a `one_time_fees` extraction and projected onto the one-time
+    fee_checklist slots (state `extracted`; `manual` never overwritten)."""
+
+    fees: list[OneTimeFeeIn] = Field(default_factory=list)
+    evidence_quote: str | None = None
+
+
 class HeatingIn(BaseModel):
     """The unit's heating fuel as stated on the page (§9.5, P3-9): drives which
     winter-weighted baseline row the all-in composition applies. None when the
@@ -291,6 +313,7 @@ class RunState(BaseModel):
     # snapshots and recorded fixtures (blocks absent) keep validating.
     mandatory_fees: MandatoryFeesIn | None = None
     heating: HeatingIn | None = None
+    one_time_fees: OneTimeFeesIn | None = None
     verify_flags: list[VerifyFlag] = Field(default_factory=list)
     effective_values: dict[str, Any] = Field(default_factory=dict)
     # §9.5 P3-9: the display plan's composition detail (components + tags +

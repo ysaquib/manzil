@@ -63,6 +63,28 @@ _SLOT_COVERS: dict[str, tuple[str, ...]] = {
 }
 
 
+# One-time / move-in fee slots (§9.5, §20 2026-07-18): display-only, never
+# composed into all_in_monthly. `admin` predates P3-9 (v1 checklist slot).
+ONE_TIME_FEE_SLOTS = ("application_fee", "admin", "pet_deposit", "pet_fee")
+_ONE_TIME_SLOT_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("application_fee", ("application", "app fee")),
+    ("pet_deposit", ("pet deposit",)),
+    ("pet_fee", ("pet fee", "pet charge")),
+    ("admin", ("admin",)),
+)
+
+
+def slot_for_one_time_fee(name: str) -> str | None:
+    """The one-time checklist slot an extracted move-in fee lands in, by
+    keyword — None when no standard slot matches (the fee still displays via
+    the `one_time_fees` extraction row)."""
+    lowered = name.lower()
+    for slot, keywords in _ONE_TIME_SLOT_KEYWORDS:
+        if any(keyword in lowered for keyword in keywords):
+            return slot
+    return None
+
+
 def slot_for_fee(name: str) -> str | None:
     """The fee_checklist slot an extracted mandatory fee lands in, by keyword —
     None when no standard slot matches (the fee still composes via the

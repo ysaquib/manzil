@@ -25,6 +25,8 @@ from manzil_worker.state import (
     HeatingIn,
     MandatoryFeeIn,
     MandatoryFeesIn,
+    OneTimeFeeIn,
+    OneTimeFeesIn,
     PlanScore,
     RunState,
     SourceState,
@@ -96,6 +98,14 @@ def _state() -> RunState:
         evidence_quote="Valet trash $25/mo; amenity fee $10/mo",
     )
     state.heating = HeatingIn(heating="gas", evidence_quote="gas forced-air heat")
+    state.one_time_fees = OneTimeFeesIn(
+        fees=[
+            OneTimeFeeIn(name="application fee", amount=50.0, basis="per_person"),
+            OneTimeFeeIn(name="pet deposit", amount=300.0, basis="per_pet", refundable=True),
+            OneTimeFeeIn(name="elevator reservation", amount=75.0),  # no standard slot
+        ],
+        evidence_quote="App fee $50/applicant; $300 refundable pet deposit",
+    )
     state.floor_plans = [FloorPlanIn(plan_name="2x2", beds=2, baths=2.0, rent_max=1500.0)]
     state.scores = [
         PlanScore(
@@ -154,6 +164,33 @@ async def test_projection_persists_p39_blocks_and_composition(pg_pool: asyncpg.P
             property_id,
         )
         assert json.loads(heating_row) == "gas"
+        # One-time fees (§20 2026-07-18): extraction row + move-in slots; a fee
+        # with no standard slot still persists via the extraction.
+        one_time_row = await pg_pool.fetchval(
+            "select value from extractions where property_id = $1 "
+            "and criterion_key = 'one_time_fees'",
+            property_id,
+        )
+        one_time = json.loads(one_time_row)
+        assert [(f["name"], f["amount"], f["basis"]) for f in one_time] == [
+            ("application fee", 50.0, "per_person"),
+            ("pet deposit", 300.0, "per_pet"),
+            ("elevator reservation", 75.0, "flat"),
+        ]
+        assert one_time[1]["refundable"] is True
+        app_slot = await pg_pool.fetchrow(
+            "select amount, value_state from fee_checklist "
+            "where hunt_listing_id = $1 and fee_slot = 'application_fee'",
+            listing_id,
+        )
+        assert app_slot is not None and float(app_slot["amount"]) == 50.0
+        assert app_slot["value_state"] == "extracted"
+        deposit_slot = await pg_pool.fetchval(
+            "select amount from fee_checklist "
+            "where hunt_listing_id = $1 and fee_slot = 'pet_deposit'",
+            listing_id,
+        )
+        assert float(deposit_slot) == 300.0
         stored = await pg_pool.fetchval(
             "select all_in_components from hunt_listings where id = $1", listing_id
         )

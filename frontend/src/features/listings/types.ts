@@ -103,9 +103,10 @@ export interface FeeEntry {
   updated_at: string | null;
 }
 
-// §9.5 standard fee slots, in checklist order.
-export const FEE_SLOTS: { slot: string; label: string }[] = [
-  { slot: "admin", label: "Admin fee" },
+// §9.5 standard fee slots, in checklist order — split monthly vs one-time
+// (§20 2026-07-18): monthly fees compose into all-in; one-time fees are
+// move-in costs, display-only, never composed.
+export const MONTHLY_FEE_SLOTS: { slot: string; label: string }[] = [
   { slot: "water_sewer", label: "Water / sewer billing" },
   { slot: "valet_trash", label: "Valet trash" },
   { slot: "parking", label: "Parking" },
@@ -114,6 +115,26 @@ export const FEE_SLOTS: { slot: string; label: string }[] = [
   { slot: "pet_rent_dog", label: "Pet rent (dog)" },
   { slot: "insurance_program", label: "Insurance program" },
 ];
+
+export const ONE_TIME_FEE_SLOTS: { slot: string; label: string }[] = [
+  { slot: "application_fee", label: "Application fee" },
+  { slot: "admin", label: "Admin fee" },
+  { slot: "pet_deposit", label: "Pet deposit" },
+  { slot: "pet_fee", label: "Pet fee (one-time)" },
+];
+
+export const FEE_SLOTS: { slot: string; label: string }[] = [
+  ...MONTHLY_FEE_SLOTS,
+  ...ONE_TIME_FEE_SLOTS,
+];
+
+// §9.5 one-time fee as extracted (the `one_time_fees` extraction row).
+export interface OneTimeFee {
+  name: string;
+  amount: number;
+  basis: "per_application" | "per_person" | "per_pet" | "flat";
+  refundable?: boolean | null;
+}
 
 // §9.5 P3-9: the display plan's all-in composition detail
 // (hunt_listings.all_in_components) — display metadata beside the pinned
