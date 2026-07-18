@@ -372,14 +372,30 @@ CATALOG: tuple[CatalogEntry, ...] = (
         label="Location safety",
         category=CriterionCategory.LOCATION,
         domain=CriterionDomain.RENT,
-        value_schema={"type": "string", "enum": ["low", "medium", "high"]},
+        # Letter grades matching public crime-grade conventions (§20 2026-07-18):
+        # human overrides today and the P3-17 module output tomorrow share one
+        # vocabulary. Banded default deltas — the 13 grades collapse to 5 tiers.
+        value_schema={
+            "type": "string",
+            "enum": [
+                "A+", "A", "A-",
+                "B+", "B", "B-",
+                "C+", "C", "C-",
+                "D+", "D", "D-",
+                "F",
+            ],
+        },
         default_options=[
-            _opt(MatchOp.EQ, "high", 0.5),
-            _opt(MatchOp.EQ, "medium", 0.0),
-            _opt(MatchOp.EQ, "low", -1.0),
+            *(_opt(MatchOp.EQ, grade, 0.5) for grade in ("A+", "A", "A-")),
+            *(_opt(MatchOp.EQ, grade, 0.25) for grade in ("B+", "B", "B-")),
+            *(_opt(MatchOp.EQ, grade, 0.0) for grade in ("C+", "C", "C-")),
+            *(_opt(MatchOp.EQ, grade, -0.5) for grade in ("D+", "D", "D-")),
+            _opt(MatchOp.EQ, "F", -1.0),
         ],
         extraction_hint=(
-            "Qualitative safety level synthesized from web sources; inherently "
+            "Letter-grade location safety (A+ through F). Placeholder in v1: no "
+            "pipeline stage emits it — the value arrives via human override until "
+            "the dedicated safety module (DESIGN §18, P3-17) lands. Inherently "
             "low-confidence by design (DESIGN R8) — frame as such, never as fact."
         ),
         requires_tool=RequiresTool.WEB_SEARCH,

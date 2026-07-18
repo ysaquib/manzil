@@ -155,3 +155,30 @@ def test_iso_availability_date_is_left_untouched() -> None:
 
     assert state.extractions["availability_date"][0].value == "2026-08-01"
     assert state.floor_plans[0].availability_date == "2026-08-01"
+
+
+def test_extract_lands_p39_fee_and_heating_blocks() -> None:
+    # §9.5 P3-9: optional-with-default blocks — present when the model emits
+    # them, None on older recordings that predate them.
+    payload = maple_extraction()
+    payload["mandatory_fees"] = {
+        "fees": [{"name": "valet trash", "amount_monthly": 25.0}],
+        "evidence_quote": "Valet trash $25/mo",
+    }
+    payload["heating"] = {"heating": "gas", "evidence_quote": "gas forced-air heat"}
+    llm = FakeLLM({"extract": payload})
+    state = make_state(cleaned_text=CLEANED)
+    state = asyncio.run(extract_stage(state, StageCtx(call_structured=llm)))
+
+    assert state.mandatory_fees is not None
+    assert state.mandatory_fees.fees[0].name == "valet trash"
+    assert state.mandatory_fees.fees[0].amount_monthly == 25.0
+    assert state.heating is not None and state.heating.heating == "gas"
+
+
+def test_extract_blocks_absent_stay_none() -> None:
+    llm = FakeLLM({"extract": maple_extraction()})
+    state = make_state(cleaned_text=CLEANED)
+    state = asyncio.run(extract_stage(state, StageCtx(call_structured=llm)))
+    assert state.mandatory_fees is None
+    assert state.heating is None

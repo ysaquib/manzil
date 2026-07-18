@@ -47,6 +47,8 @@ def test_schema_has_one_field_per_criterion_plus_floor_plans() -> None:
         "property_identity",
         "pet_costs",
         "utilities",
+        "mandatory_fees",  # §9.5 P3-9
+        "heating",  # §9.5 P3-9
     }
 
 

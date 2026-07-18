@@ -75,6 +75,7 @@ STAGE_COST_ESTIMATES_USD = {
     "IMAGE_FETCH": 0.0,
     "VISION": 0.03,
     "VERIFY": 0.01,
+    "ENRICH": 0.005,  # one small review-synthesis call; Maps calls carry no LLM cost
     "SCORE": 0.0,
 }
 
@@ -90,6 +91,15 @@ DEDUPE_NAME_GRAY_SIMILARITY = 60.0
 
 # Scheduler sweep: unanswered checkpoints auto-resume after this long
 CHECKPOINT_TIMEOUT_HOURS = 24
+
+# Scheduler tick (P3-9 lands the scaffold; P3-11/P3-12 add duties): how often
+# the worker loop runs its scheduled duties. The first duty is the
+# utility-baselines sweep (§9.5, §14: 120-day metro TTL).
+SCHEDULER_TICK_SECONDS = 60.0
+UTILITY_BASELINE_TTL_DAYS = 120
+# A metro whose baselines pass failed is not retried before this cooldown —
+# without it a persistently failing pass would fire one live LLM call per tick.
+UTILITY_BASELINE_RETRY_SECONDS = 3600.0
 
 # VISION input discipline
 MAX_IMAGES = 8
@@ -111,7 +121,7 @@ SHELL_SCRIPT_RATIO = 0.7
 # least this long are candidate state blobs, and the digest appended to the
 # cleaned text is capped at this many chars
 EMBEDDED_SCRIPT_MIN_CHARS = 500
-EMBEDDED_DATA_MAX_CHARS = 50_000
+EMBEDDED_DATA_MAX_CHARS = 100_000
 
 # Tier-2 (browser) politeness: minimum seconds between fetches to one domain
 TIER2_MIN_DELAY_SECONDS = 3.0
