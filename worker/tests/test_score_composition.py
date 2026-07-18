@@ -82,6 +82,30 @@ def test_score_composes_full_all_in_through_the_seam() -> None:
     assert state.all_in_components["badges"] == []
 
 
+def test_each_plan_carries_its_own_composition() -> None:
+    """P3-9 follow-up: the cell/drawer render per-plan compositions, so every
+    PlanScore must carry the composition of ITS rent — not the display plan's."""
+    state = _state()
+    state.floor_plans = [
+        FloorPlanIn(plan_name="1x1", beds=1, baths=1.0, rent_max=1069.0),
+        FloorPlanIn(plan_name="2x1", beds=2, baths=1.0, rent_max=1179.0),
+    ]
+
+    async def lookup(metro: str, bucket: int):  # type: ignore[no-untyped-def]
+        return BASELINES
+
+    ctx = StageCtx(rubric=ALL_IN_RUBRIC, utility_baselines_lookup=lookup)
+    state = asyncio.run(score_stage(state, ctx))
+    assert all(s.all_in_components is not None for s in state.scores)
+    rents = [
+        next(c["amount"] for c in s.all_in_components["components"] if c["name"] == "rent")
+        for s in state.scores
+    ]
+    assert rents == [1069.0, 1179.0]
+    # Each plan composes with its own rent + fee 25 + estimates 370.
+    assert [s.all_in_components["total"] for s in state.scores] == [1464.0, 1574.0]
+
+
 def test_missing_baseline_row_scores_unknown_delta() -> None:
     partial = {k: v for k, v in BASELINES.items() if k != "sewer"}
     state = asyncio.run(score_stage(_state(), _ctx(partial)))

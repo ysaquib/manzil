@@ -51,7 +51,33 @@ def test_unknown_heating_takes_the_worse_variant_and_flags_it() -> None:
     comp = _compose(heating=None)
     assert comp.total == 2200.0  # gas variant (400) > electric variant (350)
     assert "heat_unknown" in comp.badges
-    assert any("worse case" in (c.note or "") for c in comp.components)
+    # The variant note lands only on the lines the variant choice actually
+    # changed (electric/gas) — water/sewer/trash price identically either way.
+    noted = {c.name for c in comp.components if "costlier" in (c.note or "")}
+    assert noted == {"electric", "gas"}
+    assert all(
+        "priced as gas heat (the costlier setup)" in (c.note or "")
+        for c in comp.components
+        if c.name in noted
+    )
+
+
+def test_unknown_heating_electric_variant_note_names_electric() -> None:
+    cheap_gas = {**BASELINES, "gas_heat": (40.0, 30.0)}  # gas variant now cheaper
+    comp = _compose(heating=None, baselines=cheap_gas)
+    assert comp.total == 1800.0 + 220.0 + 55.0 + 45.0 + 30.0  # electric_heat variant
+    noted = {c.name for c in comp.components if "costlier" in (c.note or "")}
+    assert noted == {"electric"}
+    (electric,) = [c for c in comp.components if c.name == "electric"]
+    assert "priced as electric heat (the costlier setup)" in (electric.note or "")
+
+
+def test_undecidable_variant_carries_no_costlier_note() -> None:
+    partial = {k: v for k, v in BASELINES.items() if k != "gas_heat"}
+    comp = _compose(heating=None, baselines=partial)
+    assert comp.total is None  # one variant unpriceable → "worse" is undecidable
+    assert "heat_unknown" in comp.badges
+    assert not any("costlier" in (c.note or "") for c in comp.components)
 
 
 def test_median_mode_relaxes_estimates_only() -> None:

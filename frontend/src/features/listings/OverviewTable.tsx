@@ -13,23 +13,15 @@ import { useComments, useCurrentMember, useMembers, useRatings } from "../collab
 import { usePatchUnitGroupState } from "./api";
 import { INTEREST_STATUSES, type InterestStatus } from "./types";
 import {
+  allInValue,
   formatRange,
   rowAvailability,
+  rowComposition,
   type OverviewRow,
   type SortKey,
   type SortState,
 } from "./overviewRows";
 import { InfoCell } from "./InfoCell";
-
-// Effective all-in monthly cost: read from the persisted breakdown (never
-// recomputed client-side). Phase 1 carries the interim composition (advertised
-// rent); the estimated-portion split renders once P3-9's real composition
-// lands — no fabricated "~est" until then.
-export function allInValue(row: OverviewRow): number | null {
-  const criteria = row.group?.displayScore?.breakdown.criteria ?? [];
-  const value = criteria.find((c) => c.key === "all_in_monthly")?.value;
-  return typeof value === "number" ? value : null;
-}
 
 import classes from "./OverviewTable.module.css";
 
@@ -225,7 +217,7 @@ export function OverviewTable({ huntId, rows, sort, onSort, onOpen, onDelete }: 
                 </Text>
               </Table.Td>
               <Table.Td visibleFrom="sm">
-                <AllInCell allIn={allIn} composition={row.listing.all_in_components} />
+                <AllInCell allIn={allIn} composition={rowComposition(row)} />
               </Table.Td>
               <CurationCells row={row} huntId={huntId} />
               <Table.Td>

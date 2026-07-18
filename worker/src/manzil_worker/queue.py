@@ -564,12 +564,15 @@ async def _persist_ingest_results(
         )
         await conn.execute(
             """
-            insert into scores (hunt_listing_id, floor_plan_id, total, breakdown, rubric_version)
-            values ($1, $2, $3, $4::jsonb, $5)
+            insert into scores
+                (hunt_listing_id, floor_plan_id, total, breakdown, rubric_version,
+                 all_in_components)
+            values ($1, $2, $3, $4::jsonb, $5, $6::jsonb)
             on conflict (hunt_listing_id, floor_plan_id) do update set
                 total = excluded.total,
                 breakdown = excluded.breakdown,
                 rubric_version = excluded.rubric_version,
+                all_in_components = excluded.all_in_components,
                 computed_at = now()
             """,
             hunt_listing_id,
@@ -577,6 +580,9 @@ async def _persist_ingest_results(
             Decimal(str(plan_score.breakdown["total"])),
             json.dumps(plan_score.breakdown),
             rubric_version,
+            json.dumps(plan_score.all_in_components)
+            if plan_score.all_in_components is not None
+            else None,
         )
 
 
@@ -1108,6 +1114,22 @@ async def _run_metro_baselines(pool: asyncpg.Pool, metro: str) -> None:
                 return  # another worker owns this metro; its write satisfies the TTL
             try:
                 await refresh_metro_baselines(conn, metro)
+                # A metro's first listing always scores BEFORE its baselines
+                # exist — the pass was triggered by that listing — so a
+                # successful write re-composes the metro: one hunt-level
+                # rescore (zero LLM spend) per hunt with an active listing
+                # there (DESIGN §9.5, §20 2026-07-18).
+                await conn.execute(
+                    """
+                    insert into jobs (hunt_id, type, state, payload)
+                    select distinct hl.hunt_id, 'rescore'::job_type, 'queued'::job_state,
+                           jsonb_build_object('hunt_id', hl.hunt_id)
+                    from hunt_listings hl
+                    join properties p on p.id = hl.property_id
+                    where hl.status = 'active' and p.city = $1
+                    """,
+                    metro,
+                )
             finally:
                 await conn.fetchval(
                     "select pg_advisory_unlock(hashtext($1))", f"utility_baselines:{metro}"

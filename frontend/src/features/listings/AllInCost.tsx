@@ -17,7 +17,7 @@ const BADGE_HINT: Record<string, string> = {
   fees_unverified:
     "The page did not state utility inclusions or a needed estimate is missing — the all-in figure may be incomplete.",
   heat_unknown:
-    "Heating fuel unknown — the worse of gas-heat and electric-heat estimates is used.",
+    "Heating fuel unknown — the costlier of the gas-heat and electric-heat estimates is used.",
   utilities_not_estimated:
     "No utility baselines exist for this metro yet — the all-in excludes utility estimates.",
 };
