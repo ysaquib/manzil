@@ -277,12 +277,14 @@ async def rescore_hunt(
             await conn.execute(
                 """
                 insert into scores
-                    (hunt_listing_id, floor_plan_id, total, breakdown, rubric_version)
-                values ($1, $2, $3, $4::jsonb, $5)
+                    (hunt_listing_id, floor_plan_id, total, breakdown, rubric_version,
+                     all_in_components)
+                values ($1, $2, $3, $4::jsonb, $5, $6::jsonb)
                 on conflict (hunt_listing_id, floor_plan_id) do update set
                     total = excluded.total,
                     breakdown = excluded.breakdown,
                     rubric_version = excluded.rubric_version,
+                    all_in_components = excluded.all_in_components,
                     computed_at = now()
                 """,
                 listing_id,
@@ -290,6 +292,7 @@ async def rescore_hunt(
                 Decimal(str(breakdown["total"])),
                 json.dumps(breakdown),
                 rubric_version,
+                json.dumps(composition.to_json()) if composition is not None else None,
             )
             upserted += 1
         if breakdown_objs:

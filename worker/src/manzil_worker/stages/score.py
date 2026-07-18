@@ -146,7 +146,12 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
                 )
             )
         state.scores = [
-            PlanScore(plan_name=name, breakdown=b.to_contract()) for name, b in breakdowns
+            PlanScore(
+                plan_name=name,
+                breakdown=b.to_contract(),
+                all_in_components=comp.to_json() if comp is not None else None,
+            )
+            for (name, b), comp in zip(breakdowns, compositions, strict=True)
         ]
         state.display_score_index = select_display_score([b for _, b in breakdowns])
         display_composition = compositions[state.display_score_index]

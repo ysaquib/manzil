@@ -97,7 +97,19 @@ def _state() -> RunState:
     )
     state.heating = HeatingIn(heating="gas", evidence_quote="gas forced-air heat")
     state.floor_plans = [FloorPlanIn(plan_name="2x2", beds=2, baths=2.0, rent_max=1500.0)]
-    state.scores = [PlanScore(plan_name="2x2", breakdown={"total": 9.0})]
+    state.scores = [
+        PlanScore(
+            plan_name="2x2",
+            breakdown={"total": 9.0},
+            all_in_components={
+                "total": 1905.0,
+                "estimated_total": 370.0,
+                "components": [{"name": "rent", "amount": 1500.0, "tag": "actual"}],
+                "badges": [],
+                "mode": "conservative",
+            },
+        )
+    ]
     state.display_score_index = 0
     state.all_in_components = {
         "total": 1905.0,
@@ -146,6 +158,11 @@ async def test_projection_persists_p39_blocks_and_composition(pg_pool: asyncpg.P
             "select all_in_components from hunt_listings where id = $1", listing_id
         )
         assert json.loads(stored)["total"] == 1905.0
+        # P3-9 follow-up: the plan's own composition lands on its scores row.
+        per_plan = await pg_pool.fetchval(
+            "select all_in_components from scores where hunt_listing_id = $1", listing_id
+        )
+        assert json.loads(per_plan)["components"][0]["amount"] == 1500.0
     finally:
         await _cleanup(pg_pool, hunt_id, property_id, metro)
 
@@ -199,6 +216,15 @@ async def test_rescore_recomposes_and_mode_flip_changes_total(pg_pool: asyncpg.P
         )
         assert stored["total"] == 1905.0
         assert "fees_unverified" in stored["badges"]  # page silent on inclusions
+        # P3-9 follow-up: rescore writes the recomposed detail per scores row too.
+        per_plan = json.loads(
+            await pg_pool.fetchval(
+                "select all_in_components from scores where hunt_listing_id = $1", listing_id
+            )
+        )
+        assert per_plan["total"] == 1905.0
+        rent_line = next(c for c in per_plan["components"] if c["name"] == "rent")
+        assert rent_line["amount"] == 1500.0
 
         # Mode flip conservative → median rescores without any refetch (§9.5).
         async with pg_pool.acquire() as conn, conn.transaction():

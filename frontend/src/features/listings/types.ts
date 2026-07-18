@@ -61,6 +61,11 @@ export interface Score {
   breakdown: ScoreBreakdown;
   rubric_version: number;
   computed_at: string;
+  // §9.5 P3-9: THIS plan's composition detail (scores.all_in_components) —
+  // the cell/drawer must show the rent of the plan they display, not the
+  // listing-level display plan's. Optional: rows scored before the column
+  // landed carry null until their next rescore.
+  all_in_components?: AllInComponents | null;
 }
 
 export interface Extraction {

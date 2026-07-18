@@ -317,7 +317,11 @@ function DrawerShell({
             </Section>
 
             <Section title="All-in cost">
-              <AllInBreakdown composition={listing.all_in_components} />
+              <AllInBreakdown
+                composition={
+                  group?.displayScore?.all_in_components ?? listing.all_in_components
+                }
+              />
             </Section>
 
             <Section title="Fees checklist">

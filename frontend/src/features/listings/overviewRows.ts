@@ -1,6 +1,6 @@
 // Overview row building, filtering, sorting (P1-10). Pure and unit-tested;
 // the table component stays declarative.
-import type { InterestStatus, Listing, UnitGroupState } from "./types";
+import type { AllInComponents, InterestStatus, Listing, UnitGroupState } from "./types";
 import { deriveUnitGroups, type UnitGroupRow } from "./unitGroups";
 
 export type StatusFilter = InterestStatus | "undecided";
@@ -267,6 +267,26 @@ export function sortRows(rows: OverviewRow[], sort: SortState): OverviewRow[] {
     if (va > vb) return dir;
     return 0;
   });
+}
+
+// Effective all-in monthly cost: read from the persisted per-plan composition
+// (never recomputed client-side), so the figure tracks the plan this row
+// displays even when the all_in_monthly rubric criterion is disabled. Rows
+// scored before scores.all_in_components landed fall back to the breakdown
+// criterion (pre-P3-9 interim: advertised rent).
+export function allInValue(row: OverviewRow): number | null {
+  const composed = row.group?.displayScore?.all_in_components?.total;
+  if (typeof composed === "number") return composed;
+  const criteria = row.group?.displayScore?.breakdown.criteria ?? [];
+  const value = criteria.find((c) => c.key === "all_in_monthly")?.value;
+  return typeof value === "number" ? value : null;
+}
+
+// The composition detail for a row: the displayed plan's own (per-score,
+// P3-9 follow-up), falling back to the listing-level display-plan blob for
+// rows whose scores predate the per-plan column.
+export function rowComposition(row: OverviewRow): AllInComponents | null {
+  return row.group?.displayScore?.all_in_components ?? row.listing.all_in_components;
 }
 
 export function formatRange(min: number | null, max: number | null, prefix = ""): string {

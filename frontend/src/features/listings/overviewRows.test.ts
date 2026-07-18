@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  allInValue,
   applyOverviewFilters,
   buildRows,
   DEFAULT_OVERVIEW_FILTERS,
@@ -8,9 +9,10 @@ import {
   formatRange,
   hasActiveFilters,
   rowAvailability,
+  rowComposition,
   sortRows,
 } from "./overviewRows";
-import type { FloorPlan, Listing, Score } from "./types";
+import type { AllInComponents, FloorPlan, Listing, Score } from "./types";
 
 function makeListing(
   id: string,
@@ -307,5 +309,53 @@ describe("formatRange", () => {
     expect(formatRange(1800, 1800, "$")).toBe("$1,800");
     expect(formatRange(null, 950)).toBe("950");
     expect(formatRange(null, null)).toBe("—");
+  });
+});
+
+describe("allInValue / rowComposition (per-plan, P3-9 follow-up)", () => {
+  const composition = (rent: number): AllInComponents => ({
+    total: rent + 280,
+    estimated_total: 280,
+    components: [{ name: "rent", amount: rent, tag: "actual" }],
+    badges: [],
+    mode: "median",
+  });
+
+  function withPerPlanComposition(): Listing {
+    // Two unit groups with different rents — the 2br is the listing-level
+    // display plan; the 1br row must NOT inherit its composition.
+    const listing = makeListing(
+      "v",
+      "The Villas",
+      [
+        { beds: 1, baths: 1, rent_max: 1069 },
+        { beds: 2, baths: 1, rent_max: 1179 },
+      ],
+      { "v-plan-0": 10.5, "v-plan-1": 11 },
+    );
+    listing.all_in_components = composition(1179); // listing-level display plan
+    listing.scores[0].all_in_components = composition(1069);
+    listing.scores[1].all_in_components = composition(1179);
+    return listing;
+  }
+
+  it("each unit-group row shows its own plan's composition and total", () => {
+    const rows = buildRows([withPerPlanComposition()]);
+    const oneBed = rows.find((r) => r.group?.beds === 1)!;
+    const twoBed = rows.find((r) => r.group?.beds === 2)!;
+    expect(allInValue(oneBed)).toBe(1069 + 280);
+    expect(allInValue(twoBed)).toBe(1179 + 280);
+    expect(rowComposition(oneBed)?.components[0].amount).toBe(1069);
+    expect(rowComposition(twoBed)?.components[0].amount).toBe(1179);
+  });
+
+  it("falls back to the listing-level composition for pre-column scores", () => {
+    const listing = withPerPlanComposition();
+    listing.scores[0].all_in_components = null;
+    listing.scores[1].all_in_components = null;
+    const rows = buildRows([listing]);
+    const oneBed = rows.find((r) => r.group?.beds === 1)!;
+    expect(rowComposition(oneBed)?.components[0].amount).toBe(1179); // status quo
+    expect(allInValue(oneBed)).toBeNull(); // criterion absent from breakdown
   });
 });

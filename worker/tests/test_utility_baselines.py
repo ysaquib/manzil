@@ -138,6 +138,60 @@ async def test_due_metros_follow_the_ttl(pg_pool: asyncpg.Pool) -> None:
         await _cleanup_metro(pg_pool, metro)
 
 
+async def test_successful_pass_enqueues_metro_rescores(
+    pg_pool: asyncpg.Pool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A metro's first listing always scores before its baselines exist (the
+    pass is triggered BY that listing), so a successful write must re-compose
+    the metro's listings — one hunt-level rescore per affected hunt."""
+    metro = f"Ypsi-{uuid4().hex[:6]}"
+    hunt_id, property_id = await _seed_listing_in_metro(pg_pool, metro)
+
+    async def fake_refresh(conn, m, **kwargs):  # type: ignore[no-untyped-def]
+        return 24
+
+    monkeypatch.setattr(
+        "manzil_worker.enrich.utility_baselines.refresh_metro_baselines", fake_refresh
+    )
+    try:
+        await queue_mod._run_metro_baselines(pg_pool, metro)
+        jobs = await pg_pool.fetch(
+            "select payload from jobs where hunt_id = $1 and type = 'rescore' "
+            "and state = 'queued'",
+            hunt_id,
+        )
+        assert len(jobs) == 1
+        assert json.loads(jobs[0]["payload"])["hunt_id"] == str(hunt_id)
+    finally:
+        await pg_pool.execute("delete from hunts where id = $1", hunt_id)
+        await pg_pool.execute("delete from properties where id = $1", property_id)
+        await _cleanup_metro(pg_pool, metro)
+
+
+async def test_failed_pass_enqueues_no_rescores(
+    pg_pool: asyncpg.Pool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    metro = f"FailField-{uuid4().hex[:6]}"
+    hunt_id, property_id = await _seed_listing_in_metro(pg_pool, metro)
+
+    async def fake_refresh(conn, m, **kwargs):  # type: ignore[no-untyped-def]
+        raise ValueError("incomplete coverage")
+
+    monkeypatch.setattr(
+        "manzil_worker.enrich.utility_baselines.refresh_metro_baselines", fake_refresh
+    )
+    try:
+        await queue_mod._run_metro_baselines(pg_pool, metro)
+        count = await pg_pool.fetchval(
+            "select count(*) from jobs where hunt_id = $1 and type = 'rescore'", hunt_id
+        )
+        assert count == 0
+    finally:
+        await pg_pool.execute("delete from hunts where id = $1", hunt_id)
+        await pg_pool.execute("delete from properties where id = $1", property_id)
+        await _cleanup_metro(pg_pool, metro)
+
+
 async def test_tick_spawns_one_guarded_pass_per_due_metro(
     pg_pool: asyncpg.Pool, monkeypatch: pytest.MonkeyPatch
 ) -> None:

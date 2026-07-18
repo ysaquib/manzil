@@ -221,10 +221,12 @@ def compose_all_in(
             for v in ("gas", "electric")
         ]
         computable = [v for v in variants if all(c.amount is not None for c in v)]
+        variant_decided = False
         if len(computable) == len(variants):
             utility_components = max(
                 variants, key=lambda v: sum(c.amount or 0.0 for c in v)
             )
+            variant_decided = True
         elif not computable:
             utility_components = variants[0]  # both carry unknowns; either reports them
         else:
@@ -234,9 +236,17 @@ def compose_all_in(
                 for c in variants[0]
             ]
         badges.append("heat_unknown")
-        for c in utility_components:
-            if c.tag == "estimated":
-                c.note = (c.note + "; " if c.note else "") + "heating type unknown — worse case"
+        if variant_decided:
+            # Note only the lines the variant choice changed — water/sewer/trash
+            # price identically either way, so a note there is noise.
+            chosen = (
+                "gas heat" if any(c.name == "gas" for c in utility_components) else "electric heat"
+            )
+            for c in utility_components:
+                if c.tag == "estimated" and c.name in ("electric", "gas"):
+                    c.note = (c.note + "; " if c.note else "") + (
+                        f"heating type unknown — priced as {chosen} (the costlier setup)"
+                    )
 
     components.extend(utility_components)
 

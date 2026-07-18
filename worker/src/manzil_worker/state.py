@@ -160,10 +160,14 @@ class VerifyFlag(BaseModel):
 
 class PlanScore(BaseModel):
     """One scored floor plan (or the plan-less property score when the page
-    yielded no plans). `breakdown` is the pinned §9.3 contract dict."""
+    yielded no plans). `breakdown` is the pinned §9.3 contract dict.
+    `all_in_components` is this plan's §9.5 composition detail (display
+    metadata, projected onto scores.all_in_components) — optional-with-default
+    so pre-P3-9 snapshots keep validating."""
 
     plan_name: str | None = None
     breakdown: dict[str, Any]
+    all_in_components: dict[str, Any] | None = None
 
 
 class SourceFreshness(BaseModel):
