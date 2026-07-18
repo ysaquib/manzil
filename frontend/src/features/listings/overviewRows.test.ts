@@ -57,6 +57,7 @@ function makeListing(
     pins: {},
     created_at: "2026-07-08T00:00:00Z",
     unavailable_at,
+    all_in_components: null,
     property: {
       id: `${id}-prop`,
       name,

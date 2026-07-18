@@ -6,6 +6,7 @@
 import { ActionIcon, Checkbox, Group, Menu, Select, Table, Text, UnstyledButton } from "@mantine/core";
 import { IconChevronDown, IconChevronRight, IconChevronUp, IconDotsVertical, IconMessageCircle, IconTrash } from "@tabler/icons-react";
 
+import { AllInCell } from "./AllInCost";
 import { ScoreCell } from "./ScoreCell";
 import { RatingDots } from "../collaboration/RatingDots";
 import { useComments, useCurrentMember, useMembers, useRatings } from "../collaboration/api";
@@ -224,7 +225,7 @@ export function OverviewTable({ huntId, rows, sort, onSort, onOpen, onDelete }: 
                 </Text>
               </Table.Td>
               <Table.Td visibleFrom="sm">
-                <Text size="sm">{allIn === null ? "—" : `$${allIn.toLocaleString()}`}</Text>
+                <AllInCell allIn={allIn} composition={row.listing.all_in_components} />
               </Table.Td>
               <CurationCells row={row} huntId={huntId} />
               <Table.Td>

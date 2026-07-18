@@ -110,6 +110,24 @@ export const FEE_SLOTS: { slot: string; label: string }[] = [
   { slot: "insurance_program", label: "Insurance program" },
 ];
 
+// §9.5 P3-9: the display plan's all-in composition detail
+// (hunt_listings.all_in_components) — display metadata beside the pinned
+// scores.breakdown, written by ingest projection and rescore.
+export interface AllInComponent {
+  name: string;
+  amount: number | null; // null only when tag === "unknown"
+  tag: "actual" | "estimated" | "unknown";
+  note?: string;
+}
+
+export interface AllInComponents {
+  total: number | null; // null → the criterion scored unknown (§9.5 strict branch)
+  estimated_total: number;
+  components: AllInComponent[];
+  badges: string[]; // fees_unverified | heat_unknown | utilities_not_estimated
+  mode: string; // conservative | median
+}
+
 // One §3 Listing with the embeds the Overview reads in a single query.
 export interface Listing {
   id: string;
@@ -123,6 +141,7 @@ export interface Listing {
   // Set when ingest/refresh found no available floor plans (§8.2); null while
   // pending or scored. A no-availability listing renders as a dimmed, null-score row.
   unavailable_at: string | null;
+  all_in_components: AllInComponents | null;
   property: Property & { floor_plans: FloorPlan[]; sources: PropertySource[] };
   scores: Score[];
 }
