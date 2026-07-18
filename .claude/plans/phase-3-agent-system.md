@@ -450,6 +450,13 @@ of Yusuf's own rating on the anchored scale; gallery renders with assessments.
 
 ## 10. P3-8 — ENRICH: proximity, commute, ratings stage 1, safety (Wave C)
 
+> **Landed 2026-07-18 ◐** (IMPLEMENTATION 2.0.58) with one deviation from this
+> section, ruled in DESIGN §20 2026-07-18: `location_safety` ships as an
+> **override-first A+..F placeholder** (no web-search synthesis; the assessor is
+> the deferred P3-17 safety module). The interim proximity-flip path is a
+> `refresh` job (`scope: enrich`) re-running the location slice only — zero LLM
+> spend, as the done-criterion requires. ◐ pending one live Detroit-metro run.
+
 **What/why:** the remaining catalog criteria go live — `grocery_proximity`
 (honoring `settings.proximity_mode`, edit → field-scoped location refresh),
 `management_reviews` via **Google Places rating + one small-model review
@@ -475,6 +482,15 @@ calls only); safety shows its confidence framing in the UI; a Detroit-metro
 bench property scores its location criteria end-to-end.
 
 ## 11. P3-9 — Utility baselines + full all-in composition (Wave C)
+
+> **Landed 2026-07-18 ◐** (IMPLEMENTATION 2.0.59, DESIGN §20 2026-07-18). As
+> this section required, P3-9 landed the scheduler-tick scaffold (P3-11/P3-12
+> add duties) and the §20 entry records the jobs-vs-tick distinction. Deltas
+> ruled at landing: search-less baselines pass until P3-5's plumbing; graduated
+> unknown rule (no-baselines metro → v1 slice + badge; partial coverage →
+> withheld total); billed fee suppresses the matching estimate; metro =
+> `properties.city`; composition detail on `hunt_listings.all_in_components`.
+> ◐ pending the first live baselines pass + the owed bench re-run.
 
 **What/why:** the scheduled metro-level baselines job (one LLM+search pass per
 metro over utility-rate sources, 120 d TTL, winter-weighted `monthly_high`)
