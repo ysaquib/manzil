@@ -220,8 +220,10 @@ def test_unknown_stage_has_no_silent_fallback() -> None:
 def test_provider_derives_cache_family_from_openrouter_slug() -> None:
     assert provider_for_model("anthropic/claude-haiku-4.5") == "anthropic"
     assert provider_for_model("google/gemini-2.5-flash-lite") == "google"
+    # openai/qwen/deepseek/mistral/minimax gained cache multipliers 2026-07-18;
+    # an actually-unpriced family still refuses.
     with pytest.raises(KeyError, match="unknown vendor family"):
-        provider_for_model("openai/gpt-5-mini")
+        provider_for_model("zai/glm-5")
 
 
 def test_openrouter_provider_order_pins_upstream_vendors() -> None:
