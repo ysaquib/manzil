@@ -206,3 +206,40 @@ export function useUpsertFee(huntId: string, listingId: string) {
     },
   });
 }
+
+// P3-7a gallery: property_images rows + short-lived signed URLs from the
+// private `property-images` bucket (table RLS decides which paths we learn;
+// the storage select policy lets authenticated users sign them).
+export interface PropertyImage {
+  id: string;
+  url: string;
+  width: number | null;
+  height: number | null;
+}
+
+export function usePropertyImages(propertyId: string) {
+  return useQuery({
+    queryKey: ["property_images", propertyId],
+    queryFn: async (): Promise<PropertyImage[]> => {
+      const { data, error } = await supabase
+        .from("property_images")
+        .select("id, storage_path, width, height")
+        .eq("property_id", propertyId)
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+      const rows = data ?? [];
+      if (rows.length === 0) return [];
+      const { data: signed, error: signError } = await supabase.storage
+        .from("property-images")
+        .createSignedUrls(rows.map((r) => r.storage_path), 3600);
+      if (signError) throw signError;
+      const urlByPath = new Map((signed ?? []).map((s) => [s.path, s.signedUrl]));
+      return rows.flatMap((row) => {
+        const url = urlByPath.get(row.storage_path);
+        return url ? [{ id: row.id, url, width: row.width, height: row.height }] : [];
+      });
+    },
+    enabled: Boolean(propertyId),
+    staleTime: 45 * 60 * 1000, // refresh before the 1 h signature expires
+  });
+}

@@ -14,13 +14,14 @@ import {
   Text,
   Tooltip,
 } from "@mantine/core";
-import { IconInfoCircle } from "@tabler/icons-react";
+import { IconArrowBackUp, IconInfoCircle } from "@tabler/icons-react";
 import { useState } from "react";
 
 import type { ScoreBreakdown } from "../../lib/contracts";
 import { displayValue as formatCriterionValue } from "./displayValue";
 import { useListingDetailDraft } from "./ListingDetailDraft";
 import { OverrideControl } from "./OverrideControl";
+import { activeOverrides, REVERT_NOTE } from "./overrides";
 import type { Extraction, Override } from "./types";
 import type { CatalogEntry } from "../rubric/api";
 
@@ -46,7 +47,10 @@ function EvidenceContent({
     <Stack gap={4}>
       {overridden && (
         <Text size="xs">
-          Original: <Text span fw={600}>{formatCriterionValue(extraction.value)}</Text>
+          Original:{" "}
+          <Text span fw={600}>
+            {formatCriterionValue(extraction.value, extraction.criterion_key)}
+          </Text>
         </Text>
       )}
       {extraction.evidence_quote && (
@@ -129,8 +133,10 @@ export function CriterionBreakdown({
   isMobile,
 }: CriterionBreakdownProps) {
   const catalogByKey = new Map(catalog.map((entry) => [entry.key, entry]));
-  const overriddenKeys = new Set(overrides.map((o) => o.criterion_key));
-  const { draftOverrides } = useListingDetailDraft();
+  // Latest-per-key, null tombstones excluded (§9.6) — a reverted criterion no
+  // longer reads as overridden.
+  const overriddenKeys = new Set(activeOverrides(overrides).keys());
+  const { draftOverrides, setDraftOverride } = useListingDetailDraft();
 
   if (breakdown.gates.length > 0) {
     return (
@@ -190,6 +196,9 @@ export function CriterionBreakdown({
               savedOverride={savedOverride}
               isPending={isPending}
               isMobile={isMobile}
+              onRevert={() =>
+                setDraftOverride(criterion.key, { value: null, note: REVERT_NOTE })
+              }
             />
           );
         })}
@@ -206,6 +215,7 @@ function CriterionRow({
   savedOverride,
   isPending,
   isMobile,
+  onRevert,
 }: {
   criterion: ScoreBreakdown["criteria"][number];
   entry: CatalogEntry | undefined;
@@ -214,6 +224,7 @@ function CriterionRow({
   savedOverride: boolean;
   isPending: boolean;
   isMobile: boolean;
+  onRevert: () => void;
 }) {
   const showOverrideBadge = savedOverride && !isPending;
   const evidenceOverridden = savedOverride || isPending;
@@ -226,7 +237,7 @@ function CriterionRow({
       <Table.Td>
         <Group gap="xs" wrap="nowrap">
           <Text size="sm" fw={600} c={criterion.unknown && !isPending ? "dimmed" : undefined}>
-            {formatCriterionValue(value)}
+            {formatCriterionValue(value, criterion.key)}
           </Text>
           {isPending && (
             <Badge size="xs" color={"manual"} variant="light">
@@ -269,6 +280,19 @@ function CriterionRow({
             schema={entry?.value_schema}
             currentValue={value}
           />
+          {showOverrideBadge && (
+            <Tooltip label="Revert to original value">
+              <ActionIcon
+                color="gray"
+                size="sm"
+                variant="subtle"
+                aria-label={`revert ${criterion.key} override`}
+                onClick={onRevert}
+              >
+                <IconArrowBackUp size={14} stroke={1.5} color="var(--mantine-color-dimmed)" />
+              </ActionIcon>
+            </Tooltip>
+          )}
         </Group>
       </Table.Td>
     </Table.Tr>

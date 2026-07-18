@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   basisLabel,
+  extractedFeeOriginals,
   feeForSlot,
   moveInEstimate,
   parseOneTimeFees,
@@ -56,5 +57,28 @@ describe("parseOneTimeFees", () => {
     expect(parseOneTimeFees(FEES)).toHaveLength(4);
     expect(parseOneTimeFees(null)).toEqual([]);
     expect(parseOneTimeFees([{ name: "x" }, "junk", { amount: 5, name: "y" }])).toHaveLength(1);
+  });
+});
+
+describe("extractedFeeOriginals", () => {
+  it("maps mandatory and one-time extractions to their slots", () => {
+    const originals = extractedFeeOriginals(
+      [
+        { name: "valet trash", amount_monthly: 25 },
+        { name: "water/sewer billing", amount_monthly: 60 },
+        { name: "amenity fee", amount_monthly: 10 }, // no slot → not revertible
+      ],
+      FEES,
+    );
+    expect(originals.get("valet_trash")).toBe(25);
+    expect(originals.get("water_sewer")).toBe(60);
+    expect(originals.get("application_fee")).toBe(50);
+    expect(originals.get("admin")).toBe(150);
+    expect(originals.get("pet_deposit")).toBe(300);
+    expect(originals.has("pet_rent")).toBe(false); // no extraction row for pets
+  });
+
+  it("tolerates absent extractions", () => {
+    expect(extractedFeeOriginals(undefined, null).size).toBe(0);
   });
 });

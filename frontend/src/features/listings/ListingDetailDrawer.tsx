@@ -27,15 +27,17 @@ import { RatingControl } from "../collaboration/RatingControl";
 import { useCurrentMember, useMembers } from "../collaboration/api";
 import { useHunt } from "../hunts/api";
 import { useCatalog } from "../rubric/api";
-import { AllInBreakdown } from "./AllInCost";
+import { AllInBreakdown, AllInOverrideControl } from "./AllInCost";
+import { activeOverrides } from "./overrides";
 import { CriterionBreakdown } from "./CriterionBreakdown";
 import { FeeChecklist } from "./FeeChecklist";
 import { FloorPlanPins } from "./FloorPlanPins";
 import { ListingDetailDraftProvider, useListingDetailDraft } from "./ListingDetailDraft";
-import { parseOneTimeFees } from "./oneTimeFees";
+import { extractedFeeOriginals, parseOneTimeFees } from "./oneTimeFees";
 import { ScoreCell } from "./ScoreCell";
 import { SourcesList } from "./SourcesList";
-import { useExtractions, useFees, useListings, useOverrides } from "./api";
+import { useExtractions, useFees, useListings, useOverrides, usePropertyImages } from "./api";
+import { PropertyImageCarousel } from "./PropertyImageCarousel";
 import { resolveRow, resolveRowWithDraft } from "./unitGroups";
 import type { Extraction, Listing } from "./types";
 import { memberColor } from "../collaboration/memberColors";
@@ -202,6 +204,9 @@ function DrawerShell({
   );
   const { data: overrides } = useOverrides(listing?.id ?? "");
   const { data: fees } = useFees(listing?.id ?? "");
+  const { data: images, isLoading: imagesLoading } = usePropertyImages(
+    listing?.property_id ?? "",
+  );
   const { data: members = [] } = useMembers(huntId);
   const { data: currentMember } = useCurrentMember(huntId);
   const membercolor = memberColor(currentMember?.color ?? "");
@@ -288,6 +293,8 @@ function DrawerShell({
               {listing.property.canonical_address}
             </Text>
 
+            <PropertyImageCarousel images={images ?? []} loading={imagesLoading} />
+
             <Section title="Score breakdown">
               {score ? (
                 extractionsLoading ? (
@@ -329,11 +336,16 @@ function DrawerShell({
             </Section>
 
             <Section title="All-in cost">
-              <AllInBreakdown
-                composition={
-                  group?.displayScore?.all_in_components ?? listing.all_in_components
-                }
-              />
+              <Stack gap="xs">
+                <AllInBreakdown
+                  composition={
+                    group?.displayScore?.all_in_components ?? listing.all_in_components
+                  }
+                />
+                <AllInOverrideControl
+                  overridden={activeOverrides(overrides ?? []).has("all_in_monthly")}
+                />
+              </Stack>
             </Section>
 
             <Section title="Fees checklist">
@@ -343,6 +355,10 @@ function DrawerShell({
                   oneTimeFees={parseOneTimeFees(extractions?.get("one_time_fees")?.value)}
                   household={household}
                   memberNames={memberNames}
+                  feeOriginals={extractedFeeOriginals(
+                    extractions?.get("mandatory_fees")?.value,
+                    extractions?.get("one_time_fees")?.value,
+                  )}
                 />
                 <UtilitiesIncludedLine extraction={extractions?.get("utilities_included")} />
               </Stack>

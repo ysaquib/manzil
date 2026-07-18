@@ -263,6 +263,57 @@ async def test_rescore_recomposes_and_mode_flip_changes_total(pg_pool: asyncpg.P
         rent_line = next(c for c in per_plan["components"] if c["name"] == "rent")
         assert rent_line["amount"] == 1500.0
 
+        # An all_in_monthly override beats the composition (§9.6): the scored
+        # value is the human's figure and the display plan is marked overridden.
+        await pg_pool.execute(
+            "insert into overrides (hunt_listing_id, criterion_key, value, user_id) "
+            "values ($1, 'all_in_monthly', '1800'::jsonb, $2)",
+            listing_id,
+            uuid4(),
+        )
+        async with pg_pool.acquire() as conn, conn.transaction():
+            await rescore_hunt(
+                conn, hunt_id=hunt_id, rubric=rubric, rubric_version=2,
+                min_confidence=Confidence.MEDIUM,
+            )
+        overridden = json.loads(
+            await pg_pool.fetchval(
+                "select all_in_components from scores where hunt_listing_id = $1", listing_id
+            )
+        )
+        assert overridden["total"] == 1800.0 and overridden["overridden"] is True
+        entry = next(
+            c
+            for c in json.loads(
+                await pg_pool.fetchval(
+                    "select breakdown from scores where hunt_listing_id = $1", listing_id
+                )
+            )["criteria"]
+            if c["key"] == "all_in_monthly"
+        )
+        assert entry["value"] == 1800
+
+        # Appending a null override is the revert tombstone (§9.6, append-only):
+        # the composition's own figure returns and the overridden mark drops.
+        await pg_pool.execute(
+            "insert into overrides (hunt_listing_id, criterion_key, value, user_id) "
+            "values ($1, 'all_in_monthly', 'null'::jsonb, $2)",
+            listing_id,
+            uuid4(),
+        )
+        async with pg_pool.acquire() as conn, conn.transaction():
+            await rescore_hunt(
+                conn, hunt_id=hunt_id, rubric=rubric, rubric_version=2,
+                min_confidence=Confidence.MEDIUM,
+            )
+        reverted = json.loads(
+            await pg_pool.fetchval(
+                "select all_in_components from scores where hunt_listing_id = $1", listing_id
+            )
+        )
+        assert reverted["total"] == 1905.0
+        assert "overridden" not in reverted
+
         # Mode flip conservative → median rescores without any refetch (§9.5).
         async with pg_pool.acquire() as conn, conn.transaction():
             await rescore_hunt(

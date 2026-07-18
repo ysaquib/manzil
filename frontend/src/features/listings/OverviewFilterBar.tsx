@@ -14,6 +14,7 @@ import {
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { IconFilter } from "@tabler/icons-react";
+import { sentenceCase } from "../../lib/text";
 import { INTEREST_STATUSES } from "./types";
 
 import {
@@ -114,7 +115,7 @@ export function OverviewFilterBar({
               placeholder="any"
               data={["undecided", ...INTEREST_STATUSES].map((status) => ({
                 value: status,
-                label: status.replaceAll("_", " "),
+                label: sentenceCase(status),
               }))}
               value={filters.statuses}
               onChange={(value) => setField("statuses", value as StatusFilter[])}
@@ -137,7 +138,10 @@ export function OverviewFilterBar({
             <MultiSelect
               label="Availability"
               placeholder="any"
-              data={["scored", "pending", "unavailable"]}
+              data={["scored", "pending", "unavailable"].map((availability) => ({
+                value: availability,
+                label: sentenceCase(availability),
+              }))}
               value={filters.availabilities}
               onChange={(value) => setField("availabilities", value as OverviewFilterState["availabilities"])}
               clearable

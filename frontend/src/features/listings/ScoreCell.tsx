@@ -35,13 +35,15 @@ export interface ScoreCellProps {
   total: number;
   max?: number;
   pinned?: boolean;
+  /** scored plans in the Unit Group; >1 shows the ×N affordance (absorbs the
+   * old Info column — future stale/single-source badges belong on Property) */
+  planCount?: number;
 }
 
-export function ScoreCell({ total, pinned = false }: ScoreCellProps) {
+export function ScoreCell({ total, pinned = false, planCount = 1 }: ScoreCellProps) {
   return (
     <Group wrap="nowrap" gap={6}>
       <Text ff={"monospace"} fz="xs" fw={600} c={scoreColor(total)}>
-        {/* c="black" p={4} bdrs={4} miw="2.5rem" ta="center"> */}
         {formatScore(total)}
       </Text>
       {pinned && (
@@ -49,6 +51,13 @@ export function ScoreCell({ total, pinned = false }: ScoreCellProps) {
           <Box c={"dimmed"} w={12} display="flex">
             <IconPinnedFilled size={12} stroke={2}/>
           </Box>
+        </Tooltip>
+      )}
+      {planCount > 1 && (
+        <Tooltip label={`${planCount} scored plans — best shown`}>
+          <Text ff="monospace" fz={10} c="dimmed" aria-label="multiple scored plans">
+            ×{planCount}
+          </Text>
         </Tooltip>
       )}
     </Group>

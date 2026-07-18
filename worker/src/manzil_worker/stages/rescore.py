@@ -98,7 +98,10 @@ def _resolve_effective_values(
     values: dict[str, Any] = {}
     for crit in rubric:
         key = criterion_key(crit)
-        if key in overrides:
+        # A null override is the revert tombstone (§9.6, §20 2026-07-18):
+        # overrides are append-only, so "back to original" is expressed by
+        # appending null and falling through to the extraction below.
+        if overrides.get(key) is not None:
             values[key] = overrides[key]
             continue
         source = catalog_ext if crit.catalog_key is not None else hunt_ext
@@ -135,6 +138,25 @@ async def _latest_pet_rents(
         amounts.get("pet_rent_dog"),
         amounts.get("pet_rent"),
     )
+
+
+def _composition_json(
+    composition: Any, all_in_override: Any
+) -> dict[str, Any] | None:
+    """The display-metadata JSON for one plan's composition. A live
+    all_in_monthly override replaces the total and marks the plan overridden
+    (§9.6) — components stay as composed, so the drawer can still show what
+    the machine would have said."""
+    if composition is None:
+        return None
+    out: dict[str, Any] = composition.to_json()
+    if all_in_override is not None:
+        try:
+            out["total"] = float(all_in_override)
+        except (TypeError, ValueError):
+            return out  # non-numeric override never fabricates a total
+        out["overridden"] = True
+    return out
 
 
 def _conservative_rent(rent_min: Decimal | None, rent_max: Decimal | None) -> float | None:
@@ -249,6 +271,10 @@ async def rescore_hunt(
             values = dict(base_values)
             rent = _conservative_rent(fp["rent_min"], fp["rent_max"])
             composition = None
+            # A live all_in_monthly override beats the composition (§9.6, §20
+            # 2026-07-18): the scored value is the human's figure (already in
+            # base_values), and the display plan is marked overridden.
+            all_in_override = overrides.get("all_in_monthly")
             if rent is not None:
                 bucket = beds_bucket(fp["beds"])
                 if bucket not in baselines_by_bucket:
@@ -268,11 +294,11 @@ async def rescore_hunt(
                     occupants=occupants,
                     beds=fp["beds"],
                 )
-                if composition.total is not None:
+                if all_in_override is None and composition.total is not None:
                     values["all_in_monthly"] = composition.total
             breakdown_obj = score(rubric, values, floor_plan, rubric_version=rubric_version)
             breakdown_objs.append(breakdown_obj)
-            compositions.append(composition)
+            compositions.append(_composition_json(composition, all_in_override))
             breakdown = breakdown_obj.to_contract()
             await conn.execute(
                 """
@@ -292,7 +318,7 @@ async def rescore_hunt(
                 Decimal(str(breakdown["total"])),
                 json.dumps(breakdown),
                 rubric_version,
-                json.dumps(composition.to_json()) if composition is not None else None,
+                json.dumps(compositions[-1]) if compositions[-1] is not None else None,
             )
             upserted += 1
         if breakdown_objs:
@@ -302,7 +328,7 @@ async def rescore_hunt(
             await conn.execute(
                 "update hunt_listings set all_in_components = $2::jsonb where id = $1",
                 listing_id,
-                json.dumps(display.to_json()) if display is not None else None,
+                json.dumps(display) if display is not None else None,
             )
     log.info("rescore_hunt_complete", hunt_id=str(hunt_id), score_rows=upserted)
     return upserted

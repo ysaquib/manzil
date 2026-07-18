@@ -14,6 +14,7 @@ import {
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 
+import { sentenceCase } from "../../lib/text";
 import { useMembers } from "../collaboration/api";
 import { useListings } from "../listings/api";
 import { STATE_COLOR } from "./JobCard";
@@ -108,7 +109,10 @@ export function TasksHistoryTab() {
         <Select clearable label="Member" value={memberFilter} onChange={setMemberFilter}
           data={members.map((member) => ({ value: member.user_id, label: member.display_name ?? "Member" }))} />
         <Select clearable label="Outcome" value={outcomeFilter} onChange={setOutcomeFilter}
-          data={["done", "failed", "cancelled"]} />
+          data={["done", "failed", "cancelled"].map((outcome) => ({
+            value: outcome,
+            label: sentenceCase(outcome),
+          }))} />
       </SimpleGrid>
       {filtered.length === 0 && <Card><Text c="dimmed" size="sm">No past runs match these filters.</Text></Card>}
       {filtered.map((job) => {

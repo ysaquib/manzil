@@ -14,7 +14,7 @@ import {
   Text,
   Tooltip,
 } from "@mantine/core";
-import { IconPencil, IconUserEdit } from "@tabler/icons-react";
+import { IconArrowBackUp, IconPencil, IconUserEdit } from "@tabler/icons-react";
 import { useState } from "react";
 
 import { useListingDetailDraft } from "./ListingDetailDraft";
@@ -40,6 +40,7 @@ function FeeRow({
   entry,
   monthly,
   enteredByName,
+  original,
 }: {
   slot: string;
   label: string;
@@ -47,6 +48,8 @@ function FeeRow({
   entry: FeeEntry | undefined;
   monthly: boolean;
   enteredByName?: string;
+  /** the extraction-derived amount a revert restores; undefined → unknown */
+  original?: number;
 }) {
   const { draftFees, setDraftFee } = useListingDetailDraft();
   const [opened, setOpened] = useState(false);
@@ -98,14 +101,42 @@ function FeeRow({
                 </Badge>
               )}
               {state === "manual" && (
-                <Tooltip label={`Entered manually${enteredByName ? ` by ${enteredByName}` : ""}`}>
-                  <IconUserEdit
-                    size={14}
-                    stroke={1.5}
-                    color="var(--mantine-color-dimmed)"
-                    aria-label="manual entry"
-                  />
-                </Tooltip>
+                <>
+                  <Tooltip label={`Entered manually${enteredByName ? ` by ${enteredByName}` : ""}`}>
+                    <IconUserEdit
+                      size={14}
+                      stroke={1.5}
+                      color="var(--mantine-color-dimmed)"
+                      aria-label="manual entry"
+                    />
+                  </Tooltip>
+                  <Tooltip
+                    label={
+                      original !== undefined
+                        ? "Revert to the extracted amount"
+                        : "Revert to unknown (nothing was extracted)"
+                    }
+                  >
+                    <ActionIcon
+                      color="gray"
+                      size="sm"
+                      variant="subtle"
+                      aria-label={`revert ${label}`}
+                      onClick={() =>
+                        setDraftFee(slot, {
+                          amount: original ?? null,
+                          state: original !== undefined ? "extracted" : "unknown",
+                        })
+                      }
+                    >
+                      <IconArrowBackUp
+                        size={14}
+                        stroke={1.5}
+                        color="var(--mantine-color-dimmed)"
+                      />
+                    </ActionIcon>
+                  </Tooltip>
+                </>
               )}
             </>
           )}
@@ -163,6 +194,7 @@ export function FeeChecklist({
   oneTimeFees = [],
   household,
   memberNames,
+  feeOriginals,
 }: {
   fees: FeeEntry[];
   /** the `one_time_fees` extraction's fee list, for basis subtitles + estimate */
@@ -171,6 +203,8 @@ export function FeeChecklist({
   household?: Household;
   /** user_id → display name, for the manual-entry attribution tooltip */
   memberNames?: Map<string, string>;
+  /** slot → extraction-derived amount a revert restores */
+  feeOriginals?: Map<string, number>;
 }) {
   const bySlot = new Map(fees.map((entry) => [entry.fee_slot, entry]));
   const nameFor = (entry: FeeEntry | undefined) =>
@@ -191,6 +225,7 @@ export function FeeChecklist({
               entry={bySlot.get(slot)}
               monthly
               enteredByName={nameFor(bySlot.get(slot))}
+              original={feeOriginals?.get(slot)}
             />
           ))}
           <SectionLabel>One-time / move-in</SectionLabel>
@@ -205,6 +240,7 @@ export function FeeChecklist({
                 entry={bySlot.get(slot)}
                 monthly={false}
                 enteredByName={nameFor(bySlot.get(slot))}
+                original={feeOriginals?.get(slot)}
               />
             );
           })}
