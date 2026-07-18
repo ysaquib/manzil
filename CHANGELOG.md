@@ -5,6 +5,51 @@ IMPLEMENTATION.md §7 task IDs. Design changes go to DESIGN.md §20 (Decision
 Log); doc-mechanics changes go to IMPLEMENTATION.md §9 — this file tracks the
 repo itself.
 
+## Unreleased — Phase 3
+
+### 2026-07-18 — Utility baselines + full all-in composition (P3-9 ◐)
+
+- Scheduler-tick scaffold in the worker loop (opt-in; wired by the API entry
+  only) — its first duty refreshes metro utility baselines on the 120-day TTL
+  as advisory-lock-guarded asyncio tasks, deliberately NOT jobs rows
+  (`jobs.hunt_id` is NOT NULL; this is global maintenance). The baselines pass
+  is one forced-schema call per metro, search-less until P3-5, all-or-nothing
+  coverage, `sources` marked `"search": false`.
+- Full §9.5 composition: new `mandatory_fees` + `heating` EXTRACT blocks
+  (optional-with-default — no prompt bump, recordings stay valid), the heat
+  rule (electric/gas/worse-of-unknown), occupants scaling of water/sewer
+  (`occupants` now bumps + rescores like other household keys), conservative /
+  median mode from `cost_estimate_mode`, and a graduated unknown rule: metro
+  without baselines composes the v1 slice + badge; a missing needed baseline
+  row withholds the total (`unknown_delta`, "fees unverified") — never a
+  fabricated number. A billed water/sewer or valet-trash fee suppresses that
+  utility's estimate.
+- Display composition (components + tags + badges) persists on new
+  `hunt_listings.all_in_components`; Overview renders `$1,845 (~$210 est.)`
+  with badge tooltips and the drawer gains an "All-in cost" breakdown section.
+- ◐ pending: first live baselines pass on the real hunt; bench re-run owed
+  (EXTRACT schema grew).
+
+### 2026-07-18 — ENRICH: proximity, Places ratings, safety placeholder (P3-8 ◐)
+
+- New ENRICH stage between VERIFY and SCORE: `grocery_proximity` (nearest
+  grocery via Maps, minutes by the hunt's `proximity_mode`) and
+  `management_reviews` (Google Places rating + one small-model review
+  synthesis, `enrich_reviews` prompt v1). API-derived extraction rows persist
+  with NULL `source_id` — page-source attribution would be false provenance.
+- `location_safety` rescoped (DESIGN §20 2026-07-18): 13-grade A+..F enum,
+  override-first placeholder — ENRICH emits nothing until the deferred P3-17
+  safety module (ARCGIS/police-report based, SE Michigan first, possibly a
+  standalone project). First `catalog_sync` migration carries the row to
+  hosted DBs; the override dropdown and rubric widgets pick the grades up
+  from `value_schema` automatically.
+- `proximity_mode` settings flip enqueues a `refresh` job (`scope: enrich`):
+  re-derives the location slice against the geocode forever-cache and
+  rescores — zero LLM spend. Handled by the new refresh dispatcher.
+- Breakdown UI: unknown safety renders an "awaiting grade" badge naming the
+  override path; the evidence hover now shows the synthesized review summary.
+- ◐ pending: one live Detroit-metro property through ENRICH on the live hunt.
+
 ## Unreleased — Phase 2
 
 ### 2026-07-11 — In-process worker retained; P3-1 conditional
