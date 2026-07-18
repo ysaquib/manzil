@@ -14,7 +14,7 @@ from pathlib import Path
 
 import asyncpg
 import pytest
-from worker_helpers import seed_recorded_llm
+from worker_helpers import _SEED_EXTRACT_RECORDINGS, RECORDED, seed_recorded_llm
 
 # Inline (not imported from conftest) to avoid a same-named sibling conftest
 # shadowing it during full-suite collection — see test_migration_0002_schema.py.
@@ -31,6 +31,34 @@ def _load_dev_seed():  # type: ignore[no-untyped-def]
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def test_seed_extract_recordings_are_committed() -> None:
+    """Recording filenames are content-hash-keyed, so a prompt or model change
+    re-keys them under the blanket `fixtures/recorded/*` ignore. When that
+    happens the suite keeps passing locally (file on disk) while CI's checkout
+    is missing it — this asserts each referenced seed recording is git-tracked
+    so the drift fails at the desk, not on master."""
+    import subprocess
+
+    repo_root = Path(__file__).resolve().parents[2]
+    for filename in _SEED_EXTRACT_RECORDINGS.values():
+        path = RECORDED / filename
+        assert path.exists(), f"missing seed recording {filename} — re-record it"
+        try:
+            tracked = subprocess.run(
+                ["git", "ls-files", "--error-unmatch", str(path)],
+                cwd=repo_root,
+                capture_output=True,
+                timeout=30,
+            )
+        except (OSError, subprocess.TimeoutExpired):  # pragma: no cover - env guard
+            pytest.skip("git unavailable")
+        assert tracked.returncode == 0, (
+            f"{filename} exists locally but is not git-tracked — add a "
+            f"!worker/tests/fixtures/recorded/{filename} exception to .gitignore "
+            "and `git add` it, or CI's checkout will fail the seed pipeline"
+        )
 
 
 async def test_dev_seed_leaves_one_hunt_three_listings_nonzero_scores() -> None:
