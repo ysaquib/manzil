@@ -13,7 +13,7 @@ from manzil_api.hunts.schemas import (
     HuntSettingsPatch,
     HuntUpdate,
 )
-from manzil_api.jobs.enqueue import enqueue_rescore
+from manzil_api.jobs.enqueue import enqueue_enrich_refresh, enqueue_rescore
 from supabase import Client
 
 DEFAULT_SETTINGS: dict[str, Any] = {
@@ -38,9 +38,10 @@ _HOUSEHOLD_BOUNDS: dict[str, tuple[int, int]] = {
     "cats": (0, 10),
     "dogs": (0, 10),
 }
-# Keys whose change bumps rubric_version + enqueues a rescore. `occupants` is
-# reserved for P3-9 utility scaling and triggers nothing yet.
-_SCORING_KEYS = frozenset({"cost_estimate_mode", "min_confidence", "cats", "dogs"})
+# Keys whose change bumps rubric_version + enqueues a rescore. `occupants`
+# joined at P3-9: it scales the per-person utility estimates in the §9.5
+# composition, so a change re-scores like the other household keys.
+_SCORING_KEYS = frozenset({"cost_estimate_mode", "min_confidence", "cats", "dogs", "occupants"})
 
 
 def _to_response(row: dict[str, Any]) -> HuntResponse:
@@ -130,12 +131,20 @@ async def patch_settings(client: Client, hunt_id: UUID, body: HuntSettingsPatch)
     scoring_changed = any(
         key in body.settings and body.settings[key] != current.get(key) for key in _SCORING_KEYS
     )
+    # P3-8: a proximity_mode flip re-derives the Maps-only location criteria and
+    # rescores via a `refresh` job (scope: enrich) — no rubric bump, no LLM spend.
+    # Field-scoping arrives with P3-12; until then this re-runs the full slice.
+    proximity_changed = "proximity_mode" in body.settings and body.settings[
+        "proximity_mode"
+    ] != current.get("proximity_mode", DEFAULT_SETTINGS["proximity_mode"])
     updates: dict[str, Any] = {"settings": merged}
     if scoring_changed:
         updates["rubric_version"] = row.get("rubric_version", 0) + 1
     client.table("hunts").update(updates).eq("id", str(hunt_id)).execute()
     if scoring_changed:
         await enqueue_rescore(client, hunt_id)
+    if proximity_changed:
+        await enqueue_enrich_refresh(client, hunt_id)
     updated = await get_hunt_row(client, hunt_id)
     assert updated is not None
     return _to_response(updated)

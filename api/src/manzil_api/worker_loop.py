@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 
 import asyncpg
-from manzil_worker.queue import build_dispatch, run_worker_loop
+from manzil_worker.queue import build_dispatch, run_worker_loop, utility_baselines_tick
 
 from manzil_api.config import Settings
 
@@ -22,4 +22,6 @@ async def run_inprocess_worker(pool: asyncpg.Pool, settings: Settings, stop: asy
     # from the .env file without populating os.environ, so build_dispatch's env
     # fallback would silently degrade to InMemoryRegistry.
     dispatch = build_dispatch(pool, dsn=settings.database_url)
-    await run_worker_loop(pool, stop=stop, dispatch=dispatch)
+    # Scheduler duties run only on this production entry (P3-9 scaffold) — the
+    # opt-in keeps tests and dev-seed drains from firing scheduled LLM passes.
+    await run_worker_loop(pool, stop=stop, dispatch=dispatch, scheduler_tick=utility_baselines_tick)
