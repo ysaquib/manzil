@@ -30,6 +30,8 @@ STAGE_MODELS: dict[str, str] = {
     "verify": WORKHORSE_MODEL,  # check 4 only; checks 1-3 are code
     "reconcile_equivalence": WORKHORSE_MODEL,
     "custom_match": WORKHORSE_MODEL,
+    "enrich_reviews": WORKHORSE_MODEL,  # P3-8 ratings stage 1 review synthesis
+    "utility_baselines": WORKHORSE_MODEL,  # P3-9 metro baselines pass (scheduler tick)
     "plan_assist": WORKHORSE_MODEL,
     # taste tier
     "vision": TASTE_MODEL,
@@ -79,6 +81,7 @@ MODEL_PRICES: dict[str, tuple[float, float]] = {
     "anthropic/claude-3-haiku": (0.25, 1.25),
     "qwen/qwen3.5-flash": (0.25, 1.50),
     "google/gemini-3.1-flash-lite": (0.25, 1.50),
+    "minimax/minimax-m3": (0.30, 1.20),
     "google/gemini-2.5-flash": (0.30, 2.50),
     "google/gemini-3-flash-preview": (0.50, 3.00),
     "openai/gpt-5.6-luna": (1.00, 6.00),
@@ -89,13 +92,34 @@ MODEL_PRICES: dict[str, tuple[float, float]] = {
 # Cache economics differ per upstream family: Anthropic bills explicit cache
 # reads at 10% and writes at 125%; Gemini's implicit caching bills cached reads
 # at 25% with no write premium.
-CACHE_READ_MULTIPLIERS: dict[str, float] = {"anthropic": 0.10, "google": 0.25}
-CACHE_WRITE_MULTIPLIERS: dict[str, float] = {"anthropic": 1.25, "google": 0.0}
+CACHE_READ_MULTIPLIERS: dict[str, float] = {
+    "anthropic": 0.10,
+    "google": 0.25,
+    "minimax": 0.20,
+    "openai": 0.10,
+    "qwen": 0.10,
+    "deepseek": 0.10,
+    "mistral": 0.10,
+}
+CACHE_WRITE_MULTIPLIERS: dict[str, float] = {
+    "anthropic": 1.25,
+    "google": 0.0,
+    "minimax": 1.25,
+    "openai": 1.25,
+    "qwen": 1.25,
+    "deepseek": 1.25,
+    "mistral": 1.25,
+}
 
 # OpenRouter provider slugs for deterministic routing (§11.3 model pinning).
 _OPENROUTER_PROVIDER_ORDERS: dict[str, list[str]] = {
     "anthropic": ["Anthropic"],
     "google": ["Google AI Studio"],
+    "minimax": ["Minimax"],
+    "openai": ["OpenAI"],
+    "qwen": ["Qwen"],
+    "deepseek": ["DeepSeek"],
+    "mistral": ["Mistral"],
 }
 
 

@@ -36,6 +36,7 @@ log = structlog.get_logger()
 _GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 _NEARBY_URL = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
 _DISTANCE_URL = "https://maps.googleapis.com/maps/api/distancematrix/json"
+_DETAILS_URL = "https://maps.googleapis.com/maps/api/place/details/json"
 
 # Google `status` values that mean "no error, just no data" — an empty result,
 # not a failure.
@@ -217,6 +218,36 @@ async def commute_time(
     return await _commute_time_call(
         origin_latlng, destination, mode=mode, transport=ctx.maps_transport
     )
+
+
+# ── place details (ENRICH ratings stage 1, §10.12) ────────────────────────────
+
+
+async def _place_details_call(place_id: str, *, transport: Any = None) -> dict[str, Any] | None:
+    """Rating + review snippets for one place. ENRICH calls this as a plain
+    function (no tool loop — §10.2); None when Google has no data for the id."""
+    body = await _get_json(
+        _DETAILS_URL,
+        {"place_id": place_id, "fields": "name,rating,user_ratings_total,reviews"},
+        transport=transport,
+    )
+    result = body.get("result") or {}
+    if not result:
+        return None
+    return {
+        "name": result.get("name"),
+        "rating": result.get("rating"),
+        "user_ratings_total": result.get("user_ratings_total"),
+        "reviews": [
+            {
+                "rating": review.get("rating"),
+                "text": review.get("text"),
+                "relative_time": review.get("relative_time_description"),
+            }
+            for review in (result.get("reviews") or [])
+            if review.get("text")
+        ],
+    }
 
 
 # ── forever-cache helper ──────────────────────────────────────────────────────

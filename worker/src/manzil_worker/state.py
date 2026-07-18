@@ -91,6 +91,36 @@ class UtilitiesIn(BaseModel):
     evidence_quote: str | None = None
 
 
+class MandatoryFeeIn(BaseModel):
+    """One mandatory recurring MONTHLY fee as stated on the page (§9.5, P3-9):
+    water/sewer billing, valet trash, mandatory parking, insurance programs.
+    One-time fees (admin, application, deposits) never belong here — all-in is
+    a monthly figure."""
+
+    name: str
+    amount_monthly: float
+
+
+class MandatoryFeesIn(BaseModel):
+    """The page's mandatory recurring monthly fees (§9.5, P3-9) — a non-catalog
+    EXTRACT block. Persisted both as a `mandatory_fees` extraction (rescore
+    parity) and projected onto matching fee_checklist slots (state `extracted`;
+    a human `manual` entry is never overwritten)."""
+
+    fees: list[MandatoryFeeIn] = Field(default_factory=list)
+    evidence_quote: str | None = None
+
+
+class HeatingIn(BaseModel):
+    """The unit's heating fuel as stated on the page (§9.5, P3-9): drives which
+    winter-weighted baseline row the all-in composition applies. None when the
+    page does not state it — composition then takes the worse of the two heat
+    figures and flags it (heat_unknown)."""
+
+    heating: Literal["gas", "electric"] | None = None
+    evidence_quote: str | None = None
+
+
 class SourceState(BaseModel):
     """One source's fetch results (IMPL §3: url, tier_used, outcome, cleaned, hash)."""
 
@@ -253,8 +283,16 @@ class RunState(BaseModel):
     property_identity: PropertyIdentityIn | None = None
     pet_costs: PetCostsIn | None = None
     utilities: UtilitiesIn | None = None
+    # §9.5 P3-9 blocks. Optional-with-default like pet_costs/utilities so pre-P3-9
+    # snapshots and recorded fixtures (blocks absent) keep validating.
+    mandatory_fees: MandatoryFeesIn | None = None
+    heating: HeatingIn | None = None
     verify_flags: list[VerifyFlag] = Field(default_factory=list)
     effective_values: dict[str, Any] = Field(default_factory=dict)
+    # §9.5 P3-9: the display plan's composition detail (components + tags +
+    # badges), projected onto hunt_listings.all_in_components. Display metadata;
+    # the pinned breakdown stays the scoring truth.
+    all_in_components: dict[str, Any] | None = None
     scores: list[PlanScore] = Field(default_factory=list)
     display_score_index: int | None = None
     checkpoint: CheckpointPrompt | None = None

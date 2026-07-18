@@ -29,7 +29,7 @@ from manzil_shared.models import Confidence, FloorPlan
 from manzil_shared.scoring.engine import score, select_display_score
 
 from manzil_worker.stages.base import StageCtx
-from manzil_worker.stages.pet_costs import pet_monthly
+from manzil_worker.stages.pet_costs import beds_bucket, compose_all_in, pet_monthly
 from manzil_worker.state import FloorPlanIn, PlanScore, RunState
 
 log = structlog.get_logger()
@@ -98,14 +98,47 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
         generic_rent=pc.pet_rent_monthly if pc else None,
     )
 
+    # §9.5 P3-9 composition inputs, identical for every plan on the page; the
+    # per-plan pieces (rent, beds bucket) vary inside the loop.
+    metro = state.geocode.city if state.geocode else None
+    fees = [(f.name, f.amount_monthly) for f in state.mandatory_fees.fees] if (
+        state.mandatory_fees
+    ) else []
+    included = list(state.utilities.included) if (
+        state.utilities and state.utilities.included is not None
+    ) else None
+    heating = state.heating.heating if state.heating else None
+
     scorable = [(p, fp) for p in state.floor_plans if (fp := _to_floor_plan(p)) is not None]
     if scorable:
         breakdowns = []
+        compositions = []
         for plan_in, floor_plan in scorable:
             values = dict(base_values)
             rent = conservative_rent(plan_in)
+            composition = None
             if rent is not None:
-                values["all_in_monthly"] = rent + pet_add
+                baselines = (
+                    await ctx.utility_baselines_lookup(metro, beds_bucket(floor_plan.beds))
+                    if metro is not None
+                    else None
+                )
+                composition = compose_all_in(
+                    rent=rent,
+                    pet_add=pet_add,
+                    mandatory_fees=fees,
+                    included=included,
+                    heating=heating,
+                    baselines=baselines,
+                    mode=ctx.cost_estimate_mode,
+                    occupants=ctx.occupants,
+                    beds=floor_plan.beds,
+                )
+                # total None = the strict-unknown branch: the criterion scores
+                # unknown_delta rather than a fabricated number (§9.5).
+                if composition.total is not None:
+                    values["all_in_monthly"] = composition.total
+            compositions.append(composition)
             breakdowns.append(
                 (
                     floor_plan.plan_name,
@@ -116,6 +149,10 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
             PlanScore(plan_name=name, breakdown=b.to_contract()) for name, b in breakdowns
         ]
         state.display_score_index = select_display_score([b for _, b in breakdowns])
+        display_composition = compositions[state.display_score_index]
+        state.all_in_components = (
+            display_composition.to_json() if display_composition is not None else None
+        )
     else:
         breakdown = score(ctx.rubric, base_values, None, rubric_version=ctx.rubric_version)
         state.scores = [PlanScore(plan_name=None, breakdown=breakdown.to_contract())]

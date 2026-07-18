@@ -23,7 +23,14 @@ from manzil_shared.catalog import CATALOG
 from manzil_shared.models import CatalogEntry, Confidence
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, create_model, model_validator
 
-from manzil_worker.state import FloorPlanIn, PetCostsIn, PropertyIdentityIn, UtilitiesIn
+from manzil_worker.state import (
+    FloorPlanIn,
+    HeatingIn,
+    MandatoryFeesIn,
+    PetCostsIn,
+    PropertyIdentityIn,
+    UtilitiesIn,
+)
 
 # Composed by the pipeline, never extracted from the page (§9.5).
 COMPOSED_KEYS = frozenset({"all_in_monthly"})
@@ -212,6 +219,28 @@ def build_extraction_schema(
             description="Utilities the listing states are INCLUDED in rent. Set `included` "
             "to the list of included utilities; an empty list if the page states none are "
             "included; null the block if the page says nothing about utilities. Never invent.",
+        ),
+    )
+    fields["mandatory_fees"] = (
+        MandatoryFeesIn | None,
+        Field(
+            default=None,
+            description="Mandatory RECURRING MONTHLY fees every resident must pay, as "
+            "stated on the page: water/sewer or utility billing fees, valet trash, "
+            "mandatory parking, required insurance or liability programs. Numbers only, "
+            "monthly amounts. EXCLUDE one-time fees (admin, application, deposits), "
+            "optional add-ons, and pet rent (its own block). Null the whole block if the "
+            "page states no such fees. Never invent.",
+        ),
+    )
+    fields["heating"] = (
+        HeatingIn | None,
+        Field(
+            default=None,
+            description="The unit's heating fuel when the page states it: 'gas' (gas "
+            "heat/furnace) or 'electric' (electric heat/baseboard/heat pump). Null the "
+            "block when the page does not state the heating type. Never guess from "
+            "region or building age.",
         ),
     )
     return create_model(
