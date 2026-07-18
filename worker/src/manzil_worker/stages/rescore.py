@@ -14,9 +14,16 @@ from uuid import UUID
 
 import structlog
 from manzil_shared.models import Confidence, FloorPlan, RubricCriterion
-from manzil_shared.scoring.engine import criterion_key, score
+from manzil_shared.scoring.engine import criterion_key, score, select_display_score
 
-from manzil_worker.stages.pet_costs import pet_monthly
+from manzil_worker.enrich.utility_baselines import baselines_for_metro
+from manzil_worker.stages.pet_costs import (
+    MANDATORY_FEE_SLOTS,
+    beds_bucket,
+    compose_all_in,
+    pet_monthly,
+    slot_for_fee,
+)
 from manzil_worker.stages.score import meets_confidence
 
 if True:  # TYPE_CHECKING without import cycle
@@ -138,6 +145,36 @@ def _conservative_rent(rent_min: Decimal | None, rent_max: Decimal | None) -> fl
     return None
 
 
+async def _mandatory_fees(
+    conn: asyncpg.Connection,
+    hunt_listing_id: UUID,
+    catalog_ext: dict[str, tuple[Any, Confidence]],
+) -> list[tuple[str, float]]:
+    """§9.5 mandatory-fee components at rescore: checklist slot amounts (manual
+    entries naturally win — projection never clobbers them) + the extracted fees
+    that map to no slot (they live only on the `mandatory_fees` extraction)."""
+    rows = await conn.fetch(
+        """
+        select fee_slot, amount from fee_checklist
+        where hunt_listing_id = $1
+          and fee_slot = any($2::text[])
+          and value_state <> 'unknown'
+          and amount is not null
+        """,
+        hunt_listing_id,
+        list(MANDATORY_FEE_SLOTS),
+    )
+    fees = [(row["fee_slot"], float(row["amount"])) for row in rows]
+    extracted = catalog_ext.get("mandatory_fees")
+    if extracted is not None and isinstance(extracted[0], list):
+        for entry in extracted[0]:
+            name = entry.get("name")
+            amount = entry.get("amount_monthly")
+            if name and amount is not None and slot_for_fee(name) is None:
+                fees.append((name, float(amount)))
+    return fees
+
+
 async def rescore_hunt(
     conn: asyncpg.Connection,
     *,
@@ -147,12 +184,15 @@ async def rescore_hunt(
     min_confidence: Confidence,
     cats: int = 0,
     dogs: int = 0,
+    cost_estimate_mode: str = "conservative",
+    occupants: int = 1,
 ) -> int:
     """Rescore every active listing on the hunt. Returns the number of score rows upserted."""
     listings = await conn.fetch(
         """
-        select id, property_id from hunt_listings
-        where hunt_id = $1 and status = 'active'
+        select hl.id, hl.property_id, p.city from hunt_listings hl
+        join properties p on p.id = hl.property_id
+        where hl.hunt_id = $1 and hl.status = 'active'
         """,
         hunt_id,
     )
@@ -160,6 +200,7 @@ async def rescore_hunt(
     for listing in listings:
         listing_id: UUID = listing["id"]
         property_id: UUID = listing["property_id"]
+        metro: str | None = listing["city"]
         catalog_ext = await _latest_catalog_extractions(conn, property_id)
         hunt_ext = await _latest_hunt_extractions(conn, property_id, hunt_id)
         overrides = await _latest_overrides(conn, listing_id)
@@ -174,10 +215,21 @@ async def rescore_hunt(
             dog_rent=dog_rent,
             generic_rent=generic_rent,
         )
+        # §9.5 P3-9 composition inputs, from the same persisted rows the ingest
+        # projection writes — the two paths never drift.
+        fees = await _mandatory_fees(conn, listing_id, catalog_ext)
+        included_ext = catalog_ext.get("utilities_included")
+        included = included_ext[0] if included_ext is not None else None
+        heating_ext = catalog_ext.get("heating_type")
+        heating = heating_ext[0] if heating_ext is not None else None
+        baselines_by_bucket: dict[int, dict[str, tuple[float, float]] | None] = {}
+
         floor_plans = await conn.fetch(
             "select * from floor_plans where property_id = $1",
             property_id,
         )
+        breakdown_objs = []
+        compositions = []
         for fp in floor_plans:
             if fp["beds"] is None or fp["baths"] is None:
                 continue
@@ -196,11 +248,32 @@ async def rescore_hunt(
             )
             values = dict(base_values)
             rent = _conservative_rent(fp["rent_min"], fp["rent_max"])
+            composition = None
             if rent is not None:
-                values["all_in_monthly"] = rent + pet_add
-            breakdown = score(
-                rubric, values, floor_plan, rubric_version=rubric_version
-            ).to_contract()
+                bucket = beds_bucket(fp["beds"])
+                if bucket not in baselines_by_bucket:
+                    baselines_by_bucket[bucket] = (
+                        await baselines_for_metro(conn, metro, bucket)
+                        if metro is not None
+                        else None
+                    )
+                composition = compose_all_in(
+                    rent=rent,
+                    pet_add=pet_add,
+                    mandatory_fees=fees,
+                    included=included,
+                    heating=heating,
+                    baselines=baselines_by_bucket[bucket],
+                    mode=cost_estimate_mode,
+                    occupants=occupants,
+                    beds=fp["beds"],
+                )
+                if composition.total is not None:
+                    values["all_in_monthly"] = composition.total
+            breakdown_obj = score(rubric, values, floor_plan, rubric_version=rubric_version)
+            breakdown_objs.append(breakdown_obj)
+            compositions.append(composition)
+            breakdown = breakdown_obj.to_contract()
             await conn.execute(
                 """
                 insert into scores
@@ -219,5 +292,14 @@ async def rescore_hunt(
                 rubric_version,
             )
             upserted += 1
+        if breakdown_objs:
+            # Same display selection as SCORE: the display plan's composition
+            # detail lands on hunt_listings.all_in_components (P3-9).
+            display = compositions[select_display_score(breakdown_objs)]
+            await conn.execute(
+                "update hunt_listings set all_in_components = $2::jsonb where id = $1",
+                listing_id,
+                json.dumps(display.to_json()) if display is not None else None,
+            )
     log.info("rescore_hunt_complete", hunt_id=str(hunt_id), score_rows=upserted)
     return upserted

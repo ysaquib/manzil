@@ -23,6 +23,8 @@ from manzil_worker.stages.schema_gen import build_extraction_schema, extractable
 from manzil_worker.state import (
     FieldExtraction,
     FloorPlanIn,
+    HeatingIn,
+    MandatoryFeesIn,
     PetCostsIn,
     PropertyIdentityIn,
     RunState,
@@ -112,6 +114,17 @@ async def extract_stage(state: RunState, ctx: StageCtx) -> RunState:
         UtilitiesIn.model_validate(utilities, from_attributes=True)
         if utilities is not None
         else None
+    )
+    # §9.5 P3-9 blocks — absent on pre-P3-9 recordings, so getattr-with-None.
+    mandatory_fees = getattr(extraction, "mandatory_fees", None)
+    state.mandatory_fees = (
+        MandatoryFeesIn.model_validate(mandatory_fees, from_attributes=True)
+        if mandatory_fees is not None
+        else None
+    )
+    heating = getattr(extraction, "heating", None)
+    state.heating = (
+        HeatingIn.model_validate(heating, from_attributes=True) if heating is not None else None
     )
     normalize_availability_dates(state, ctx.today().isoformat())
     log.info(

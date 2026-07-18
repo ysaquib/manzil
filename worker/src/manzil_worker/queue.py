@@ -33,6 +33,8 @@ import structlog
 from manzil_shared.config import (
     JOB_ORPHAN_AFTER_SECONDS,
     MANZIL_JOB_MAX_ATTEMPTS,
+    SCHEDULER_TICK_SECONDS,
+    UTILITY_BASELINE_RETRY_SECONDS,
     WORKER_IDLE_BACKOFF_SECONDS,
 )
 from manzil_shared.models import (
@@ -56,6 +58,7 @@ from manzil_worker.runner import (
     run_job,
 )
 from manzil_worker.stages.base import StageCtx
+from manzil_worker.stages.pet_costs import slot_for_fee
 from manzil_worker.stages.rescore import rescore_hunt
 from manzil_worker.state import DedupeCandidate, RunState, SourceFreshness
 
@@ -64,9 +67,11 @@ if TYPE_CHECKING:
 
     from manzil_worker.stages.base import (
         CallStructured,
+        CommuteMinutes,
         DedupeCandidates,
         FreshSourceLookup,
         GeocodeAddress,
+        NearbyPlaces,
     )
 
 log = structlog.get_logger()
@@ -76,6 +81,11 @@ JOB_ORPHAN_AFTER = timedelta(seconds=JOB_ORPHAN_AFTER_SECONDS)
 # A dispatcher runs one claimed job to a terminal state (raising only on
 # unexpected failure — the runner maps stage errors to `failed` itself).
 Dispatcher = Callable[["asyncpg.Pool", "asyncpg.Record"], Awaitable[None]]
+
+# Scheduler duty (P3-9 scaffold): invoked by run_worker_loop at most every
+# SCHEDULER_TICK_SECONDS when wired (production only). P3-11's checkpoint sweep
+# and P3-12's TTL refresh extend the same seam.
+SchedulerTick = Callable[["asyncpg.Pool"], Awaitable[None]]
 FetchersFactory = Callable[[], dict[int, Fetcher]]
 
 
@@ -356,6 +366,11 @@ async def _persist_ingest_results(
         )
 
     for key, ext in state.reconciled.items():
+        # ENRICH values are API-derived (RunState source_id "google_maps:…" /
+        # "google_places:…"), not page facts: attributing them to the fetched
+        # property_sources row would be false provenance — persist NULL instead;
+        # the evidence_quote and model columns carry the real origin (P3-8).
+        from_page = ext.source_id == source.url
         await conn.execute(
             """
             insert into extractions
@@ -368,7 +383,7 @@ async def _persist_ingest_results(
             json.dumps(ext.value),
             ext.confidence.value,
             ext.evidence_quote,
-            source_id,
+            source_id if from_page else None,
             ext.model,
         )
 
@@ -426,6 +441,68 @@ async def _persist_ingest_results(
             model,
         )
 
+    # §9.5 P3-9 blocks → append-only extractions (rescore parity) + fee slots.
+    mandatory = state.mandatory_fees
+    if mandatory is not None and mandatory.fees:
+        model = next((e.model for e in state.reconciled.values()), None) or model_for_stage(
+            "extract"
+        )
+        await conn.execute(
+            """
+            insert into extractions
+                (property_id, hunt_id, criterion_key, value, confidence,
+                 evidence_quote, source_id, model)
+            values ($1, null, 'mandatory_fees', $2::jsonb, 'high'::confidence, $3, $4, $5)
+            """,
+            property_id,
+            json.dumps([f.model_dump(mode="json") for f in mandatory.fees]),
+            mandatory.evidence_quote,
+            source_id,
+            model,
+        )
+        # Mappable fees fill their checklist slot (state `extracted`); a human
+        # `manual` entry is never overwritten (§9.5). Unmapped fees still
+        # compose via the extraction row above — they just lack a slot.
+        for fee in mandatory.fees:
+            slot = slot_for_fee(fee.name)
+            if slot is None:
+                continue
+            await conn.execute(
+                """
+                insert into fee_checklist
+                    (hunt_listing_id, fee_slot, amount, value_state, evidence_ref, updated_at)
+                values ($1, $2, $3, 'extracted', $4, now())
+                on conflict (hunt_listing_id, fee_slot) do update set
+                    amount = excluded.amount,
+                    value_state = excluded.value_state,
+                    evidence_ref = excluded.evidence_ref,
+                    updated_at = now()
+                where fee_checklist.value_state <> 'manual'
+                """,
+                hunt_listing_id,
+                slot,
+                Decimal(str(fee.amount_monthly)),
+                mandatory.evidence_quote,
+            )
+    heating = state.heating
+    if heating is not None and heating.heating is not None:
+        model = next((e.model for e in state.reconciled.values()), None) or model_for_stage(
+            "extract"
+        )
+        await conn.execute(
+            """
+            insert into extractions
+                (property_id, hunt_id, criterion_key, value, confidence,
+                 evidence_quote, source_id, model)
+            values ($1, null, 'heating_type', $2::jsonb, 'high'::confidence, $3, $4, $5)
+            """,
+            property_id,
+            json.dumps(heating.heating),
+            heating.evidence_quote,
+            source_id,
+            model,
+        )
+
     scorable = [p for p in state.floor_plans if p.beds is not None and p.baths is not None]
     if not scorable:
         # No available floor plans, even after extraction/cross-validation — a
@@ -437,10 +514,16 @@ async def _persist_ingest_results(
             hunt_listing_id,
         )
         return
-    # Plans found — clear any prior no-availability marker (reversible on refresh).
+    # Plans found — clear the no-availability marker and store the display
+    # plan's §9.5 composition detail for the all-in cell/drawer (P3-9).
     await conn.execute(
-        "update hunt_listings set unavailable_at = null where id = $1",
+        """
+        update hunt_listings
+        set unavailable_at = null, all_in_components = $2::jsonb
+        where id = $1
+        """,
         hunt_listing_id,
+        json.dumps(state.all_in_components) if state.all_in_components is not None else None,
     )
     # strict=True: SCORE guarantees one PlanScore per scorable plan, so any length
     # mismatch is a real filter/order drift and must surface, not truncate.
@@ -607,6 +690,9 @@ def make_ingest_dispatcher(
         min_confidence = Confidence(settings.get("min_confidence", "medium"))
         cats = int(settings.get("cats", 0))
         dogs = int(settings.get("dogs", 0))
+        proximity_mode = str(settings.get("proximity_mode", "driving"))
+        cost_estimate_mode = str(settings.get("cost_estimate_mode", "conservative"))
+        occupants = int(settings.get("occupants", 1))
 
         payload = json.loads(job["payload"])
         # A resumed/retried job arrives with a prior RunState snapshot; a fresh
@@ -674,6 +760,10 @@ def make_ingest_dispatcher(
             min_confidence=min_confidence,
             cats=cats,
             dogs=dogs,
+            proximity_mode=proximity_mode,
+            cost_estimate_mode=cost_estimate_mode,
+            occupants=occupants,
+            utility_baselines_lookup=_make_utility_baselines_lookup(pool),
             persistence=persistence,
             fresh_source_lookup=_make_fresh_source_lookup(pool),
             dedupe_candidates=_make_dedupe_candidates(pool, listing["property_id"]),
@@ -722,6 +812,19 @@ def _make_fresh_source_lookup(pool: asyncpg.Pool) -> FreshSourceLookup:
     return lookup
 
 
+def _make_utility_baselines_lookup(pool: asyncpg.Pool):  # type: ignore[no-untyped-def]
+    """SCORE's §9.5 baselines seam: the utility_baselines rows for one
+    (metro, beds bucket), or None when the metro has none (composer fallback)."""
+
+    async def lookup(metro: str, bucket: int) -> dict[str, tuple[float, float]] | None:
+        from manzil_worker.enrich.utility_baselines import baselines_for_metro
+
+        async with pool.acquire() as conn:
+            return await baselines_for_metro(conn, metro, bucket)
+
+    return lookup
+
+
 def _make_existing_image_hashes(pool: asyncpg.Pool):  # type: ignore[no-untyped-def]
     """IMAGE_FETCH's dumb DB seam: the currently stored content-hash set."""
 
@@ -761,6 +864,8 @@ def make_rescore_dispatcher() -> Dispatcher:
         min_confidence = Confidence(settings.get("min_confidence", "medium"))
         cats = int(settings.get("cats", 0))
         dogs = int(settings.get("dogs", 0))
+        cost_estimate_mode = str(settings.get("cost_estimate_mode", "conservative"))
+        occupants = int(settings.get("occupants", 1))
 
         try:
             async with pool.acquire() as conn, conn.transaction():
@@ -779,6 +884,8 @@ def make_rescore_dispatcher() -> Dispatcher:
                     min_confidence=min_confidence,
                     cats=cats,
                     dogs=dogs,
+                    cost_estimate_mode=cost_estimate_mode,
+                    occupants=occupants,
                 )
                 await conn.execute(
                     """
@@ -808,6 +915,154 @@ def make_rescore_dispatcher() -> Dispatcher:
     return dispatch
 
 
+def make_enrich_refresh_dispatcher(
+    *,
+    nearby_places: NearbyPlaces | None = None,
+    commute_minutes: CommuteMinutes | None = None,
+) -> Dispatcher:
+    """Build the `refresh` handler — P3-8 interim, `payload.scope == "enrich"`
+    only (P3-12's planner-driven refresh subsumes this). Re-derives the Maps-only
+    location criteria (`grocery_proximity`) for every active listing at the
+    hunt's current `proximity_mode`, then rescores the hunt. Zero LLM spend by
+    construction: geocodes ride the properties forever-cache and the review
+    synthesis is not on this path. Seams injectable for tests; defaults live."""
+
+    async def dispatch(pool: asyncpg.Pool, job: asyncpg.Record) -> None:
+        from manzil_worker.enrich.maps import MapsError, geocode_property
+        from manzil_worker.stages.base import _live_commute_minutes, _live_nearby_places
+        from manzil_worker.stages.enrich import grocery_extraction, nearest_grocery_minutes
+
+        nearby = nearby_places or _live_nearby_places
+        commute = commute_minutes or _live_commute_minutes
+
+        job_id: UUID = job["id"]
+        payload = json.loads(job["payload"])
+        scope = payload.get("scope")
+        if scope != "enrich":
+            await _mark_failed(
+                pool, job_id, f"refresh: unsupported scope {scope!r} (full refresh lands P3-12)"
+            )
+            return
+        hunt_id_raw = payload.get("hunt_id")
+        if hunt_id_raw is None:
+            await _mark_failed(pool, job_id, "refresh: payload missing hunt_id")
+            return
+        hunt_id = UUID(hunt_id_raw)
+
+        async with pool.acquire() as conn:
+            hunt = await conn.fetchrow(
+                "select settings, rubric_version from hunts where id = $1",
+                hunt_id,
+            )
+            if hunt is None:
+                await _mark_failed(pool, job_id, f"refresh: hunt {hunt_id} not found")
+                return
+            rubric = await _load_rubric(conn, hunt_id)
+
+        settings = json.loads(hunt["settings"]) if hunt["settings"] else {}
+        proximity_mode = str(settings.get("proximity_mode", "driving"))
+        min_confidence = Confidence(settings.get("min_confidence", "medium"))
+        cats = int(settings.get("cats", 0))
+        dogs = int(settings.get("dogs", 0))
+        cost_estimate_mode = str(settings.get("cost_estimate_mode", "conservative"))
+        occupants = int(settings.get("occupants", 1))
+
+        try:
+            async with pool.acquire() as conn, conn.transaction():
+                await conn.execute(
+                    """
+                    insert into job_events (job_id, stage, event, detail)
+                    values ($1, 'refresh', 'started', $2::jsonb)
+                    """,
+                    job_id,
+                    json.dumps({"scope": "enrich", "proximity_mode": proximity_mode}),
+                )
+                listings = await conn.fetch(
+                    """
+                    select id, property_id from hunt_listings
+                    where hunt_id = $1 and status = 'active'
+                    """,
+                    hunt_id,
+                )
+                enriched = 0
+                for listing in listings:
+                    property_id: UUID = listing["property_id"]
+                    try:
+                        _, lat, lng = await geocode_property(conn, property_id)
+                        found = await nearest_grocery_minutes(
+                            lat,
+                            lng,
+                            proximity_mode,
+                            nearby_places=nearby,
+                            commute_minutes=commute,
+                        )
+                    except MapsError as error:
+                        log.warning(
+                            "enrich_refresh_property_skipped",
+                            job_id=str(job_id),
+                            property_id=str(property_id),
+                            error=str(error),
+                        )
+                        continue
+                    if found is None:
+                        continue
+                    minutes, place_name = found
+                    ext = grocery_extraction(minutes, place_name, proximity_mode)
+                    await conn.execute(
+                        """
+                        insert into extractions
+                            (property_id, hunt_id, criterion_key, value, confidence,
+                             evidence_quote, source_id, model)
+                        values ($1, null, 'grocery_proximity', $2::jsonb,
+                                $3::confidence, $4, null, $5)
+                        """,
+                        property_id,
+                        json.dumps(ext.value),
+                        ext.confidence.value,
+                        ext.evidence_quote,
+                        ext.model,
+                    )
+                    enriched += 1
+                await rescore_hunt(
+                    conn,
+                    hunt_id=hunt_id,
+                    rubric=rubric,
+                    rubric_version=hunt["rubric_version"],
+                    min_confidence=min_confidence,
+                    cats=cats,
+                    dogs=dogs,
+                    cost_estimate_mode=cost_estimate_mode,
+                    occupants=occupants,
+                )
+                await conn.execute(
+                    """
+                    update jobs set
+                        state = 'done',
+                        finished_at = now(),
+                        locked_by = null,
+                        locked_at = null,
+                        current_stage = 'refresh'
+                    where id = $1
+                    """,
+                    job_id,
+                )
+                await conn.execute(
+                    """
+                    insert into job_events (job_id, stage, event, detail)
+                    values ($1, 'refresh', 'completed', $2::jsonb)
+                    """,
+                    job_id,
+                    json.dumps({"enriched": enriched, "listings": len(listings)}),
+                )
+        except Exception as error:
+            log.error("enrich_refresh_failed", job_id=str(job_id), error=str(error))
+            await _mark_failed(pool, job_id, f"refresh: {error}")
+            return
+        log.info("enrich_refresh_done", job_id=str(job_id), hunt_id=str(hunt_id))
+
+    return dispatch
+
+
 def build_dispatch(
     pool: asyncpg.Pool,
     *,
@@ -825,10 +1080,62 @@ def build_dispatch(
             call_structured=call_structured,
         ),
         JobType.RESCORE: make_rescore_dispatcher(),
+        JobType.REFRESH: make_enrich_refresh_dispatcher(),
     }
 
 
 # ── the loop ─────────────────────────────────────────────────────────────────
+
+
+# In-flight metro passes (and their task handles, so they aren't GC'd): the
+# in-process guard; the Postgres advisory lock below is the cross-process one.
+_BASELINE_TASKS: dict[str, asyncio.Task[None]] = {}
+# Attempt cooldown: a metro stays due until its pass WRITES (all-or-nothing), so
+# without this a persistently failing pass would fire one live LLM call per
+# tick. Monotonic-clock timestamps of the last attempt, success or not.
+_BASELINE_LAST_ATTEMPT: dict[str, float] = {}
+
+
+async def _run_metro_baselines(pool: asyncpg.Pool, metro: str) -> None:
+    from manzil_worker.enrich.utility_baselines import refresh_metro_baselines
+
+    try:
+        async with pool.acquire() as conn:
+            locked = await conn.fetchval(
+                "select pg_try_advisory_lock(hashtext($1))", f"utility_baselines:{metro}"
+            )
+            if not locked:
+                return  # another worker owns this metro; its write satisfies the TTL
+            try:
+                await refresh_metro_baselines(conn, metro)
+            finally:
+                await conn.fetchval(
+                    "select pg_advisory_unlock(hashtext($1))", f"utility_baselines:{metro}"
+                )
+    except Exception as error:
+        # Next tick retries — a 120-day cadence needs no queue durability (§9.5).
+        log.warning("utility_baselines_failed", metro=metro, error=str(error))
+
+
+async def utility_baselines_tick(pool: asyncpg.Pool) -> None:
+    """The first scheduler duty (P3-9): one guarded asyncio task per due metro.
+    NOT a jobs row — jobs.hunt_id is NOT NULL and this is global, hunt-less
+    maintenance (DESIGN §20 2026-07-18)."""
+    from manzil_worker.enrich.utility_baselines import due_metros
+
+    async with pool.acquire() as conn:
+        metros = await due_metros(conn)
+    now = asyncio.get_running_loop().time()
+    for metro in metros:
+        if metro in _BASELINE_TASKS:
+            continue
+        last = _BASELINE_LAST_ATTEMPT.get(metro)
+        if last is not None and now - last < UTILITY_BASELINE_RETRY_SECONDS:
+            continue
+        _BASELINE_LAST_ATTEMPT[metro] = now
+        task = asyncio.create_task(_run_metro_baselines(pool, metro))
+        _BASELINE_TASKS[metro] = task
+        task.add_done_callback(lambda _t, m=metro: _BASELINE_TASKS.pop(m, None))
 
 
 async def run_worker_loop(
@@ -839,6 +1146,8 @@ async def run_worker_loop(
     worker_id: str | None = None,
     idle_backoff: float = WORKER_IDLE_BACKOFF_SECONDS,
     until_empty: bool = False,
+    scheduler_tick: SchedulerTick | None = None,
+    tick_interval: float = SCHEDULER_TICK_SECONDS,
 ) -> None:
     """Tick: reclaim orphans → claim → dispatch by `job_type` → repeat.
 
@@ -846,11 +1155,27 @@ async def run_worker_loop(
     in-flight job (already claimed this tick) runs to completion before exit.
     `until_empty` returns when the queue drains instead of idling — the bounded
     drain the dev-seed and tests use.
+
+    `scheduler_tick` is the P3-9 scheduler scaffold (P3-11/P3-12 extend it):
+    a duty callable invoked at most every `tick_interval` seconds, deliberately
+    opt-in (None default) so tests and dev-seed drains never trigger scheduled
+    duties — the production entry (api worker_loop) passes the real one. A
+    failing tick logs and retries next interval; it never stops the loop.
     """
     dispatch = dispatch if dispatch is not None else build_dispatch(pool)
     worker_id = worker_id or f"{socket.gethostname()}:{os.getpid()}"
+    last_tick = float("-inf")
 
     while not stop.is_set():
+        if scheduler_tick is not None:
+            now = asyncio.get_running_loop().time()
+            if now - last_tick >= tick_interval:
+                last_tick = now
+                try:
+                    await scheduler_tick(pool)
+                except Exception as error:
+                    log.warning("scheduler_tick_failed", error=str(error))
+
         async with pool.acquire() as conn:
             await reclaim_orphans(conn)
             job = await claim_next_job(conn, worker_id)

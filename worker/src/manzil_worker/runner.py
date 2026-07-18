@@ -28,6 +28,7 @@ from manzil_shared.models import JobState
 from manzil_worker.llm.client import RunContext, cost_tally, run_context
 from manzil_worker.stages.base import Stage, StageCtx
 from manzil_worker.stages.dedupe import dedupe_stage
+from manzil_worker.stages.enrich import enrich_stage
 from manzil_worker.stages.extract import extract_stage
 from manzil_worker.stages.fetch import fetch_stage
 from manzil_worker.stages.image_fetch import image_fetch_stage
@@ -70,6 +71,9 @@ INGEST_STAGES: list[tuple[str, Stage]] = [
     ("IMAGE_FETCH", image_fetch_stage),
     ("VISION", vision_stage),
     ("VERIFY", verify_stage),
+    # ENRICH sits downstream of VERIFY (§10.1): its values are API-derived, so
+    # the page-evidence audit must never run on them.
+    ("ENRICH", enrich_stage),
     ("SCORE", score_stage),
 ]
 INGEST_STAGE_NAMES: list[str] = [name for name, _ in INGEST_STAGES]

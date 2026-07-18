@@ -44,6 +44,20 @@ DedupeCandidates = Callable[[], Awaitable[list["DedupeCandidate"]]]
 GeocodeAddress = Callable[[str], Awaitable["GeocodeIn"]]
 ExistingImageHashes = Callable[[UUID], Awaitable[set[str]]]
 
+# ENRICH's Maps seams (P3-8): plain function calls, not tools (§10.2 — ENRICH is
+# not a tool-loop stage). Defaults wrap the live Maps calls lazily, mirroring
+# `geocode_address`; tests inject fakes. `nearby_places(lat, lng, keyword)`,
+# `commute_minutes(origin_latlng, destination, mode)`, `place_details(place_id)`.
+NearbyPlaces = Callable[[float, float, str], Awaitable[list[dict[str, Any]]]]
+CommuteMinutes = Callable[[str, str, str], Awaitable[float | None]]
+PlaceDetails = Callable[[str], Awaitable[dict[str, Any] | None]]
+
+# SCORE's baselines seam (P3-9): `(metro, beds_bucket)` → utility →
+# (monthly_high, monthly_median), or None when the metro has no baseline rows —
+# the composer's graceful v1 fallback. The queue wires the DB read; the default
+# returns None so CLI and unit runs compose exactly like shipped v1.
+UtilityBaselines = Callable[[str, int], Awaitable[dict[str, tuple[float, float]] | None]]
+
 
 async def _no_fresh_source(property_id: UUID | None, url: str) -> SourceFreshness | None:
     """Default lookup: no database wired (CLI / unit tests) → nothing is fresh, so
@@ -59,6 +73,28 @@ async def _no_dedupe_candidates() -> list[DedupeCandidate]:
 
 async def _no_existing_image_hashes(property_id: UUID) -> set[str]:
     return set()
+
+
+async def _no_utility_baselines(metro: str, bucket: int) -> dict[str, tuple[float, float]] | None:
+    return None
+
+
+async def _live_nearby_places(lat: float, lng: float, keyword: str) -> list[dict[str, Any]]:
+    from manzil_worker.enrich.maps import _places_nearby_call
+
+    return await _places_nearby_call(lat, lng, keyword=keyword)
+
+
+async def _live_commute_minutes(origin_latlng: str, destination: str, mode: str) -> float | None:
+    from manzil_worker.enrich.maps import _commute_time_call
+
+    return await _commute_time_call(origin_latlng, destination, mode=mode)
+
+
+async def _live_place_details(place_id: str) -> dict[str, Any] | None:
+    from manzil_worker.enrich.maps import _place_details_call
+
+    return await _place_details_call(place_id)
 
 
 async def _live_geocode_address(address: str) -> GeocodeIn:
@@ -102,6 +138,11 @@ class StageCtx:
     # component of `all_in_monthly`. Default 0 so Phase 0 CLI runs compose no pet rent.
     cats: int = 0
     dogs: int = 0
+    # §9.5 P3-9 composition inputs: mode picks the baseline column (conservative →
+    # monthly_high); occupants scales the per-person utilities (water/sewer).
+    cost_estimate_mode: str = "conservative"
+    occupants: int = 1
+    utility_baselines_lookup: UtilityBaselines = _no_utility_baselines
     persistence: Persistence = field(default_factory=NullPersistence)
     today: Callable[[], date] = _today
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep  # injected so tests skip backoff
@@ -116,6 +157,12 @@ class StageCtx:
     # touch Google.
     dedupe_candidates: DedupeCandidates = _no_dedupe_candidates
     geocode_address: GeocodeAddress = _live_geocode_address
+    # ENRICH inputs (P3-8). `proximity_mode` is the hunt setting (§8.2) grocery
+    # proximity honors; the Maps seams default to the live calls and fake in tests.
+    proximity_mode: str = "driving"
+    nearby_places: NearbyPlaces = _live_nearby_places
+    commute_minutes: CommuteMinutes = _live_commute_minutes
+    place_details: PlaceDetails = _live_place_details
     # IMAGE_FETCH inputs (P3-7a). Binary downloads and private Storage are
     # injected so CI never touches the network; the queue wires production
     # defaults when Supabase credentials exist.
