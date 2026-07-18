@@ -71,12 +71,19 @@ STAGE_MAX_TOKENS: dict[str, int] = {
 # Langfuse-side cost comes from these same figures so there is one source.
 # OpenRouter's reported `usage.cost` is logged as a cross-check in traces.
 MODEL_PRICES: dict[str, tuple[float, float]] = {
-    WORKHORSE_MODEL: (1.00, 5.00),
-    TASTE_MODEL: (3.00, 15.00),
-    "google/gemini-2.5-flash-lite": (0.10, 0.40),
-    "google/gemini-2.5-flash": (0.30, 2.50),
+    WORKHORSE_MODEL:                 (1.00, 5.00),
+    TASTE_MODEL:                     (3.00, 15.00),
+    "deepseek/deepseek-v4-flash":    (0.09, 0.18),
+    "google/gemini-2.5-flash-lite":  (0.10, 0.40),
+    "openai/gpt-5.4-nano":           (0.20, 1.25),
+    "anthropic/claude-3-haiku":      (0.25, 1.25),
+    "qwen/qwen3.5-flash":            (0.25, 1.50),
+    "google/gemini-3.1-flash-lite":  (0.25, 1.50),
+    "google/gemini-2.5-flash":       (0.30, 2.50),
     "google/gemini-3-flash-preview": (0.50, 3.00),
-    "google/gemini-3.1-flash-lite": (0.25, 1.50),
+    "openai/gpt-5.6-luna":           (1.00, 6.00),
+    "google/gemini-3.5-flash":       (1.50, 9.00),
+    "google/gemini-3.1-pro-preview": (2.00, 12.00),
 }
 
 # Cache economics differ per upstream family: Anthropic bills explicit cache
