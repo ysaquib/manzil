@@ -152,6 +152,9 @@ export interface AllInComponents {
   components: AllInComponent[];
   badges: string[]; // fees_unverified | heat_unknown | utilities_not_estimated
   mode: string; // conservative | median
+  // §9.6: a live all_in_monthly override replaced the composed total; the
+  // components still show what the machine would have said.
+  overridden?: boolean;
 }
 
 // One §3 Listing with the embeds the Overview reads in a single query.

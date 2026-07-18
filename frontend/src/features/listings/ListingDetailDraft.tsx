@@ -131,13 +131,19 @@ export function ListingDetailDraftProvider({
     type Task =
       | { kind: "pins" }
       | { kind: "override"; key: string; entry: DraftOverride }
-      | { kind: "fee"; slot: string; amount: number | null };
+      | { kind: "fee"; slot: string; amount: number | null; state: "manual" | "extracted" | "unknown" };
 
     const tasks: Task[] = [];
     if (pinsChanged) tasks.push({ kind: "pins" });
     for (const [key, entry] of overrideEntries) tasks.push({ kind: "override", key, entry });
     for (const slot of feeSlots) {
-      tasks.push({ kind: "fee", slot, amount: draftFees.get(slot)?.amount ?? null });
+      const draft = draftFees.get(slot);
+      tasks.push({
+        kind: "fee",
+        slot,
+        amount: draft?.amount ?? null,
+        state: draft?.state ?? "manual",
+      });
     }
 
     const results = await Promise.allSettled(
@@ -155,7 +161,7 @@ export function ListingDetailDraftProvider({
         return upsertFee.mutateAsync({
           slot: task.slot,
           amount: task.amount,
-          value_state: "manual",
+          value_state: task.state,
         });
       }),
     );

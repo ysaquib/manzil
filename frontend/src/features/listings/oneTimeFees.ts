@@ -13,6 +13,43 @@ const SLOT_KEYWORDS: [string, string[]][] = [
   ["admin", ["admin"]],
 ];
 
+// Mirrors the worker's slot_for_fee keyword map — needed to recover a slot's
+// extracted amount when reverting a manual entry.
+const MANDATORY_SLOT_KEYWORDS: [string, string[]][] = [
+  ["water_sewer", ["water", "sewer", "utility billing", "utilities billing"]],
+  ["valet_trash", ["trash", "waste"]],
+  ["parking", ["parking", "garage", "carport"]],
+  ["insurance_program", ["insurance", "liability"]],
+];
+
+/** Slot → originally extracted amount, from the `mandatory_fees` and
+ * `one_time_fees` extractions. Pet-rent slots have no extraction row (the v1
+ * projection writes them straight to the checklist), so a reverted pet slot
+ * falls back to unknown. */
+export function extractedFeeOriginals(
+  mandatoryValue: unknown,
+  oneTimeValue: unknown,
+): Map<string, number> {
+  const originals = new Map<string, number>();
+  if (Array.isArray(mandatoryValue)) {
+    for (const fee of mandatoryValue) {
+      const name = (fee as { name?: unknown }).name;
+      const amount = (fee as { amount_monthly?: unknown }).amount_monthly;
+      if (typeof name !== "string" || typeof amount !== "number") continue;
+      const lowered = name.toLowerCase();
+      const slot = MANDATORY_SLOT_KEYWORDS.find(([, kws]) =>
+        kws.some((k) => lowered.includes(k)),
+      )?.[0];
+      if (slot && !originals.has(slot)) originals.set(slot, amount);
+    }
+  }
+  for (const fee of parseOneTimeFees(oneTimeValue)) {
+    const slot = slotForOneTimeFee(fee.name);
+    if (slot && !originals.has(slot)) originals.set(slot, fee.amount);
+  }
+  return originals;
+}
+
 export function slotForOneTimeFee(name: string): string | null {
   const lowered = name.toLowerCase();
   for (const [slot, keywords] of SLOT_KEYWORDS) {

@@ -9,6 +9,9 @@ export interface DraftOverride {
 
 export interface DraftFee {
   amount: number | null;
+  /** target value_state on save; undefined means "manual" (a hand edit).
+   * Revert sets "extracted" (restore the machine amount) or "unknown". */
+  state?: "manual" | "extracted" | "unknown";
 }
 
 export function pinsEqual(a: Record<string, string>, b: Record<string, string>): boolean {
@@ -37,7 +40,9 @@ export function isFeeSlotDirty(
 ): boolean {
   if (!draft) return false;
   const server = serverFees.find((f) => f.fee_slot === slot);
-  return server?.amount !== draft.amount;
+  if (server?.amount !== draft.amount) return true;
+  // An explicit target state (revert) is a change even at the same amount.
+  return draft.state !== undefined && draft.state !== (server?.value_state ?? "unknown");
 }
 
 export function isFeesDirty(

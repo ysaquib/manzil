@@ -3,7 +3,7 @@
 // set is small). One row per Unit Group; score cell shows the group's best or
 // pinned plan (§9.4). Sqft/all-in columns hide below md/sm — no horizontal
 // page scroll (frontend/AGENTS.md).
-import { ActionIcon, Checkbox, Group, Menu, Select, Table, Text, UnstyledButton } from "@mantine/core";
+import { ActionIcon, Checkbox, Group, Menu, Select, Table, Text, Tooltip, UnstyledButton } from "@mantine/core";
 import { IconChevronDown, IconChevronRight, IconChevronUp, IconDotsVertical, IconMessageCircle, IconTrash } from "@tabler/icons-react";
 
 import { AllInCell } from "./AllInCost";
@@ -21,7 +21,7 @@ import {
   type SortKey,
   type SortState,
 } from "./overviewRows";
-import { InfoCell } from "./InfoCell";
+import { sentenceCase } from "../../lib/text";
 
 import classes from "./OverviewTable.module.css";
 
@@ -95,35 +95,40 @@ function CurationCells({ row, huntId }: { row: OverviewRow; huntId: string }) {
       visited,
     });
   };
+  const visited = row.state?.visited ?? false;
+  // One curation cell (§13.2 declutter): status select + visited toggle share
+  // a column instead of owning one each.
   return (
-    <>
-      <Table.Td onClick={(event) => event.stopPropagation()}>
-        {group ? (
+    <Table.Td onClick={(event) => event.stopPropagation()}>
+      {group ? (
+        <Group gap="xs" wrap="nowrap">
           <Select
             aria-label="interest status"
             placeholder="Undecided"
             data={INTEREST_STATUSES.map((status) => ({
               value: status,
-              label: status.replaceAll("_", " "),
+              label: sentenceCase(status),
             }))}
             value={row.state?.interest_status ?? null}
-            onChange={(value) => save(value as InterestStatus | null, row.state?.visited ?? false)}
+            onChange={(value) => save(value as InterestStatus | null, visited)}
             disabled={!canCurate || patchState.isPending}
             clearable
             size="xs"
-            w={155}
+            w={140}
           />
-        ) : <Text size="sm" c="dimmed">—</Text>}
-      </Table.Td>
-      <Table.Td onClick={(event) => event.stopPropagation()}>
-        <Checkbox
-          aria-label="visited"
-          checked={row.state?.visited ?? false}
-          disabled={!group || !canCurate || patchState.isPending}
-          onChange={(event) => save(row.state?.interest_status ?? null, event.currentTarget.checked)}
-        />
-      </Table.Td>
-    </>
+          <Tooltip label={visited ? "Visited" : "Mark visited"} openDelay={300}>
+            <Checkbox
+              aria-label="visited"
+              checked={visited}
+              disabled={!canCurate || patchState.isPending}
+              onChange={(event) =>
+                save(row.state?.interest_status ?? null, event.currentTarget.checked)
+              }
+            />
+          </Tooltip>
+        </Group>
+      ) : <Text size="sm" c="dimmed">—</Text>}
+    </Table.Td>
   );
 }
 
@@ -136,9 +141,6 @@ export function OverviewTable({ huntId, rows, sort, onSort, onOpen, onDelete }: 
             <SortHeader label="Score" sortKey="score" sort={sort} onSort={onSort} />
           </Table.Th>
           <Table.Th>
-            Info
-          </Table.Th>
-          <Table.Th>
             <SortHeader label="Property" sortKey="name" sort={sort} onSort={onSort} />
           </Table.Th>
           <Table.Th>Unit</Table.Th>
@@ -148,7 +150,6 @@ export function OverviewTable({ huntId, rows, sort, onSort, onOpen, onDelete }: 
           <Table.Th visibleFrom="md">Sqft</Table.Th>
           <Table.Th visibleFrom="sm">All-in / mo</Table.Th>
           <Table.Th>Status</Table.Th>
-          <Table.Th>Visited</Table.Th>
           <Table.Th>People</Table.Th>
           <Table.Th aria-label="row actions" />
         </Table.Tr>
@@ -170,24 +171,11 @@ export function OverviewTable({ huntId, rows, sort, onSort, onOpen, onDelete }: 
                   <ScoreCell
                     total={group.displayScore.total}
                     pinned={group.pinnedPlanId !== null}
+                    planCount={group.scoredPlanCount}
                   />
                 ) : (
                   <Text size="sm" c="dimmed">
-                    {availability === "unavailable" ? "No availability" : "pending"}
-                  </Text>
-                )}
-              </Table.Td>
-              <Table.Td>
-                {group?.displayScore ? (
-                  <InfoCell
-                    scoredPlanCount={group.scoredPlanCount}
-                    // stale={group.stale}
-                    // autoResolved={group.autoResolved}
-                    // singleSource={group.singleSource}
-                  />
-                ) : (
-                  <Text size="sm" c="dimmed">
-                    {availability === "unavailable" ? "No availability" : "pending"}
+                    {availability === "unavailable" ? "No availability" : "Pending"}
                   </Text>
                 )}
               </Table.Td>

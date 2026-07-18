@@ -23,15 +23,33 @@ describe("AllInCell", () => {
     renderWithProviders(<AllInCell allIn={2055} composition={composition} />);
     expect(screen.getByText("$2,055")).toBeInTheDocument();
     expect(screen.getByText("(~$210 est.)")).toBeInTheDocument();
-    expect(screen.getByText("fees unverified")).toBeInTheDocument();
   });
 
-  it("shows a dash with badges when the total is unknown (§9.5 strict branch)", () => {
+  it("consolidates warnings into one icon, not a chip per badge", () => {
+    renderWithProviders(
+      <AllInCell
+        allIn={2055}
+        composition={{ ...composition, badges: ["fees_unverified", "heat_unknown"] }}
+      />,
+    );
+    expect(screen.getByLabelText("2 all-in warnings")).toBeInTheDocument();
+    expect(screen.queryByText("Fees unverified")).not.toBeInTheDocument(); // tooltip-only
+  });
+
+  it("shows no warning icon when the composition is clean", () => {
+    renderWithProviders(
+      <AllInCell allIn={2055} composition={{ ...composition, badges: [] }} />,
+    );
+    expect(screen.queryByLabelText(/all-in warning/)).not.toBeInTheDocument();
+  });
+
+  it("shows a dash with the warning icon when the total is unknown (§9.5 strict branch)", () => {
     renderWithProviders(
       <AllInCell allIn={null} composition={{ ...composition, total: null }} />,
     );
     expect(screen.getByText("—")).toBeInTheDocument();
     expect(screen.queryByText(/est\.\)/)).not.toBeInTheDocument();
+    expect(screen.getByLabelText("1 all-in warning")).toBeInTheDocument();
   });
 });
 
