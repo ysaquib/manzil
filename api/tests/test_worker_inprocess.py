@@ -19,6 +19,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from manzil_worker.fetching.results import FetchResult
 from manzil_worker.phase0_rubric import phase0_rubric
+from pipeline_helpers import maple_recorded_llm
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL", "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
@@ -125,6 +126,7 @@ async def test_inprocess_loop_processes_a_job_while_serving_and_drains(monkeypat
     from pathlib import Path
 
     import manzil_worker.queue as queue_mod
+    from manzil_api import worker_loop as worker_loop_mod
     from manzil_api.config import get_settings
     from manzil_api.main import create_app, lifespan
 
@@ -134,6 +136,16 @@ async def test_inprocess_loop_processes_a_job_while_serving_and_drains(monkeypat
     monkeypatch.setenv("MANZIL_WORKER_INPROCESS", "true")
     monkeypatch.setenv("MANZIL_LLM_MODE", "replay")
     monkeypatch.setattr(queue_mod, "_default_fetchers", lambda: {1: _FixtureFetcher(body)})
+    real_build_dispatch = worker_loop_mod.build_dispatch
+
+    def build_test_dispatch(pool, *, dsn=None):  # type: ignore[no-untyped-def]
+        return real_build_dispatch(
+            pool,
+            dsn=dsn,
+            call_structured=maple_recorded_llm,
+        )
+
+    monkeypatch.setattr(worker_loop_mod, "build_dispatch", build_test_dispatch)
     get_settings.cache_clear()
 
     hunt_id, listing_id = uuid4(), uuid4()

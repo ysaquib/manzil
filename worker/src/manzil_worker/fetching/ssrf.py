@@ -50,7 +50,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import socket
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from urllib.parse import urlsplit, urlunsplit
 
 from manzil_shared.errors import PrivateAddressRefused
@@ -181,6 +181,27 @@ async def screen_url(url: str, *, resolver: Resolver | None = None) -> list[IPAd
     fetchers."""
     host = screen_url_literal(url)
     return await resolve_public_host(host, resolver=resolver)
+
+
+async def screen_urls(urls: Iterable[str], *, resolver: Resolver | None = None) -> None:
+    """Screen a *set* of URLs — every one must pass ``screen_url`` (scheme + literal
+    + DNS) or the first offender raises ``PrivateAddressRefused``. This is the
+    CI-testable seam for tier 2's post-load redirect-chain screen: the browser-coupled
+    part (walking ``request.redirected_from`` to collect the hop URLs) stays a thin
+    inline loop in the fetcher, while the security decision — "is any hop private?" —
+    lives here where a fake resolver can exercise it without a browser.
+
+    Order is preserved and duplicates are screened in dedup'd order so a caller that
+    already dedup'd its hops does no redundant DNS. Screens all hops rather than only
+    the landing URL because a ``public → private(reachable) → public`` redirect chain
+    transits the private host (the browser makes that request) even though the final
+    URL is clean."""
+    seen: set[str] = set()
+    for url in urls:
+        if url in seen:
+            continue
+        seen.add(url)
+        await screen_url(url, resolver=resolver)
 
 
 def pin_target(url: str, address: IPAddress) -> tuple[str, str, str]:

@@ -219,9 +219,7 @@ async def remove_member(client: Client, hunt_id: UUID, target_user_id: UUID) -> 
 async def transfer_ownership(
     settings: Settings, hunt_id: UUID, new_owner_id: UUID
 ) -> TransferOwnershipResponse:
-    result = privileged.transfer_ownership(
-        create_service_client(settings), hunt_id, new_owner_id
-    )
+    result = privileged.transfer_ownership(create_service_client(settings), hunt_id, new_owner_id)
     if result.get("status") == "not_member":
         raise TransferTargetNotMember("The new owner must already be a member of the hunt")
     return TransferOwnershipResponse(status="ok")

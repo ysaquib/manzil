@@ -128,9 +128,7 @@ async def test_settings_household_valid_update(client: AsyncClient, db_pool) -> 
 async def test_settings_household_out_of_range_rejected(client: AsyncClient, db_pool) -> None:
     hunt_id = await _seed_hunt(db_pool, _FULL_SETTINGS)
     try:
-        resp = await client.patch(
-            f"/v1/hunts/{hunt_id}/settings", json={"settings": {"cats": 99}}
-        )
+        resp = await client.patch(f"/v1/hunts/{hunt_id}/settings", json={"settings": {"cats": 99}})
         assert resp.status_code == 422
     finally:
         await db_pool.execute("delete from hunts where id = $1", hunt_id)
@@ -152,9 +150,7 @@ async def test_settings_household_bool_rejected(client: AsyncClient, db_pool) ->
 async def test_settings_cats_change_bumps_version_and_rescore(client: AsyncClient, db_pool) -> None:
     hunt_id = await _seed_hunt(db_pool, _FULL_SETTINGS)
     try:
-        resp = await client.patch(
-            f"/v1/hunts/{hunt_id}/settings", json={"settings": {"cats": 2}}
-        )
+        resp = await client.patch(f"/v1/hunts/{hunt_id}/settings", json={"settings": {"cats": 2}})
         assert resp.status_code == 200
         version = await db_pool.fetchval("select rubric_version from hunts where id = $1", hunt_id)
         assert version == 1

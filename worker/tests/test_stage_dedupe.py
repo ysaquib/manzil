@@ -106,9 +106,7 @@ def test_candidates_without_coords_are_skipped() -> None:
 
 def test_self_is_excluded_from_candidates() -> None:
     own_id = uuid4()
-    self_row = DedupeCandidate(
-        id=own_id, name="Maple Court Apartments", lat=NEAR_LAT, lng=-83.0
-    )
+    self_row = DedupeCandidate(id=own_id, name="Maple Court Apartments", lat=NEAR_LAT, lng=-83.0)
     state = _run(
         _state(name="Maple Court Apartments", property_id=own_id),
         _ctx(candidates=[self_row]),
@@ -121,9 +119,7 @@ def test_self_is_excluded_from_candidates() -> None:
 
 def test_auto_merge_on_near_and_similar_name() -> None:
     cand_id = uuid4()
-    near = DedupeCandidate(
-        id=cand_id, name="Maple Court Apartments", lat=NEAR_LAT, lng=-83.0
-    )
+    near = DedupeCandidate(id=cand_id, name="Maple Court Apartments", lat=NEAR_LAT, lng=-83.0)
     state = _run(_state(name="Maple Court Apartments"), _ctx(candidates=[near]))
     assert state.property_id == cand_id  # run switched to the canonical property
     assert state.dedupe is not None and state.dedupe.action == "merged_auto"
@@ -173,18 +169,14 @@ def test_below_gray_and_different_place_keeps_separate() -> None:
     near_but_unrelated = DedupeCandidate(
         id=cand_id, name="Riverfront Towers", lat=NEAR_LAT, lng=-83.0
     )
-    state = _run(
-        _state(name="Maple Court Apartments"), _ctx(candidates=[near_but_unrelated])
-    )
+    state = _run(_state(name="Maple Court Apartments"), _ctx(candidates=[near_but_unrelated]))
     assert state.property_id != cand_id  # not merged
     assert state.dedupe is not None and state.dedupe.action == "kept_separate"
     assert state.dedupe.candidate_property_id == str(cand_id)
 
 
 def test_out_of_range_candidate_is_not_a_target() -> None:
-    far = DedupeCandidate(
-        id=uuid4(), name="Maple Court Apartments", lat=FAR_LAT, lng=-83.0
-    )
+    far = DedupeCandidate(id=uuid4(), name="Maple Court Apartments", lat=FAR_LAT, lng=-83.0)
     state = _run(_state(name="Maple Court Apartments"), _ctx(candidates=[far]))
     assert state.dedupe is not None and state.dedupe.action == "no_candidates"
 

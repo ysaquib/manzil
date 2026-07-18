@@ -292,12 +292,16 @@ uv run --package manzil-worker pytest worker/tests  # cleaner, classifier, ladde
 uv run pytest -k classifier                         # one area, by keyword
 ```
 
-Phase 2 authorization tests require the local Supabase stack because they mint
-real users/JWTs and exercise PostgREST RLS directly:
+API router/integration tests require the local Supabase stack because their
+shared fixtures mint real users/JWTs and use PostgREST plus Postgres. The RLS
+matrix remains a separate command so CI reports the collaboration-security gate
+independently:
 
 ```bash
 supabase start
-supabase db reset
+supabase db reset --yes
+MANZIL_WORKER_INPROCESS=false \
+  uv run --package manzil-api pytest api/tests --ignore=api/tests/test_rls_matrix.py -q
 MANZIL_WORKER_INPROCESS=false \
   uv run --package manzil-api pytest api/tests/test_rls_matrix.py -q
 ```

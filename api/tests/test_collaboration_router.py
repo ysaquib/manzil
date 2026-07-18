@@ -23,9 +23,7 @@ async def test_comment_create_edit_and_author_soft_delete(
         f"/v1/comments/{comment_id}", json={"body": "Not my comment"}
     )
     assert denied_edit.status_code == 403
-    edited = await as_member.patch(
-        f"/v1/comments/{comment_id}", json={"body": "  Tour booked  "}
-    )
+    edited = await as_member.patch(f"/v1/comments/{comment_id}", json={"body": "  Tour booked  "})
     assert edited.status_code == 200
     assert edited.json()["body"] == "Tour booked"
     assert edited.json()["edited_at"] is not None
@@ -169,9 +167,7 @@ async def test_owner_removes_member_and_rls_hides_hunt(
     collab_hunt, as_owner: AsyncClient, seeded_users
 ) -> None:
     hunt_id = collab_hunt["hunt_id"]
-    removed = await as_owner.delete(
-        f"/v1/hunts/{hunt_id}/members/{seeded_users['member'].user_id}"
-    )
+    removed = await as_owner.delete(f"/v1/hunts/{hunt_id}/members/{seeded_users['member'].user_id}")
     assert removed.status_code == 204
     # P2-8 done-when: the removed member no longer sees the hunt at the RLS layer.
     rows = (

@@ -23,8 +23,8 @@ from manzil_api.database import create_db_pool
 from manzil_api.exceptions import CatchAllMiddleware, register_exception_handlers
 from manzil_api.fees.router import router as fees_router
 from manzil_api.hunts.router import router as hunts_router
-from manzil_api.invites.router import router as invites_router
 from manzil_api.invitation_links.router import router as invitation_links_router
+from manzil_api.invites.router import router as invites_router
 from manzil_api.jobs.router import router as jobs_router
 from manzil_api.listings.router import router as listings_router
 from manzil_api.overrides.router import router as overrides_router

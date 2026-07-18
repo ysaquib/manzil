@@ -28,9 +28,7 @@ VerifyCheck = Literal["evidence", "conformance", "plausibility", "consistency"]
 
 # Utilities a listing can state are included in rent (§9.5). Kept here so the
 # EXTRACT schema block and the RunState model share one closed vocabulary.
-UtilityKind = Literal[
-    "water", "sewer", "trash", "gas", "electric", "heat", "internet", "cable"
-]
+UtilityKind = Literal["water", "sewer", "trash", "gas", "electric", "heat", "internet", "cable"]
 
 
 class FieldExtraction(BaseModel):

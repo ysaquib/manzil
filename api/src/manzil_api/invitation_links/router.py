@@ -33,9 +33,7 @@ async def create_invitation_link(
     return await service.create_invitation_link(client, settings, hunt_id, user.id, body)
 
 
-@router.get(
-    "/hunts/{hunt_id}/invitation-links", response_model=list[InvitationLinkResponse]
-)
+@router.get("/hunts/{hunt_id}/invitation-links", response_model=list[InvitationLinkResponse])
 async def list_invitation_links(
     hunt_id: UUID, hunt: OwnedHunt, client: UserClient, settings: SettingsDep
 ) -> list[InvitationLinkResponse]:

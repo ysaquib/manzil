@@ -11,12 +11,7 @@ router = APIRouter(tags=["profile"])
 @router.get("/profile", response_model=ProfileResponse | None)
 async def get_profile(user: CurrentUser, client: UserClient) -> ProfileResponse | None:
     rows = (
-        client.table("user_profiles")
-        .select("*")
-        .eq("user_id", user.id)
-        .limit(1)
-        .execute()
-        .data
+        client.table("user_profiles").select("*").eq("user_id", user.id).limit(1).execute().data
         or []
     )
     return ProfileResponse.model_validate(rows[0]) if rows else None

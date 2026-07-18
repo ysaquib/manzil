@@ -52,9 +52,7 @@ def _write_page(
     if meta is not None:
         (page / "meta.json").write_text(json.dumps(meta))
     elif saved_at is not None:
-        (page / "meta.json").write_text(
-            json.dumps({"url": URL, "saved_at": saved_at, "tier": 1})
-        )
+        (page / "meta.json").write_text(json.dumps({"url": URL, "saved_at": saved_at, "tier": 1}))
     return page
 
 

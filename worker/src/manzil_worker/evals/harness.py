@@ -129,9 +129,7 @@ def _corpus_as_of_date(page_dir: Path) -> date:
             f"invalid corpus metadata at {meta_path}: unparseable saved_at {raw!r}"
         ) from error
     if parsed.utcoffset() is None:
-        raise ValueError(
-            f"invalid corpus metadata at {meta_path}: saved_at must be timezone-aware"
-        )
+        raise ValueError(f"invalid corpus metadata at {meta_path}: saved_at must be timezone-aware")
     return parsed.astimezone(UTC).date()
 
 
@@ -166,9 +164,7 @@ _PLAN_FIELDS = (
 )
 
 
-def _grade_plans(
-    expected: list[FloorPlanIn], got: list[FloorPlanIn], *, today: date
-) -> PlanGrade:
+def _grade_plans(expected: list[FloorPlanIn], got: list[FloorPlanIn], *, today: date) -> PlanGrade:
     got_by_name = {_norm_name(p.plan_name): p for p in got}
     grade = PlanGrade(expected=len(expected), matched=0)
     for want in expected:
@@ -325,9 +321,7 @@ async def run_bench(
             continue
         try:
             listings.append(
-                await _run_listing(
-                    label, cleaned_path.read_text(), ctx, gate_keys, as_of=as_of
-                )
+                await _run_listing(label, cleaned_path.read_text(), ctx, gate_keys, as_of=as_of)
             )
         except ReplayMissError as error:
             listings.append(

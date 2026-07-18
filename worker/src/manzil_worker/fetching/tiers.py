@@ -27,6 +27,7 @@ from manzil_worker.fetching.ssrf import (
     pin_target,
     resolve_public_host,
     screen_url,
+    screen_urls,
 )
 
 log = structlog.get_logger()
@@ -145,12 +146,17 @@ class Tier2Fetcher:
         """Playwright route handler enforcing the SSRF screen inside the browser.
 
         Scope (proportionate, per §16): (1) EVERY request whose host is a non-global
-        IP *literal* is aborted — cheap, no DNS, stops a page fetching
-        ``http://169.254.169.254`` directly; (2) main-frame document navigations
-        (i.e. redirects to a *new* host) are DNS-re-screened and aborted if
-        non-global. Subresource *hostname* DNS resolution is intentionally NOT done
-        — it is optional hardening that would add a lookup per asset; the pre-nav
-        screen + post-load ``page.url`` backstop cover the main-frame threat."""
+        IP *literal* is aborted — cheap, no DNS, stops a page (or any subresource)
+        fetching ``http://169.254.169.254`` directly; this is the live-valuable
+        subresource protection. (2) Main-frame document navigations are
+        DNS-re-screened and aborted if non-global — but Playwright only invokes this
+        handler for the *initial* navigation and for client-initiated (JS/meta)
+        navigations. It does NOT re-invoke the handler on server-side 3xx redirects:
+        the browser follows those internally, so this branch never sees them.
+        Server-redirect chains are therefore covered separately by the post-load
+        full-chain screen in ``fetch`` (which walks ``response.request.redirected_from``
+        and screens every hop). Subresource *hostname* DNS resolution is intentionally
+        NOT done — it is optional hardening that would add a lookup per asset."""
 
         async def guard(route: Any) -> None:
             request = route.request
@@ -204,9 +210,23 @@ class Tier2Fetcher:
                     response = await page.goto(
                         url, timeout=self._timeout * 1000, wait_until="domcontentloaded"
                     )
-                    # Backstop: whatever the browser actually landed on (redirects,
-                    # meta-refresh, JS navigation) must still screen clean.
-                    await screen_url(page.url, resolver=self._resolver)
+                    # Backstop: screen the FULL server-redirect chain, not just the
+                    # landing URL. Playwright follows server 3xx internally without
+                    # re-invoking the route guard, so a ``public → private(reachable)
+                    # → public`` chain would transit a private host while ``page.url``
+                    # (the final URL) screens clean. Walk ``redirected_from`` back from
+                    # the final request to collect every intermediate hop, plus
+                    # ``page.url`` (the actual landed URL, which may differ after client
+                    # JS). Screen every distinct URL; any private hop raises
+                    # PrivateAddressRefused and the body is never read.
+                    chain: list[str] = []
+                    if response is not None:
+                        req: Any = response.request
+                        while req is not None:
+                            chain.append(req.url)
+                            req = req.redirected_from
+                    chain.append(page.url)
+                    await screen_urls(chain, resolver=self._resolver)
                     await page.wait_for_timeout(1500)  # settle JS-rendered content
                     body = await page.content()
                     screenshot = (

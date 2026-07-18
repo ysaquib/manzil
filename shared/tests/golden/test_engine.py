@@ -225,9 +225,7 @@ def test_one_sided_inclusive_comparisons_include_boundary() -> None:
 
     available = crit("availability_date", [opt(MatchOp.LTE, "2026-09-01", 0.5)])
     assert (
-        score([available], {"availability_date": "2026-09-01"}, rubric_version=1)
-        .criteria[0]
-        .delta
+        score([available], {"availability_date": "2026-09-01"}, rubric_version=1).criteria[0].delta
         == 0.5
     )
 

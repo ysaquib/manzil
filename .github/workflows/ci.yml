@@ -30,12 +30,27 @@ jobs:
     runs-on: ubuntu-latest
     env:
       MANZIL_LLM_MODE: replay
+      MANZIL_WORKER_INPROCESS: "false"
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.98.2
       - run: uv sync --all-packages
+      - run: supabase start
+      - run: supabase db reset --yes
+      - name: Export local Supabase environment
+        shell: bash
+        run: |
+          supabase status -o json | jq -er '
+            "SUPABASE_URL=\(.API_URL)",
+            "SUPABASE_ANON_KEY=\(.ANON_KEY)",
+            "SUPABASE_SERVICE_ROLE_KEY=\(.SERVICE_ROLE_KEY)",
+            "DATABASE_URL=\(.DB_URL)"
+          ' >> "$GITHUB_ENV"
       - run: uv run --package manzil-shared pytest shared/tests
-      - run: uv run --package manzil-api pytest api/tests
+      - run: uv run --package manzil-api pytest api/tests --ignore=api/tests/test_rls_matrix.py
       - run: uv run --package manzil-worker pytest worker/tests
 
   collaboration-security:
@@ -48,10 +63,19 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 2.98.2
       - run: uv sync --all-packages
       - run: supabase start
-      - run: supabase db reset
+      - run: supabase db reset --yes
+      - name: Export local Supabase environment
+        shell: bash
+        run: |
+          supabase status -o json | jq -er '
+            "SUPABASE_URL=\(.API_URL)",
+            "SUPABASE_ANON_KEY=\(.ANON_KEY)",
+            "SUPABASE_SERVICE_ROLE_KEY=\(.SERVICE_ROLE_KEY)",
+            "DATABASE_URL=\(.DB_URL)"
+          ' >> "$GITHUB_ENV"
       - run: uv run --package manzil-api pytest api/tests/test_rls_matrix.py
 
   frontend:
