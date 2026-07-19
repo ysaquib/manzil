@@ -28,6 +28,21 @@ class HuntSettingsPatch(BaseModel):
     settings: dict[str, Any]
 
 
+class SharedFiltersPut(BaseModel):
+    """Hunt-wide Overview filters (§13.2, §20 2026-07-19). View state, not
+    settings: an opaque-to-the-API object the frontend sanitizes on read, so
+    filter-set growth never needs an API change."""
+
+    filters: dict[str, Any]
+
+
+class SharedFiltersResponse(BaseModel):
+    hunt_id: UUID
+    filters: dict[str, Any]
+    updated_by: UUID
+    updated_at: datetime
+
+
 class HuntResponse(BaseModel):
     id: UUID
     name: str

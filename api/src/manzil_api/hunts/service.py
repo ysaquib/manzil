@@ -12,6 +12,8 @@ from manzil_api.hunts.schemas import (
     HuntResponse,
     HuntSettingsPatch,
     HuntUpdate,
+    SharedFiltersPut,
+    SharedFiltersResponse,
 )
 from manzil_api.jobs.enqueue import enqueue_enrich_refresh, enqueue_rescore
 from supabase import Client
@@ -120,6 +122,30 @@ async def patch_hunt(client: Client, hunt_id: UUID, body: HuntUpdate) -> HuntRes
     if row is None:
         raise RuntimeError("hunt missing after patch")
     return _to_response(row)
+
+
+async def put_shared_filters(
+    client: Client, hunt_id: UUID, user_id: str, body: SharedFiltersPut
+) -> SharedFiltersResponse:
+    """Upsert the hunt-wide filter set. Role is double-enforced: the router's
+    CuratedHunt dependency and the hunt_shared_filters RLS write policies."""
+    response = (
+        client.table("hunt_shared_filters")
+        .upsert(
+            {
+                "hunt_id": str(hunt_id),
+                "filters": body.filters,
+                "updated_by": user_id,
+                "updated_at": datetime.now(UTC).isoformat(),
+            },
+            on_conflict="hunt_id",
+        )
+        .execute()
+    )
+    row = (response.data or [None])[0]
+    if row is None:
+        raise RuntimeError("shared-filters upsert returned no row")
+    return SharedFiltersResponse.model_validate(row)
 
 
 async def patch_settings(client: Client, hunt_id: UUID, body: HuntSettingsPatch) -> HuntResponse:

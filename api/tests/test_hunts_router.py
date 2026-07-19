@@ -291,3 +291,46 @@ async def test_settings_source_policy_change_no_rescore(client: AsyncClient, db_
         assert rescore == 0
     finally:
         await db_pool.execute("delete from hunts where id = $1", hunt_id)
+
+
+@pytest.mark.asyncio
+async def test_shared_filters_upsert_and_role_gate(client: AsyncClient, db_pool) -> None:
+    hunt_id = uuid4()
+    await db_pool.execute(
+        "insert into hunts (id, name, owner_id) values ($1, 'F', $2)",
+        hunt_id,
+        FAKE_USER.id,
+    )
+    try:
+        resp = await client.put(
+            f"/v1/hunts/{hunt_id}/shared-filters",
+            json={"filters": {"minScore": 5, "laundry": ["in_unit"]}},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["filters"] == {"minScore": 5, "laundry": ["in_unit"]}
+        assert resp.json()["updated_by"] == str(FAKE_USER.id)
+
+        # Second PUT overwrites the same row rather than inserting another.
+        resp = await client.put(
+            f"/v1/hunts/{hunt_id}/shared-filters",
+            json={"filters": {"maxRent": 2000}},
+        )
+        assert resp.status_code == 200
+        rows = await db_pool.fetch(
+            "select filters from hunt_shared_filters where hunt_id = $1", hunt_id
+        )
+        assert len(rows) == 1
+        assert json.loads(rows[0]["filters"]) == {"maxRent": 2000}
+
+        # Plain members cannot publish (curator-or-owner gate).
+        await db_pool.execute(
+            "update hunt_members set role = 'member' where hunt_id = $1 and user_id = $2",
+            hunt_id,
+            FAKE_USER.id,
+        )
+        resp = await client.put(
+            f"/v1/hunts/{hunt_id}/shared-filters", json={"filters": {}}
+        )
+        assert resp.status_code == 403
+    finally:
+        await db_pool.execute("delete from hunts where id = $1", hunt_id)

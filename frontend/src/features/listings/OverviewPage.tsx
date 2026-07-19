@@ -12,13 +12,15 @@ import {
   Text,
 } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
+import { notifications } from "@mantine/notifications";
 import { IconHome } from "@tabler/icons-react";
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { PageHeader } from "../../components/PageHeader";
 import { resolveSettings } from "../../lib/contracts";
-import { useHunt } from "../hunts/api";
+import { useCurrentMember } from "../collaboration/api";
+import { useHunt, usePublishSharedFilters, useSharedFilters } from "../hunts/api";
 import { useDeleteListing, useListings, useUnitGroupStates } from "./api";
 import { ListingDetailDrawer, type DrawerSelection } from "./ListingDetailDrawer";
 import { OverviewFilterBar } from "./OverviewFilterBar";
@@ -28,6 +30,7 @@ import {
   buildRows,
   DEFAULT_OVERVIEW_FILTERS,
   hasActiveFilters,
+  sanitizeFilterState,
   sortRows,
   type OverviewRow,
   type OverviewFilterState,
@@ -45,6 +48,37 @@ export function OverviewPage() {
 
   const [filters, setFilters] = useState<OverviewFilterState>(DEFAULT_OVERVIEW_FILTERS);
   const [sort, setSort] = useState<SortState>({ key: "score", dir: "desc" });
+
+  // Hunt-wide filters (§13.2, §20 2026-07-19): the published set seeds the
+  // local state once per mount — after that the member deviates freely.
+  const { data: sharedRow } = useSharedFilters(huntId);
+  const publishFilters = usePublishSharedFilters(huntId);
+  const { data: currentMember } = useCurrentMember(huntId);
+  const sharedFilters = useMemo(
+    () => (sharedRow ? sanitizeFilterState(sharedRow.filters) : null),
+    [sharedRow],
+  );
+  const touchedRef = useRef(false);
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (seededRef.current || sharedFilters === null) return;
+    seededRef.current = true;
+    if (hasActiveFilters(sharedFilters) && !touchedRef.current) setFilters(sharedFilters);
+  }, [sharedFilters]);
+  const onFiltersChange = (next: OverviewFilterState) => {
+    touchedRef.current = true;
+    setFilters(next);
+  };
+  const canPublish = currentMember?.role === "owner" || currentMember?.role === "curator";
+  const onPublish = (next: OverviewFilterState) =>
+    publishFilters.mutate({ ...next }, {
+      onSuccess: () =>
+        notifications.show({
+          message: hasActiveFilters(next)
+            ? "Filters applied hunt-wide — members start from this view."
+            : "Hunt-wide filters cleared.",
+        }),
+    });
   // View preference, not hunt data — persists per browser.
   const [density, setDensity] = useLocalStorage<TableDensity>({
     key: "manzil:overview-density",
@@ -84,10 +118,14 @@ export function OverviewPage() {
         <div style={{ flex: 1, minWidth: 0 }}>
           <OverviewFilterBar
             filters={filters}
-            onChange={setFilters}
+            onChange={onFiltersChange}
             cities={cities}
             visibleCount={rows.length}
             totalCount={allRows.length}
+            sharedFilters={sharedFilters}
+            canPublish={canPublish}
+            onPublish={onPublish}
+            publishPending={publishFilters.isPending}
           />
         </div>
         <TableDensityMenu density={density} onChange={setDensity} />

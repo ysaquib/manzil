@@ -41,6 +41,14 @@ export function rowAvailability(row: OverviewRow): RowAvailability {
   return row.group.displayScore ? "scored" : "pending";
 }
 
+// Catalog enum vocabularies (§8.2 criteria_catalog) the enum filters accept.
+export const LAUNDRY_VALUES = ["in_unit", "hookups", "on_site", "none"] as const;
+export const PARKING_VALUES = [
+  "garage", "carport", "covered", "dedicated_lot", "street_only", "none",
+] as const;
+export const PETS_VALUES = ["cats_and_dogs", "cats_only", "dogs_only", "none"] as const;
+export const COOLING_VALUES = ["central", "window_units", "none"] as const;
+
 export interface OverviewFilterState {
   minScore: number | null;
   maxScore: number | null;
@@ -56,6 +64,14 @@ export interface OverviewFilterState {
   statuses: StatusFilter[];
   visited: boolean | null;
   availabilities: RowAvailability[];
+  laundry: string[];
+  parking: string[];
+  pets: string[];
+  cooling: string[];
+  dishwasher: boolean | null;
+  maxAllIn: number | null;
+  /** ISO date: a group passes when some plan is available on or before it. */
+  availableBy: string | null;
 }
 
 export const DEFAULT_OVERVIEW_FILTERS: OverviewFilterState = {
@@ -73,7 +89,58 @@ export const DEFAULT_OVERVIEW_FILTERS: OverviewFilterState = {
   statuses: [],
   visited: null,
   availabilities: [],
+  laundry: [],
+  parking: [],
+  pets: [],
+  cooling: [],
+  dishwasher: null,
+  maxAllIn: null,
+  availableBy: null,
 };
+
+// Rehydrate a possibly stale/foreign filter object (hunt_shared_filters rows
+// written before a filter was added, or after one is removed): unknown keys
+// drop, missing or ill-typed keys default. Never throws.
+export function sanitizeFilterState(input: unknown): OverviewFilterState {
+  const raw = (typeof input === "object" && input !== null ? input : {}) as Record<
+    string,
+    unknown
+  >;
+  const out = { ...DEFAULT_OVERVIEW_FILTERS };
+  for (const key of Object.keys(DEFAULT_OVERVIEW_FILTERS) as FilterPillKey[]) {
+    const fallback = DEFAULT_OVERVIEW_FILTERS[key];
+    const value = raw[key];
+    if (Array.isArray(fallback)) {
+      if (Array.isArray(value) && value.every((v) => typeof v === "string")) {
+        (out[key] as string[]) = value as string[];
+      }
+    } else if (value === null || typeof value === typeof exemplarFor(key)) {
+      (out[key] as unknown) = value === undefined ? fallback : value;
+    }
+  }
+  return out;
+}
+
+// A representative non-null value per scalar filter key, for typeof checks.
+function exemplarFor(key: FilterPillKey): unknown {
+  if (key === "visited" || key === "dishwasher") return true;
+  if (key === "availableBy") return "";
+  return 0;
+}
+
+/** Order-insensitive equality — drives the hunt-wide vs modified badge. */
+export function filtersEqual(a: OverviewFilterState, b: OverviewFilterState): boolean {
+  return (Object.keys(DEFAULT_OVERVIEW_FILTERS) as FilterPillKey[]).every((key) => {
+    const va = a[key];
+    const vb = b[key];
+    if (Array.isArray(va) && Array.isArray(vb)) {
+      if (va.length !== vb.length) return false;
+      const sb = [...vb].sort();
+      return [...va].sort().every((v, i) => v === sb[i]);
+    }
+    return va === vb;
+  });
+}
 
 export function hasActiveFilters(filters: OverviewFilterState): boolean {
   return Object.values(filters).some((v) => (Array.isArray(v) ? v.length > 0 : v !== null));
@@ -164,6 +231,55 @@ function availabilityPredicate(row: OverviewRow, filters: OverviewFilterState): 
   return filters.availabilities.length === 0 || filters.availabilities.includes(rowAvailability(row));
 }
 
+// Effective criterion value for the plan this row displays, read from the
+// persisted breakdown (§9.3) — the only per-criterion data the Overview loads.
+// A criterion absent from the rubric (or an unscored row) reads as unknown.
+export function criterionValue(row: OverviewRow, key: string): unknown {
+  const entry = row.group?.displayScore?.breakdown.criteria.find((c) => c.key === key);
+  if (!entry || entry.unknown) return null;
+  return entry.value ?? null;
+}
+
+// Enum criterion filters share one shape: empty selection or unknown value
+// passes (a pending/disabled criterion is not a verdict), otherwise the value
+// must be selected.
+function enumCriterionPredicate(
+  filterKey: "laundry" | "parking" | "pets" | "cooling",
+  criterionKey: string,
+): RowPredicate {
+  return (row, filters) => {
+    const selected = filters[filterKey];
+    if (selected.length === 0) return true;
+    const value = criterionValue(row, criterionKey);
+    if (typeof value !== "string") return true;
+    return selected.includes(value);
+  };
+}
+
+function dishwasherPredicate(row: OverviewRow, filters: OverviewFilterState): boolean {
+  if (filters.dishwasher === null) return true;
+  const value = criterionValue(row, "dishwasher");
+  if (typeof value !== "boolean") return true;
+  return value === filters.dishwasher;
+}
+
+function maxAllInPredicate(row: OverviewRow, filters: OverviewFilterState): boolean {
+  if (filters.maxAllIn === null) return true;
+  const value = allInValue(row);
+  if (value === null) return true;
+  return value <= filters.maxAllIn;
+}
+
+function availableByPredicate(row: OverviewRow, filters: OverviewFilterState): boolean {
+  if (filters.availableBy === null || row.group === null) return true;
+  const dates = row.group.plans
+    .map((plan) => plan.availability_date)
+    .filter((d): d is string => d !== null);
+  if (dates.length === 0) return true;
+  // ISO dates compare lexicographically; earliest available plan decides.
+  return dates.some((d) => d <= filters.availableBy!);
+}
+
 type RowPredicate = (row: OverviewRow, filters: OverviewFilterState) => boolean;
 
 // Registry — adding a future filter appends one predicate here.
@@ -177,6 +293,13 @@ const FILTER_PREDICATES: RowPredicate[] = [
   statusPredicate,
   visitedPredicate,
   availabilityPredicate,
+  enumCriterionPredicate("laundry", "in_unit_laundry"),
+  enumCriterionPredicate("parking", "parking"),
+  enumCriterionPredicate("pets", "pets_policy"),
+  enumCriterionPredicate("cooling", "cooling"),
+  dishwasherPredicate,
+  maxAllInPredicate,
+  availableByPredicate,
 ];
 
 export function applyOverviewFilters(
@@ -235,6 +358,24 @@ export function filterPills(filters: OverviewFilterState): FilterPill[] {
   }
   for (const availability of filters.availabilities) {
     pills.push({ key: "availabilities", label: `Availability: ${availability}` });
+  }
+  const enumPill = (key: FilterPillKey, prefix: string, values: string[]) => {
+    for (const value of values) {
+      pills.push({ key, label: `${prefix}: ${value.replaceAll("_", " ")}` });
+    }
+  };
+  enumPill("laundry", "Laundry", filters.laundry);
+  enumPill("parking", "Parking", filters.parking);
+  enumPill("pets", "Pets", filters.pets);
+  enumPill("cooling", "Cooling", filters.cooling);
+  if (filters.dishwasher !== null) {
+    pills.push({ key: "dishwasher", label: filters.dishwasher ? "Dishwasher" : "No dishwasher" });
+  }
+  if (filters.maxAllIn !== null) {
+    pills.push({ key: "maxAllIn", label: `All-in ≤ $${filters.maxAllIn.toLocaleString()}` });
+  }
+  if (filters.availableBy !== null) {
+    pills.push({ key: "availableBy", label: `Available by ${filters.availableBy}` });
   }
   return pills;
 }
