@@ -4,7 +4,22 @@
 // pinned plan (§9.4). Sqft/all-in columns hide below md/sm — no horizontal
 // page scroll (frontend/AGENTS.md).
 import { ActionIcon, Checkbox, Group, Menu, Select, Table, Text, Tooltip, UnstyledButton } from "@mantine/core";
-import { IconChevronDown, IconChevronRight, IconChevronUp, IconDotsVertical, IconMessageCircle, IconTrash } from "@tabler/icons-react";
+import { notifications } from "@mantine/notifications";
+import {
+  IconBaselineDensityLarge,
+  IconBaselineDensityMedium,
+  IconBaselineDensitySmall,
+  IconCheck,
+  IconChevronDown,
+  IconChevronRight,
+  IconChevronUp,
+  IconCopy,
+  IconDotsVertical,
+  IconExternalLink,
+  IconEye,
+  IconMessageCircle,
+  IconTrash,
+} from "@tabler/icons-react";
 
 import { AllInCell } from "./AllInCost";
 import { ScoreCell } from "./ScoreCell";
@@ -50,6 +65,54 @@ function SortHeader({
   );
 }
 
+// Row density (view options): spacing only — content and type size stay put.
+export type TableDensity = "compact" | "normal" | "comfortable";
+
+const DENSITY_SPACING: Record<TableDensity, { vertical: string | number; horizontal: string }> = {
+  compact: { vertical: 4, horizontal: "xs" },
+  normal: { vertical: "sm", horizontal: "sm" },
+  comfortable: { vertical: "lg", horizontal: "md" },
+};
+
+const DENSITY_OPTIONS: { value: TableDensity; label: string; icon: typeof IconBaselineDensitySmall }[] = [
+  { value: "compact", label: "Compact", icon: IconBaselineDensitySmall },
+  { value: "normal", label: "Normal", icon: IconBaselineDensityMedium },
+  { value: "comfortable", label: "Comfortable", icon: IconBaselineDensityLarge },
+];
+
+export function TableDensityMenu({
+  density,
+  onChange,
+}: {
+  density: TableDensity;
+  onChange: (next: TableDensity) => void;
+}) {
+  return (
+    <Menu position="bottom-end" withinPortal>
+      <Menu.Target>
+        <Tooltip label="Row density" openDelay={300}>
+          <ActionIcon color="gray" c="dimmed" aria-label="table view options" size="lg">
+            <IconBaselineDensityMedium size={16} stroke={1.5} />
+          </ActionIcon>
+        </Tooltip>
+      </Menu.Target>
+      <Menu.Dropdown>
+        <Menu.Label>Row density</Menu.Label>
+        {DENSITY_OPTIONS.map(({ value, label, icon: Icon }) => (
+          <Menu.Item
+            key={value}
+            leftSection={<Icon size={14} stroke={1.5} />}
+            rightSection={density === value ? <IconCheck size={14} stroke={1.5} /> : undefined}
+            onClick={() => onChange(value)}
+          >
+            {label}
+          </Menu.Item>
+        ))}
+      </Menu.Dropdown>
+    </Menu>
+  );
+}
+
 export interface OverviewTableProps {
   huntId: string;
   rows: OverviewRow[];
@@ -57,6 +120,7 @@ export interface OverviewTableProps {
   onSort: (key: SortKey) => void;
   onOpen: (row: OverviewRow) => void;
   onDelete: (row: OverviewRow) => void;
+  density?: TableDensity;
 }
 
 function CollaborationCell({ listingId, huntId, unitGroupKey }: { listingId: string; huntId: string; unitGroupKey: string | null }) {
@@ -132,9 +196,91 @@ function CurationCells({ row, huntId }: { row: OverviewRow; huntId: string }) {
   );
 }
 
-export function OverviewTable({ huntId, rows, sort, onSort, onOpen, onDelete }: OverviewTableProps) {
+// Per-row actions beyond "open the drawer": jump to the live listing page,
+// grab the address/link for sharing, and the destructive delete last.
+function RowActionsMenu({
+  row,
+  onOpen,
+  onDelete,
+}: {
+  row: OverviewRow;
+  onOpen: (row: OverviewRow) => void;
+  onDelete: (row: OverviewRow) => void;
+}) {
+  const property = row.listing.property;
+  const listingUrl = property.official_url ?? property.sources[0]?.url ?? null;
+
+  const copy = async (label: string, value: string) => {
+    await navigator.clipboard.writeText(value);
+    notifications.show({ message: `${label} copied`, color: "green", autoClose: 1800 });
+  };
+
   return (
-    <Table striped highlightOnHover verticalSpacing="sm">
+    <Menu position="bottom-end" withinPortal>
+      <Menu.Target>
+        <ActionIcon color="gray" c="dimmed" aria-label="listing actions">
+          <IconDotsVertical size={16} stroke={1.5} />
+        </ActionIcon>
+      </Menu.Target>
+      <Menu.Dropdown>
+        <Menu.Item
+          leftSection={<IconEye size={14} stroke={1.5} />}
+          onClick={() => onOpen(row)}
+        >
+          Open details
+        </Menu.Item>
+        {listingUrl && (
+          <Menu.Item
+            leftSection={<IconExternalLink size={14} stroke={1.5} />}
+            onClick={() => window.open(listingUrl, "_blank", "noopener")}
+          >
+            Open listing page
+          </Menu.Item>
+        )}
+        <Menu.Item
+          leftSection={<IconCopy size={14} stroke={1.5} />}
+          onClick={() => void copy("Address", property.canonical_address)}
+        >
+          Copy address
+        </Menu.Item>
+        {listingUrl && (
+          <Menu.Item
+            leftSection={<IconCopy size={14} stroke={1.5} />}
+            onClick={() => void copy("Listing link", listingUrl)}
+          >
+            Copy listing link
+          </Menu.Item>
+        )}
+        <Menu.Divider />
+        <Menu.Item
+          color="red"
+          leftSection={<IconTrash size={14} stroke={1.5} />}
+          onClick={() => onDelete(row)}
+        >
+          Delete listing
+        </Menu.Item>
+      </Menu.Dropdown>
+    </Menu>
+  );
+}
+
+export function OverviewTable({
+  huntId,
+  rows,
+  sort,
+  onSort,
+  onOpen,
+  onDelete,
+  density = "normal",
+}: OverviewTableProps) {
+  const spacing = DENSITY_SPACING[density];
+  return (
+    <Table
+      striped
+      highlightOnHover
+      verticalSpacing={spacing.vertical}
+      horizontalSpacing={spacing.horizontal}
+    >
       <Table.Thead>
         <Table.Tr>
           <Table.Th>
@@ -216,22 +362,7 @@ export function OverviewTable({ huntId, rows, sort, onSort, onOpen, onDelete }: 
                 />
               </Table.Td>
               <Table.Td onClick={(e) => e.stopPropagation()} width={40}>
-                <Menu position="bottom-end" withinPortal>
-                  <Menu.Target>
-                    <ActionIcon color="gray" c="dimmed" aria-label="listing actions">
-                      <IconDotsVertical size={16} stroke={1.5} />
-                    </ActionIcon>
-                  </Menu.Target>
-                  <Menu.Dropdown>
-                    <Menu.Item
-                      color="red"
-                      leftSection={<IconTrash size={14} stroke={1.5} />}
-                      onClick={() => onDelete(row)}
-                    >
-                      Delete listing
-                    </Menu.Item>
-                  </Menu.Dropdown>
-                </Menu>
+                <RowActionsMenu row={row} onOpen={onOpen} onDelete={onDelete} />
               </Table.Td>
             </Table.Tr>
           );
