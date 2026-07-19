@@ -6,10 +6,12 @@ import {
   buildRows,
   DEFAULT_OVERVIEW_FILTERS,
   filterPills,
+  filtersEqual,
   formatRange,
   hasActiveFilters,
   rowAvailability,
   rowComposition,
+  sanitizeFilterState,
   sortRows,
 } from "./overviewRows";
 import type { AllInComponents, FloorPlan, Listing, Score } from "./types";
@@ -154,6 +156,116 @@ describe("applyOverviewFilters (curation and locality)", () => {
       ...DEFAULT_OVERVIEW_FILTERS,
       maxScore: 4,
     }).map((row) => row.listing.id)).toEqual(["l2", "l3"]);
+  });
+});
+
+// A scored listing whose breakdown carries criterion values (the source the
+// criterion filters read); one plan available 2026-08-01.
+function makeCriteriaListing(
+  id: string,
+  criteria: { key: string; value: unknown; unknown?: boolean }[],
+  planExtra: Partial<FloorPlan> = {},
+): Listing {
+  const listing = makeListing(
+    id,
+    `Prop ${id}`,
+    [{ beds: 2, baths: 2, availability_date: "2026-08-01", ...planExtra }],
+    { [`${id}-plan-0`]: 8 },
+  );
+  listing.scores[0].breakdown.criteria = criteria.map((c) => ({
+    key: c.key,
+    value: c.value,
+    matched: null,
+    delta: 0,
+    unknown: c.unknown,
+  }));
+  return listing;
+}
+
+describe("applyOverviewFilters (criterion + cost + availability-date)", () => {
+  const inUnit = makeCriteriaListing("f1", [
+    { key: "in_unit_laundry", value: "in_unit" },
+    { key: "parking", value: "covered" },
+    { key: "dishwasher", value: true },
+  ]);
+  const onSite = makeCriteriaListing("f2", [
+    { key: "in_unit_laundry", value: "on_site" },
+    { key: "dishwasher", value: false },
+  ], { availability_date: "2026-10-01" });
+  const unknownRow = makeCriteriaListing("f3", [
+    { key: "in_unit_laundry", value: null, unknown: true },
+  ], { availability_date: null });
+  const rows = buildRows([inUnit, onSite, unknownRow]);
+
+  it("filters enum criteria and passes unknown values through", () => {
+    const filtered = applyOverviewFilters(rows, {
+      ...DEFAULT_OVERVIEW_FILTERS,
+      laundry: ["in_unit"],
+    });
+    expect(filtered.map((r) => r.listing.id)).toEqual(["f1", "f3"]); // f3 unknown — passes
+  });
+
+  it("filters parking; rows missing the criterion pass", () => {
+    const filtered = applyOverviewFilters(rows, {
+      ...DEFAULT_OVERVIEW_FILTERS,
+      parking: ["garage"],
+    });
+    expect(filtered.map((r) => r.listing.id)).toEqual(["f2", "f3"]);
+  });
+
+  it("filters dishwasher both ways, unknown passing", () => {
+    const withDw = applyOverviewFilters(rows, { ...DEFAULT_OVERVIEW_FILTERS, dishwasher: true });
+    expect(withDw.map((r) => r.listing.id)).toEqual(["f1", "f3"]);
+    const withoutDw = applyOverviewFilters(rows, { ...DEFAULT_OVERVIEW_FILTERS, dishwasher: false });
+    expect(withoutDw.map((r) => r.listing.id)).toEqual(["f2", "f3"]);
+  });
+
+  it("applies a max all-in ceiling via the composed total, unknown passing", () => {
+    const priced = makeCriteriaListing("f4", []);
+    priced.scores[0].all_in_components = {
+      total: 2400,
+      components: [],
+      badges: [],
+    } as unknown as Score["all_in_components"];
+    const filtered = applyOverviewFilters(buildRows([priced, unknownRow]), {
+      ...DEFAULT_OVERVIEW_FILTERS,
+      maxAllIn: 2000,
+    });
+    expect(filtered.map((r) => r.listing.id)).toEqual(["f3"]);
+  });
+
+  it("passes groups with any plan available on or before the date; unknown dates pass", () => {
+    const filtered = applyOverviewFilters(rows, {
+      ...DEFAULT_OVERVIEW_FILTERS,
+      availableBy: "2026-08-15",
+    });
+    expect(filtered.map((r) => r.listing.id)).toEqual(["f1", "f3"]); // f2 opens Oct 1
+  });
+});
+
+describe("sanitizeFilterState / filtersEqual", () => {
+  it("drops unknown keys, defaults missing ones, rejects ill-typed values", () => {
+    const sanitized = sanitizeFilterState({
+      minRent: 900,
+      laundry: ["in_unit"],
+      bogus: "drop-me",
+      maxScore: "twelve",
+      dishwasher: true,
+    });
+    expect(sanitized.minRent).toBe(900);
+    expect(sanitized.laundry).toEqual(["in_unit"]);
+    expect(sanitized.maxScore).toBeNull();
+    expect(sanitized.dishwasher).toBe(true);
+    expect("bogus" in sanitized).toBe(false);
+    expect(sanitized.cities).toEqual([]);
+  });
+
+  it("round-trips defaults and treats array order as irrelevant", () => {
+    expect(sanitizeFilterState(null)).toEqual(DEFAULT_OVERVIEW_FILTERS);
+    const a = { ...DEFAULT_OVERVIEW_FILTERS, cities: ["Detroit", "Ferndale"] };
+    const b = { ...DEFAULT_OVERVIEW_FILTERS, cities: ["Ferndale", "Detroit"] };
+    expect(filtersEqual(a, b)).toBe(true);
+    expect(filtersEqual(a, { ...b, visited: true })).toBe(false);
   });
 });
 
