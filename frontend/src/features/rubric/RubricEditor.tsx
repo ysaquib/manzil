@@ -112,7 +112,9 @@ export function RubricEditor({
         </Alert>
       )}
 
-      <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
+      {/* Two columns max: edit rows (op + value + points + actions) need the
+          width; the read-only view keeps its denser three-column grid. */}
+      <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
         {draft.map((criterion) => {
           const entry = entryByKey.get(criterion.catalog_key ?? "");
           return entry ? (

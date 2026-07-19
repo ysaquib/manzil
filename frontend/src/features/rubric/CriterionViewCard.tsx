@@ -92,7 +92,7 @@ export function CriterionViewCard({
             {criterion.options.map((option, index) => (
               <Table.Tr key={index}>
                 <Table.Td>
-                  <Text size="sm">{formatMatchLabel(option.match)}</Text>
+                  <Text size="sm">{formatMatchLabel(option.match, entry.key)}</Text>
                 </Table.Td>
                 <ValueCell>
                   <OptionValue option={option} />

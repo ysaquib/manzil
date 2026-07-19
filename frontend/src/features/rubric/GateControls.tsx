@@ -1,9 +1,11 @@
 // Gate controls (§3, §13.2): the criterion-level non-negotiable toggle
 // revealing its set-score input. Gates are consequential and rare — the
-// set-score stays hidden until the toggle is on.
-import { Group, NumberInput, Switch, Text, Tooltip } from "@mantine/core";
+// set-score stays hidden until the toggle is on. Rendered as a row of the
+// CriterionCard option grid so the input aligns with the points column.
+import { NumberInput, Switch, Tooltip } from "@mantine/core";
 
 import type { NonNegotiable } from "../../lib/contracts";
+import classes from "./CriterionCard.module.css";
 
 export function GateControls({
   nonNegotiable,
@@ -13,33 +15,39 @@ export function GateControls({
   onChange: (next: NonNegotiable | null) => void;
 }) {
   return (
-    <Group gap="sm" align="center">
-      <Switch
-        size="xs"
-        label="Non-negotiable"
-        checked={nonNegotiable !== null}
-        onChange={(e) => onChange(e.currentTarget.checked ? { set_score: 0 } : null)}
-      />
-      {nonNegotiable !== null && (
-        <Tooltip label="Score set when the gate fails">
-          <Group gap={4} align="center">
-            <Text size="xs" c="dimmed">
-              →
-            </Text>
-            <NumberInput
-              aria-label="non-negotiable set score"
-              size="xs"
-              w={80}
-              min={0}
-              max={15}
-              value={nonNegotiable.set_score}
-              onChange={(next) =>
-                onChange({ set_score: typeof next === "number" ? next : 0 })
-              }
-            />
-          </Group>
+    <div className={classes.optionRow}>
+      <Tooltip
+        label="When this criterion's requirement isn't met, the listing's score is set directly instead of adding points"
+        openDelay={300}
+        position="top-start"
+        maw={320}
+        multiline
+      >
+        <Switch
+          size="xs"
+          label="Non-negotiable"
+          checked={nonNegotiable !== null}
+          onChange={(e) => onChange(e.currentTarget.checked ? { set_score: 0 } : null)}
+        />
+      </Tooltip>
+      {nonNegotiable !== null ? (
+        <Tooltip label="Score set when the gate fails" openDelay={300}>
+          <NumberInput
+            aria-label="non-negotiable set score"
+            size="xs"
+            min={0}
+            max={15}
+            prefix="→ "
+            className={classes.dealbreakerInput}
+            value={nonNegotiable.set_score}
+            onChange={(next) => onChange({ set_score: typeof next === "number" ? next : 0 })}
+          />
         </Tooltip>
+      ) : (
+        <div />
       )}
-    </Group>
+      <div />
+      <div />
+    </div>
   );
 }

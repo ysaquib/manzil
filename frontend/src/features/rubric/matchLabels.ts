@@ -4,9 +4,12 @@
 // View-label conventions (rubric read-only option rows — DESIGN §20 2026-07-10):
 // - `eq` and `bool`: no operator word — "equals"/"is" are the default and add
 //   noise in a scan table (show "2 br" or "yes", not "equals 2 br").
-// - `lt` / `gt`: symbols (`<`, `>`) — shorter than words, unambiguous in context.
+// - `lt` / `lte` / `gt` / `gte`: symbols (`<`, `≤`, `>`, `≥`) — shorter than
+//   words, unambiguous in context.
 // - `range` / `in`: keep words ("between …", "any of …") — symbols would be jargon.
-// Editor dropdowns still use OP_LABEL_SHORT (words + symbols where helpful).
+// - Numeric values carry their display unit (lib/criterionUnits) so thresholds
+//   read as "between 10 and 20 min", never a bare "between 10 and 20".
+import { criterionUnit, type UnitFormat } from "../../lib/criterionUnits";
 import type { MatchOp, OptionMatch } from "../../lib/contracts";
 import type { ValueSchema } from "./widgets/types";
 
@@ -23,7 +26,7 @@ export const OP_LABEL: Record<MatchOp, string> = {
 
 /** Compact labels for the operator Select in edit mode. */
 export const OP_LABEL_SHORT: Record<MatchOp, string> = {
-  eq: "equals",
+  eq: "=",
   lt: "<",
   lte: "≤",
   gt: ">",
@@ -33,42 +36,60 @@ export const OP_LABEL_SHORT: Record<MatchOp, string> = {
   bool: "is",
 };
 
+/** Plain-word gloss shown next to the symbol in the editor's op dropdown. */
+export const OP_LABEL_WORD: Record<MatchOp, string> = {
+  eq: "exactly",
+  lt: "less than",
+  lte: "at most",
+  gt: "more than",
+  gte: "at least",
+  range: "between",
+  in: "any of",
+  bool: "is",
+};
+
+// Numeric ops in number-line order (< ≤ = ≥ >), then the compound "between" —
+// reads as a scale instead of the arbitrary eq/lt/lte/gt/gte grouping.
 export function opsForSchema(schema: ValueSchema): MatchOp[] {
   if (schema.type === "boolean") return ["bool"];
   if (schema.enum) return ["eq", "in"];
-  return ["eq", "lt", "lte", "gt", "gte", "range"];
+  return ["lt", "lte", "eq", "gte", "gt", "range"];
 }
 
-function formatScalar(value: unknown): string {
+function formatScalar(value: unknown, unit?: UnitFormat): string {
   if (value === null || value === undefined) return "…";
   if (typeof value === "boolean") return value ? "yes" : "no";
-  if (typeof value === "number") return value.toLocaleString();
+  if (typeof value === "number")
+    return `${unit?.prefix ?? ""}${value.toLocaleString()}${unit?.suffix ?? ""}`;
   return String(value).replaceAll("_", " ");
 }
 
 /** Human-readable match label for rubric view cards. See file-header conventions. */
-export function formatMatchLabel(match: OptionMatch): string {
+export function formatMatchLabel(match: OptionMatch, criterionKey?: string | null): string {
+  const unit = criterionUnit(criterionKey);
   switch (match.op) {
     case "eq":
-      return formatScalar(match.value);
+      return formatScalar(match.value, unit);
     case "bool":
       return formatScalar(match.value);
     case "lt":
-      return `< ${formatScalar(match.value)}`;
+      return `< ${formatScalar(match.value, unit)}`;
     case "lte":
-      return `≤ ${formatScalar(match.value)}`;
+      return `≤ ${formatScalar(match.value, unit)}`;
     case "gt":
-      return `> ${formatScalar(match.value)}`;
+      return `> ${formatScalar(match.value, unit)}`;
     case "gte":
-      return `≥ ${formatScalar(match.value)}`;
+      return `≥ ${formatScalar(match.value, unit)}`;
     case "range": {
       if (!Array.isArray(match.value) || match.value.length !== 2) return "between …";
       const [lo, hi] = match.value as unknown[];
-      return `between ${formatScalar(lo)} and ${formatScalar(hi)}`;
+      // Suffix units read once at the end ("between 10 and 20 min"); prefix
+      // units repeat per number ("between $1,800 and $2,000").
+      return `between ${formatScalar(lo, unit && { prefix: unit.prefix })} and ${formatScalar(hi, unit)}`;
     }
     case "in": {
       if (!Array.isArray(match.value) || match.value.length === 0) return "any of …";
-      const members = (match.value as unknown[]).map(formatScalar).join(", ");
+      const members = (match.value as unknown[]).map((member) => formatScalar(member)).join(", ");
       return `any of ${members}`;
     }
   }
