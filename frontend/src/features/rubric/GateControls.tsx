@@ -5,7 +5,7 @@
 import { NumberInput, Switch, Tooltip } from "@mantine/core";
 
 import type { NonNegotiable } from "../../lib/contracts";
-import classes from "./CriterionCard.module.css";
+import { OptionGridRow } from "./OptionGridRow";
 
 export function GateControls({
   nonNegotiable,
@@ -15,7 +15,7 @@ export function GateControls({
   onChange: (next: NonNegotiable | null) => void;
 }) {
   return (
-    <div className={classes.optionRow}>
+    <OptionGridRow>
       <Tooltip
         label="When this criterion's requirement isn't met, the listing's score is set directly instead of adding points"
         openDelay={300}
@@ -38,7 +38,7 @@ export function GateControls({
             min={0}
             max={15}
             prefix="→ "
-            className={classes.dealbreakerInput}
+            error
             value={nonNegotiable.set_score}
             onChange={(next) => onChange({ set_score: typeof next === "number" ? next : 0 })}
           />
@@ -48,6 +48,6 @@ export function GateControls({
       )}
       <div />
       <div />
-    </div>
+    </OptionGridRow>
   );
 }
