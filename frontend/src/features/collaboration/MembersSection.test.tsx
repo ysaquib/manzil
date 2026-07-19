@@ -14,7 +14,7 @@ const owner: HuntMember = {
   hunt_id: "h1",
   user_id: "u-owner",
   role: "owner",
-  color: "dusk",
+  color: "moss",
   display_name: "Yusuf",
 };
 const member: HuntMember = {

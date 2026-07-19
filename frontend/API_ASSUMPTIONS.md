@@ -21,7 +21,7 @@ declared at all · `implemented` = working · `no table` = table not yet in a mi
 | `DELETE /v1/listings/{id}` | `useDeleteListing` (`features/listings/api.ts`) | generated (204) | P1-7 | implemented |
 | `PATCH /v1/listings/{id}/pins` | `usePatchPins` (`features/listings/api.ts`) | generated `PinsPatch` | P1-11 mini-endpoint | implemented |
 | `PATCH /v1/listings/{id}/unit-groups/{unit_group_key}/state` | `usePatchUnitGroupState` (`features/listings/api.ts`) | generated `UnitGroupStatePatch`/`UnitGroupStateResponse` | DESIGN v3.5 | implemented |
-| `GET /v1/hunts/{id}/jobs?state=…` | `useActiveJobs` (`features/jobs/api.ts`) — the one polled read, 3s | generated `JobResponse` + optional `checkpoint` | P1-7 / P1-13 | implemented |
+| `GET /v1/hunts/{id}/jobs?state=…` | `useActiveJobs` (`features/jobs/api.ts`) — the one polled read, 3s | generated `JobResponse` + optional `checkpoint`; `started_at` drives elapsed time for running jobs | P1-7 / P1-13 | implemented |
 
 `state` accepts repeated query params (`state=queued&state=running`) **and** a single
 comma-separated value (`state=queued,running,waiting_user`) — the form the Tasks tab polls.
@@ -37,6 +37,7 @@ comma-separated value (`state=queued,running,waiting_user`) — the form the Tas
 | `POST/GET /v1/hunts/{id}/invitation-links` | `useCreateInvitationLink` / `useInvitationLinks` (`features/invites/api.ts`) | generated Invitation Link shapes (`name` optional on create/response) | P2-11 | implemented |
 | `PATCH/DELETE /v1/invitation-links/{id}` | `usePatchInvitationLink` / `useDeleteInvitationLink` (`features/invites/api.ts`) | generated Invitation Link shapes (`name` optional on patch) | P2-11 | implemented |
 | `POST /v1/invitation-links/{token}/join` | `useJoinInvitationLink` (`features/invites/api.ts`) | generated `InvitationLinkJoined` | P2-11 | implemented |
+| `PUT /v1/profile` | `/profile` (`auth/ProfilePage.tsx`) | generated `ProfileUpsert`/`ProfileResponse`; optional `default_color` is omitted by onboarding and required when explicitly sent | DESIGN §13.1 | implemented |
 
 Invitation Link responses carry an API-configured absolute `link`, but the frontend replaces its
 origin with `window.location.origin` before copying. Supabase Auth storage is origin-scoped, so a
@@ -54,7 +55,8 @@ origin that appears logged out.
 | `extractions` latest-per-criterion for a property | `useExtractions` (`features/listings/api.ts`) | hand-typed | table exists (0001) |
 | `rubric_criteria` | `useRubric` (`features/rubric/api.ts`) | hand-typed `RubricCriterion` | exists (0002) |
 | `criteria_catalog` | `useCatalog` (`features/rubric/api.ts`) | hand-typed `CatalogEntry` | table exists (0001) + seed |
-| `hunt_members` (+ `user_profiles` for defaults) | `useMembers` (`features/collaboration/api.ts`) | hand-typed `HuntMember` | exists (0002+; profile coalesce P2) |
+| `hunt_members` (+ `user_profiles` for display-name/color defaults) | `useMembers` (`features/collaboration/api.ts`) | hand-typed `HuntMember`, including nullable Hunt-level overrides and effective coalesced identity | exists (0002+; profile coalesce P2 + 20260729000000) |
+| `user_profiles` for the current account | `useProfile` (`auth/profile.ts`) | hand-typed `UserProfile` (`default_display_name`, `default_color`) | exists (0002 + 20260729000000) |
 | *(derived)* same as `useMembers` | `useCurrentMember` (`features/collaboration/api.ts`) | `HuntMember \| undefined` via session user id — no extra fetch | client-side only |
 | `comments` for one Listing | `useComments` (`features/collaboration/api.ts`) | hand-typed `Comment`; nullable Unit Group scope + `edited_at` | exists (0002 + 20260724000000) |
 | `ratings` for one Listing | `useRatings` (`features/collaboration/api.ts`) | hand-typed `Rating`; filtered per Unit Group by row consumers | exists (0002 + 20260724000000) |
@@ -73,7 +75,8 @@ origin that appears logged out.
    Exposed on `ListingResponse.unavailable_at` and read on the hand-typed `Listing`.
    `buildRows` now emits one listing-level row (`group: null`) for a plan-less listing.
 6. **`jobs.hunt_id`** — added (migration 0004): `list_jobs` filters on it directly. Not read by
-   the frontend (jobs are fetched via `GET /v1/hunts/{id}/jobs`); `JobResponse` is unchanged.
+   the frontend (jobs are fetched via `GET /v1/hunts/{id}/jobs`). `JobResponse.started_at` was
+   later exposed for the running-job elapsed timer (DESIGN §13.2).
 
 ## Not assumed (deliberately)
 

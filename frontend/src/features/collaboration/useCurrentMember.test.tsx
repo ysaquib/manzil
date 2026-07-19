@@ -48,7 +48,7 @@ describe("useCurrentMember", () => {
     const client = new QueryClient({
       defaultOptions: { queries: { retry: false, staleTime: Infinity } },
     });
-    client.setQueryData(["hunt_members", "h1"], [member, { ...member, user_id: "u2", color: "dusk" }]);
+    client.setQueryData(["hunt_members", "h1"], [member, { ...member, user_id: "u2", color: "moss" }]);
 
     const { result } = renderHook(() => useCurrentMember("h1"), { wrapper: wrapper(client) });
 

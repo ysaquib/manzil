@@ -804,6 +804,8 @@ export interface components {
             cost_actual_usd: number;
             /** Created At */
             created_at?: string | null;
+            /** Started At */
+            started_at?: string | null;
             /** Finished At */
             finished_at?: string | null;
             checkpoint?: components["schemas"]["CheckpointPrompt"] | null;
@@ -951,6 +953,8 @@ export interface components {
             user_id: string;
             /** Default Display Name */
             default_display_name: string;
+            /** Default Color */
+            default_color: string;
             /**
              * Created At
              * Format: date-time
@@ -966,6 +970,8 @@ export interface components {
         ProfileUpsert: {
             /** Default Display Name */
             default_display_name: string;
+            /** Default Color */
+            default_color?: string | null;
         };
         /** RatingResponse */
         RatingResponse: {

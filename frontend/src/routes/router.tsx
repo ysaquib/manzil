@@ -5,6 +5,7 @@ import { createBrowserRouter, Navigate } from "react-router-dom";
 import { LoginPage } from "../auth/LoginPage";
 import { AuthCallbackPage } from "../auth/AuthCallbackPage";
 import { OnboardingPage } from "../auth/OnboardingPage";
+import { ProfilePage } from "../auth/ProfilePage";
 import { RequireAuth } from "../auth/RequireAuth";
 import { RequireProfile } from "../auth/RequireProfile";
 import { ResetPasswordPage } from "../auth/ResetPasswordPage";
@@ -34,6 +35,7 @@ export const router = createBrowserRouter([
   { path: "/auth/callback", element: <AuthCallbackPage /> },
   { path: "/auth/reset-password", element: authenticatedRoute(<ResetPasswordPage />) },
   { path: "/onboarding", element: authenticatedRoute(<OnboardingPage />) },
+  { path: "/profile", element: protectedRoute(<ProfilePage />) },
   { path: "/invite/:token", element: protectedRoute(<InviteAcceptPage />) },
   { path: "/join/:token", element: protectedRoute(<InvitationLinkJoinPage />) },
   {
