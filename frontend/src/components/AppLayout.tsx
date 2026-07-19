@@ -1,9 +1,10 @@
 // App frame (P1-9): Mantine AppShell, hunt-scoped nav, account menu. Below the
 // sm breakpoint the navbar collapses behind a Burger — every route stays
 // reachable at phone width (frontend/AGENTS.md responsive rule).
-import { Anchor, AppShell, Burger, Group, NavLink, Title } from "@mantine/core";
+import { Anchor, AppShell, Badge, Burger, Group, NavLink, Title } from "@mantine/core";
 import { useDisclosure, useMediaQuery } from "@mantine/hooks";
 import {
+  IconArrowsLeftRight,
   IconLayoutDashboard,
   IconListCheck,
   IconScale,
@@ -12,12 +13,14 @@ import {
 import { Link, NavLink as RouterNavLink, Outlet, useLocation, useParams } from "react-router-dom";
 
 import { useHuntRealtime } from "../lib/realtime";
+import { useCompareSet } from "../features/listings/compareSet";
 import { CreateRubricPrompt } from "../features/rubric/CreateRubricPrompt";
 import { ColorSchemeToggle } from "./ColorSchemeToggle";
 import { UserMenu } from "./UserMenu";
 
 const NAV = [
   { label: "Overview", to: "", icon: IconLayoutDashboard },
+  { label: "Compare", to: "compare", icon: IconArrowsLeftRight },
   { label: "Rubric", to: "rubric", icon: IconScale },
   { label: "Tasks", to: "tasks", icon: IconListCheck },
   { label: "Settings", to: "settings", icon: IconSettings },
@@ -35,6 +38,7 @@ export function AppLayout() {
   const [navOpened, { toggle, close }] = useDisclosure(false);
   const isMobile = useMediaQuery("(max-width: 48em)");
   useHuntRealtime(huntId);
+  const compare = useCompareSet(huntId ?? "");
 
   return (
     <AppShell
@@ -71,6 +75,13 @@ export function AppLayout() {
                 active={active}
                 variant="light"
                 leftSection={<Icon size={18} stroke={1.5} />}
+                rightSection={
+                  item.to === "compare" && compare.entries.length > 0 ? (
+                    <Badge size="sm" variant="light" circle>
+                      {compare.entries.length}
+                    </Badge>
+                  ) : undefined
+                }
                 onClick={close}
                 h={isMobile ? 64 : undefined}
                 style={{

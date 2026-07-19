@@ -64,6 +64,44 @@ export function usePatchHunt(huntId: string) {
   });
 }
 
+// Hunt-wide Overview filters (§13.2, §20 2026-07-19) — hand-typed like the
+// read models; the PUT body is opaque to the API, so no generated DTO exists.
+export interface SharedFiltersRow {
+  hunt_id: string;
+  filters: Record<string, unknown>;
+  updated_by: string;
+  updated_at: string;
+}
+
+export function useSharedFilters(huntId: string) {
+  return useQuery({
+    queryKey: ["hunt_shared_filters", huntId],
+    queryFn: async (): Promise<SharedFiltersRow | null> => {
+      const { data, error } = await supabase
+        .from("hunt_shared_filters")
+        .select("*")
+        .eq("hunt_id", huntId)
+        .maybeSingle();
+      if (error) throw error;
+      return data as SharedFiltersRow | null;
+    },
+  });
+}
+
+export function usePublishSharedFilters(huntId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (filters: object) =>
+      apiFetch<SharedFiltersRow>(`/v1/hunts/${huntId}/shared-filters`, {
+        method: "PUT",
+        body: { filters },
+      }),
+    onSuccess: (saved) => {
+      qc.setQueryData(["hunt_shared_filters", huntId], saved);
+    },
+  });
+}
+
 export function usePatchHuntSettings(huntId: string) {
   const qc = useQueryClient();
   return useMutation({
