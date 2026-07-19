@@ -46,6 +46,7 @@ def _row_to_response(row: dict[str, Any]) -> JobResponse:
         error=row.get("error"),
         cost_actual_usd=float(row.get("cost_actual_usd") or 0),
         created_at=row.get("created_at"),
+        started_at=row.get("started_at"),
         finished_at=row.get("finished_at"),
         checkpoint=checkpoint,
     )

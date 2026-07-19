@@ -8,7 +8,9 @@ import { supabase } from "../../lib/supabase";
 
 export type JobState = components["schemas"]["JobState"];
 export type JobType = components["schemas"]["JobType"];
-export type Job = components["schemas"]["JobResponse"];
+// started_at is intersected until the next `pnpm gen:api-types` run picks it
+// up from the API's JobResponse (added for the running-job elapsed timer).
+export type Job = components["schemas"]["JobResponse"] & { started_at?: string | null };
 
 export const ACTIVE_STATES = "queued,running,waiting_user";
 export const HISTORY_STATES = "done,failed,cancelled";
