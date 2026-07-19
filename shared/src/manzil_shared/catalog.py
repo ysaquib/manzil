@@ -259,17 +259,18 @@ CATALOG: tuple[CatalogEntry, ...] = (
         domain=CriterionDomain.RENT,
         value_schema={
             "type": "string",
-            "enum": ["garage", "carport", "dedicated_lot", "street_only", "none"],
+            "enum": ["garage", "carport", "covered", "dedicated_lot", "street_only", "none"],
         },
         default_options=[
             _opt(MatchOp.EQ, "garage", 0.5),
             _opt(MatchOp.EQ, "carport", 0.25),
+            _opt(MatchOp.EQ, "covered", 0.25),
             _opt(MatchOp.EQ, "dedicated_lot", 0.0),
             _opt(MatchOp.EQ, "street_only", -0.5),
             _opt(MatchOp.EQ, "none", -1.0),
         ],
         extraction_hint=(
-            "Best parking included or available with the unit: garage, carport, "
+            "Best parking included or available with the unit: garage, carport, covered, "
             "dedicated_lot (assigned or off-street lot), street_only, or none."
         ),
         requires_tool=None,
