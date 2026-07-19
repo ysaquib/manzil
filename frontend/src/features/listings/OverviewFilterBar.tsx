@@ -11,6 +11,7 @@ import {
   Pill,
   Stack,
   Select,
+  Text,
 } from "@mantine/core";
 import { useDisclosure } from "@mantine/hooks";
 import { IconFilter } from "@tabler/icons-react";
@@ -32,14 +33,20 @@ export function OverviewFilterBar({
   filters,
   onChange,
   cities,
+  visibleCount,
+  totalCount,
 }: {
   filters: OverviewFilterState;
   onChange: (next: OverviewFilterState) => void;
   cities: string[];
+  visibleCount: number;
+  totalCount: number;
 }) {
   const [opened, { toggle }] = useDisclosure(false);
   const pills = filterPills(filters);
   const activeCount = pills.length;
+  const filtersActive = hasActiveFilters(filters);
+  const filteredOut = Math.max(0, totalCount - visibleCount);
 
   const setField = <K extends FilterPillKey>(key: K, value: OverviewFilterState[K]) =>
     onChange({ ...filters, [key]: value });
@@ -69,6 +76,11 @@ export function OverviewFilterBar({
             {pill.label}
           </Pill>
         ))}
+        {filtersActive && (
+          <Text size="xs" c="dimmed">
+            {visibleCount} visible · {filteredOut} filtered out
+          </Text>
+        )}
       </Group>
 
       <Collapse expanded={opened}>

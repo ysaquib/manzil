@@ -11,6 +11,7 @@ import {
   Stack,
   Text,
 } from "@mantine/core";
+import { useLocalStorage } from "@mantine/hooks";
 import { IconHome } from "@tabler/icons-react";
 import { useState } from "react";
 import { useParams } from "react-router-dom";
@@ -21,7 +22,7 @@ import { useHunt } from "../hunts/api";
 import { useDeleteListing, useListings, useUnitGroupStates } from "./api";
 import { ListingDetailDrawer, type DrawerSelection } from "./ListingDetailDrawer";
 import { OverviewFilterBar } from "./OverviewFilterBar";
-import { OverviewTable } from "./OverviewTable";
+import { OverviewTable, TableDensityMenu, type TableDensity } from "./OverviewTable";
 import {
   applyOverviewFilters,
   buildRows,
@@ -44,6 +45,11 @@ export function OverviewPage() {
 
   const [filters, setFilters] = useState<OverviewFilterState>(DEFAULT_OVERVIEW_FILTERS);
   const [sort, setSort] = useState<SortState>({ key: "score", dir: "desc" });
+  // View preference, not hunt data — persists per browser.
+  const [density, setDensity] = useLocalStorage<TableDensity>({
+    key: "manzil:overview-density",
+    defaultValue: "normal",
+  });
   const [selected, setSelected] = useState<DrawerSelection | null>(null);
   const [drawerOpened, setDrawerOpened] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<OverviewRow | null>(null);
@@ -74,7 +80,18 @@ export function OverviewPage() {
         )}
       </Group>
 
-      <OverviewFilterBar filters={filters} onChange={setFilters} cities={cities} />
+      <Group justify="space-between" align="flex-start" wrap="nowrap" gap="sm">
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <OverviewFilterBar
+            filters={filters}
+            onChange={setFilters}
+            cities={cities}
+            visibleCount={rows.length}
+            totalCount={allRows.length}
+          />
+        </div>
+        <TableDensityMenu density={density} onChange={setDensity} />
+      </Group>
 
       {isLoading && (
         <Center py="xl">
@@ -110,6 +127,7 @@ export function OverviewPage() {
           huntId={huntId}
           rows={rows}
           sort={sort}
+          density={density}
           onSort={onSort}
           onOpen={(row) => {
             setSelected({ listingId: row.listing.id, groupKey: row.group?.key ?? null });
