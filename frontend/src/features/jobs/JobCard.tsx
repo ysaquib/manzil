@@ -1,8 +1,10 @@
 // One live job card (P1-13, §13.2): type, stage progress, state, cancel /
-// retry, inline checkpoint prompt when the job waits on the user.
-import { Badge, Button, Card, Group, Paper, Stack, Text } from "@mantine/core";
+// retry, inline checkpoint prompt when the job waits on the user. Running
+// jobs get a loader + counting-up timer so progress is visibly alive.
+import { Badge, Button, Card, Group, Loader, Paper, Stack, Text } from "@mantine/core";
 
 import { CheckpointPromptCard } from "./CheckpointPromptCard";
+import { ElapsedTimer } from "./ElapsedTimer";
 import type { Job, JobState } from "./api";
 
 export const STATE_COLOR: Record<JobState, string> = {
@@ -53,11 +55,19 @@ export function JobCard({
             {job.state.replace("_", " ")}
           </Badge>
         </Group>
-        <Group gap="xs">
+        <Group gap="xs" justify="space-between" wrap="nowrap">
           <Text size="xs" c="dimmed">
             {job.current_stage ? `stage: ${job.current_stage}` : "not started"}
             {job.attempts > 1 ? ` · attempt ${job.attempts}` : ""}
           </Text>
+          {job.state === "running" && (
+            <Group gap={8} wrap="nowrap">
+              <Loader size="xs" />
+              {(job.started_at ?? job.created_at) && (
+                <ElapsedTimer since={(job.started_at ?? job.created_at)!} />
+              )}
+            </Group>
+          )}
         </Group>
         {job.error && (
           <Text size="xs" c={"red"}>

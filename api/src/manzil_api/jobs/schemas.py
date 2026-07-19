@@ -21,6 +21,7 @@ class JobResponse(BaseModel):
     error: str | None
     cost_actual_usd: float
     created_at: datetime | None = None
+    started_at: datetime | None = None
     finished_at: datetime | None = None
     checkpoint: CheckpointPrompt | None = None
 
