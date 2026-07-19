@@ -1,0 +1,34 @@
+/* Compare table: the label column stays pinned while the value columns
+   scroll horizontally inside .scroller — the page body never scrolls
+   sideways (frontend/AGENTS.md). */
+.scroller {
+  overflow-x: auto;
+}
+
+.table {
+  min-width: max-content;
+}
+
+.labelCol {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--mantine-color-body);
+  min-width: 9rem;
+  vertical-align: top;
+}
+
+.valueCol {
+  min-width: 18rem;
+  max-width: 24rem;
+}
+
+.photoCell {
+  max-width: 24rem;
+}
+
+.sectionRow td,
+.sectionRow th {
+  border-bottom: none;
+  padding-top: var(--mantine-spacing-md);
+}

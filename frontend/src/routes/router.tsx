@@ -1,5 +1,4 @@
-// Route table (Phase 1 plan §5.2, DESIGN §13.1 subset). NOT /compare or
-// /compare remains Phase 3.
+// Route table (DESIGN §13.1 subset — /compare landed with P3-13's compare half).
 import { createBrowserRouter, Navigate } from "react-router-dom";
 
 import { LoginPage } from "../auth/LoginPage";
@@ -16,6 +15,7 @@ import { HuntSwitcherPage } from "../features/hunts/HuntSwitcherPage";
 import { HuntSettingsPage } from "../features/hunts/HuntSettingsPage";
 import { InviteAcceptPage } from "../features/invites/InviteAcceptPage";
 import { InvitationLinkJoinPage } from "../features/invites/InvitationLinkJoinPage";
+import { ComparePage } from "../features/listings/ComparePage";
 import { OverviewPage } from "../features/listings/OverviewPage";
 import { TasksPage } from "../features/jobs/TasksPage";
 import { RubricPage } from "../features/rubric/RubricPage";
@@ -47,6 +47,7 @@ export const router = createBrowserRouter([
     element: protectedRoute(<AppLayout />),
     children: [
       { index: true, element: <OverviewPage /> },
+      { path: "compare", element: <ComparePage /> },
       { path: "rubric", element: <RubricPage /> },
       { path: "tasks", element: <TasksPage /> },
       { path: "settings", element: <HuntSettingsPage /> },

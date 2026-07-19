@@ -26,4 +26,22 @@ if (typeof window !== "undefined") {
 
   window.HTMLElement.prototype.scrollIntoView =
     window.HTMLElement.prototype.scrollIntoView || (() => {});
+
+  // Node's experimental localStorage global leaves window.localStorage
+  // undefined under vitest; back it with a plain in-memory Storage.
+  if (!window.localStorage) {
+    const store = new Map<string, string>();
+    Object.defineProperty(window, "localStorage", {
+      value: {
+        getItem: (key: string) => store.get(key) ?? null,
+        setItem: (key: string, value: string) => void store.set(key, String(value)),
+        removeItem: (key: string) => void store.delete(key),
+        clear: () => store.clear(),
+        key: (index: number) => [...store.keys()][index] ?? null,
+        get length() {
+          return store.size;
+        },
+      },
+    });
+  }
 }

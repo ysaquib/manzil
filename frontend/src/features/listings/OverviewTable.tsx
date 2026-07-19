@@ -6,6 +6,7 @@
 import { ActionIcon, Checkbox, Group, Menu, Select, Table, Text, Tooltip, UnstyledButton } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import {
+  IconArrowsLeftRight,
   IconBaselineDensityLarge,
   IconBaselineDensityMedium,
   IconBaselineDensitySmall,
@@ -22,6 +23,7 @@ import {
 } from "@tabler/icons-react";
 
 import { AllInCell } from "./AllInCost";
+import { COMPARE_LIMIT, rowEntry, useCompareSet } from "./compareSet";
 import { ScoreCell } from "./ScoreCell";
 import { RatingDots } from "../collaboration/RatingDots";
 import { useComments, useCurrentMember, useMembers, useRatings } from "../collaboration/api";
@@ -200,15 +202,21 @@ function CurationCells({ row, huntId }: { row: OverviewRow; huntId: string }) {
 // grab the address/link for sharing, and the destructive delete last.
 function RowActionsMenu({
   row,
+  huntId,
   onOpen,
   onDelete,
 }: {
   row: OverviewRow;
+  huntId: string;
   onOpen: (row: OverviewRow) => void;
   onDelete: (row: OverviewRow) => void;
 }) {
   const property = row.listing.property;
   const listingUrl = property.official_url ?? property.sources[0]?.url ?? null;
+  const compare = useCompareSet(huntId);
+  const entry = rowEntry(row);
+  const inCompare = compare.has(entry);
+  const compareBlocked = entry === null || (compare.isFull && !inCompare);
 
   const copy = async (label: string, value: string) => {
     await navigator.clipboard.writeText(value);
@@ -229,6 +237,23 @@ function RowActionsMenu({
         >
           Open details
         </Menu.Item>
+        <Tooltip
+          label={
+            entry === null
+              ? "Only scored unit groups can be compared"
+              : `Compare is full (${COMPARE_LIMIT}) — remove one first`
+          }
+          openDelay={300}
+          disabled={!compareBlocked}
+        >
+          <Menu.Item
+            leftSection={<IconArrowsLeftRight size={14} stroke={1.5} />}
+            disabled={compareBlocked}
+            onClick={() => entry && compare.toggle(entry)}
+          >
+            {inCompare ? "Remove from Compare" : "Send to Compare"}
+          </Menu.Item>
+        </Tooltip>
         {listingUrl && (
           <Menu.Item
             leftSection={<IconExternalLink size={14} stroke={1.5} />}
@@ -362,7 +387,7 @@ export function OverviewTable({
                 />
               </Table.Td>
               <Table.Td onClick={(e) => e.stopPropagation()} width={40}>
-                <RowActionsMenu row={row} onOpen={onOpen} onDelete={onDelete} />
+                <RowActionsMenu row={row} huntId={huntId} onOpen={onOpen} onDelete={onDelete} />
               </Table.Td>
             </Table.Tr>
           );
