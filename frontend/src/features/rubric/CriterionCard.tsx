@@ -37,8 +37,8 @@ import type { RubricOption } from "../../lib/contracts";
 import type { CatalogEntry, RubricCriterion } from "./api";
 import { GateControls } from "./GateControls";
 import { OptionMatchEditor } from "./OptionMatchEditor";
+import { OptionGridRow } from "./OptionGridRow";
 import { deriveIsBonus } from "./rubricDraft";
-import classes from "./CriterionCard.module.css";
 
 function PointsInput({
   value,
@@ -76,7 +76,7 @@ function DealbreakerScoreInput({
         min={0}
         max={15}
         prefix="→ "
-        className={classes.dealbreakerInput}
+        error
         value={value}
         onChange={(next) => onChange(typeof next === "number" ? next : 0)}
       />
@@ -127,7 +127,7 @@ function OptionRow({
 }) {
   const isDealbreaker = option.dealbreaker_set_score !== null;
   return (
-    <div className={classes.optionRow}>
+    <OptionGridRow>
       <OptionMatchEditor
         match={option.match}
         schema={entry.value_schema}
@@ -157,7 +157,7 @@ function OptionRow({
           <IconX size={14} stroke={1.5} />
         </ActionIcon>
       </Tooltip>
-    </div>
+    </OptionGridRow>
   );
 }
 
@@ -195,7 +195,7 @@ function BoolRows({
       {rows.map(({ boolValue, index, option }) => {
         const isDealbreaker = option.dealbreaker_set_score !== null;
         return (
-          <div className={classes.optionRow} key={String(boolValue)}>
+          <OptionGridRow key={String(boolValue)}>
             <Text size="sm" fw={500} pl={2}>
               {boolValue ? "True" : "False"}
             </Text>
@@ -223,7 +223,7 @@ function BoolRows({
               }
             />
             <div />
-          </div>
+          </OptionGridRow>
         );
       })}
     </>
@@ -300,8 +300,8 @@ export function CriterionCard({
         </Group>
 
         {criterion.enabled && (
-          <Stack gap={6}>
-            <div className={`${classes.optionRow} ${classes.columnHeader}`}>
+          <Stack gap="xs">
+            <OptionGridRow>
               <Text size="xs" c="dimmed">
                 When the value is…
               </Text>
@@ -310,7 +310,7 @@ export function CriterionCard({
               </Text>
               <div />
               <div />
-            </div>
+            </OptionGridRow>
 
             {isBoolean ? (
               <BoolRows criterion={criterion} onChange={onChange} />
@@ -352,7 +352,7 @@ export function CriterionCard({
 
             <Divider my={4} />
 
-            <div className={classes.optionRow}>
+            <OptionGridRow>
               <Tooltip
                 label="Points applied when the value can't be determined"
                 openDelay={300}
@@ -376,7 +376,7 @@ export function CriterionCard({
               />
               <div />
               <div />
-            </div>
+            </OptionGridRow>
 
             <GateControls
               nonNegotiable={criterion.non_negotiable}
