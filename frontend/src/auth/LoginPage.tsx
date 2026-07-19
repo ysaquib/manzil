@@ -19,11 +19,19 @@ import { useAuth } from "./useAuth";
 
 type Mode = "password" | "register" | "magic";
 
+// Post-auth landing: the homepage, except flows that must resume where they
+// started (invite/join links). Restoring an arbitrary stale `from` (e.g. a
+// hunt the fresh account isn't a member of) strands new users on a blank page.
+function safeReturnTo(from: string | undefined): string {
+  if (from && (from.startsWith("/invite/") || from.startsWith("/join/"))) return from;
+  return "/";
+}
+
 export function LoginPage() {
   const { session } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const returnTo = (location.state as { from?: string } | null)?.from ?? "/";
+  const returnTo = safeReturnTo((location.state as { from?: string } | null)?.from);
   const [mode, setMode] = useState<Mode>("password");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
