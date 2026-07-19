@@ -15,6 +15,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { PublicPageShell } from "../../components/PublicPageShell";
+import { UserMenu } from "../../components/UserMenu";
 import { ApiError } from "../../lib/apiClient";
 import { useCreateHunt, useHunts } from "./api";
 
@@ -40,7 +41,7 @@ export function HuntSwitcherPage() {
   const empty = !isLoading && !error && (hunts ?? []).length === 0;
 
   return (
-    <PublicPageShell>
+    <PublicPageShell rightSlot={<UserMenu />}>
       <Stack gap="lg">
         <div>
           <Text fw={600} size="lg">

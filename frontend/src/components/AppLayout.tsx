@@ -1,7 +1,7 @@
-// App frame (P1-9): Mantine AppShell, hunt-scoped nav, sign-out. Below the sm
-// breakpoint the navbar collapses behind a Burger — every route stays
+// App frame (P1-9): Mantine AppShell, hunt-scoped nav, account menu. Below the
+// sm breakpoint the navbar collapses behind a Burger — every route stays
 // reachable at phone width (frontend/AGENTS.md responsive rule).
-import { Anchor, AppShell, Burger, Button, Group, NavLink, Title } from "@mantine/core";
+import { Anchor, AppShell, Burger, Group, NavLink, Title } from "@mantine/core";
 import { useDisclosure, useMediaQuery } from "@mantine/hooks";
 import {
   IconLayoutDashboard,
@@ -11,10 +11,10 @@ import {
 } from "@tabler/icons-react";
 import { Link, NavLink as RouterNavLink, Outlet, useLocation, useParams } from "react-router-dom";
 
-import { supabase } from "../lib/supabase";
 import { useHuntRealtime } from "../lib/realtime";
 import { CreateRubricPrompt } from "../features/rubric/CreateRubricPrompt";
 import { ColorSchemeToggle } from "./ColorSchemeToggle";
+import { UserMenu } from "./UserMenu";
 
 const NAV = [
   { label: "Overview", to: "", icon: IconLayoutDashboard },
@@ -50,11 +50,9 @@ export function AppLayout() {
               <Title order={4}>Manzil</Title>
             </Anchor>
           </Group>
-          <Group gap="xs">
+          <Group gap="sm">
             <ColorSchemeToggle size={isMobile ? "md" : "sm"} />
-            <Button variant="subtle" size="compact-sm" onClick={() => supabase.auth.signOut()}>
-              Sign out
-            </Button>
+            <UserMenu />
           </Group>
         </Group>
       </AppShell.Header>

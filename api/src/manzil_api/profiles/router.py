@@ -21,12 +21,17 @@ async def get_profile(user: CurrentUser, client: UserClient) -> ProfileResponse 
 async def put_profile(
     body: ProfileUpsert, user: CurrentUser, client: UserClient
 ) -> ProfileResponse:
+    payload: dict[str, object] = {
+        "user_id": user.id,
+        "default_display_name": body.default_display_name,
+    }
+    # Only touch the color when the caller sent it — onboarding's name-only
+    # PUT must not clear a previously chosen default.
+    if "default_color" in body.model_fields_set:
+        payload["default_color"] = body.default_color
     row = (
         client.table("user_profiles")
-        .upsert(
-            {"user_id": user.id, "default_display_name": body.default_display_name},
-            on_conflict="user_id",
-        )
+        .upsert(payload, on_conflict="user_id")
         .execute()
         .data[0]
     )

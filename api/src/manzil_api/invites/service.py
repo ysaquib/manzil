@@ -12,7 +12,7 @@ from manzil_api.invites.exceptions import InviteGone, InviteNotFound
 from manzil_api.invites.schemas import InviteAccepted, InviteCreate, InviteResponse
 from supabase import Client
 
-MEMBER_COLOR_TOKENS = ("dusk", "clay", "moss", "ochre", "brick", "olive", "stone", "plum")
+MEMBER_COLOR_TOKENS = ("moss", "ochre", "brick", "olive", "stone", "plum")
 
 
 def _response(row: dict[str, Any], frontend_url: str) -> InviteResponse:

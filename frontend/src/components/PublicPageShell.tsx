@@ -7,15 +7,20 @@ import { ColorSchemeToggle } from "./ColorSchemeToggle";
 export function PublicPageShell({
   children,
   containerSize = "xs",
+  rightSlot,
 }: {
   children: ReactNode;
   containerSize?: "xs" | "sm" | "md";
+  rightSlot?: ReactNode;
 }) {
   return (
     <Box mih="100dvh" bg="var(--mantine-color-body)">
       <Group justify="space-between" px="md" py="sm">
         <Title order={4}>Manzil</Title>
-        <ColorSchemeToggle />
+        <Group gap="xs">
+          <ColorSchemeToggle />
+          {rightSlot}
+        </Group>
       </Group>
       <Container size={containerSize} py="xl">
         {children}

@@ -31,12 +31,12 @@ function chooseOption(value: string) {
 
 describe("MemberColorControl", () => {
   it("hides the custom picker for a palette token", () => {
-    renderControl({ value: "dusk" });
+    renderControl({ value: "moss" });
     expect(screen.queryByLabelText("Custom color")).not.toBeInTheDocument();
   });
 
   it("reveals the custom picker without saving when Custom color is selected", () => {
-    const { onChange } = renderControl({ value: "dusk" });
+    const { onChange } = renderControl({ value: "moss" });
 
     chooseOption("Custom color");
 

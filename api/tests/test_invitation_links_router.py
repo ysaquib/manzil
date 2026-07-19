@@ -30,6 +30,12 @@ async def test_link_defaults_join_and_existing_member_does_not_consume(
     assert existing.status_code == 200
     assert (await as_owner.get(path)).json()[0]["use_count"] == 0
 
+    # No account default → join assigns the first unused hunt palette token.
+    # (A profile with default_color would inherit instead — color null.)
+    await db_pool.execute(
+        "delete from user_profiles where user_id = $1",
+        UUID(seeded_users["outsider"].user_id),
+    )
     joined = await as_outsider.post(f"/v1/invitation-links/{token}/join")
     assert joined.status_code == 200
     member = await db_pool.fetchrow(
@@ -37,7 +43,7 @@ async def test_link_defaults_join_and_existing_member_does_not_consume(
         UUID(collab_hunt["hunt_id"]),
         seeded_users["outsider"].user_id,
     )
-    assert dict(member) == {"role": "member", "color": "dusk"}
+    assert dict(member) == {"role": "member", "color": "moss"}
     listed = (await as_owner.get(path)).json()[0]
     assert listed["use_count"] == 1
     assert listed["joins"][0]["user_id"] == seeded_users["outsider"].user_id

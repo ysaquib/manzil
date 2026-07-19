@@ -17,6 +17,7 @@ export interface HuntMember {
   color: string | null;
   display_name: string | null;
   display_name_override?: string | null;
+  color_override?: string | null;
 }
 
 export interface Comment {
@@ -46,19 +47,27 @@ export function useMembers(huntId: string) {
         .select("*")
         .eq("hunt_id", huntId);
       if (error) throw error;
-      const rows = (data ?? []) as Omit<HuntMember, "display_name_override">[];
+      const rows = (data ?? []) as Omit<HuntMember, "display_name_override" | "color_override">[];
       const userIds = rows.map((row) => row.user_id);
       const profiles = userIds.length
-        ? await supabase.from("user_profiles").select("user_id, default_display_name").in("user_id", userIds)
+        ? await supabase
+            .from("user_profiles")
+            .select("user_id, default_display_name, default_color")
+            .in("user_id", userIds)
         : { data: [], error: null };
       if (profiles.error) throw profiles.error;
       const defaults = new Map(
-        (profiles.data ?? []).map((profile) => [profile.user_id, profile.default_display_name]),
+        (profiles.data ?? []).map((profile) => [profile.user_id, profile] as const),
       );
+      // Hunt-level values are overrides; null inherits the account default
+      // (name always, color when the profile has one — same rule as the DB
+      // membership-insert trigger).
       return rows.map((row) => ({
         ...row,
         display_name_override: row.display_name,
-        display_name: row.display_name ?? defaults.get(row.user_id) ?? null,
+        color_override: row.color,
+        display_name: row.display_name ?? defaults.get(row.user_id)?.default_display_name ?? null,
+        color: row.color ?? defaults.get(row.user_id)?.default_color ?? null,
       }));
     },
     refetchOnWindowFocus: true,

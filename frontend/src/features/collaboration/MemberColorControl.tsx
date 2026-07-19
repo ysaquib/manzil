@@ -15,10 +15,12 @@ export function MemberColorControl({
   value,
   loading,
   onChange,
+  label = "Palette color",
 }: {
   value: string | null;
   loading: boolean;
   onChange: (color: string) => void;
+  label?: string;
 }) {
   const [customSelected, setCustomSelected] = useState(() =>
     Boolean(value && isHexColor(value)),
@@ -41,7 +43,8 @@ export function MemberColorControl({
   return (
     <Stack gap="sm">
       <Select
-        label="Palette color"
+        label={label}
+        placeholder="Choose a color"
         data={[
           ...MEMBER_COLOR_TOKENS.map((token) => ({ value: token, label: token })),
           { value: CUSTOM_SENTINEL, label: "Custom color" },

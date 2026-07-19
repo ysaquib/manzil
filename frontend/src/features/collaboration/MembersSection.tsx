@@ -112,7 +112,7 @@ export function MembersSection({
                     }
                   />
                 ) : (
-                  <Badge variant="light" color={member.role === "owner" ? "dusk" : "gray"}>
+                  <Badge variant="light" color={member.role === "owner" ? "dusky" : "gray"}>
                     {ROLE_LABEL[member.role]}
                   </Badge>
                 )}
