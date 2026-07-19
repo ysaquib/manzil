@@ -2,14 +2,15 @@
 // property images, above the score breakdown in the drawer. Dependency-free —
 // a snap strip with chevron paging, no embla. Images are signed-URL WebPs
 // from the private bucket; the strip scrolls in its own container (no page
-// horizontal scroll).
-import { ActionIcon, Box, Group, Skeleton, Text } from "@mantine/core";
+// horizontal scroll). Clicking a photo opens the full-screen lightbox.
+import { ActionIcon, Box, Group, Skeleton, Text, UnstyledButton } from "@mantine/core";
 import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
 import { useRef, useState } from "react";
 
 import type { PropertyImage } from "./api";
+import { ImageLightbox } from "./ImageLightbox";
 
-const STRIP_HEIGHT = 170;
+const STRIP_HEIGHT = 240;
 
 export function PropertyImageCarousel({
   images,
@@ -20,12 +21,13 @@ export function PropertyImageCarousel({
 }) {
   const strip = useRef<HTMLDivElement | null>(null);
   const [index, setIndex] = useState(0);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
   if (loading) {
     return (
       <Group gap="xs" wrap="nowrap">
-        <Skeleton height={STRIP_HEIGHT} width={220} radius="md" />
-        <Skeleton height={STRIP_HEIGHT} width={220} radius="md" />
+        <Skeleton height={STRIP_HEIGHT} width={280} radius="md" />
+        <Skeleton height={STRIP_HEIGHT} width={280} radius="md" />
       </Group>
     );
   }
@@ -65,21 +67,33 @@ export function PropertyImageCarousel({
         }}
       >
         {images.map((image, i) => (
-          <img
+          <UnstyledButton
             key={image.id}
-            src={image.url}
-            alt={`listing photo ${i + 1} of ${images.length}`}
-            loading="lazy"
+            onClick={() => setLightboxIndex(i)}
+            aria-label={`open photo ${i + 1} of ${images.length}`}
             style={{
-              height: STRIP_HEIGHT,
-              width: "auto",
-              maxWidth: "85%",
-              objectFit: "cover",
-              borderRadius: "var(--mantine-radius-md)",
-              scrollSnapAlign: "start",
               flexShrink: 0,
+              scrollSnapAlign: "start",
+              maxWidth: "85%",
+              cursor: "zoom-in",
+              borderRadius: "var(--mantine-radius-md)",
+              overflow: "hidden",
+              display: "block",
             }}
-          />
+          >
+            <img
+              src={image.url}
+              alt={`listing photo ${i + 1} of ${images.length}`}
+              loading="lazy"
+              style={{
+                height: STRIP_HEIGHT,
+                width: "auto",
+                maxWidth: "100%",
+                objectFit: "cover",
+                display: "block",
+              }}
+            />
+          </UnstyledButton>
         ))}
       </Box>
       {images.length > 1 && (
@@ -114,12 +128,20 @@ export function PropertyImageCarousel({
               background: "rgba(0,0,0,0.55)",
               borderRadius: 999,
               padding: "1px 8px",
+              pointerEvents: "none",
             }}
           >
             {index + 1} / {images.length}
           </Text>
         </>
       )}
+
+      <ImageLightbox
+        images={images}
+        index={lightboxIndex}
+        onNavigate={setLightboxIndex}
+        onClose={() => setLightboxIndex(null)}
+      />
     </Box>
   );
 }
