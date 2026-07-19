@@ -27,6 +27,14 @@ describe("formatMatchLabel", () => {
     expect(formatMatchLabel(multi)).toBe("any of 2 br, 3 br");
   });
 
+  it("carries the criterion's display unit into numeric labels", () => {
+    expect(formatMatchLabel({ op: "range", value: [10, 20] }, "grocery_proximity")).toBe(
+      "between 10 and 20 min",
+    );
+    expect(formatMatchLabel({ op: "lt", value: 1800 }, "all_in_monthly")).toBe("< $1,800");
+    expect(formatMatchLabel({ op: "gt", value: 900 }, "sqft")).toBe("> 900 sqft");
+  });
+
   it("uses placeholder for incomplete values", () => {
     expect(formatMatchLabel({ op: "eq", value: null })).toBe("…");
     expect(formatMatchLabel({ op: "range", value: [null, null] })).toBe(
@@ -40,6 +48,6 @@ describe("opsForSchema", () => {
   it("returns ops appropriate to schema type", () => {
     expect(opsForSchema(boolSchema)).toEqual(["bool"]);
     expect(opsForSchema(enumSchema)).toEqual(["eq", "in"]);
-    expect(opsForSchema(numberSchema)).toEqual(["eq", "lt", "lte", "gt", "gte", "range"]);
+    expect(opsForSchema(numberSchema)).toEqual(["lt", "lte", "eq", "gte", "gt", "range"]);
   });
 });

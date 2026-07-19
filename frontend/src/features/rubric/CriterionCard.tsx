@@ -1,11 +1,21 @@
-// One criterion's rubric editor (§13.2): options table with delta steppers,
-// unknown-delta row, per-option dealbreaker toggles, non-negotiable gate.
-// is_bonus is derived and display-only (§9.2).
+// One criterion's rubric editor (§13.2): aligned option grid (match | points |
+// dealbreaker | remove), unknown-value row, non-negotiable gate. is_bonus is
+// derived and display-only (§9.2).
+//
+// Layout decisions (UI polish pass, 2026-07-18):
+// - Options are grid rows with fixed columns — inputs align down the card and
+//   never wrap to a second line.
+// - Dealbreaker is an ActionIcon toggle; when armed, the points input becomes
+//   the red "sets score to" input in the same column (a dealbreaker's delta is
+//   meaningless, so the swap loses nothing and saves a column).
+// - Boolean criteria render fixed True/False rows as plain text — never a
+//   switch; each row just gets its own points.
 import {
   ActionIcon,
   Badge,
   Button,
   Card,
+  Divider,
   Group,
   NumberInput,
   Stack,
@@ -15,9 +25,9 @@ import {
 } from "@mantine/core";
 import {
   IconBan,
+  IconHelpCircle,
   IconInfoCircle,
   IconPlus,
-  IconQuestionMark,
   IconShieldCheck,
   IconSparkles,
   IconX,
@@ -28,6 +38,81 @@ import type { CatalogEntry, RubricCriterion } from "./api";
 import { GateControls } from "./GateControls";
 import { OptionMatchEditor } from "./OptionMatchEditor";
 import { deriveIsBonus } from "./rubricDraft";
+import classes from "./CriterionCard.module.css";
+
+function PointsInput({
+  value,
+  onChange,
+  ariaLabel,
+}: {
+  value: number;
+  onChange: (next: number) => void;
+  ariaLabel: string;
+}) {
+  return (
+    <NumberInput
+      aria-label={ariaLabel}
+      size="xs"
+      step={0.5}
+      suffix=" pts"
+      value={value}
+      onChange={(next) => onChange(typeof next === "number" ? next : 0)}
+    />
+  );
+}
+
+function DealbreakerScoreInput({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (next: number) => void;
+}) {
+  return (
+    <Tooltip label="Matching this option sets the final score to this value" openDelay={300}>
+      <NumberInput
+        aria-label="dealbreaker set score"
+        size="xs"
+        min={0}
+        max={15}
+        prefix="→ "
+        className={classes.dealbreakerInput}
+        value={value}
+        onChange={(next) => onChange(typeof next === "number" ? next : 0)}
+      />
+    </Tooltip>
+  );
+}
+
+function DealbreakerToggle({
+  active,
+  onToggle,
+}: {
+  active: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <Tooltip
+      label={
+        active
+          ? "Dealbreaker — matching sets the score directly. Click to score points instead."
+          : "Make this option a dealbreaker"
+      }
+      openDelay={300}
+    >
+      <ActionIcon
+        size="sm"
+        variant={active ? "filled" : "subtle"}
+        color={active ? "red" : "gray"}
+        aria-label="dealbreaker"
+        aria-pressed={active}
+        onClick={onToggle}
+      >
+        <IconBan size={14} stroke={1.5} />
+      </ActionIcon>
+    </Tooltip>
+  );
+}
 
 function OptionRow({
   option,
@@ -42,64 +127,106 @@ function OptionRow({
 }) {
   const isDealbreaker = option.dealbreaker_set_score !== null;
   return (
-    <Group gap="sm" align="flex-end" wrap="wrap" justify="space-between">
+    <div className={classes.optionRow}>
       <OptionMatchEditor
         match={option.match}
         schema={entry.value_schema}
+        criterionKey={entry.key}
         onChange={(match) => onChange({ ...option, match })}
       />
-      <Group gap="sm" align="flex-end" wrap="wrap">
-        <Tooltip label="Points">
-          <NumberInput
-            aria-label="option delta"
-            size="xs"
-            w={90}
-            step={0.5}
-            value={option.delta}
-            onChange={(next) => onChange({ ...option, delta: typeof next === "number" ? next : 0 })}
-            disabled={isDealbreaker}
-            rightSection={
-              <Text size="xs" c="dimmed" pr={4}>
-                pts
-              </Text>
-            }
-            rightSectionWidth={28}
-          />
-        </Tooltip>
-        <Tooltip label="Dealbreaker — matching this option sets the score directly">
-          <Switch
-            size="xs"
-            aria-label="dealbreaker"
-            checked={isDealbreaker}
-            onChange={(e) =>
-              onChange({ ...option, dealbreaker_set_score: e.currentTarget.checked ? 0 : null })
-            }
-            onLabel={<IconBan size={12} stroke={1.5} />}
-            offLabel={<IconBan size={12} stroke={1.5} color="var(--mantine-color-dimmed)" />}
-          />
-        </Tooltip>
-        {isDealbreaker && (
-          <Tooltip label="Score to set when this option matches">
-            <NumberInput
-              aria-label="dealbreaker set score"
-              size="xs"
-              w={90}
-              min={0}
-              max={15}
-              value={option.dealbreaker_set_score ?? 0}
-              onChange={(next) =>
-                onChange({ ...option, dealbreaker_set_score: typeof next === "number" ? next : 0 })
+      {isDealbreaker ? (
+        <DealbreakerScoreInput
+          value={option.dealbreaker_set_score ?? 0}
+          onChange={(next) => onChange({ ...option, dealbreaker_set_score: next })}
+        />
+      ) : (
+        <PointsInput
+          ariaLabel="option delta"
+          value={option.delta}
+          onChange={(delta) => onChange({ ...option, delta })}
+        />
+      )}
+      <DealbreakerToggle
+        active={isDealbreaker}
+        onToggle={() =>
+          onChange({ ...option, dealbreaker_set_score: isDealbreaker ? null : 0 })
+        }
+      />
+      <Tooltip label="Remove option" openDelay={300}>
+        <ActionIcon color="gray" size="sm" onClick={onRemove} aria-label="remove option">
+          <IconX size={14} stroke={1.5} />
+        </ActionIcon>
+      </Tooltip>
+    </div>
+  );
+}
+
+// Boolean criteria: exactly one True row and one False row, as text — which
+// value matched is data, not a control. Rows synthesize on first edit if the
+// saved rubric is missing one.
+function BoolRows({
+  criterion,
+  onChange,
+}: {
+  criterion: RubricCriterion;
+  onChange: (criterion: RubricCriterion) => void;
+}) {
+  const rows = [true, false].map((boolValue) => {
+    const index = criterion.options.findIndex(
+      (o) => o.match.op === "bool" && o.match.value === boolValue,
+    );
+    const option: RubricOption =
+      index >= 0
+        ? criterion.options[index]
+        : { match: { op: "bool", value: boolValue }, delta: 0, dealbreaker_set_score: null };
+    return { boolValue, index, option };
+  });
+
+  const setBoolOption = (index: number, option: RubricOption) => {
+    const options =
+      index >= 0
+        ? criterion.options.map((o, i) => (i === index ? option : o))
+        : [...criterion.options, option];
+    onChange({ ...criterion, options });
+  };
+
+  return (
+    <>
+      {rows.map(({ boolValue, index, option }) => {
+        const isDealbreaker = option.dealbreaker_set_score !== null;
+        return (
+          <div className={classes.optionRow} key={String(boolValue)}>
+            <Text size="sm" fw={500} pl={2}>
+              {boolValue ? "True" : "False"}
+            </Text>
+            {isDealbreaker ? (
+              <DealbreakerScoreInput
+                value={option.dealbreaker_set_score ?? 0}
+                onChange={(next) =>
+                  setBoolOption(index, { ...option, dealbreaker_set_score: next })
+                }
+              />
+            ) : (
+              <PointsInput
+                ariaLabel={`points when ${boolValue}`}
+                value={option.delta}
+                onChange={(delta) => setBoolOption(index, { ...option, delta })}
+              />
+            )}
+            <DealbreakerToggle
+              active={isDealbreaker}
+              onToggle={() =>
+                setBoolOption(index, {
+                  ...option,
+                  dealbreaker_set_score: isDealbreaker ? null : 0,
+                })
               }
             />
-          </Tooltip>
-        )}
-        <Tooltip label="Remove option">
-          <ActionIcon color="gray" size="sm" onClick={onRemove} aria-label="remove option">
-            <IconX size={14} stroke={1.5} />
-          </ActionIcon>
-        </Tooltip>
-      </Group>
-    </Group>
+            <div />
+          </div>
+        );
+      })}
+    </>
   );
 }
 
@@ -113,6 +240,7 @@ export function CriterionCard({
   onChange: (criterion: RubricCriterion) => void;
 }) {
   const isBonus = deriveIsBonus(criterion.options, criterion.unknown_delta);
+  const isBoolean = entry.value_schema.type === "boolean";
 
   const setOption = (index: number, option: RubricOption) => {
     const options = criterion.options.map((o, i) => (i === index ? option : o));
@@ -133,7 +261,7 @@ export function CriterionCard({
               <Text fw={600} size="sm">
                 {entry.label}
               </Text>
-              <Tooltip label={entry.extraction_hint}>
+              <Tooltip label={entry.extraction_hint} maw={320} multiline>
                 <ActionIcon
                   color="gray"
                   size="xs"
@@ -172,78 +300,88 @@ export function CriterionCard({
         </Group>
 
         {criterion.enabled && (
-          <Stack gap="xs" mt="xs">
-            {criterion.options.map((option, index) => (
-              <OptionRow
-                key={index}
-                option={option}
-                entry={entry}
-                onChange={(next) => setOption(index, next)}
-                onRemove={() =>
-                  onChange({
-                    ...criterion,
-                    options: criterion.options.filter((_, i) => i !== index),
-                  })
-                }
-              />
-            ))}
-            <Group>
-              <Button
-                variant="subtle"
-                size="xs"
-                leftSection={<IconPlus size={14} stroke={1.5} />}
-                onClick={() =>
-                  onChange({
-                    ...criterion,
-                    options: [
-                      ...criterion.options,
-                      {
-                        match: {
-                          op: entry.value_schema.type === "boolean" ? "bool" : "eq",
-                          value: null,
-                        },
-                        delta: 0,
-                        dealbreaker_set_score: null,
-                      },
-                    ],
-                  })
-                }
+          <Stack gap={6}>
+            <div className={`${classes.optionRow} ${classes.columnHeader}`}>
+              <Text size="xs" c="dimmed">
+                When the value is…
+              </Text>
+              <Text size="xs" c="dimmed">
+                Points
+              </Text>
+              <div />
+              <div />
+            </div>
+
+            {isBoolean ? (
+              <BoolRows criterion={criterion} onChange={onChange} />
+            ) : (
+              <>
+                {criterion.options.map((option, index) => (
+                  <OptionRow
+                    key={index}
+                    option={option}
+                    entry={entry}
+                    onChange={(next) => setOption(index, next)}
+                    onRemove={() =>
+                      onChange({
+                        ...criterion,
+                        options: criterion.options.filter((_, i) => i !== index),
+                      })
+                    }
+                  />
+                ))}
+                <Button
+                  variant="subtle"
+                  size="xs"
+                  w="fit-content"
+                  leftSection={<IconPlus size={14} stroke={1.5} />}
+                  onClick={() =>
+                    onChange({
+                      ...criterion,
+                      options: [
+                        ...criterion.options,
+                        { match: { op: "eq", value: null }, delta: 0, dealbreaker_set_score: null },
+                      ],
+                    })
+                  }
+                >
+                  Add option
+                </Button>
+              </>
+            )}
+
+            <Divider my={4} />
+
+            <div className={classes.optionRow}>
+              <Tooltip
+                label="Points applied when the value can't be determined"
+                openDelay={300}
+                position="top-start"
               >
-                Add
-              </Button>
-            </Group>
-            <Group gap="sm" align="flex-end" mt="md" wrap="wrap">
-              <Tooltip label="Points when the value can't be determined">
-                <Group gap={4} align="flex-end">
-                  <IconQuestionMark
-                    size={16}
+                <Group gap={6} wrap="nowrap">
+                  <IconHelpCircle
+                    size={15}
                     stroke={1.5}
                     color="var(--mantine-color-dimmed)"
-                    style={{ marginBottom: 6 }}
                   />
-                  <NumberInput
-                    aria-label="unknown delta"
-                    size="xs"
-                    w={90}
-                    step={0.5}
-                    value={criterion.unknown_delta}
-                    onChange={(next) =>
-                      onChange({ ...criterion, unknown_delta: typeof next === "number" ? next : 0 })
-                    }
-                    rightSection={
-                      <Text size="xs" c="dimmed" pr={4}>
-                        pts
-                      </Text>
-                    }
-                    rightSectionWidth={28}
-                  />
+                  <Text size="sm" c="dimmed">
+                    If unknown
+                  </Text>
                 </Group>
               </Tooltip>
-              <GateControls
-                nonNegotiable={criterion.non_negotiable}
-                onChange={(non_negotiable) => onChange({ ...criterion, non_negotiable })}
+              <PointsInput
+                ariaLabel="unknown delta"
+                value={criterion.unknown_delta}
+                onChange={(unknown_delta) => onChange({ ...criterion, unknown_delta })}
               />
-            </Group>
+              <div />
+              <div />
+            </div>
+
+            <GateControls
+              nonNegotiable={criterion.non_negotiable}
+              onChange={(non_negotiable) => onChange({ ...criterion, non_negotiable })}
+            />
           </Stack>
         )}
       </Stack>
