@@ -33,7 +33,7 @@ from manzil_shared.errors import ManzilError
 from manzil_shared.models import Confidence, FetchOutcome, JobType, RubricCriterion
 from pydantic import BaseModel, Field
 
-from manzil_worker.evals.labels import BenchLabel
+from manzil_worker.evals.labels import BenchLabel, SkippedLabel
 from manzil_worker.llm.client import RunContext, cost_tally, llm_mode, run_context
 from manzil_worker.llm.config import model_for_stage
 from manzil_worker.llm.prompt_loader import load_prompt
@@ -94,6 +94,7 @@ class BenchReport(BaseModel):
     models: dict[str, str]
     prompt_versions: dict[str, int]
     listings: list[ListingResult]
+    skipped: list[SkippedLabel] = Field(default_factory=list)
     summary: dict[str, Any]
 
 
@@ -261,7 +262,7 @@ async def _run_listing(
     return result
 
 
-def _summarize(listings: list[ListingResult]) -> dict[str, Any]:
+def _summarize(listings: list[ListingResult], skipped: list[SkippedLabel]) -> dict[str, Any]:
     graded = [r for r in listings if r.error is None]
     checks = [c for r in graded for c in r.criteria.values()]
     gate_checks = [c for r in graded for k, c in r.criteria.items() if k in r.gate_keys]
@@ -276,6 +277,7 @@ def _summarize(listings: list[ListingResult]) -> dict[str, Any]:
     return {
         "listings": len(listings),
         "failed": len(listings) - len(graded),
+        "skipped": len(skipped),
         "criterion_accuracy": rate(sum(c.ok for c in checks), len(checks)),
         "gate_accuracy": rate(sum(c.ok for c in gate_checks), len(gate_checks)),
         "unknown_accuracy": rate(sum(c.ok for c in unknown_checks), len(unknown_checks)),
@@ -296,10 +298,15 @@ async def run_bench(
     corpus_dir: Path,
     ctx: StageCtx,
     gate_keys: list[str],
+    skipped: list[SkippedLabel] | None = None,
 ) -> BenchReport:
     """One harness run. Per-listing failures (replay miss, missing corpus
     page, stage error) are recorded on the listing and never abort the run —
-    a partial report beats no report."""
+    a partial report beats no report. `skipped` carries unfinished-skeleton
+    labels the loader partitioned out: reported and counted, never graded."""
+    skipped = skipped or []
+    for s in skipped:
+        log.warning("bench_label_skipped", slug=s.slug, reason=s.reason)
     listings: list[ListingResult] = []
     for label in labels:
         page_dir = corpus_dir / label.slug
@@ -342,7 +349,8 @@ async def run_bench(
         models={stage: model_for_stage(stage) for stage in BENCH_STAGES},
         prompt_versions={stage: load_prompt(stage).version for stage in BENCH_STAGES},
         listings=listings,
-        summary=_summarize(listings),
+        skipped=skipped,
+        summary=_summarize(listings, skipped),
     )
 
 
@@ -368,6 +376,8 @@ def report_text(report: BenchReport) -> str:
             f"| {r.slug} | {fmt(r.criterion_accuracy)} | {fmt(r.gate_accuracy)} "
             f"| {r.evidence_flags} | {r.cost_usd:.4f} | {r.latency_s:.1f} |"
         )
+    for s in report.skipped:
+        lines.append(f"| {s.slug} | SKIPPED: {s.reason} | | | | |")
     lines.append("")
     lines.append("summary: " + ", ".join(f"{k}={v}" for k, v in report.summary.items()))
     return "\n".join(lines)

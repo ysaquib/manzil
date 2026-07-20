@@ -304,6 +304,35 @@ def bench_skeleton(
     typer.echo("manifest.md row added; fill in criteria values and its trait columns by hand")
 
 
+@app.command("extract-corpus")
+def extract_corpus(slug: str) -> None:
+    """Run only EXTRACT -> VERIFY for one saved corpus slug; emit raw JSON.
+
+    Uses cleaned.txt without fetching or grading, and freezes date-sensitive
+    verification to meta.json.saved_at like the bench. Honors MANZIL_LLM_MODE;
+    record mode saves both LLM responses through the normal recording seam.
+    """
+    from manzil_shared.errors import ManzilError
+
+    from manzil_worker.evals.corpus_run import run_corpus_extraction
+    from manzil_worker.fetching.corpus import CORPUS_DIR
+    from manzil_worker.phase0_rubric import phase0_rubric
+    from manzil_worker.stages.base import StageCtx
+
+    try:
+        result = asyncio.run(
+            run_corpus_extraction(
+                slug,
+                corpus_dir=CORPUS_DIR,
+                ctx=StageCtx(rubric=phase0_rubric()),
+            )
+        )
+    except (ManzilError, ValueError) as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=1) from None
+    typer.echo(result.model_dump_json(indent=2))
+
+
 @app.command("bench-run")
 def bench_run(
     out_dir: Path = typer.Option(Path("worker/evals/reports"), "--out-dir"),
@@ -319,17 +348,19 @@ def bench_run(
     from datetime import UTC, datetime
 
     from manzil_worker.evals.harness import gate_keys_from, report_text, run_bench
-    from manzil_worker.evals.labels import LABELS_DIR, LabelError, load_labels
+    from manzil_worker.evals.labels import LABELS_DIR, LabelError, load_labels_split
     from manzil_worker.fetching.corpus import CORPUS_DIR
     from manzil_worker.llm.config import model_for_stage
     from manzil_worker.phase0_rubric import phase0_rubric
     from manzil_worker.stages.base import StageCtx
     try:
-        labels = load_labels(slugs, LABELS_DIR)
+        # Unfinished-skeleton labels (null/empty values) are partitioned into
+        # `skipped` and reported, not graded; only broken labels abort.
+        labels, skipped = load_labels_split(slugs, LABELS_DIR)
     except LabelError as error:
         typer.echo(str(error), err=True)
         raise typer.Exit(code=1) from None
-    if not labels:
+    if not labels and not skipped:
         typer.echo(
             f"no labels in {LABELS_DIR} — `manzil bench-skeleton <slug>` then label by hand",
             err=True,
@@ -339,7 +370,13 @@ def bench_run(
     rubric = phase0_rubric()
     ctx = StageCtx(rubric=rubric)
     report = asyncio.run(
-        run_bench(labels, corpus_dir=CORPUS_DIR, ctx=ctx, gate_keys=gate_keys_from(rubric))
+        run_bench(
+            labels,
+            corpus_dir=CORPUS_DIR,
+            ctx=ctx,
+            gate_keys=gate_keys_from(rubric),
+            skipped=skipped,
+        )
     )
 
     model_name = model_for_stage("extract").replace("/", "_")
@@ -349,7 +386,7 @@ def bench_run(
     out.write_text(report.model_dump_json(indent=2) + "\n")
     console.print(Markdown(report_text(report)))
     typer.echo(f"\nreport written to {out}")
-    if all(listing.error is not None for listing in report.listings):
+    if report.listings and all(listing.error is not None for listing in report.listings):
         raise typer.Exit(code=1)
 
 
