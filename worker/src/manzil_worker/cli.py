@@ -207,7 +207,7 @@ def split_property_cmd(
 
 
 @app.command("llm-smoke")
-def llm_smoke() -> None:
+def llm_smoke_cmd() -> None:
     """One structured call through the LLM seam (P0-7 gate: trace visible in Langfuse).
 
     Honors MANZIL_LLM_MODE — run with `record` to refresh the committed replay
@@ -232,31 +232,21 @@ def llm_smoke() -> None:
 
 
 @app.command("clean-corpus")
-def clean_corpus() -> None:
-    """Regenerate cleaned.txt for every corpus page (run after cleaner changes)."""
+def clean_corpus_cmd(
+    slugs: list[str] = typer.Option([], "--slug", help="Corpus slugs to clean")
+) -> None:
+    """
+    Regenerate cleaned.txt for every corpus page (run after cleaner changes).
+    If slugs are provided, only clean the specified pages.
+    """
     from manzil_worker.fetching.corpus import regenerate_cleaned
-
-    report = regenerate_cleaned()
+    report = regenerate_cleaned(slugs)
     if not report:
         typer.echo("corpus is empty — save pages with `manzil save-page`", err=True)
         raise typer.Exit(code=1)
     for slug, raw_bytes, cleaned_chars in report:
         typer.echo(f"{slug}: {raw_bytes} B raw -> {cleaned_chars} chars cleaned")
     typer.echo(f"regenerated {len(report)} pages")
-
-
-@app.command("clean-corpus-page")
-def clean_corpus_page(
-    slug: str,
-) -> None:
-    """Clean a single corpus page."""
-    from manzil_worker.fetching.corpus import CORPUS_DIR, clean_page
-
-    cleaned = clean_page(slug, corpus_dir=CORPUS_DIR)
-    if not cleaned:
-        typer.echo(f"failed to clean {slug}", err=True)
-        raise typer.Exit(code=1)
-    typer.echo(f"cleaned {slug}")
 
 
 @app.command("save-page")
@@ -318,6 +308,7 @@ def bench_skeleton(
 def bench_run(
     out_dir: Path = typer.Option(Path("worker/evals/reports"), "--out-dir"),
     name: str = typer.Option("", "--name", help="Report file stem (default: timestamp+model)"),
+    slugs: list[str] = typer.Option([], "--label", help="Label slugs to bench"),
 ) -> None:
     """Run the eval harness over the bench labels (P0-12); write a JSON report.
 
@@ -333,9 +324,8 @@ def bench_run(
     from manzil_worker.llm.config import model_for_stage
     from manzil_worker.phase0_rubric import phase0_rubric
     from manzil_worker.stages.base import StageCtx
-
     try:
-        labels = load_labels(LABELS_DIR)
+        labels = load_labels(slugs, LABELS_DIR)
     except LabelError as error:
         typer.echo(str(error), err=True)
         raise typer.Exit(code=1) from None
