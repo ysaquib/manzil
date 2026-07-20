@@ -9,7 +9,12 @@ deliberately via a §20 decision).
 Priority = judgment across importance to the actual hunt, usefulness per unit
 of effort, and feasibility on the existing substrate. **P1** = worth pulling
 into a wave soon · **P2** = worth doing when adjacent code is open · **P3** =
-parked until reality demands it.
+parked until reality demands it · **✅** = shipped (date in the row).
+
+**2026-07-19 (later): Yusuf pulled a batch in.** m1, m2, m3, m6, m7, m11
+(including the new optional columns), and m12 shipped the same day (DESIGN §20
+2026-07-19, IMPLEMENTATION 2.0.66). Along the way "delete listing" was renamed
+to what it always did — archive — and gained the Archived view + restore.
 
 ## Major features
 
@@ -27,25 +32,34 @@ parked until reality demands it.
 | M10 | P3 | **Per-member weighted rubrics** | **DESIGN §18 deferred.** The §20 record already rejected it once; two-member hunts resolve disagreement in comments faster than in math |
 | M11 | P3 | **Application tracker** — documents, deadlines, per-application fees paid, outcome per unit group | Interest statuses already model outcomes; the rest is a checklist product of its own. Park until the hunt reaches application volume that hurts |
 | M12 | P3 | **Public read-only hunt share / CSV export** | **DESIGN §18 deferred** (both). CSV is trivially satisfiable ad-hoc via Supabase if ever needed pre-feature |
+| M13 | P2 | **Commute matrix** — per-member commute targets in hunt settings; ENRICH computes drive/transit minutes per listing per target, surfaced as optional columns + filters | The Maps seams, geocode forever-cache, and proximity-mode plumbing all exist (P3-8); this is the un-tabular axis M1's overlays want. Sequence after P3-5 like everything else; settings edit → `refresh` job (`scope: enrich`), zero LLM spend, same as the proximity flip |
+| M14 | P3 | **Lease-document intake** — at application stage, upload the lease PDF; a zero-tool EXTRACT block pulls term/fees/clauses and cross-checks them against the listing's claims, surfacing discrepancies like VERIFY flags | The moment a lease contradicts the listing is the highest-stakes fact-check of the hunt, and it's pipeline-shaped (document in, structured facts out, deterministic compare). Parked with M11 until application volume exists |
+| M15 | P3 | **Hunt retrospective on close** — closing a hunt generates a summary: the winner, total costs vs estimates, timeline, which criteria mattered and which the rubric over-weighted; exportable as Markdown | Cheap read-model over data that already exists (`job_events`, scores history, overrides) + one synthesis call. Institutional memory for the next hunt; pairs naturally with M12's export |
 
 ## Minor features
 
 | # | Priority | Suggestion | Notes |
 |---|---|---|---|
-| m1 | P1 | **Free-text search** in the filter bar (property name / address substring) | One predicate + one input on the shipped registry; the first thing anyone reaches for at 30+ listings |
-| m2 | P1 | **More sort keys** — all-in cost, availability date, recently added | `sortValue` is a pure switch; all three values already sit on the row |
-| m3 | P1 | **Duplicate-submission pre-check** — warn before enqueueing a URL whose property already exists in the hunt | DEDUPE merges eventually, but a submit-time `property_sources.url` lookup saves a whole pipeline run and a checkpoint |
+| m1 | ✅ 2026-07-19 | **Free-text search** in the filter bar (property name / address substring) | Shipped: always-visible search input + `query` predicate in the registry; whitespace-only is inert, unknown-safe |
+| m2 | ✅ 2026-07-19 | **More sort keys** — all-in cost, availability date, recently added | Shipped: `allIn` / `available` / `added` sort keys on their column headers (availability defaults ascending); unknowns still sink |
+| m3 | ✅ 2026-07-19 | **Duplicate-submission pre-check** — warn before enqueueing a URL whose property already exists in the hunt | Shipped client-side over the already-loaded listings (official + source URLs, normalized host/path) — warns with Submit anyway, never blocks |
 | m4 | P2 | **Named filter presets** — save current filters as a chip ("2bd under $2k"), personal by default; publishing one is just the shipped Apply-hunt-wide | Serialization + sanitize already exist; a localStorage list + chips row |
 | m5 | P2 | **Keyboard navigation** — ↑/↓ row focus, Enter opens drawer, ←/→ pages the drawer between rows | Table is plain Mantine; needs focus management only. Pairs with the lightbox's existing keyboard nav |
-| m6 | P2 | **Bulk actions** — multi-select rows → set status / archive / send to compare | Curation at scale; checkbox column + one menu. RLS already vets each write |
-| m7 | P2 | **Archived-listings view** — a filter/tab exposing `status = archived` rows with restore | The column exists; today archived rows are simply invisible |
+| m6 | ✅ 2026-07-19 | **Bulk actions** — multi-select rows → set status / archive / send to compare | Shipped: checkbox column + selection bar; archive confirms once per batch; send-to-compare fills to the limit and says so |
+| m7 | ✅ 2026-07-19 | **Archived-listings view** — a filter/tab exposing `status = archived` rows with restore | Shipped: Active \| Archived toggle + restore via new `PATCH /v1/listings/{id}/status` (Owner-only, like archive); "delete" renamed archive |
 | m8 | P2 | **Score-history sparkline** in the drawer (per rubric version) | `scores` keeps every rubric_version row; tiny chart, no new data |
 | m9 | P2 | **"New since your last visit" dot** per row (localStorage last-seen timestamp per hunt) | Cheap orientation aid for the second member; no server state |
 | m10 | P2 | **Per-row refresh action** once P3-12 lands ("Refresh now" in the row menu) | The jobs plumbing exists; gate on P3-12's TTL/hash logic so a manual refresh is cheap by construction |
-| m11 | P3 | **Column visibility picker** on the Overview | Waits until the column set actually outgrows one screen; density just shipped for the same pressure |
-| m12 | P3 | **Compare column reordering** (drag) | Cosmetic until COMPARE_LIMIT grows past 3 |
+| m11 | ✅ 2026-07-19 | **Column visibility picker** on the Overview | Shipped early (Yusuf-directed): picker + new optional City / Available / Deposit / Added columns, **defaults exactly the pre-picker set** |
+| m12 | ✅ 2026-07-19 | **Compare column reordering** (drag) | Shipped: native HTML5 drag on the column headers — no dnd dependency for 3 columns |
 | m13 | P3 | **Locale/currency formatting setting** | Single-market tool today (SE Michigan, USD); YAGNI until that changes |
 | m14 | P3 | **Onboarding checklist card** for a brand-new hunt (submit first URL → set rubric → invite partner) | Nice polish; the empty states already point the way, and there are exactly two users |
+| m15 | P2 | **Archive undo in the toast** — the "archived" notification carries a one-click Undo | The restore endpoint and notification plumbing both exist post-m7; undo-in-place beats a trip to the Archived view for the common slip |
+| m16 | P3 | **Persist the sort choice** per browser | One `useLocalStorage` beside density/columns; wait for someone to actually miss it |
+| m17 | P2 | **Drawer deep links** — `?listing=…&group=…` on the Overview URL opens the drawer on load | Makes "look at this one" pasteable in chat — collaboration glue cheaper than M7's feed; router + drawer state already centralized |
+| m18 | P2 | **Stale-fetch chip** — "checked N d ago" from `property_sources.last_success_at` on the row/drawer | Honest-data orientation while refreshes are still manual; becomes the visual hook for m10 once P3-12 lands |
+| m19 | P3 | **Latest-comment column** — optional Overview column showing the newest comment snippet | The column picker (m11) made optional columns cheap; comments are already fetched per row for the count |
+| m20 | P3 | **Fee-checklist progress chip** — confirmed/total fee slots per row | Surfaces "we never verified the fees here" at a glance; feeds M5's visit-mode checklist when that happens |
 
 ## Review appendix — second pass (same day)
 
@@ -98,3 +112,24 @@ hunt, with corrections:
 10. **Meta-recommendation:** nothing in this file should jump ahead of P3-5
     (DISCOVER) or the owed bench re-run. The pipeline's spine outranks every
     suggestion here, including the good ones.
+
+## Third pass (2026-07-19, after the shipped batch)
+
+1. The batch Yusuf pulled in (m1, m2, m3, m6, m7, m11, m12) deliberately took
+   the two P3s early: m11 because the new Available/Added columns are where
+   m2's extra sort keys live (a sort you can't see is a mystery), m12 because
+   the compare header rework was already open. m11's defaults are unchanged —
+   the picker only *adds* reachable columns.
+2. One semantic shift worth naming: **"delete listing" was always a soft
+   archive** (`status = archived`); m7 makes the UI stop lying about it. The
+   row action now says Archive, the modal promises restorability, and restore
+   exists (`PATCH /v1/listings/{id}/status`, Owner-only both directions —
+   the delete endpoint's gate, unchanged).
+3. New entries (M13–M15, m15–m20) were checked against DESIGN §18: commute
+   matrix extends P3-8's ENRICH surface rather than the deferred
+   notifications/discovery items; lease intake and retrospective touch nothing
+   rejected. m15 (archive undo) exists *because* the batch shipped — it's the
+   first follow-up a real mis-archive will demand.
+4. The remaining P1s are gone. The strongest open candidates are unchanged:
+   M2+M3 as one unit among majors, and now m15/m17/m18 among minors — all
+   still behind P3-5 and the owed bench re-run.

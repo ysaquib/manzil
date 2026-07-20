@@ -84,6 +84,48 @@ async def test_delete_listing_soft_archives(client: AsyncClient, db_pool) -> Non
 
 
 @pytest.mark.asyncio
+async def test_patch_status_archives_and_restores(client: AsyncClient, db_pool) -> None:
+    hunt_id, listing_id, property_id = uuid4(), uuid4(), uuid4()
+    await db_pool.execute(
+        "insert into hunts (id, name, owner_id) values ($1, 'L', $2)",
+        hunt_id,
+        FAKE_USER.id,
+    )
+    await db_pool.execute(
+        "insert into properties (id, name, canonical_address) values ($1, 'P', 'a')",
+        property_id,
+    )
+    await db_pool.execute(
+        """
+        insert into hunt_listings (id, hunt_id, property_id, added_by)
+        values ($1, $2, $3, $4)
+        """,
+        listing_id,
+        hunt_id,
+        property_id,
+        FAKE_USER.id,
+    )
+    try:
+        resp = await client.patch(
+            f"/v1/listings/{listing_id}/status", json={"status": "archived"}
+        )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "archived"
+
+        resp = await client.patch(
+            f"/v1/listings/{listing_id}/status", json={"status": "active"}
+        )
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "active"
+        status = await db_pool.fetchval(
+            "select status from hunt_listings where id = $1", listing_id
+        )
+        assert status == "active"
+    finally:
+        await db_pool.execute("delete from hunts where id = $1", hunt_id)
+
+
+@pytest.mark.asyncio
 async def test_curator_updates_unit_group_state_and_member_cannot(
     collab_hunt, as_curator: AsyncClient, as_member: AsyncClient
 ) -> None:

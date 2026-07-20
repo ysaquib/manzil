@@ -40,6 +40,23 @@ export interface paths {
         patch: operations["patch_hunt_v1_hunts__hunt_id__patch"];
         trace?: never;
     };
+    "/v1/hunts/{hunt_id}/shared-filters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Shared Filters */
+        put: operations["put_shared_filters_v1_hunts__hunt_id__shared_filters_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/hunts/{hunt_id}/settings": {
         parameters: {
             query?: never;
@@ -318,6 +335,23 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/v1/listings/{listing_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Status */
+        patch: operations["patch_status_v1_listings__listing_id__status_patch"];
         trace?: never;
     };
     "/v1/listings/{listing_id}/pins": {
@@ -858,6 +892,17 @@ export interface components {
             unavailable_at?: string | null;
         };
         /**
+         * ListingStatusPatch
+         * @description Archive / restore (§8.2 `hunt_listings.status`) — the soft-delete pair.
+         */
+        ListingStatusPatch: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "archived";
+        };
+        /**
          * MatchOp
          * @enum {string}
          */
@@ -1085,6 +1130,40 @@ export interface components {
             /** Criteria */
             criteria: components["schemas"]["RubricCriterionIn"][];
         };
+        /**
+         * SharedFiltersPut
+         * @description Hunt-wide Overview filters (§13.2, §20 2026-07-19). View state, not
+         *     settings: an opaque-to-the-API object the frontend sanitizes on read, so
+         *     filter-set growth never needs an API change.
+         */
+        SharedFiltersPut: {
+            /** Filters */
+            filters: {
+                [key: string]: unknown;
+            };
+        };
+        /** SharedFiltersResponse */
+        SharedFiltersResponse: {
+            /**
+             * Hunt Id
+             * Format: uuid
+             */
+            hunt_id: string;
+            /** Filters */
+            filters: {
+                [key: string]: unknown;
+            };
+            /**
+             * Updated By
+             * Format: uuid
+             */
+            updated_by: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /** TransferOwnershipRequest */
         TransferOwnershipRequest: {
             /**
@@ -1265,6 +1344,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HuntResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_shared_filters_v1_hunts__hunt_id__shared_filters_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SharedFiltersPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharedFiltersResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2046,6 +2160,41 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_status_v1_listings__listing_id__status_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListingStatusPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

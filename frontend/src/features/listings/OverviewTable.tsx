@@ -6,6 +6,7 @@
 import { ActionIcon, Checkbox, Group, Menu, Select, Table, Text, Tooltip, UnstyledButton } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import {
+  IconArchive,
   IconArrowsLeftRight,
   IconBaselineDensityLarge,
   IconBaselineDensityMedium,
@@ -14,12 +15,12 @@ import {
   IconChevronDown,
   IconChevronRight,
   IconChevronUp,
+  IconColumns,
   IconCopy,
   IconDotsVertical,
   IconExternalLink,
   IconEye,
   IconMessageCircle,
-  IconTrash,
 } from "@tabler/icons-react";
 
 import { AllInCell } from "./AllInCost";
@@ -31,6 +32,7 @@ import { usePatchUnitGroupState } from "./api";
 import { INTEREST_STATUSES, type InterestStatus } from "./types";
 import {
   allInValue,
+  earliestAvailability,
   formatRange,
   rowAvailability,
   rowComposition,
@@ -115,14 +117,80 @@ export function TableDensityMenu({
   );
 }
 
+// Column visibility (m11): the optional columns and their defaults — the
+// default set is exactly the pre-picker table. Score/Property/Unit/Rent and
+// the actions column are always on.
+export type OverviewColumnKey =
+  | "sqft" | "allIn" | "curation" | "people"
+  | "city" | "available" | "deposit" | "added";
+
+export const COLUMN_OPTIONS: { key: OverviewColumnKey; label: string; defaultVisible: boolean }[] = [
+  { key: "sqft", label: "Sqft", defaultVisible: true },
+  { key: "allIn", label: "All-in / mo", defaultVisible: true },
+  { key: "curation", label: "Status", defaultVisible: true },
+  { key: "people", label: "People", defaultVisible: true },
+  { key: "city", label: "City", defaultVisible: false },
+  { key: "available", label: "Available", defaultVisible: false },
+  { key: "deposit", label: "Deposit", defaultVisible: false },
+  { key: "added", label: "Added", defaultVisible: false },
+];
+
+export const DEFAULT_OVERVIEW_COLUMNS: OverviewColumnKey[] = COLUMN_OPTIONS.filter(
+  (option) => option.defaultVisible,
+).map((option) => option.key);
+
+export function TableColumnsMenu({
+  columns,
+  onChange,
+}: {
+  columns: OverviewColumnKey[];
+  onChange: (next: OverviewColumnKey[]) => void;
+}) {
+  const toggle = (key: OverviewColumnKey) =>
+    onChange(
+      columns.includes(key) ? columns.filter((k) => k !== key) : [...columns, key],
+    );
+  return (
+    <Menu position="bottom-end" withinPortal closeOnItemClick={false}>
+      <Menu.Target>
+        <Tooltip label="Columns" openDelay={300}>
+          <ActionIcon color="gray" c="dimmed" aria-label="table columns" size="lg">
+            <IconColumns size={16} stroke={1.5} />
+          </ActionIcon>
+        </Tooltip>
+      </Menu.Target>
+      <Menu.Dropdown>
+        <Menu.Label>Columns</Menu.Label>
+        {COLUMN_OPTIONS.map(({ key, label }) => (
+          <Menu.Item
+            key={key}
+            rightSection={columns.includes(key) ? <IconCheck size={14} stroke={1.5} /> : undefined}
+            onClick={() => toggle(key)}
+          >
+            {label}
+          </Menu.Item>
+        ))}
+      </Menu.Dropdown>
+    </Menu>
+  );
+}
+
+/** Stable identity for a table row — also the bulk-selection key (m6). */
+export const rowKey = (row: OverviewRow) => `${row.listing.id}:${row.group?.key ?? "listing"}`;
+
 export interface OverviewTableProps {
   huntId: string;
   rows: OverviewRow[];
   sort: SortState;
   onSort: (key: SortKey) => void;
   onOpen: (row: OverviewRow) => void;
-  onDelete: (row: OverviewRow) => void;
+  onArchive: (row: OverviewRow) => void;
   density?: TableDensity;
+  columns?: OverviewColumnKey[];
+  /** Bulk selection (m6): selected row keys; omit to hide the checkbox column. */
+  selectedKeys?: Set<string>;
+  onToggleRow?: (key: string) => void;
+  onToggleAll?: () => void;
 }
 
 function CollaborationCell({ listingId, huntId, unitGroupKey }: { listingId: string; huntId: string; unitGroupKey: string | null }) {
@@ -199,17 +267,18 @@ function CurationCells({ row, huntId }: { row: OverviewRow; huntId: string }) {
 }
 
 // Per-row actions beyond "open the drawer": jump to the live listing page,
-// grab the address/link for sharing, and the destructive delete last.
+// grab the address/link for sharing, and archive last (soft — the Archived
+// view can restore it).
 function RowActionsMenu({
   row,
   huntId,
   onOpen,
-  onDelete,
+  onArchive,
 }: {
   row: OverviewRow;
   huntId: string;
   onOpen: (row: OverviewRow) => void;
-  onDelete: (row: OverviewRow) => void;
+  onArchive: (row: OverviewRow) => void;
 }) {
   const property = row.listing.property;
   const listingUrl = property.official_url ?? property.sources[0]?.url ?? null;
@@ -279,15 +348,18 @@ function RowActionsMenu({
         <Menu.Divider />
         <Menu.Item
           color="red"
-          leftSection={<IconTrash size={14} stroke={1.5} />}
-          onClick={() => onDelete(row)}
+          leftSection={<IconArchive size={14} stroke={1.5} />}
+          onClick={() => onArchive(row)}
         >
-          Delete listing
+          Archive listing
         </Menu.Item>
       </Menu.Dropdown>
     </Menu>
   );
 }
+
+const dateLabel = (iso: string | null) =>
+  iso === null ? "—" : new Date(iso.includes("T") ? iso : `${iso}T00:00:00`).toLocaleDateString();
 
 export function OverviewTable({
   huntId,
@@ -295,10 +367,18 @@ export function OverviewTable({
   sort,
   onSort,
   onOpen,
-  onDelete,
+  onArchive,
   density = "normal",
+  columns = DEFAULT_OVERVIEW_COLUMNS,
+  selectedKeys,
+  onToggleRow,
+  onToggleAll,
 }: OverviewTableProps) {
   const spacing = DENSITY_SPACING[density];
+  const show = (key: OverviewColumnKey) => columns.includes(key);
+  const selectable = selectedKeys !== undefined && onToggleRow !== undefined;
+  const allSelected = selectable && rows.length > 0 && rows.every((row) => selectedKeys.has(rowKey(row)));
+  const someSelected = selectable && rows.some((row) => selectedKeys.has(rowKey(row)));
   return (
     <Table
       striped
@@ -308,6 +388,16 @@ export function OverviewTable({
     >
       <Table.Thead>
         <Table.Tr>
+          {selectable && (
+            <Table.Th w={36}>
+              <Checkbox
+                aria-label="select all rows"
+                checked={allSelected}
+                indeterminate={someSelected && !allSelected}
+                onChange={() => onToggleAll?.()}
+              />
+            </Table.Th>
+          )}
           <Table.Th>
             <SortHeader label="Score" sortKey="score" sort={sort} onSort={onSort} />
           </Table.Th>
@@ -318,10 +408,26 @@ export function OverviewTable({
           <Table.Th>
             <SortHeader label="Rent" sortKey="rent" sort={sort} onSort={onSort} />
           </Table.Th>
-          <Table.Th visibleFrom="md">Sqft</Table.Th>
-          <Table.Th visibleFrom="sm">All-in / mo</Table.Th>
-          <Table.Th>Status</Table.Th>
-          <Table.Th>People</Table.Th>
+          {show("sqft") && <Table.Th visibleFrom="md">Sqft</Table.Th>}
+          {show("allIn") && (
+            <Table.Th visibleFrom="sm">
+              <SortHeader label="All-in / mo" sortKey="allIn" sort={sort} onSort={onSort} />
+            </Table.Th>
+          )}
+          {show("city") && <Table.Th>City</Table.Th>}
+          {show("available") && (
+            <Table.Th>
+              <SortHeader label="Available" sortKey="available" sort={sort} onSort={onSort} />
+            </Table.Th>
+          )}
+          {show("deposit") && <Table.Th>Deposit</Table.Th>}
+          {show("added") && (
+            <Table.Th>
+              <SortHeader label="Added" sortKey="added" sort={sort} onSort={onSort} />
+            </Table.Th>
+          )}
+          {show("curation") && <Table.Th>Status</Table.Th>}
+          {show("people") && <Table.Th>People</Table.Th>}
           <Table.Th aria-label="row actions" />
         </Table.Tr>
       </Table.Thead>
@@ -330,13 +436,23 @@ export function OverviewTable({
           const allIn = allInValue(row);
           const group = row.group;
           const availability = rowAvailability(row);
+          const key = rowKey(row);
           return (
             <Table.Tr
-              key={`${row.listing.id}:${group?.key ?? "listing"}`}
+              key={key}
               onClick={() => onOpen(row)}
               // A no-availability listing is dimmed — present but nothing to rank on.
               style={{ cursor: "pointer", opacity: availability === "unavailable" ? 0.55 : 1 }}
             >
+              {selectable && (
+                <Table.Td onClick={(e) => e.stopPropagation()}>
+                  <Checkbox
+                    aria-label="select row"
+                    checked={selectedKeys.has(key)}
+                    onChange={() => onToggleRow?.(key)}
+                  />
+                </Table.Td>
+              )}
               <Table.Td>
                 {group?.displayScore ? (
                   <ScoreCell
@@ -370,24 +486,54 @@ export function OverviewTable({
                   {group === null ? "—" : formatRange(group.rentMin, group.rentMax, "$")}
                 </Text>
               </Table.Td>
-              <Table.Td visibleFrom="md">
-                <Text size="sm">
-                  {group === null ? "—" : formatRange(group.sqftMin, group.sqftMax)}
-                </Text>
-              </Table.Td>
-              <Table.Td visibleFrom="sm">
-                <AllInCell allIn={allIn} composition={rowComposition(row)} />
-              </Table.Td>
-              <CurationCells row={row} huntId={huntId} />
-              <Table.Td>
-                <CollaborationCell
-                  listingId={row.listing.id}
-                  huntId={huntId}
-                  unitGroupKey={group?.key ?? null}
-                />
-              </Table.Td>
+              {show("sqft") && (
+                <Table.Td visibleFrom="md">
+                  <Text size="sm">
+                    {group === null ? "—" : formatRange(group.sqftMin, group.sqftMax)}
+                  </Text>
+                </Table.Td>
+              )}
+              {show("allIn") && (
+                <Table.Td visibleFrom="sm">
+                  <AllInCell allIn={allIn} composition={rowComposition(row)} />
+                </Table.Td>
+              )}
+              {show("city") && (
+                <Table.Td>
+                  <Text size="sm">{row.listing.property.city ?? "—"}</Text>
+                </Table.Td>
+              )}
+              {show("available") && (
+                <Table.Td>
+                  <Text size="sm">{dateLabel(earliestAvailability(row))}</Text>
+                </Table.Td>
+              )}
+              {show("deposit") && (
+                <Table.Td>
+                  <Text size="sm">
+                    {group?.displayPlan.deposit != null
+                      ? `$${group.displayPlan.deposit.toLocaleString()}`
+                      : "—"}
+                  </Text>
+                </Table.Td>
+              )}
+              {show("added") && (
+                <Table.Td>
+                  <Text size="sm">{dateLabel(row.listing.created_at)}</Text>
+                </Table.Td>
+              )}
+              {show("curation") && <CurationCells row={row} huntId={huntId} />}
+              {show("people") && (
+                <Table.Td>
+                  <CollaborationCell
+                    listingId={row.listing.id}
+                    huntId={huntId}
+                    unitGroupKey={group?.key ?? null}
+                  />
+                </Table.Td>
+              )}
               <Table.Td onClick={(e) => e.stopPropagation()} width={40}>
-                <RowActionsMenu row={row} huntId={huntId} onOpen={onOpen} onDelete={onDelete} />
+                <RowActionsMenu row={row} huntId={huntId} onOpen={onOpen} onArchive={onArchive} />
               </Table.Td>
             </Table.Tr>
           );

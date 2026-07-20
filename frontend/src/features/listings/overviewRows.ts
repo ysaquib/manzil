@@ -50,6 +50,8 @@ export const PETS_VALUES = ["cats_and_dogs", "cats_only", "dogs_only", "none"] a
 export const COOLING_VALUES = ["central", "window_units", "none"] as const;
 
 export interface OverviewFilterState {
+  /** Free-text property name / address substring; null when off. */
+  query: string | null;
   minScore: number | null;
   maxScore: number | null;
   minRent: number | null;
@@ -75,6 +77,7 @@ export interface OverviewFilterState {
 }
 
 export const DEFAULT_OVERVIEW_FILTERS: OverviewFilterState = {
+  query: null,
   minScore: null,
   maxScore: null,
   minRent: null,
@@ -124,7 +127,7 @@ export function sanitizeFilterState(input: unknown): OverviewFilterState {
 // A representative non-null value per scalar filter key, for typeof checks.
 function exemplarFor(key: FilterPillKey): unknown {
   if (key === "visited" || key === "dishwasher") return true;
-  if (key === "availableBy") return "";
+  if (key === "availableBy" || key === "query") return "";
   return 0;
 }
 
@@ -144,6 +147,19 @@ export function filtersEqual(a: OverviewFilterState, b: OverviewFilterState): bo
 
 export function hasActiveFilters(filters: OverviewFilterState): boolean {
   return Object.values(filters).some((v) => (Array.isArray(v) ? v.length > 0 : v !== null));
+}
+
+// Free-text search: case-insensitive substring over property name + address.
+// A whitespace-only query is inert (the input clears to null, but a stray
+// shared-filter value must not hide every row).
+function queryPredicate(row: OverviewRow, filters: OverviewFilterState): boolean {
+  const needle = filters.query?.trim().toLowerCase();
+  if (!needle) return true;
+  const property = row.listing.property;
+  return (
+    property.name.toLowerCase().includes(needle) ||
+    property.canonical_address.toLowerCase().includes(needle)
+  );
 }
 
 function rangeOverlaps(
@@ -284,6 +300,7 @@ type RowPredicate = (row: OverviewRow, filters: OverviewFilterState) => boolean;
 
 // Registry — adding a future filter appends one predicate here.
 const FILTER_PREDICATES: RowPredicate[] = [
+  queryPredicate,
   scorePredicate,
   rentPredicate,
   sqftPredicate,
@@ -319,6 +336,9 @@ export interface FilterPill {
 /** Labels for active filter Pills. One pill per non-null bound. */
 export function filterPills(filters: OverviewFilterState): FilterPill[] {
   const pills: FilterPill[] = [];
+  if (filters.query !== null && filters.query.trim() !== "") {
+    pills.push({ key: "query", label: `Search: ${filters.query.trim()}` });
+  }
   if (filters.minScore !== null) {
     pills.push({ key: "minScore", label: `Score ≥ ${filters.minScore}` });
   }
@@ -380,11 +400,20 @@ export function filterPills(filters: OverviewFilterState): FilterPill[] {
   return pills;
 }
 
-export type SortKey = "score" | "rent" | "name";
+export type SortKey = "score" | "rent" | "name" | "allIn" | "available" | "added";
 
 export interface SortState {
   key: SortKey;
   dir: "asc" | "desc";
+}
+
+/** Earliest availability date (ISO) across the group's plans, or null. */
+export function earliestAvailability(row: OverviewRow): string | null {
+  const dates = (row.group?.plans ?? [])
+    .map((plan) => plan.availability_date)
+    .filter((d): d is string => d !== null)
+    .sort();
+  return dates[0] ?? null;
 }
 
 function sortValue(row: OverviewRow, key: SortKey): number | string | null {
@@ -392,6 +421,10 @@ function sortValue(row: OverviewRow, key: SortKey): number | string | null {
   // bottom via the null handling in `sortRows`, never coerced to 0.
   if (key === "score") return row.group?.displayScore?.total ?? null;
   if (key === "rent") return row.group ? (row.group.rentMin ?? row.group.rentMax) : null;
+  if (key === "allIn") return allInValue(row);
+  // ISO dates and timestamps sort correctly as strings.
+  if (key === "available") return earliestAvailability(row);
+  if (key === "added") return row.listing.created_at;
   return row.listing.property.name.toLowerCase();
 }
 

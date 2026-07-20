@@ -21,10 +21,11 @@ import { useLocalStorage } from "@mantine/hooks";
 import {
   IconArrowsLeftRight,
   IconExternalLink,
+  IconGripVertical,
   IconTrash,
   IconX,
 } from "@tabler/icons-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { PageHeader } from "../../components/PageHeader";
@@ -36,6 +37,7 @@ import { COMPARE_LIMIT, entryKey, useCompareSet, type CompareEntry } from "./com
 import { displayValue } from "./displayValue";
 import {
   buildRows,
+  earliestAvailability,
   formatRange,
   rowAvailability,
   rowComposition,
@@ -72,14 +74,6 @@ function PhotosCell({ propertyId }: { propertyId: string }) {
 interface CompareColumn {
   entry: CompareEntry;
   row: OverviewRow;
-}
-
-function earliestAvailability(row: OverviewRow): string | null {
-  const dates = (row.group?.plans ?? [])
-    .map((plan) => plan.availability_date)
-    .filter((d): d is string => d !== null)
-    .sort();
-  return dates[0] ?? null;
 }
 
 function LabelCell({ children }: { children: React.ReactNode }) {
@@ -167,6 +161,19 @@ export function ComparePage() {
   const criterionOf = (column: CompareColumn, key: string) =>
     column.row.group?.displayScore?.breakdown.criteria.find((c) => c.key === key);
 
+  // Column drag reordering (m12): native HTML5 drag on the header cells —
+  // three columns don't justify a dnd dependency. Indexes translate through
+  // entryKey because `columns` can lag `compare.entries` by unpruned rows.
+  const [dragKey, setDragKey] = useState<string | null>(null);
+  const entryIndex = (key: string) =>
+    compare.entries.findIndex((entry) => entryKey(entry) === key);
+  const dropOn = (targetKey: string) => {
+    if (dragKey !== null && dragKey !== targetKey) {
+      compare.move(entryIndex(dragKey), entryIndex(targetKey));
+    }
+    setDragKey(null);
+  };
+
   return (
     <Stack gap="lg">
       <PageHeader
@@ -234,17 +241,49 @@ export function ComparePage() {
                 {columns.map((column) => {
                   const property = column.row.listing.property;
                   const listingUrl = property.official_url ?? property.sources[0]?.url ?? null;
+                  const key = entryKey(column.entry);
                   return (
-                    <Table.Th key={entryKey(column.entry)} className={classes.valueCol}>
+                    <Table.Th
+                      key={key}
+                      className={classes.valueCol}
+                      draggable={columns.length > 1}
+                      onDragStart={(e) => {
+                        e.dataTransfer.effectAllowed = "move";
+                        setDragKey(key);
+                      }}
+                      onDragOver={(e) => {
+                        if (dragKey !== null) e.preventDefault();
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        dropOn(key);
+                      }}
+                      onDragEnd={() => setDragKey(null)}
+                      style={{
+                        cursor: columns.length > 1 ? "grab" : undefined,
+                        opacity: dragKey === key ? 0.5 : 1,
+                      }}
+                    >
                       <Group justify="space-between" wrap="nowrap" align="flex-start">
-                        <div>
+                        <Group gap={6} wrap="nowrap" align="flex-start">
+                          {columns.length > 1 && (
+                            <IconGripVertical
+                              size={14}
+                              stroke={1.5}
+                              color="var(--mantine-color-dimmed)"
+                              style={{ marginTop: 4, flexShrink: 0 }}
+                              aria-hidden
+                            />
+                          )}
+                          <div>
                           <Text size="md" fw={600} ff="heading">
                             {property.name}
                           </Text>
                           <Text size="xs" c="dimmed" fw={400}>
                             {property.canonical_address}
                           </Text>
-                        </div>
+                          </div>
+                        </Group>
                         <Group gap={4} wrap="nowrap">
                           {listingUrl && (
                             <Tooltip label="Open listing page" openDelay={300}>

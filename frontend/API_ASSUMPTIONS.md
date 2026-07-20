@@ -18,7 +18,8 @@ declared at all · `implemented` = working · `no table` = table not yet in a mi
 | `PATCH /v1/hunts/{id}/settings` | `usePatchHuntSettings` (`features/hunts/api.ts`) | generated `HuntSettingsPatch` | P1-5 | implemented |
 | `PUT /v1/hunts/{id}/rubric` | `usePutRubric` (`features/rubric/api.ts`) | generated (shared §8.2 shape) | P1-5 | implemented |
 | `POST /v1/hunts/{id}/listings` | `useCreateListing` (`features/listings/api.ts`) | generated `ListingCreate`/`ListingResponse` | P1-7 | implemented |
-| `DELETE /v1/listings/{id}` | `useDeleteListing` (`features/listings/api.ts`) | generated (204) | P1-7 | implemented |
+| `DELETE /v1/listings/{id}` | *(no hook — superseded in the UI by the status patch below; endpoint kept)* | generated (204) | P1-7 | implemented |
+| `PATCH /v1/listings/{id}/status` | `usePatchListingStatus` (`features/listings/api.ts`) | generated `ListingStatusPatch`/`ListingResponse`; Owner-only archive/restore | m6/m7 (2026-07-19) | implemented |
 | `PATCH /v1/listings/{id}/pins` | `usePatchPins` (`features/listings/api.ts`) | generated `PinsPatch` | P1-11 mini-endpoint | implemented |
 | `PATCH /v1/listings/{id}/unit-groups/{unit_group_key}/state` | `usePatchUnitGroupState` (`features/listings/api.ts`) | generated `UnitGroupStatePatch`/`UnitGroupStateResponse` | DESIGN v3.5 | implemented |
 | `GET /v1/hunts/{id}/jobs?state=…` | `useActiveJobs` (`features/jobs/api.ts`) — the one polled read, 3s | generated `JobResponse` + optional `checkpoint`; `started_at` drives elapsed time for running jobs | P1-7 / P1-13 | implemented |
@@ -50,6 +51,7 @@ origin that appears logged out.
 |---|---|---|---|
 | `hunts` | `useHunts`, `useHunt` (`features/hunts/api.ts`) | hand-typed `Hunt` (incl. `created_at`) | exists (0002; `created_at` 0003) |
 | `hunt_listings` + embedded `properties`, `floor_plans`, `scores` | `useListings` (`features/listings/api.ts`) | hand-typed | exists (0001 + 0002) |
+| `hunt_listings` (`status = archived`, same embed) | `useArchivedListings` (`features/listings/api.ts`) — fetched only while the Archived view is open | hand-typed | exists (0001 + 0002) |
 | `overrides` for one listing | `useOverrides` (`features/listings/api.ts`) | hand-typed | exists (0002) |
 | `fee_checklist` for one listing | `useFees` (`features/listings/api.ts`) | hand-typed | exists (0002) |
 | `extractions` latest-per-criterion for a property | `useExtractions` (`features/listings/api.ts`) | hand-typed | table exists (0001) |

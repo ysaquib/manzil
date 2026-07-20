@@ -142,11 +142,34 @@ export function useCreateListing(huntId: string) {
   });
 }
 
-export function useDeleteListing(huntId: string) {
+// Archived listings (m7): the same embed as the active query so buildRows
+// works unchanged; fetched only while the Archived view is open.
+export function useArchivedListings(huntId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["hunt_listings", huntId, "archived"],
+    queryFn: async (): Promise<Listing[]> => {
+      const { data, error } = await supabase
+        .from("hunt_listings")
+        .select(LISTING_SELECT)
+        .eq("hunt_id", huntId)
+        .eq("status", "archived");
+      if (error) throw error;
+      return (data ?? []) as unknown as Listing[];
+    },
+    enabled,
+  });
+}
+
+// Archive/restore (m6/m7). Invalidating the ["hunt_listings", huntId] prefix
+// refreshes both the active and archived queries.
+export function usePatchListingStatus(huntId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (listingId: string) =>
-      apiFetch<void>(`/v1/listings/${listingId}`, { method: "DELETE" }),
+    mutationFn: ({ listingId, status }: { listingId: string; status: "active" | "archived" }) =>
+      apiFetch<ListingResponse>(`/v1/listings/${listingId}/status`, {
+        method: "PATCH",
+        body: { status } satisfies components["schemas"]["ListingStatusPatch"],
+      }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["hunt_listings", huntId] }),
   });
 }

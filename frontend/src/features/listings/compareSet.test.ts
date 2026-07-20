@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  addEntries,
   COMPARE_LIMIT,
   containsEntry,
   entryKey,
+  moveEntry,
   pruneEntries,
   rowEntry,
   toggleEntry,
@@ -45,5 +47,35 @@ describe("rowEntry", () => {
   it("returns null for listing-level rows", () => {
     const row = { listing: { id: "a" }, group: null, state: null } as unknown as OverviewRow;
     expect(rowEntry(row)).toBeNull();
+  });
+});
+
+describe("addEntries (m6 bulk send)", () => {
+  it("appends missing entries in order until the limit fills", () => {
+    const entries = addEntries([e("a")], [e("a"), e("b"), e("c"), e("d")]);
+    expect(entries.map(entryKey)).toEqual(["a:2-2", "b:2-2", "c:2-2"]);
+  });
+
+  it("returns the same array when nothing fits or everything is present", () => {
+    const full = [e("a"), e("b"), e("c")];
+    expect(addEntries(full, [e("d")])).toBe(full);
+    const partial = [e("a")];
+    expect(addEntries(partial, [e("a")])).toBe(partial);
+  });
+});
+
+describe("moveEntry (m12 reorder)", () => {
+  const entries = [e("a"), e("b"), e("c")];
+
+  it("moves an entry forward and backward", () => {
+    expect(moveEntry(entries, 0, 2).map(entryKey)).toEqual(["b:2-2", "c:2-2", "a:2-2"]);
+    expect(moveEntry(entries, 2, 0).map(entryKey)).toEqual(["c:2-2", "a:2-2", "b:2-2"]);
+  });
+
+  it("clamps the target and no-ops on same or invalid indexes", () => {
+    expect(moveEntry(entries, 1, 99).map(entryKey)).toEqual(["a:2-2", "c:2-2", "b:2-2"]);
+    expect(moveEntry(entries, 1, 1)).toBe(entries);
+    expect(moveEntry(entries, -1, 0)).toBe(entries);
+    expect(moveEntry(entries, 5, 0)).toBe(entries);
   });
 });
