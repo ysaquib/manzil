@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import structlog
-from manzil_shared.config import MAX_IMAGES
+from manzil_shared.config import MAX_STORED_IMAGES
 from manzil_shared.errors import PrivateAddressRefused, StageRetryable
 
 from manzil_worker.enrich.images import (
@@ -43,7 +43,7 @@ async def image_fetch_stage(state: RunState, ctx: StageCtx) -> RunState:
     seen: set[str] = set()
     incomplete = False
     for url in urls:
-        if len(prepared) >= MAX_IMAGES:
+        if len(prepared) >= MAX_STORED_IMAGES:
             break
         try:
             normalized = normalize_image(await fetch(url))
@@ -60,12 +60,17 @@ async def image_fetch_stage(state: RunState, ctx: StageCtx) -> RunState:
         seen.add(normalized.content_hash)
         prepared.append((url, normalized))
 
-    # Never compare or replace a partial set: one transiently failed candidate
-    # could otherwise look like a deletion and trigger spend/data loss.
-    if incomplete and len(prepared) < MAX_IMAGES:
+    # A known-partial set is stored but never marked complete. Persistence keys
+    # its authoritative replace off `image_fetch_completed`, so leaving the flag
+    # unset makes the write purely additive — a failed candidate can never look
+    # like a deletion. Discarding `prepared` here as well would be the actual
+    # data loss: one permanently-404 candidate (a mis-parsed srcset entry, a
+    # rotated CDN path) would otherwise starve the Property of images forever.
+    complete = not incomplete
+    if not prepared:
         state.property_images = []
-        state.image_fetch_completed = False
-        _skip_vision(state, "image_set_incomplete")
+        state.image_fetch_completed = complete
+        _skip_vision(state, "no_usable_images")
         return state
 
     previous_hashes = await ctx.existing_image_hashes(state.property_id)
@@ -89,11 +94,12 @@ async def image_fetch_stage(state: RunState, ctx: StageCtx) -> RunState:
         )
 
     state.property_images = images
-    state.image_fetch_completed = True
+    state.image_fetch_completed = complete
     current_hashes = {image.content_hash for image in images}
-    if not current_hashes:
-        _skip_vision(state, "no_usable_images")
-    elif current_hashes == previous_hashes:
+    # VISION spends only on genuinely new content. On a partial set that is a
+    # subset of what we already hold, "changed" would otherwise be true purely
+    # because candidates went missing — so gate on new hashes, not equality.
+    if not current_hashes - previous_hashes:
         _skip_vision(state, "images_unchanged")
     elif state.plan is not None and state.plan.skipped.get("VISION") == "images_unchanged":
         state.plan.skipped.pop("VISION")
@@ -101,6 +107,7 @@ async def image_fetch_stage(state: RunState, ctx: StageCtx) -> RunState:
         "images_prepared",
         property_id=str(state.property_id),
         count=len(images),
-        changed=current_hashes != previous_hashes,
+        complete=complete,
+        changed=bool(current_hashes - previous_hashes),
     )
     return state

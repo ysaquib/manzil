@@ -25,7 +25,7 @@ from manzil_shared.config import (
     IMAGE_MAX_DOWNLOAD_BYTES,
     IMAGE_MAX_PIXELS,
     IMAGE_WEBP_QUALITY,
-    MAX_IMAGES,
+    MAX_STORED_IMAGES,
 )
 from manzil_shared.errors import PrivateAddressRefused
 from PIL import Image, ImageOps, UnidentifiedImageError
@@ -67,11 +67,27 @@ def _absolute_http_url(value: str | None, base_url: str) -> str | None:
 
 
 def _srcset_urls(value: str | None) -> Iterable[str]:
+    """Return the largest variant from a srcset/data-srcset attribute.
+
+    Candidates are `url [descriptor]` pairs separated by commas, but a URL may
+    itself contain commas — Cloudinary and Imgix put their transform segment in
+    the path (`c_fill,f_auto,q_auto,w_640`). Splitting the attribute on every
+    comma therefore shatters such URLs into fragments, and the trailing fragment
+    resolves against the page base into a URL that never existed and 404s. Walk
+    whitespace-separated tokens instead and treat only a *trailing* comma as a
+    candidate boundary, which is where the separator actually sits.
+    """
     if not value:
         return ()
-    candidates = [
-        candidate.strip().split()[0] for candidate in value.split(",") if candidate.strip()
-    ]
+    candidates: list[str] = []
+    expect_url = True
+    for token in value.split():
+        boundary = token.endswith(",")
+        token = token.rstrip(",")
+        if expect_url and token:
+            candidates.append(token)
+        # Otherwise this token is a width/density descriptor — carries no URL.
+        expect_url = boundary
     # srcset is conventionally ordered from smaller to larger. Keep the best
     # variant instead of spending the Property cap on multiple resolutions of
     # the same photo.
@@ -98,11 +114,14 @@ def _json_image_urls(value: object, *, image_context: bool = False) -> Iterable[
                 yield from _json_image_urls(item, image_context=in_image)
 
 
-def discover_image_urls(document: str, base_url: str, *, limit: int = MAX_IMAGES * 4) -> list[str]:
+def discover_image_urls(
+    document: str, base_url: str, *, limit: int = MAX_STORED_IMAGES * 4
+) -> list[str]:
     """Return de-duplicated listing image candidates in page order.
 
     The wider discovery cap leaves room for download failures and byte-level
-    duplicates; IMAGE_FETCH applies the final ``MAX_IMAGES`` cap after hashing.
+    duplicates; IMAGE_FETCH applies the final ``MAX_STORED_IMAGES`` cap after
+    hashing.
     """
     try:
         root = html.fromstring(document, base_url=base_url)

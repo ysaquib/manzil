@@ -92,19 +92,71 @@ def test_same_normalized_hashes_mark_vision_skipped() -> None:
     assert store.objects == {}  # content-addressed object already exists
 
 
-def test_partial_download_set_preserves_prior_rows_and_skips_vision() -> None:
+def test_partial_download_set_keeps_good_images_without_authoritative_replace() -> None:
+    """One dead candidate must not discard the images that did download.
+
+    `image_fetch_completed=False` already makes persistence additive
+    (queue.py: the delete-not-in-current only runs when completed), so storing
+    a partial set is safe -- it can never delete a prior row.
+    """
+
     async def fetch(url: str) -> bytes:
         if url.endswith("bad"):
             return b"not an image"
         return _bytes("blue")
 
+    store = MemoryStore()
     state = asyncio.run(
         image_fetch_stage(
             _state(["https://img.test/good", "https://img.test/bad"]),
+            StageCtx(download_image=fetch, image_store=store),
+        )
+    )
+    # Not authoritative -- the set is known-partial, so persistence stays additive.
+    assert not state.image_fetch_completed
+    # ...but the image that did download is kept and stored.
+    assert len(state.property_images) == 1
+    assert len(store.objects) == 1
+    assert state.plan is not None and "VISION" not in state.plan.skipped
+
+
+def test_all_candidates_failing_stores_nothing_and_skips_vision() -> None:
+    async def fetch(url: str) -> bytes:
+        return b"not an image"
+
+    state = asyncio.run(
+        image_fetch_stage(
+            _state(["https://img.test/bad1", "https://img.test/bad2"]),
             StageCtx(download_image=fetch, image_store=MemoryStore()),
         )
     )
     assert not state.image_fetch_completed
     assert state.property_images == []
     assert state.plan is not None
-    assert state.plan.skipped == {"VISION": "image_set_incomplete"}
+    assert state.plan.skipped == {"VISION": "no_usable_images"}
+
+
+def test_partial_set_adding_no_new_hashes_skips_vision() -> None:
+    raw = _bytes("green")
+    expected = normalize_image(raw).content_hash
+
+    async def fetch(url: str) -> bytes:
+        if url.endswith("bad"):
+            return b"not an image"
+        return raw
+
+    async def previous(property_id):  # type: ignore[no-untyped-def]
+        return {expected}
+
+    state = asyncio.run(
+        image_fetch_stage(
+            _state(["https://img.test/good", "https://img.test/bad"]),
+            StageCtx(
+                download_image=fetch,
+                image_store=MemoryStore(),
+                existing_image_hashes=previous,
+            ),
+        )
+    )
+    assert state.plan is not None
+    assert state.plan.skipped == {"VISION": "images_unchanged"}
