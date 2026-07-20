@@ -471,3 +471,69 @@ describe("allInValue / rowComposition (per-plan, P3-9 follow-up)", () => {
     expect(allInValue(oneBed)).toBeNull(); // criterion absent from breakdown
   });
 });
+
+describe("applyOverviewFilters (free-text query, m1)", () => {
+  it("matches property name and address, case-insensitively", () => {
+    const byName = applyOverviewFilters(buildRows(listings), {
+      ...DEFAULT_OVERVIEW_FILTERS,
+      query: "alpha",
+    });
+    expect(byName.map((r) => r.listing.property.name)).toEqual(["Alpha Court"]);
+
+    const byAddress = applyOverviewFilters(buildRows(listings), {
+      ...DEFAULT_OVERVIEW_FILTERS,
+      query: "MAIN st",
+    });
+    expect(byAddress).toHaveLength(3); // every fixture lives at 1 Main St
+  });
+
+  it("treats a whitespace-only query as off", () => {
+    expect(
+      applyOverviewFilters(buildRows(listings), { ...DEFAULT_OVERVIEW_FILTERS, query: "   " }),
+    ).toHaveLength(3);
+  });
+
+  it("survives sanitize and shows a pill", () => {
+    expect(sanitizeFilterState({ query: "alpha" }).query).toBe("alpha");
+    expect(sanitizeFilterState({ query: 7 }).query).toBeNull();
+    expect(filterPills({ ...DEFAULT_OVERVIEW_FILTERS, query: "alpha" })).toEqual([
+      { key: "query", label: "Search: alpha" },
+    ]);
+  });
+});
+
+describe("sortRows (m2 keys)", () => {
+  it("sorts by all-in cost with unknowns last", () => {
+    const cheap = makeListing("s1", "Cheap", [{ beds: 1, baths: 1 }], { "s1-plan-0": 8 });
+    cheap.scores[0].all_in_components = {
+      total: 1500, estimated_total: 0, components: [], badges: [], mode: "median",
+    };
+    const dear = makeListing("s2", "Dear", [{ beds: 1, baths: 1 }], { "s2-plan-0": 9 });
+    dear.scores[0].all_in_components = {
+      total: 2400, estimated_total: 0, components: [], badges: [], mode: "median",
+    };
+    const unknown = makeListing("s3", "Unknown", [{ beds: 1, baths: 1 }], { "s3-plan-0": 10 });
+    const rows = sortRows(buildRows([dear, unknown, cheap]), { key: "allIn", dir: "asc" });
+    expect(rows.map((r) => r.listing.property.name)).toEqual(["Cheap", "Dear", "Unknown"]);
+  });
+
+  it("sorts by earliest availability date with dateless rows last", () => {
+    const soon = makeListing("a1", "Soon", [{ availability_date: "2026-08-01" }]);
+    const later = makeListing("a2", "Later", [
+      { availability_date: "2026-09-15" },
+      { availability_date: "2026-10-01" },
+    ]);
+    const never = makeListing("a3", "No Date", [{ beds: 3 }]);
+    const rows = sortRows(buildRows([later, never, soon]), { key: "available", dir: "asc" });
+    expect(rows.map((r) => r.listing.property.name)).toEqual(["Soon", "Later", "No Date"]);
+  });
+
+  it("sorts by recently added", () => {
+    const old = makeListing("t1", "Old", [{ beds: 1 }]);
+    old.created_at = "2026-07-01T00:00:00Z";
+    const fresh = makeListing("t2", "Fresh", [{ beds: 1 }]);
+    fresh.created_at = "2026-07-18T00:00:00Z";
+    const rows = sortRows(buildRows([old, fresh]), { key: "added", dir: "desc" });
+    expect(rows.map((r) => r.listing.property.name)).toEqual(["Fresh", "Old"]);
+  });
+});

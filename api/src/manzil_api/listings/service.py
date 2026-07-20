@@ -13,6 +13,7 @@ from manzil_api.hunts.exceptions import InsufficientRole
 from manzil_api.listings.schemas import (
     ListingCreate,
     ListingResponse,
+    ListingStatusPatch,
     PinsPatch,
     UnitGroupStatePatch,
     UnitGroupStateResponse,
@@ -93,6 +94,22 @@ async def delete_listing(client: Client, listing_id: UUID, user_id: str) -> None
     if listing is None or _role(client, listing["hunt_id"], user_id) != "owner":
         raise InsufficientRole("Only the Hunt Owner may delete Listings")
     client.table("hunt_listings").update({"status": "archived"}).eq("id", str(listing_id)).execute()
+
+
+async def patch_status(
+    client: Client, listing: dict[str, Any], user_id: str, body: ListingStatusPatch
+) -> ListingResponse:
+    """Archive or restore — the same owner gate as delete_listing (archive's alias)."""
+    if _role(client, listing["hunt_id"], user_id) != "owner":
+        raise InsufficientRole("Only the Hunt Owner may archive or restore Listings")
+    listing_id = UUID(listing["id"])
+    client.table("hunt_listings").update({"status": body.status}).eq(
+        "id", str(listing_id)
+    ).execute()
+    row = await get_listing_row(client, listing_id)
+    if row is None:
+        raise RuntimeError("listing missing after status patch")
+    return _to_response(row)
 
 
 async def patch_pins(

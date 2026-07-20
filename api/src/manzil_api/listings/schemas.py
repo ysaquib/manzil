@@ -42,6 +42,12 @@ class ListingResponse(BaseModel):
     unavailable_at: datetime | None = None
 
 
+class ListingStatusPatch(BaseModel):
+    """Archive / restore (§8.2 `hunt_listings.status`) — the soft-delete pair."""
+
+    status: Literal["active", "archived"]
+
+
 class PinsPatch(BaseModel):
     """Per-Unit-Group pinned floor plan (DESIGN §8.2 `hunt_listings.pins`)."""
 

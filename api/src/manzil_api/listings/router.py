@@ -13,6 +13,7 @@ from manzil_api.listings.dependencies import ValidListing
 from manzil_api.listings.schemas import (
     ListingCreate,
     ListingResponse,
+    ListingStatusPatch,
     PinsPatch,
     UnitGroupStatePatch,
     UnitGroupStateResponse,
@@ -54,6 +55,17 @@ async def delete_listing(
     listing_id: UUID, listing: ValidListing, user: CurrentUser, client: UserClient
 ) -> None:
     await service.delete_listing(client, listing_id, user.id)
+
+
+@router.patch("/listings/{listing_id}/status", response_model=ListingResponse)
+async def patch_status(
+    listing_id: UUID,
+    body: ListingStatusPatch,
+    listing: ValidListing,
+    user: CurrentUser,
+    client: UserClient,
+) -> ListingResponse:
+    return await service.patch_status(client, listing, user.id, body)
 
 
 @router.patch("/listings/{listing_id}/pins", response_model=ListingResponse)

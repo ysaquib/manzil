@@ -39,6 +39,31 @@ export function toggleEntry(
   return [...entries, entry];
 }
 
+/** Bulk add (m6): append the missing entries in order until the limit fills. */
+export function addEntries(
+  entries: CompareEntry[],
+  toAdd: CompareEntry[],
+  limit: number = COMPARE_LIMIT,
+): CompareEntry[] {
+  const next = [...entries];
+  for (const entry of toAdd) {
+    if (next.length >= limit) break;
+    if (!containsEntry(next, entry)) next.push(entry);
+  }
+  return next.length === entries.length ? entries : next;
+}
+
+/** Reorder (m12): move the entry at `from` to `to`, clamped; no-op when equal. */
+export function moveEntry(entries: CompareEntry[], from: number, to: number): CompareEntry[] {
+  if (from < 0 || from >= entries.length) return entries;
+  const target = Math.max(0, Math.min(entries.length - 1, to));
+  if (target === from) return entries;
+  const next = [...entries];
+  const [moved] = next.splice(from, 1);
+  next.splice(target, 0, moved);
+  return next;
+}
+
 /** Drop entries whose row no longer exists (deleted listing, vanished group). */
 export function pruneEntries(entries: CompareEntry[], validKeys: Set<string>): CompareEntry[] {
   const pruned = entries.filter((e) => validKeys.has(entryKey(e)));
@@ -67,6 +92,8 @@ export function useCompareSet(huntId: string) {
     isFull: entries.length >= COMPARE_LIMIT,
     has: (entry: CompareEntry | null) => entry !== null && containsEntry(entries, entry),
     toggle: (entry: CompareEntry) => setStored(toggleEntry(entries, entry)),
+    addMany: (toAdd: CompareEntry[]) => setStored(addEntries(entries, toAdd)),
+    move: (from: number, to: number) => setStored(moveEntry(entries, from, to)),
     remove: (entry: CompareEntry) =>
       setStored(entries.filter((e) => entryKey(e) !== entryKey(entry))),
     prune: (validKeys: Set<string>) => {

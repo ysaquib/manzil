@@ -13,11 +13,12 @@ import {
   Stack,
   Select,
   Text,
+  TextInput,
   Tooltip,
 } from "@mantine/core";
 import { DatePickerInput } from "@mantine/dates";
 import { useDisclosure } from "@mantine/hooks";
-import { IconFilter, IconWorld } from "@tabler/icons-react";
+import { IconFilter, IconSearch, IconWorld } from "@tabler/icons-react";
 import { sentenceCase } from "../../lib/text";
 import { INTEREST_STATUSES } from "./types";
 
@@ -93,6 +94,15 @@ export function OverviewFilterBar({
         >
           Filters{activeCount > 0 ? ` (${activeCount})` : ""}
         </Button>
+        <TextInput
+          aria-label="search listings"
+          placeholder="Search name or address"
+          leftSection={<IconSearch size={14} stroke={1.5} />}
+          value={filters.query ?? ""}
+          onChange={(e) => setField("query", e.currentTarget.value || null)}
+          size="xs"
+          w={220}
+        />
         {sharedActive && (
           <Tooltip
             label={
