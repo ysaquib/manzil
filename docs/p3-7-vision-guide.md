@@ -17,15 +17,30 @@ approves the versioned reference set and its bench result.
   It downloads at most the candidate budget, rejects private/non-http targets,
   non-images, oversized inputs and decompression bombs, applies EXIF orientation,
   resizes within 1024 px, encodes WebP, de-duplicates normalized bytes, and keeps
-  at most `MAX_IMAGES` (currently 8).
+  at most `MAX_STORED_IMAGES` (currently 20). VISION consumes at most
+  `MAX_VISION_IMAGES` (currently 8) of those — the two caps are deliberately
+  separate (DESIGN §15 lever 3, §20 2026-07-20): storage is cheap, model input is
+  the lever, and photos past the first handful are amenity/floor-plan/stock shots
+  that dilute the kitchen/flooring signal. **P3-7b owes the slice**: whatever
+  enables the anchored call must take the first `MAX_VISION_IMAGES`, not the
+  whole stored set.
 - Objects use `properties/{property_id}/{sha256}.webp` in the private
   `property-images` bucket. `property_images` records source URL, normalized-byte
   hash, dimensions, byte size, kind and the future per-image assessment.
-- `IMAGE_FETCH` compares the complete current normalized-hash set with the
-  Property's persisted set. Equality writes `VISION: images_unchanged` into
-  `plan.skipped`; the runner honors the skip before opening a cost tally or model
-  call. A reused URL whose bytes changed therefore reruns VISION; a changed URL
-  with identical normalized bytes does not.
+- `IMAGE_FETCH` compares the current normalized-hash set with the Property's
+  persisted set and skips VISION unless the current set contains a hash the
+  Property does not already hold (`current - previous`). Writing
+  `VISION: images_unchanged` into `plan.skipped` makes the runner honor the skip
+  before opening a cost tally or model call. A reused URL whose bytes changed
+  therefore reruns VISION; a changed URL with identical normalized bytes does not.
+  The gate is new-hash rather than set-equality so that a *partial* set — one
+  where some candidate failed to download — does not read as "changed" merely
+  because images went missing.
+- A partial set is stored but not marked `image_fetch_completed`. Persistence
+  keys its authoritative replace off that flag, so an incomplete set writes
+  additively and can never delete a prior row. The stage no longer discards the
+  images that did download: a permanently-404 candidate would otherwise starve
+  the Property of images on every run.
 - `call_vision` supports forced-schema OpenRouter calls, NFR6 Langfuse tracing,
   cost tallying, and record/replay. Recordings contain input hashes, never image
   bytes. There is deliberately no `vision.md` prompt yet.

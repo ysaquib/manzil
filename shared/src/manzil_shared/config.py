@@ -101,8 +101,14 @@ UTILITY_BASELINE_TTL_DAYS = 120
 # without it a persistently failing pass would fire one live LLM call per tick.
 UTILITY_BASELINE_RETRY_SECONDS = 3600.0
 
-# VISION input discipline
-MAX_IMAGES = 8
+# Image discipline. Two caps, deliberately split (DESIGN §20 2026-07-20):
+# storage is effectively free (WebP @1024px, ~60KB each) and a wider stored set
+# lets the UI browse and lets a re-analysis run without refetching, while the
+# VISION cap is what DESIGN §15 lever 3 actually constrains — both for spend and
+# because images past the first handful are amenity/floor-plan/stock shots that
+# dilute the kitchen_quality / flooring_quality signal.
+MAX_STORED_IMAGES = 20
+MAX_VISION_IMAGES = 8
 IMAGE_MAX_DIM = 1024
 IMAGE_MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024
 IMAGE_MAX_PIXELS = 40_000_000
