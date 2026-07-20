@@ -83,6 +83,11 @@ class LabelError(ValueError):
     """A label file that cannot be trusted must never grade a bench run."""
 
 
+class IncompleteLabelError(LabelError):
+    """An unfinished skeleton — null/empty values, not a trust failure. bench-run
+    warns and skips these; every other LabelError still fails the run loudly."""
+
+
 class BenchLabel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -116,11 +121,7 @@ def validate_label(label: BenchLabel) -> None:
         if key not in entries:
             continue
         if value is None:
-            problems.append(
-                f"criteria.{key} is null — fill in the true value, move the key "
-                "to `unknown`, or delete it (absent = not graded)"
-            )
-            continue
+            continue  # null = unfinished skeleton — caught by incomplete_reasons, not a trust bug
         try:
             value_adapter(entries[key]).validate_python(value)
         except ValidationError as error:
@@ -131,12 +132,28 @@ def validate_label(label: BenchLabel) -> None:
         raise LabelError(f"label {label.slug!r}: " + "; ".join(problems))
 
 
+def incomplete_reasons(label: BenchLabel) -> list[str]:
+    """Null/empty markers of an unfinished skeleton (vs gradeable ground truth):
+    a null `labeled_at` (the schema's own skeleton marker) or any null `criteria`
+    value. A finished label has neither; bench-run warns and skips the rest."""
+    reasons: list[str] = []
+    if label.labeled_at is None:
+        reasons.append("labeled_at is null (unfinished skeleton)")
+    reasons += [
+        f"criteria.{key} is null" for key in sorted(label.criteria) if label.criteria[key] is None
+    ]
+    return reasons
+
+
 def load_label(path: Path) -> BenchLabel:
     try:
         label = BenchLabel.model_validate(json.loads(path.read_text()))
     except (json.JSONDecodeError, ValidationError) as error:
         raise LabelError(f"label file {path.name}: {error}") from error
-    validate_label(label)
+    validate_label(label)  # trust checks — a typo'd label fails loudly
+    reasons = incomplete_reasons(label)
+    if reasons:
+        raise IncompleteLabelError(f"label {label.slug!r}: " + "; ".join(reasons))
     return label
 
 
@@ -144,6 +161,34 @@ def load_labels(slugs: list[str] = [], labels_dir: Path = LABELS_DIR) -> list[Be
     if not labels_dir.is_dir():
         return []
     return [load_label(path) for path in sorted(labels_dir.glob("*.json")) if (not slugs or path.stem in slugs)]
+
+
+class SkippedLabel(BaseModel):
+    """A bench label bench-run left out because it is an unfinished skeleton."""
+
+    slug: str
+    reason: str
+
+
+def load_labels_split(
+    slugs: list[str] = [], labels_dir: Path = LABELS_DIR
+) -> tuple[list[BenchLabel], list[SkippedLabel]]:
+    """Load labels for a bench run, partitioning unfinished skeletons (null/empty
+    values) out as `skipped` instead of aborting. Genuinely broken labels — bad
+    JSON, non-catalog keys, schema violations, criteria/unknown overlap — still
+    raise LabelError so a typo can never silently mis-grade the bench."""
+    loaded: list[BenchLabel] = []
+    skipped: list[SkippedLabel] = []
+    if not labels_dir.is_dir():
+        return loaded, skipped
+    for path in sorted(labels_dir.glob("*.json")):
+        if slugs and path.stem not in slugs:
+            continue
+        try:
+            loaded.append(load_label(path))
+        except IncompleteLabelError as error:
+            skipped.append(SkippedLabel(slug=path.stem, reason=str(error)))
+    return loaded, skipped
 
 
 def skeleton_payload(slug: str, url: str) -> dict[str, Any]:
