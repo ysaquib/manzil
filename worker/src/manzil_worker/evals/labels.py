@@ -140,10 +140,10 @@ def load_label(path: Path) -> BenchLabel:
     return label
 
 
-def load_labels(labels_dir: Path = LABELS_DIR) -> list[BenchLabel]:
+def load_labels(slugs: list[str] = [], labels_dir: Path = LABELS_DIR) -> list[BenchLabel]:
     if not labels_dir.is_dir():
         return []
-    return [load_label(path) for path in sorted(labels_dir.glob("*.json"))]
+    return [load_label(path) for path in sorted(labels_dir.glob("*.json")) if (not slugs or path.stem in slugs)]
 
 
 def skeleton_payload(slug: str, url: str) -> dict[str, Any]:

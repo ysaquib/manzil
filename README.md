@@ -17,12 +17,12 @@ Manzil is also deliberately dual-purpose: a real tool on a real deadline, and a 
 | [`AGENTS.md`](AGENTS.md) | Instructions for coding agents (`CLAUDE.md` imports it). |
 | [`CHANGELOG.md`](CHANGELOG.md) | What has landed in the code, by task. |
 
-**Current phase: Phase 0 tail ∥ Phase 2 in progress** — Phase 1 has exited and
-the spreadsheet is retired. Phase 2 is adding collaboration; its RLS boundary,
-API role matrix, real-JWT fixtures, permission gate, invites, and Realtime
-consistency path, comments, ratings, member colors, and retained Task History
-(P2-1..P2-7) are live; P2-8 member management is implemented and P2-9
-automation is complete. Manual Phase 2 exit acceptance remains.
+**Current phase: Phase 3 ∥ the Phase 0 tail** — Phases 1 and 2 have exited
+(2026-07-10 and 2026-07-18); the spreadsheet is retired and collaboration ships.
+Phase 3 is the agent system: the planner + manifest-driven runner, the tool
+registry with per-stage allow-lists, DEDUPE, IMAGE_FETCH, ENRICH, and the full
+§9.5 cost composition have landed. Next up is DISCOVER (P3-5). The Phase 0 tail
+still owes bench labeling and the model-pin verdict (P0-11..P0-14).
 See DESIGN §19 for scope and exit gates, IMPLEMENTATION §7 for the task plan.
 
 ## Repo layout
@@ -50,6 +50,8 @@ manzil/
 │   │   ├── stages/              # one module per DESIGN §10.3 stage + generated schema
 │   │   ├── fetching/            # tier ladder, outcome classifier, cleaner + embedded-data miner, registry
 │   │   ├── llm/                 # THE client seam — only package importing provider SDKs
+│   │   ├── enrich/              # P3-7a images + P3-8 maps/proximity/ratings (geocode forever-cache)
+│   │   ├── ops/                 # admin operations behind CLI commands (split_property)
 │   │   ├── evals/               # bench labels + eval harness + model compare (P0-11..13)
 │   │   └── agents/              # agents mode ONLY (learning track); empty until L1
 │   ├── tests/fixtures/          # pages/ (synthetic, committed) · corpus/ + bench/labels/ (LOCAL eval kit, gitignored) · recorded/ (smoke fixture committed)
@@ -87,7 +89,9 @@ uv run ruff check --fix . && uv run ruff format .
 uv run mypy                # --strict on shared/ (the engine must be airtight)
 ```
 
-If all four are green, CI will be green — they are exactly the three CI jobs.
+If all four are green, CI will be green — they are the CI jobs. The one thing they
+don't cover is the `collaboration-security` job (the RLS matrix), which needs a live
+Supabase stack; see [Tests](#tests).
 
 ### Local app loop
 
@@ -125,9 +129,11 @@ Regenerate API types after handler changes (API must be running locally):
 pnpm -C frontend gen:api-types
 ```
 
-Phase 1 ingest jobs persist to the `jobs` row via `PostgresPersistence` (not
-`.manzil/runs/`). The CLI `manzil ingest` path still uses file persistence until
-wired to enqueue jobs (P1-7).
+Submitting a listing through the API creates the Listing and its ingest job in
+one `submit_listing` RPC; the worker runs it and the terminal projection writes
+the derived rows (property, sources, extractions, floor plans, scores). **This is
+the only path that creates Listings** — `manzil ingest` is a debugging tool that
+writes no database rows at all. See [Worker CLI](#worker-cli-manzil).
 
 Key env vars: `DATABASE_URL` (local Supabase Postgres), `MANZIL_WORKER_INPROCESS`
 (API, default `true`), `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` /
@@ -170,10 +176,11 @@ pnpm -C frontend dev | test | build | gen:api-types
 
 | Command | What it does | Use it when |
 |---|---|---|
-| `manzil ingest <url>` | Full pipeline — validate-url → fetch → validate → extract → verify → score — printing the per-plan score breakdown, verify flags, and cost | The Phase 0 workhorse. **Spends tokens** (two to three LLM calls) unless `MANZIL_LLM_MODE=replay` |
+| `manzil ingest <url>` | Full pipeline — validate-url → fetch → validate → extract → verify → score — printing the per-plan score breakdown, verify flags, and cost. **Writes no database rows**; output goes to a run file | Debugging a fetch or an extraction against a real URL without touching your hunt. **Spends tokens** (two to three LLM calls) unless `MANZIL_LLM_MODE=replay` |
 | `manzil llm-smoke` | One structured call through the LLM seam; prints echo, tokens, cost | Verifying keys/tracing after env changes; with `MANZIL_LLM_MODE=record` it refreshes the committed replay fixture |
 | `manzil save-page <url> <slug>` | Fetches through the tier ladder and saves a corpus fixture dir (`raw.html`, `cleaned.txt`, `meta.json`) | Growing the fixture corpus toward 50+ pages, and capturing bench listings for hand-labeling (P0-11) |
-| `manzil clean-corpus` | Re-runs the cleaner over every corpus page, rewriting each `cleaned.txt` | **After any change to `cleaner.py` or `structured.py`** — cleaned text is derived data and must never go stale (runbook, IMPLEMENTATION §8) |
+| `manzil clean-corpus --slug <slug>` | Re-runs the cleaner over every corpus page, rewriting each `cleaned.txt` Optional `--slug` to clean only one page | **After any change to `cleaner.py` or `structured.py`** — cleaned text is derived data and must never go stale (runbook, IMPLEMENTATION §8) |
+| `manzil split-property <property-id> --source-url <url>` | Peels a Source off a merged Property onto a fresh one, re-points its extractions/floor plans/Listings, enqueues a rescore per affected Hunt | Reversing a wrong DEDUPE merge (P3-4). Admin-only: connects with `DATABASE_URL` **below** the RLS boundary. `--listing <uuid>` (repeatable) moves Listings explicitly when no ingest job carried the URL |
 | `manzil census` | Probes every URL in `infra/census_urls.txt` through the tier ladder, writes `docs/hostile-domain-census.csv` | When a new listing domain enters the picture, or to refresh the Tier-3 decision-gate data (P0-14) |
 | `manzil bench-skeleton <slug>` | Scaffolds `fixtures/bench/labels/{slug}.json` from a saved corpus page, every extractable key null | Starting a hand label (P0-11) — fill in true values, move unstated keys to `unknown`, delete ungraded keys |
 | `manzil bench-run` | Runs EXTRACT → VERIFY over every bench label and grades against it; writes a JSON report to `worker/evals/reports/` | The eval harness (P0-12). **Spends tokens** unless `MANZIL_LLM_MODE=replay` |
@@ -181,12 +188,23 @@ pnpm -C frontend dev | test | build | gen:api-types
 
 `ingest` details worth knowing:
 
-- Runs against the hardcoded Phase 0 rubric (`worker/src/manzil_worker/phase0_rubric.py` —
-  2 br · in-unit laundry · cats · balcony · all-in < $2,000 conservative). Rubric editing
-  arrives with the UI in Phase 1.
+- **It is not a second way to add a listing.** `ingest` runs the pipeline in-process with
+  file persistence and stops there: no `jobs` row, no property, no sources, no
+  extractions, no scores. The terminal projection that writes those rows lives in the
+  worker loop (`queue.py`), which the CLI never enters — so a DEDUPE merge decided during
+  the run is also discarded, since the projection is what applies it. Use the UI/API to
+  add a listing for real.
+- **The score it prints is not your hunt's score.** It scores against the hardcoded Phase 0
+  rubric (`worker/src/manzil_worker/phase0_rubric.py` — 2 br · in-unit laundry · cats ·
+  balcony · all-in < $2,000 conservative), because the CLI has no hunt to read a rubric
+  from. Two listings can tie here and differ in the app. Treat the facts and verify flags
+  as the useful output, not the total. (A `--hunt` flag to score against a real rubric is
+  planned — `.claude/plans/cli-submit-and-hunt-rubric.md`.)
+- One thing it *does* share: with `DATABASE_URL` set it uses `PostgresRegistry` rather than
+  an in-memory one, so it reads and updates the fetch/domain registry.
 - Run state persists to `.manzil/runs/<job_id>.json` after **every** stage (gitignored) —
-  inspect it to debug a run; this is the Phase 0 CLI resumability contract. Phase 1
-  ingest jobs enqueued through the API or dev-seed use the `jobs` row instead.
+  inspect it to debug a run; this is the Phase 0 CLI resumability contract. Jobs enqueued
+  through the API or dev-seed use the `jobs` row and `PostgresPersistence` instead.
 - Values VERIFY demoted below `min_confidence` (default `medium`) score as **unknown** —
   on a gated criterion that fires the gate. The extracted value is still in the run file's
   `reconciled` map with its flags; suspect data never silently passes.
@@ -325,14 +343,35 @@ MANZIL_LLM_MODE=replay uv run pytest                                     # what 
 MANZIL_LLM_MODE=record uv run --package manzil-worker pytest -k <slug>   # re-record one fixture (spends tokens)
 ```
 
-Model pins live in `worker/src/manzil_worker/llm/config.py` as OpenRouter slugs
-(`anthropic/claude-haiku-4.5`, `google/gemini-2.5-flash-lite`, …). All live calls
-route through OpenRouter (`OPENROUTER_API_KEY`). For bench/dev runs,
-`MANZIL_MODEL_<STAGE>` overrides a stage's pin without editing config (the model must be
-priced in `MODEL_PRICES`, and recordings are keyed by model so replay never crosses models):
+Model pins live in `worker/src/manzil_worker/llm/config.py` as OpenRouter slugs, one
+per stage. All live calls route through OpenRouter (`OPENROUTER_API_KEY`).
+
+**`MANZIL_MODEL_<STAGE>` overrides one stage's pin for a single run** — the P0-13 sweep
+mechanism, so a model can be judged without editing config (and without a config edit
+sneaking into a commit). The variable is *not* in `.env.example` on purpose: it is a
+per-command knob, not an environment setting. Two guardrails apply — the override must
+be priced in `MODEL_PRICES` (an unpriced model raises rather than guessing at cost), and
+recordings are keyed by model, so `replay` can never serve one model's response for
+another.
+
+`<STAGE>` is the upper-cased stage name from `STAGE_MODELS`:
+
+| Variable | Overrides |
+|---|---|
+| `MANZIL_MODEL_EXTRACT` | EXTRACT — the structured pull from `cleaned.txt`. The main bench dial, and the model `bench-run` names its default report after |
+| `MANZIL_MODEL_VERIFY` | VERIFY check 4 (the LLM check; checks 1–3 are code). Sweep it *with* `MANZIL_MODEL_EXTRACT` — the bench grades the pair, since a demotion below `min_confidence` scores as unknown |
+| `MANZIL_MODEL_SMOKE` | `llm-smoke` — the cheapest way to prove a new slug routes and is priced |
+| `MANZIL_MODEL_VALIDATE` | VALIDATE (is this page a listing?) |
+| `MANZIL_MODEL_DISCOVER` · `MANZIL_MODEL_VISION` | The taste-tier stages (P3-5, P3-7b) |
+| `MANZIL_MODEL_RECONCILE_EQUIVALENCE` · `MANZIL_MODEL_CUSTOM_MATCH` · `MANZIL_MODEL_ENRICH_REVIEWS` · `MANZIL_MODEL_UTILITY_BASELINES` · `MANZIL_MODEL_PLAN_ASSIST` | The remaining workhorse stages |
 
 ```bash
 MANZIL_MODEL_SMOKE=google/gemini-2.5-flash-lite MANZIL_LLM_MODE=record uv run manzil llm-smoke
+
+# sweep the extraction pair — one --name per run, then compare
+MANZIL_MODEL_EXTRACT=google/gemini-3.1-flash-lite \
+MANZIL_MODEL_VERIFY=google/gemini-3.1-flash-lite \
+MANZIL_LLM_MODE=record uv run manzil bench-run --name flash-lite-pair
 ```
 
 Golden-test rule: if an engine change alters any golden in `shared/tests/golden/`, update the golden **in the same commit** with an explanation — that's the audit trail for scoring behavior.
@@ -372,7 +411,26 @@ docker exec -it supabase_db_manzil psql -U postgres              # poke the DB d
 
 ### Environment
 
-Copy `infra/.env.example` to `.env` at the repo root. Notable variables (full table in IMPLEMENTATION §1): `OPENROUTER_API_KEY`, `LANGFUSE_*` (tracing is wired before the first LLM call — an untraced call is a bug), `DATABASE_URL`, `SUPABASE_*` (service-role key is worker + API in-process loop only, never frontend), `MANZIL_WORKER_INPROCESS` (API, default `true`), `MANZIL_MODE` (`workflow` | `agents`), `MANZIL_LLM_MODE` (`live` | `record` | `replay`), `VITE_*` (frontend).
+Copy `infra/.env.example` to `.env` at the repo root. Notable variables (full table in IMPLEMENTATION §1): `OPENROUTER_API_KEY`, `LANGFUSE_*` (tracing is wired before the first LLM call — an untraced call is a bug), `DATABASE_URL`, `SUPABASE_*` (service-role key is worker + API in-process loop only, never frontend), `GOOGLE_MAPS_API_KEY` (Phase 3 ENRICH), `MANZIL_WORKER_INPROCESS` (API, default `true`), `MANZIL_MODE` (`workflow` | `agents`), `MANZIL_LLM_MODE` (`live` | `record` | `replay`), `VITE_*` (frontend).
+
+#### Per-command variables (deliberately not in `.env`)
+
+These are run knobs, not configuration. Setting them in `.env` makes a temporary
+choice permanent and invisible — prefix them onto the one command instead.
+
+| Variable | Effect | Typical use |
+|---|---|---|
+| `MANZIL_MODEL_<STAGE>` | Overrides one stage's model pin for this run; must be priced in `MODEL_PRICES` | Model sweeps — see the table above |
+| `MANZIL_LLM_MODE` | `live` \| `record` \| `replay`. Has an `.env` default, but is normally set per command | `replay` to prove a change spends no tokens; `record` to refresh a fixture |
+| `MANZIL_RECORDED_DIR` | Relocates the replay/record fixture directory (default `worker/tests/fixtures/recorded/`) | Recording into a scratch dir to diff against the committed fixtures before overwriting them |
+| `MANZIL_WORKER_INPROCESS=false` | Stops the API process from claiming jobs | **Required for API tests** when a dev API is on the same local DB — otherwise its worker claims a test Job and races the state-transition assertions |
+| `MANZIL_MODE=agents` | Selects the learning track | Not usable yet — `manzil ingest` exits 2 until L1 lands |
+| `DATABASE_URL` | Also read directly by the CLI | `ingest` uses `PostgresRegistry` when set and an in-memory one when not; `split-property` **requires** it (service-role, below RLS) |
+| `MANZIL_TIER3_PROVIDER` | `brightdata` (default) \| `scrapingbee` | Switching unblocker vendors; the selected provider's key still gates the tier |
+
+Two things that look like env vars but aren't: **`MANZIL_JOB_MAX_ATTEMPTS`** is a constant
+in `shared/src/manzil_shared/config.py` (the dead-letter threshold — change it in code,
+with intent), and **`BRIGHTDATA_ZONE`** defaults to `web_unlocker1` in `tier3.py` if unset.
 
 ## CI
 
