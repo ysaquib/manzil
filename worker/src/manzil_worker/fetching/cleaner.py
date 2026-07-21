@@ -12,10 +12,14 @@ digest of it under [EMBEDDED DATA].
 
 Floor-plan-card retention guard: some listing pages put the Floor Plan summary
 (name, rent range, beds/baths, sqft) in a span-only card and the available
-Units in a separate list. Generic extractors can keep enough Unit prices to
-pass the price-retention guard while silently dropping every summary card.
-Name-bearing, fact-bearing cards are therefore rendered compactly and appended
-when their names are missing from the primary/fallback text.
+Units in a separate sibling list. Generic extractors can keep enough Unit
+prices to pass the price-retention guard while silently dropping every summary
+card — severing each Unit from its category (beds/baths, plan name). Name- and
+fact-bearing cards are therefore rendered compactly and appended when their
+names are missing from the primary/fallback text; when a card carries a
+distinct unit grid, its units are nested (indented) beneath the header so the
+category stays attached to them. Two guardrails keep this from mis-associating
+units across a multi-card container (see _floor_plan_lines).
 
 Price-retention guard: generic extractors can silently discard the listing
 data itself — rentcafe wraps the page in class "main-content-before-contact",
@@ -61,6 +65,9 @@ _FLOOR_PLAN_FACT = re.compile(
     re.IGNORECASE,
 )
 _RENT_STATUS = re.compile(r"\b(?:call|contact(?: us)?) for (?:rent|pricing)\b", re.IGNORECASE)
+_UNIT_ROW_ID = re.compile(
+    r"\b(?:unit|apt|apartment|suite)\b[\s#:.-]*[\w-]*\d|#\s?\d", re.IGNORECASE
+)
 _CARD_TEXT_XPATH = (
     ".//text()[not(ancestor::a) and not(ancestor::button) and not(ancestor::script) "
     "and not(ancestor::style) and not(ancestor::noscript) and not(ancestor::template) "
@@ -144,13 +151,65 @@ def _text_without_actions(element: lxml.html.HtmlElement) -> str:
     return " ".join(parts)
 
 
-def _floor_plan_lines(html: str) -> list[tuple[str, str]]:
-    """Return ``(name, summary)`` for compact, semantic Floor Plan cards.
+def _unit_rows(
+    card: lxml.html.HtmlElement, header: lxml.html.HtmlElement
+) -> list[str]:
+    """Compact text of unit rows inside ``card`` but outside its ``header``.
 
-    The signal is deliberately structural rather than domain-specific: a
-    class/id such as ``floorplan-name``, ``modelName`` or ``fp-name`` must be
-    inside a nearby card containing both a price and a Floor Plan fact. This
-    excludes generic model labels and navigation headings.
+    A unit row carries a price (or rent-status) *and* a unit identifier such as
+    ``Unit 03-205``. Requiring the identifier is what keeps grid header rows
+    ("Unit Base Price Sq Ft") and availability blurbs ("1 Available unit") out.
+    Structured ``<li>``/``<tr>`` rows are preferred; otherwise the smallest
+    identifier-bearing elements (those with no matching descendant) are used.
+    """
+    header_nodes = set(header.iter())
+    rows: list[str] = []
+    seen: set[str] = set()
+
+    def _is_unit(text: str) -> bool:
+        return bool(
+            text
+            and _UNIT_ROW_ID.search(text)
+            and (_PRICE_TOKEN.search(text) or _RENT_STATUS.search(text))
+        )
+
+    for element in card.xpath(".//li | .//tr"):
+        if element in header_nodes:
+            continue
+        row = _normalize(_text_without_actions(element))
+        if _is_unit(row) and row not in seen:
+            seen.add(row)
+            rows.append(row)
+    if rows:
+        return rows
+
+    for element in card.iter():
+        if element in header_nodes or element is header:
+            continue
+        row = _normalize(_text_without_actions(element))
+        if not _is_unit(row) or row in seen:
+            continue
+        # Skip containers: keep only the minimal element with no matching child.
+        if any(
+            _is_unit(_normalize(_text_without_actions(child))) for child in element
+        ):
+            continue
+        seen.add(row)
+        rows.append(row)
+    return rows
+
+
+def _floor_plan_lines(html: str) -> list[tuple[str, str]]:
+    """Return ``(name, block)`` for compact, semantic Floor Plan cards.
+
+    ``block`` is the header summary (name, rent range, beds/baths, sqft); when
+    the card carries a distinct unit grid, each available unit is indented
+    beneath it, so the extractor-dropped category stays attached to its units.
+
+    The signal is structural, not domain-specific: a class/id such as
+    ``floorplan-name``, ``modelName`` or ``fp-name`` inside a card that also
+    carries a price and a Floor Plan fact. Unit nesting is bounded by two
+    guardrails against mis-association (see inline comments).
     """
     try:
         tree = lxml.html.fromstring(html)
@@ -167,20 +226,60 @@ def _floor_plan_lines(html: str) -> list[tuple[str, str]]:
         if not name or "\n" in name or len(name) > 160:
             continue
 
+        # 1. Header region: the smallest ancestor whose text has a price/rent
+        #    status and a Floor Plan fact.
+        header = None
+        header_summary = ""
         context = element
         for _ in range(7):
             summary = _text_without_actions(context)
             has_rent = _PRICE_TOKEN.search(summary) or _RENT_STATUS.search(summary)
             if has_rent and _FLOOR_PLAN_FACT.search(summary):
-                item = (name, summary)
-                if item not in seen:
-                    seen.add(item)
-                    lines.append(item)
+                header = context
+                header_summary = _normalize(summary)
                 break
             parent = context.getparent()
             if parent is None:
                 break
             context = parent
+        if header is None:
+            continue
+
+        key = (name, header_summary)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        # 2. Climb to the smallest ancestor that adds unit rows. Guardrails:
+        #    (a) stop as soon as unit rows appear — never keep climbing;
+        #    (b) abort nesting (header-only) if an ancestor spans more than one
+        #        plan name, i.e. a multi-card container, where units cannot be
+        #        safely attributed to a single plan.
+        unit_rows: list[str] = []
+        card = header.getparent()
+        for _ in range(5):
+            if card is None:
+                break
+            name_hits = sum(
+                1
+                for node in card.iter()
+                if _PLAN_NAME_HINT.search(
+                    " ".join((node.get("class", ""), node.get("id", "")))
+                )
+            )
+            if name_hits > 1:
+                break
+            rows = _unit_rows(card, header)
+            if rows:
+                unit_rows = rows
+                break
+            card = card.getparent()
+
+        if unit_rows:
+            block = header_summary + "\n" + "\n".join(f"  {row}" for row in unit_rows)
+        else:
+            block = header_summary
+        lines.append((name, block))
     return lines
 
 
@@ -210,7 +309,7 @@ def clean_html(html: str) -> CleanedPage:
         )
 
     floor_plan_lines = _floor_plan_lines(html)
-    missing_plans = [summary for name, summary in floor_plan_lines if name not in text]
+    missing_plans = [block for name, block in floor_plan_lines if name not in text]
     if missing_plans:
         section = f"{FLOOR_PLAN_MARKER}\n" + "\n".join(missing_plans)
         text = f"{text}\n\n{section}" if text else section
