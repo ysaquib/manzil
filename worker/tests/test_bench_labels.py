@@ -83,10 +83,10 @@ def test_vision_and_composed_keys_are_not_labelable(tmp_path: Path) -> None:
 
 
 def test_load_labels_sorted_and_empty_dir_is_empty(tmp_path: Path) -> None:
-    assert load_labels(tmp_path / "missing") == []
+    assert load_labels(labels_dir=tmp_path / "missing") == []
     write_label(tmp_path / "b.json", valid_payload() | {"slug": "b"})
     write_label(tmp_path / "a.json", valid_payload() | {"slug": "a"})
-    assert [label.slug for label in load_labels(tmp_path)] == ["a", "b"]
+    assert [label.slug for label in load_labels(labels_dir=tmp_path)] == ["a", "b"]
 
 
 # ── skeleton labels are skipped, not fatal (bench-run) ───────────────────────
