@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 
 import type { RubricOption } from "../../lib/contracts";
 import type { CatalogEntry, RubricCriterion } from "./api";
+import { CriterionIcon } from "./criterionIcon";
 import { formatMatchLabel } from "./matchLabels";
 import { deriveIsBonus } from "./rubricDraft";
 
@@ -58,6 +59,7 @@ export function CriterionViewCard({
     <Card h="100%">
       <Stack gap="sm">
         <Group gap="xs" wrap="wrap">
+          <CriterionIcon entry={entry} />
           <Text fw={600} size="sm">
             {entry.label}
           </Text>

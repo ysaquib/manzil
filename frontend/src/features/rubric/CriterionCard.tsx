@@ -35,6 +35,7 @@ import {
 
 import type { RubricOption } from "../../lib/contracts";
 import type { CatalogEntry, RubricCriterion } from "./api";
+import { CriterionIcon } from "./criterionIcon";
 import { GateControls } from "./GateControls";
 import { OptionMatchEditor } from "./OptionMatchEditor";
 import { OptionGridRow } from "./OptionGridRow";
@@ -258,6 +259,7 @@ export function CriterionCard({
               aria-label={`enable ${entry.label}`}
             />
             <Group gap="xs" wrap="wrap">
+              <CriterionIcon entry={entry} />
               <Text fw={600} size="sm">
                 {entry.label}
               </Text>
