@@ -22,7 +22,8 @@ Manzil is also deliberately dual-purpose: a real tool on a real deadline, and a 
 Phase 3 is the agent system: the planner + manifest-driven runner, the tool
 registry with per-stage allow-lists, DEDUPE, IMAGE_FETCH, ENRICH, and the full
 §9.5 cost composition have landed. Next up is DISCOVER (P3-5). The Phase 0 tail
-still owes bench labeling and the model-pin verdict (P0-11..P0-14).
+is closed: bench labeling done and the P0-14 model-pin verdict ruled 2026-07-21
+(EXTRACT/VERIFY → gemini-3-flash-preview; DESIGN §20).
 See DESIGN §19 for scope and exit gates, IMPLEMENTATION §7 for the task plan.
 
 ## Repo layout

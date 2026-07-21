@@ -20,6 +20,7 @@ over the reports.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import json
 import time
@@ -29,7 +30,7 @@ from typing import Any, Literal
 from uuid import uuid4
 
 import structlog
-from manzil_shared.errors import ManzilError
+from manzil_shared.errors import CheckpointRaised, ManzilError
 from manzil_shared.models import Confidence, FetchOutcome, JobType, RubricCriterion
 from pydantic import BaseModel, Field
 
@@ -252,7 +253,19 @@ async def _run_listing(
     started = time.perf_counter()
     with run_context(trace), cost_tally() as tally:
         state = await extract_stage(state, listing_ctx)
-        state = await verify_stage(state, listing_ctx)
+        # The bench has no human to answer a gate-relevant confirm_value
+        # checkpoint (§10.10). At raise time EXTRACT's values and every VERIFY
+        # flag are already on `state` (all checks run before the raise, single
+        # pass — no double-counting), so grading it as-is is exactly "accept at
+        # low confidence": the extracted value is graded against the label and
+        # the flag still surfaces via verify_flags/evidence_flags. Dropping the
+        # listing instead would bias the bench toward whichever model
+        # checkpoints least and grade each model over a different subset.
+        # Genuine stage errors (schema validation, replay miss) still propagate
+        # and fail the listing. (P0-12 gap surfaced by the gate-heavy 10-label
+        # set; DESIGN §20.)
+        with contextlib.suppress(CheckpointRaised):
+            state = await verify_stage(state, listing_ctx)
     result = _grade(state, label, gate_keys, today=as_of)
     result.latency_s = round(time.perf_counter() - started, 3)
     result.calls = tally.calls
@@ -302,7 +315,10 @@ async def run_bench(
 ) -> BenchReport:
     """One harness run. Per-listing failures (replay miss, missing corpus
     page, stage error) are recorded on the listing and never abort the run —
-    a partial report beats no report. `skipped` carries unfinished-skeleton
+    a partial report beats no report. A gate-relevant VERIFY confirm_value
+    checkpoint is NOT a failure: with no human to answer it the listing is
+    graded accept-at-low-confidence (see `_run_listing`), so every model is
+    graded over the same listings. `skipped` carries unfinished-skeleton
     labels the loader partitioned out: reported and counted, never graded."""
     skipped = skipped or []
     for s in skipped:
