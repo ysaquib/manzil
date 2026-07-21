@@ -19,6 +19,8 @@ import os
 # bench results — a silent model change must never wobble scores.
 WORKHORSE_MODEL = "anthropic/claude-haiku-4.5"
 TASTE_MODEL = "anthropic/claude-sonnet-4.6"
+# WORKHORSE_MODEL = "google/gemini-3-flash-preview"
+# TASTE_MODEL = "google/gemini-3-flash-preview"
 
 # Stage -> model. Unknown stage is an error, not a fallback: a new stage must
 # be assigned a tier deliberately (and get a prompt file) before it can call.
@@ -73,8 +75,8 @@ STAGE_MAX_TOKENS: dict[str, int] = {
 # Langfuse-side cost comes from these same figures so there is one source.
 # OpenRouter's reported `usage.cost` is logged as a cross-check in traces.
 MODEL_PRICES: dict[str, tuple[float, float]] = {
-    WORKHORSE_MODEL: (1.00, 5.00),
-    TASTE_MODEL: (3.00, 15.00),
+    "anthropic/claude-haiku-4.5": (1.00, 5.00),
+    "anthropic/claude-sonnet-4.6": (3.00, 15.00),
     "deepseek/deepseek-v4-flash": (0.09, 0.18),
     "google/gemini-2.5-flash-lite": (0.10, 0.40),
     "openai/gpt-5.4-nano": (0.20, 1.25),
