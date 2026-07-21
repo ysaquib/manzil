@@ -1,0 +1,18 @@
+{
+  "cache_read_tokens": 0,
+  "cache_write_tokens": 0,
+  "content_sha256": "b39fb58589edc9dd92ca9047b619a1c54b19cfc1bb9c3851cd49c1447d160023",
+  "image_hashes": null,
+  "input_tokens": 837,
+  "model": "google/gemini-3-flash-preview",
+  "output": {
+    "contradictions": []
+  },
+  "output_tokens": 14,
+  "prompt_version": 1,
+  "recorded_at": "2026-07-21T06:22:29.363783+00:00",
+  "stage": "verify",
+  "stop_reason": null,
+  "text": null,
+  "tool_calls": null
+}

@@ -7,6 +7,29 @@ repo itself.
 
 ## Unreleased — Phase 3
 
+### 2026-07-21 — Model bench + first non-Anthropic pin (P0-12/13/14 ✅)
+
+- **P0-12 harness fix**: `_run_listing` now suppresses `CheckpointRaised` and
+  grades the flagged state as-is (accept-at-low-confidence). A gate
+  `confirm_value` checkpoint used to fail the whole listing — 4–5 of 10 per
+  model, a different subset each — so models were compared over different
+  listings; now every model grades over the same ten. Genuine stage errors
+  (schema-validation, replay-miss) still fail the listing. +1 harness test.
+- **P0-13 sweep**: record-mode harness over the 10 bench labels for every
+  priced candidate, then a zero-token replay compare. `gemini-3-flash-preview`
+  won the EXTRACT/VERIFY pair (criterion 0.904 vs Haiku 0.862, tied gate 1.0,
+  0 fail, ~63% cheaper, ~2× faster). `gemini-2.5-flash-lite` disqualified on
+  reliability (7/10 schema-validation failures).
+- **P0-14 pin**: `EXTRACT_VERIFY_MODEL = google/gemini-3-flash-preview` in
+  `llm/config.py`; EXTRACT + VERIFY point at it, the other workhorse stages
+  stay `WORKHORSE_MODEL` (Haiku) and TASTE stays Sonnet — the benched pair
+  only (gemini's evidence-flag rate 0.20 vs 0.03 keeps it off un-benched
+  stages). Six unroutable / no-tool-call slugs pruned from `MODEL_PRICES`.
+- Seed/e2e VERIFY replay recordings re-keyed to the pin (EXTRACT frozen via
+  `_SEED_EXTRACT_RECORDINGS`); `.gitignore` exceptions swapped. Resolves the
+  four "pre-existing" pin-flip failures from 2026-07-20. Worker 451 + api 64
+  green in replay, ruff clean.
+
 ### 2026-07-18 — Utility baselines + full all-in composition (P3-9 ◐)
 
 - Scheduler-tick scaffold in the worker loop (opt-in; wired by the API entry

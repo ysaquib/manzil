@@ -195,6 +195,36 @@ def test_missing_corpus_page_fails_that_listing_only(tmp_path: Path) -> None:
     assert "FAILED" in report_text(report)
 
 
+def test_verify_checkpoint_listing_is_graded_not_dropped(tmp_path: Path) -> None:
+    """A gate-relevant VERIFY contradiction demotes beds below min_confidence,
+    which raises a confirm_value checkpoint (§10.10). The bench has no human to
+    answer it, so the listing must still be graded (accept-at-low-confidence) —
+    its extracted values against the label, the flag recorded — never dropped as
+    a failure. Dropping it would bias the bench toward whichever model
+    checkpoints least. (P0-12 gap; DESIGN §20.)"""
+    ctx = StageCtx(
+        call_structured=FakeLLM(
+            {
+                "extract": maple_extraction(),
+                "verify": {
+                    "contradictions": [
+                        {"criterion_key": "beds", "note": "single unit type vs range"}
+                    ]
+                },
+            }
+        ),
+        rubric=phase0_rubric(),
+    )
+    report = run([truth_label()], make_corpus(tmp_path), ctx)
+
+    [listing] = report.listings
+    assert listing.error is None  # graded, not dropped as a failure
+    assert report.summary["failed"] == 0
+    assert listing.criteria["beds"].ok is True  # extracted value still graded vs label
+    assert listing.verify_flags >= 1  # the flag survives into the report
+    assert report.summary["criterion_accuracy"] == 1.0
+
+
 def test_available_now_label_matches_corpus_saved_at_not_wall_clock(tmp_path: Path) -> None:
     """Phrase-only available_now resolves to corpus saved_at, not StageCtx.today."""
     payload = maple_extraction()

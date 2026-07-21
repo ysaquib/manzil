@@ -2,8 +2,10 @@
 
 Pinned OpenRouter model slugs, per-stage assignment, and list prices for the
 cost tally. Swapping a stage's model is a config change here — nowhere else.
-P0-13 (model bench) settles these choices empirically and rewrites this file;
-until then the all-Anthropic baseline from §11.2 stands (routed via OpenRouter).
+P0-13 (model bench) settles these choices empirically and rewrites this file.
+P0-14 landed the first non-Anthropic pin (DESIGN §20 2026-07-21): EXTRACT and
+VERIFY moved to gemini-3-flash-preview on bench evidence; every other workhorse
+stage still rides the §11.2 all-Anthropic baseline (routed via OpenRouter).
 
 Cache economics are keyed by upstream family (`anthropic/` → Anthropic rates,
 `google/` → Google rates). Provider pinning for deterministic routing lives in
@@ -15,12 +17,17 @@ from __future__ import annotations
 
 import os
 
-# Baseline pins (§11.2) as OpenRouter slugs. Verify at P0-13 before committing
-# bench results — a silent model change must never wobble scores.
+# Baseline pins (§11.2) as OpenRouter slugs.
 WORKHORSE_MODEL = "anthropic/claude-haiku-4.5"
 TASTE_MODEL = "anthropic/claude-sonnet-4.6"
-# WORKHORSE_MODEL = "google/gemini-3-flash-preview"
-# TASTE_MODEL = "google/gemini-3-flash-preview"
+
+# P0-14 model-pin (DESIGN §20 2026-07-21). The 10-listing bench (P0-13) ranked
+# gemini-3-flash-preview first for the EXTRACT/VERIFY pair: criterion accuracy
+# 0.904 vs the haiku baseline's 0.862, tied gate accuracy (1.0), zero failures,
+# and 63% cheaper. Scope is the benched pair ONLY — the other workhorse stages
+# stay on WORKHORSE_MODEL because the bench never measured them, and this model
+# trades a higher evidence-flag rate (0.20 vs 0.03) for that accuracy/cost win.
+EXTRACT_VERIFY_MODEL = "google/gemini-3-flash-preview"
 
 # Stage -> model. Unknown stage is an error, not a fallback: a new stage must
 # be assigned a tier deliberately (and get a prompt file) before it can call.
@@ -28,8 +35,8 @@ STAGE_MODELS: dict[str, str] = {
     # workhorse tier
     "smoke": WORKHORSE_MODEL,  # P0-7 seam check; cheapest tier on purpose
     "validate": WORKHORSE_MODEL,
-    "extract": WORKHORSE_MODEL,
-    "verify": WORKHORSE_MODEL,  # check 4 only; checks 1-3 are code
+    "extract": EXTRACT_VERIFY_MODEL,  # P0-14 pin (DESIGN §20 2026-07-21)
+    "verify": EXTRACT_VERIFY_MODEL,  # P0-14 pin; check 4 only, checks 1-3 are code
     "reconcile_equivalence": WORKHORSE_MODEL,
     "custom_match": WORKHORSE_MODEL,
     "enrich_reviews": WORKHORSE_MODEL,  # P3-8 ratings stage 1 review synthesis
@@ -74,21 +81,22 @@ STAGE_MAX_TOKENS: dict[str, int] = {
 # (cost accounting never guesses). Used for the RunState cost tally; the
 # Langfuse-side cost comes from these same figures so there is one source.
 # OpenRouter's reported `usage.cost` is logged as a cross-check in traces.
+#
+# Pruned 2026-07-21 (P0-13): the P0-13 sweep found six priced slugs unusable —
+# deepseek-v4-flash, claude-3-haiku, qwen3.5-flash, minimax-m3 do not route on
+# OpenRouter (404/400), and gemini-3.1-pro-preview / gemini-3.5-flash route but
+# return no tool_calls under forced tool_choice, so they cannot serve any
+# structured stage. Re-add a row only once its slug is confirmed to route AND
+# honor forced tool use (`manzil llm-smoke` with MANZIL_MODEL_SMOKE).
 MODEL_PRICES: dict[str, tuple[float, float]] = {
     "anthropic/claude-haiku-4.5": (1.00, 5.00),
     "anthropic/claude-sonnet-4.6": (3.00, 15.00),
-    "deepseek/deepseek-v4-flash": (0.09, 0.18),
     "google/gemini-2.5-flash-lite": (0.10, 0.40),
     "openai/gpt-5.4-nano": (0.20, 1.25),
-    "anthropic/claude-3-haiku": (0.25, 1.25),
-    "qwen/qwen3.5-flash": (0.25, 1.50),
     "google/gemini-3.1-flash-lite": (0.25, 1.50),
-    "minimax/minimax-m3": (0.30, 1.20),
     "google/gemini-2.5-flash": (0.30, 2.50),
     "google/gemini-3-flash-preview": (0.50, 3.00),
     "openai/gpt-5.6-luna": (1.00, 6.00),
-    "google/gemini-3.5-flash": (1.50, 9.00),
-    "google/gemini-3.1-pro-preview": (2.00, 12.00),
 }
 
 # Cache economics differ per upstream family: Anthropic bills explicit cache
