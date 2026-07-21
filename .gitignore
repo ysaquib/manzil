@@ -70,3 +70,4 @@ worker/tests/fixtures/recorded/*
 # and carry page evidence quotes — local artifacts, never repo content.
 worker/evals/reports/
 .pnpm-store/**
+worker/tests/fixtures/bench/labels.md
