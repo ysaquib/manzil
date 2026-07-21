@@ -22,7 +22,7 @@ from manzil_worker.evals.harness import (
     report_text,
     run_bench,
 )
-from manzil_worker.evals.labels import BenchLabel
+from manzil_worker.evals.labels import BenchLabel, SkippedLabel
 from manzil_worker.fetching.cleaner import clean_html
 from manzil_worker.phase0_rubric import phase0_rubric
 from manzil_worker.stages.base import StageCtx
@@ -160,6 +160,28 @@ def test_plan_grading_flags_missing_and_extra_plans(tmp_path: Path) -> None:
     assert plans.matched == 1
     assert plans.missing == ["The Oak"]
     assert plans.extra == []
+
+
+def test_skipped_labels_are_reported_and_excluded_from_results(tmp_path: Path) -> None:
+    """Unfinished-skeleton labels the loader partitioned out ride in the report
+    as `skipped` (counted, warned) but never touch the graded results."""
+    skipped = [SkippedLabel(slug="rent.com--skel", reason="label 'skel': criteria.beds is null")]
+    report = asyncio.run(
+        run_bench(
+            [truth_label()],
+            corpus_dir=make_corpus(tmp_path),
+            ctx=perfect_ctx(),
+            gate_keys=GATE_KEYS,
+            skipped=skipped,
+        )
+    )
+
+    assert [s.slug for s in report.skipped] == ["rent.com--skel"]
+    assert report.summary["skipped"] == 1
+    # Skipped slugs never enter listings, so they don't skew accuracy.
+    assert [r.slug for r in report.listings] == [SLUG]
+    assert report.summary["criterion_accuracy"] == 1.0
+    assert "SKIPPED" in report_text(report)
 
 
 def test_missing_corpus_page_fails_that_listing_only(tmp_path: Path) -> None:

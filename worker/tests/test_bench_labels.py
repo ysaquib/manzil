@@ -11,9 +11,11 @@ from pathlib import Path
 import pytest
 from manzil_worker.evals.labels import (
     BenchLabel,
+    IncompleteLabelError,
     LabelError,
     load_label,
     load_labels,
+    load_labels_split,
     skeleton_payload,
     write_skeleton,
 )
@@ -85,6 +87,50 @@ def test_load_labels_sorted_and_empty_dir_is_empty(tmp_path: Path) -> None:
     write_label(tmp_path / "b.json", valid_payload() | {"slug": "b"})
     write_label(tmp_path / "a.json", valid_payload() | {"slug": "a"})
     assert [label.slug for label in load_labels(tmp_path)] == ["a", "b"]
+
+
+# ── skeleton labels are skipped, not fatal (bench-run) ───────────────────────
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        {"criteria": {"beds": None}},  # a null criteria value
+        {"labeled_at": None},  # undated = unfinished skeleton
+    ],
+)
+def test_incomplete_label_raises_incomplete_subclass(
+    tmp_path: Path, mutation: dict[str, object]
+) -> None:
+    """A skeleton/unfinished label raises IncompleteLabelError — still a
+    LabelError (existing callers unchanged) but distinguishable so bench-run can
+    skip it instead of aborting."""
+    payload = valid_payload() | mutation
+    with pytest.raises(IncompleteLabelError):
+        load_label(write_label(tmp_path / "x.json", payload))
+
+
+def test_load_labels_split_partitions_skeletons_from_gradeable(tmp_path: Path) -> None:
+    write_label(tmp_path / "good.json", valid_payload() | {"slug": "good"})
+    write_label(tmp_path / "skel.json", valid_payload() | {"slug": "skel", "labeled_at": None})
+    write_label(
+        tmp_path / "nullcrit.json",
+        valid_payload() | {"slug": "nullcrit", "criteria": {"beds": None}},
+    )
+
+    loaded, skipped = load_labels_split(labels_dir=tmp_path)
+
+    assert [label.slug for label in loaded] == ["good"]
+    assert {s.slug for s in skipped} == {"skel", "nullcrit"}
+    assert all("null" in s.reason for s in skipped)
+
+
+def test_load_labels_split_still_raises_on_broken_labels(tmp_path: Path) -> None:
+    """A typo'd catalog key is a trust failure, never a skip — it must still
+    abort the run loudly rather than be silently partitioned away."""
+    write_label(tmp_path / "typo.json", valid_payload() | {"criteria": {"kitchen_vibes": 5}})
+    with pytest.raises(LabelError, match="not an extractable catalog key"):
+        load_labels_split(labels_dir=tmp_path)
 
 
 # ── skeleton scaffolding ─────────────────────────────────────────────────────
