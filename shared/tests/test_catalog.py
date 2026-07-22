@@ -123,6 +123,7 @@ def test_beds_entry_matches_pinned_contract() -> None:
         "label": "Number of bedrooms",
         "category": "unit",
         "domain": "rent",
+        "fact_scope": "floor_plan",
         "value_schema": {"type": "integer", "minimum": 0, "maximum": 5},
         "default_options": [
             {"match": {"op": "eq", "value": 2}, "delta": 0.5},
@@ -131,4 +132,6 @@ def test_beds_entry_matches_pinned_contract() -> None:
         ],
         "extraction_hint": "Count distinct bedrooms; a studio is 0.",
         "refresh_class": "listing_details",
+        "escalation_policy": "decision_relevant",
+        "conflict_policy": "standard_ladder",
     }

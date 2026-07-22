@@ -25,6 +25,7 @@ from manzil_shared.models import (
     CatalogEntry,
     CriterionCategory,
     CriterionDomain,
+    FactScope,
     MatchOp,
     OptionMatch,
     RefreshClass,
@@ -379,10 +380,18 @@ CATALOG: tuple[CatalogEntry, ...] = (
         value_schema={
             "type": "string",
             "enum": [
-                "A+", "A", "A-",
-                "B+", "B", "B-",
-                "C+", "C", "C-",
-                "D+", "D", "D-",
+                "A+",
+                "A",
+                "A-",
+                "B+",
+                "B",
+                "B-",
+                "C+",
+                "C",
+                "C-",
+                "D+",
+                "D",
+                "D-",
                 "F",
             ],
         },
@@ -404,6 +413,36 @@ CATALOG: tuple[CatalogEntry, ...] = (
     ),
 )
 
+# P3-SC2 establishes scope as Catalog truth before P3-SC3/P3-SC4 expand the
+# catalog and extraction prompt. These assignments do not yet teach EXTRACT
+# exact Floor Plan association; page-level unit claims are persisted as
+# unit_scope_unspecified until P3-SC4.
+_FLOOR_PLAN_KEYS = frozenset(
+    {
+        "beds",
+        "baths",
+        "sqft",
+        "patio_balcony",
+        "private_entry",
+        "security_deposit",
+        "availability_date",
+        "kitchen_quality",
+        "flooring_quality",
+        "cooling",
+        "dishwasher",
+    }
+)
+_MIXED_KEYS = frozenset({"in_unit_laundry", "parking", "min_lease_months"})
+for _entry in CATALOG:
+    if _entry.key == "all_in_monthly":
+        _entry.fact_scope = FactScope.COMPOSED
+    elif _entry.key in _FLOOR_PLAN_KEYS:
+        _entry.fact_scope = FactScope.FLOOR_PLAN
+    elif _entry.key in _MIXED_KEYS:
+        _entry.fact_scope = FactScope.MIXED
+    else:
+        _entry.fact_scope = FactScope.PROPERTY
+
 
 # --- seed.sql generation ---
 
@@ -412,13 +451,17 @@ _COLUMNS = (
     "label",
     "category",
     "domain",
+    "fact_scope",
     "value_schema",
+    "claim_value_schema",
     "default_options",
     "extraction_hint",
     "requires_tool",
     "refresh_class",
+    "escalation_policy",
+    "conflict_policy",
 )
-_JSONB_COLUMNS = frozenset({"value_schema", "default_options"})
+_JSONB_COLUMNS = frozenset({"value_schema", "claim_value_schema", "default_options"})
 
 
 def _sql_str(value: str) -> str:
