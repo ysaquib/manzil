@@ -77,6 +77,7 @@ class CriterionDomain(StrEnum):
 
 
 class CriterionCategory(StrEnum):
+    PROPERTY = "property"
     UNIT = "unit"
     POLICY = "policy"
     COST = "cost"
@@ -148,6 +149,8 @@ class MatchOp(StrEnum):
     RANGE = "range"
     IN = "in"
     BOOL = "bool"
+    CONTAINS_ANY = "contains_any"
+    CONTAINS_ALL = "contains_all"
 
 
 class CheckpointKind(StrEnum):
@@ -260,6 +263,7 @@ class FloorPlan(BaseModel):
     plan_name: str
     beds: int
     baths: float
+    unit_types: list[str] = Field(default_factory=list)
     sqft_min: int | None = None
     sqft_max: int | None = None
     rent_min: Decimal | None = None

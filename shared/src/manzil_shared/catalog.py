@@ -1,4 +1,4 @@
-"""Criteria catalog seed — the 19 v1 criteria from DESIGN.md §8.2, verbatim keys.
+"""Criteria catalog seed — the active rent criteria from DESIGN.md §8.2.
 
 This module is the single source of truth for `criteria_catalog` rows:
 `supabase/seed.sql` is generated FROM here (runbook, IMPLEMENTATION.md §8)
@@ -23,8 +23,10 @@ from typing import Any
 
 from manzil_shared.models import (
     CatalogEntry,
+    ConflictPolicy,
     CriterionCategory,
     CriterionDomain,
+    EscalationPolicy,
     FactScope,
     MatchOp,
     OptionMatch,
@@ -36,6 +38,26 @@ from manzil_shared.models import (
 
 def _opt(op: MatchOp, value: Any, delta: float) -> RubricOption:
     return RubricOption(match=OptionMatch(op=op, value=value), delta=delta)
+
+
+PROPERTY_TYPE_VALUES = (
+    "apartment",
+    "condo",
+    "townhome",
+    "duplex",
+    "single_family",
+    "loft",
+    "other",
+)
+
+
+def _controlled_set_schema(values: tuple[str, ...]) -> dict[str, Any]:
+    return {
+        "type": "array",
+        "items": {"type": "string", "enum": list(values)},
+        "minItems": 1,
+        "uniqueItems": True,
+    }
 
 
 CATALOG: tuple[CatalogEntry, ...] = (
@@ -411,6 +433,259 @@ CATALOG: tuple[CatalogEntry, ...] = (
         requires_tool=RequiresTool.WEB_SEARCH,
         refresh_class=RefreshClass.REVIEWS,
     ),
+    # P3-SC3: first Property tranche. Preference conveniences use the
+    # available-sources-only / verified-positive defaults; a Hunt Gate upgrades
+    # acquisition to decision-relevant at reconciliation time (DESIGN §9.2).
+    CatalogEntry(
+        key="pool",
+        label="Pool",
+        category=CriterionCategory.PROPERTY,
+        domain=CriterionDomain.RENT,
+        fact_scope=FactScope.PROPERTY,
+        value_schema={
+            "type": "string",
+            "enum": ["indoor", "outdoor", "indoor_and_outdoor", "unspecified", "none"],
+        },
+        default_options=[
+            _opt(MatchOp.EQ, "indoor_and_outdoor", 0.5),
+            _opt(MatchOp.IN, ["indoor", "outdoor"], 0.25),
+            _opt(MatchOp.EQ, "unspecified", 0.25),
+            _opt(MatchOp.EQ, "none", 0.0),
+        ],
+        extraction_hint=(
+            "Shared Property pool facilities only: indoor, outdoor, both, unspecified type, "
+            "or explicitly none. Do not infer private-unit pools."
+        ),
+        refresh_class=RefreshClass.LISTING_DETAILS,
+        escalation_policy=EscalationPolicy.AVAILABLE_SOURCES_ONLY,
+        conflict_policy=ConflictPolicy.VERIFIED_POSITIVE_PREFERRED,
+    ),
+    CatalogEntry(
+        key="fitness_center",
+        label="Fitness center or gym",
+        category=CriterionCategory.PROPERTY,
+        domain=CriterionDomain.RENT,
+        fact_scope=FactScope.PROPERTY,
+        value_schema={"type": "boolean"},
+        default_options=[
+            _opt(MatchOp.BOOL, True, 0.5),
+            _opt(MatchOp.BOOL, False, 0.0),
+        ],
+        extraction_hint="True only for an on-site resident fitness center or gym.",
+        refresh_class=RefreshClass.LISTING_DETAILS,
+        escalation_policy=EscalationPolicy.AVAILABLE_SOURCES_ONLY,
+        conflict_policy=ConflictPolicy.VERIFIED_POSITIVE_PREFERRED,
+    ),
+    CatalogEntry(
+        key="clubhouse",
+        label="Clubhouse",
+        category=CriterionCategory.PROPERTY,
+        domain=CriterionDomain.RENT,
+        fact_scope=FactScope.PROPERTY,
+        value_schema={"type": "boolean"},
+        default_options=[
+            _opt(MatchOp.BOOL, True, 0.25),
+            _opt(MatchOp.BOOL, False, 0.0),
+        ],
+        extraction_hint="True only when the Property advertises a resident clubhouse.",
+        refresh_class=RefreshClass.LISTING_DETAILS,
+        escalation_policy=EscalationPolicy.AVAILABLE_SOURCES_ONLY,
+        conflict_policy=ConflictPolicy.VERIFIED_POSITIVE_PREFERRED,
+    ),
+    CatalogEntry(
+        key="emergency_maintenance",
+        label="Emergency maintenance",
+        category=CriterionCategory.PROPERTY,
+        domain=CriterionDomain.RENT,
+        fact_scope=FactScope.PROPERTY,
+        value_schema={
+            "type": "string",
+            "enum": ["emergency_service", "24_hour_emergency", "none"],
+        },
+        default_options=[
+            _opt(MatchOp.EQ, "24_hour_emergency", 0.5),
+            _opt(MatchOp.EQ, "emergency_service", 0.25),
+            _opt(MatchOp.EQ, "none", 0.0),
+        ],
+        extraction_hint=(
+            "24_hour_emergency only when 24-hour emergency maintenance is explicit; "
+            "emergency_service for emergency maintenance without a 24-hour promise; none only "
+            "when explicitly unavailable."
+        ),
+        refresh_class=RefreshClass.LISTING_DETAILS,
+        escalation_policy=EscalationPolicy.AVAILABLE_SOURCES_ONLY,
+        conflict_policy=ConflictPolicy.VERIFIED_POSITIVE_PREFERRED,
+    ),
+    CatalogEntry(
+        key="maintenance_on_site",
+        label="Maintenance on site",
+        category=CriterionCategory.PROPERTY,
+        domain=CriterionDomain.RENT,
+        fact_scope=FactScope.PROPERTY,
+        value_schema={"type": "boolean"},
+        default_options=[
+            _opt(MatchOp.BOOL, True, 0.25),
+            _opt(MatchOp.BOOL, False, 0.0),
+        ],
+        extraction_hint="True only when on-site maintenance staff or service is advertised.",
+        refresh_class=RefreshClass.LISTING_DETAILS,
+        escalation_policy=EscalationPolicy.AVAILABLE_SOURCES_ONLY,
+        conflict_policy=ConflictPolicy.VERIFIED_POSITIVE_PREFERRED,
+    ),
+    CatalogEntry(
+        key="management_on_site",
+        label="Management on site",
+        category=CriterionCategory.PROPERTY,
+        domain=CriterionDomain.RENT,
+        fact_scope=FactScope.PROPERTY,
+        value_schema={"type": "boolean"},
+        default_options=[
+            _opt(MatchOp.BOOL, True, 0.25),
+            _opt(MatchOp.BOOL, False, 0.0),
+        ],
+        extraction_hint="True only when on-site Property management is advertised.",
+        refresh_class=RefreshClass.LISTING_DETAILS,
+        escalation_policy=EscalationPolicy.AVAILABLE_SOURCES_ONLY,
+        conflict_policy=ConflictPolicy.VERIFIED_POSITIVE_PREFERRED,
+    ),
+    CatalogEntry(
+        key="online_payments",
+        label="Online payments",
+        category=CriterionCategory.PROPERTY,
+        domain=CriterionDomain.RENT,
+        fact_scope=FactScope.PROPERTY,
+        value_schema={"type": "boolean"},
+        default_options=[
+            _opt(MatchOp.BOOL, True, 0.25),
+            _opt(MatchOp.BOOL, False, 0.0),
+        ],
+        extraction_hint=(
+            "True only when online rent payments are explicit. A generic resident portal alone "
+            "is display evidence and does not prove this capability."
+        ),
+        refresh_class=RefreshClass.LISTING_DETAILS,
+        escalation_policy=EscalationPolicy.AVAILABLE_SOURCES_ONLY,
+        conflict_policy=ConflictPolicy.VERIFIED_POSITIVE_PREFERRED,
+    ),
+    CatalogEntry(
+        key="online_maintenance_requests",
+        label="Online maintenance requests",
+        category=CriterionCategory.PROPERTY,
+        domain=CriterionDomain.RENT,
+        fact_scope=FactScope.PROPERTY,
+        value_schema={"type": "boolean"},
+        default_options=[
+            _opt(MatchOp.BOOL, True, 0.25),
+            _opt(MatchOp.BOOL, False, 0.0),
+        ],
+        extraction_hint=(
+            "True only when residents can submit maintenance requests online. A generic resident "
+            "portal alone is display evidence and does not prove this capability."
+        ),
+        refresh_class=RefreshClass.LISTING_DETAILS,
+        escalation_policy=EscalationPolicy.AVAILABLE_SOURCES_ONLY,
+        conflict_policy=ConflictPolicy.VERIFIED_POSITIVE_PREFERRED,
+    ),
+    CatalogEntry(
+        key="package_handling",
+        label="Package handling",
+        category=CriterionCategory.PROPERTY,
+        domain=CriterionDomain.RENT,
+        fact_scope=FactScope.PROPERTY,
+        value_schema={
+            "type": "string",
+            "enum": ["locker", "secured_room", "office", "unsecured_area", "none"],
+        },
+        default_options=[
+            _opt(MatchOp.EQ, "locker", 0.5),
+            _opt(MatchOp.EQ, "secured_room", 0.25),
+            _opt(MatchOp.EQ, "office", 0.1),
+            _opt(MatchOp.EQ, "unsecured_area", 0.0),
+            _opt(MatchOp.EQ, "none", 0.0),
+        ],
+        extraction_hint=(
+            "How resident packages are handled: dedicated locker, secured room, office receipt, "
+            "unsecured area, or explicitly none."
+        ),
+        refresh_class=RefreshClass.LISTING_DETAILS,
+        escalation_policy=EscalationPolicy.AVAILABLE_SOURCES_ONLY,
+        conflict_policy=ConflictPolicy.VERIFIED_POSITIVE_PREFERRED,
+    ),
+    CatalogEntry(
+        key="smoking_policy",
+        label="Smoking policy",
+        category=CriterionCategory.PROPERTY,
+        domain=CriterionDomain.RENT,
+        fact_scope=FactScope.PROPERTY,
+        value_schema={
+            "type": "string",
+            "enum": ["smoke_free_property", "designated_areas_only", "permitted"],
+        },
+        default_options=[
+            _opt(MatchOp.EQ, "smoke_free_property", 0.5),
+            _opt(MatchOp.EQ, "designated_areas_only", 0.0),
+            _opt(MatchOp.EQ, "permitted", -0.5),
+        ],
+        extraction_hint=(
+            "Property-wide smoking policy: fully smoke-free, permitted only in designated areas, "
+            "or generally permitted. Silence is unknown."
+        ),
+        refresh_class=RefreshClass.LISTING_DETAILS,
+        escalation_policy=EscalationPolicy.DECISION_RELEVANT,
+        conflict_policy=ConflictPolicy.STANDARD_LADDER,
+    ),
+    CatalogEntry(
+        key="property_types",
+        label="Property types",
+        category=CriterionCategory.PROPERTY,
+        domain=CriterionDomain.RENT,
+        fact_scope=FactScope.PROPERTY,
+        value_schema=_controlled_set_schema(PROPERTY_TYPE_VALUES),
+        default_options=[
+            _opt(MatchOp.CONTAINS_ANY, list(PROPERTY_TYPE_VALUES), 0.0),
+        ],
+        extraction_hint=(
+            "Every explicitly advertised Property type from the controlled vocabulary. Preserve "
+            "multiple types; do not infer from architecture or a Floor Plan name."
+        ),
+        refresh_class=RefreshClass.LISTING_DETAILS,
+    ),
+    CatalogEntry(
+        key="unit_types",
+        label="Unit types",
+        category=CriterionCategory.UNIT,
+        domain=CriterionDomain.RENT,
+        fact_scope=FactScope.FLOOR_PLAN,
+        value_schema=_controlled_set_schema(PROPERTY_TYPE_VALUES),
+        default_options=[
+            _opt(MatchOp.CONTAINS_ANY, list(PROPERTY_TYPE_VALUES), 0.0),
+        ],
+        extraction_hint=(
+            "Every explicitly advertised type for the Floor Plan. Usually one value; preserve "
+            "multiple types for a genuinely hybrid offering and do not infer from architecture."
+        ),
+        refresh_class=RefreshClass.LISTING_DETAILS,
+    ),
+    CatalogEntry(
+        key="internet_readiness",
+        label="Internet readiness advertised",
+        category=CriterionCategory.PROPERTY,
+        domain=CriterionDomain.RENT,
+        fact_scope=FactScope.PROPERTY,
+        value_schema={"type": "boolean"},
+        default_options=[
+            _opt(MatchOp.BOOL, True, 0.25),
+            _opt(MatchOp.BOOL, False, 0.0),
+        ],
+        extraction_hint=(
+            "True only when the Source advertises general internet, high-speed internet, or fiber "
+            "readiness for the Property. This does not verify provider serviceability, speed, "
+            "Floor Plan coverage, or inclusion in rent; silence is unknown."
+        ),
+        refresh_class=RefreshClass.LISTING_DETAILS,
+        escalation_policy=EscalationPolicy.AVAILABLE_SOURCES_ONLY,
+        conflict_policy=ConflictPolicy.VERIFIED_POSITIVE_PREFERRED,
+    ),
 )
 
 # P3-SC2 establishes scope as Catalog truth before P3-SC3/P3-SC4 expand the
@@ -430,6 +705,7 @@ _FLOOR_PLAN_KEYS = frozenset(
         "flooring_quality",
         "cooling",
         "dishwasher",
+        "unit_types",
     }
 )
 _MIXED_KEYS = frozenset({"in_unit_laundry", "parking", "min_lease_months"})
@@ -481,18 +757,36 @@ def _sql_value(column: str, entry: CatalogEntry) -> str:
     return _sql_str(str(raw))
 
 
-def generate_seed_sql(catalog: tuple[CatalogEntry, ...] = CATALOG) -> str:
+def generate_catalog_upsert_sql(catalog: tuple[CatalogEntry, ...]) -> str:
     rows = ",\n".join(
         "  (" + ", ".join(_sql_value(col, entry) for col in _COLUMNS) + ")" for entry in catalog
     )
     updates = ",\n".join(f"  {col} = excluded.{col}" for col in _COLUMNS[1:])
     return (
-        "-- Generated from shared/src/manzil_shared/catalog.py — never edit by hand.\n"
-        "-- Regenerate: uv run --package manzil-shared python -m manzil_shared.catalog\n"
-        "\n"
         f"insert into criteria_catalog\n  ({', '.join(_COLUMNS)})\nvalues\n"
         f"{rows}\n"
         f"on conflict (key) do update set\n{updates};\n"
+    )
+
+
+def generate_seed_sql(catalog: tuple[CatalogEntry, ...] = CATALOG) -> str:
+    return (
+        "-- Generated from shared/src/manzil_shared/catalog.py — never edit by hand.\n"
+        "-- Regenerate: uv run --package manzil-shared python -m manzil_shared.catalog\n"
+        "\n" + generate_catalog_upsert_sql(catalog)
+    )
+
+
+def generate_catalog_sync_sql(*keys: str) -> str:
+    """Hosted-database upsert for a named Catalog tranche (IMPLEMENTATION §8)."""
+    selected = tuple(entry for entry in CATALOG if entry.key in keys)
+    missing = set(keys) - {entry.key for entry in selected}
+    if missing:
+        raise KeyError(f"unknown catalog keys: {sorted(missing)}")
+    return (
+        "-- Generated Catalog sync from shared/src/manzil_shared/catalog.py.\n"
+        "-- P3-SC3 first Property/Unit type tranche; idempotent on hosted and local databases.\n\n"
+        + generate_catalog_upsert_sql(selected)
     )
 
 

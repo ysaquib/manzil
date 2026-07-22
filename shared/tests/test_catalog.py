@@ -13,7 +13,13 @@ import json
 from pathlib import Path
 from typing import Any
 
-from manzil_shared.catalog import _COLUMNS, _JSONB_COLUMNS, CATALOG, generate_seed_sql
+from manzil_shared.catalog import (
+    _COLUMNS,
+    _JSONB_COLUMNS,
+    CATALOG,
+    generate_catalog_sync_sql,
+    generate_seed_sql,
+)
 from manzil_shared.models import CatalogEntry
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -72,9 +78,9 @@ def parse_seed_sql(sql: str) -> list[CatalogEntry]:
     return entries
 
 
-def test_catalog_is_the_19_v1_criteria() -> None:
+def test_catalog_contains_the_approved_p3_sc3_tranche() -> None:
     keys = [entry.key for entry in CATALOG]
-    assert len(keys) == len(set(keys)) == 19
+    assert len(keys) == len(set(keys)) == 32
     assert keys == [
         "beds",
         "baths",
@@ -95,7 +101,30 @@ def test_catalog_is_the_19_v1_criteria() -> None:
         "grocery_proximity",
         "management_reviews",
         "location_safety",
+        "pool",
+        "fitness_center",
+        "clubhouse",
+        "emergency_maintenance",
+        "maintenance_on_site",
+        "management_on_site",
+        "online_payments",
+        "online_maintenance_requests",
+        "package_handling",
+        "smoking_policy",
+        "property_types",
+        "unit_types",
+        "internet_readiness",
     ]
+
+    by_key = {entry.key: entry for entry in CATALOG}
+    assert by_key["pool"].category.value == "property"
+    assert by_key["pool"].fact_scope.value == "property"
+    assert by_key["pool"].escalation_policy.value == "available_sources_only"
+    assert by_key["pool"].conflict_policy.value == "verified_positive_preferred"
+    assert by_key["smoking_policy"].escalation_policy.value == "decision_relevant"
+    assert by_key["unit_types"].fact_scope.value == "floor_plan"
+    assert by_key["property_types"].value_schema["uniqueItems"] is True
+    assert by_key["property_types"].default_options[0].match.op.value == "contains_any"
 
 
 def test_seed_sql_round_trips() -> None:
@@ -109,6 +138,14 @@ def test_committed_seed_sql_is_current() -> None:
         "supabase/seed.sql is stale — regenerate: "
         "uv run --package manzil-shared python -m manzil_shared.catalog"
     )
+
+
+def test_p3_sc3_catalog_sync_is_generated_from_catalog() -> None:
+    keys = [entry.key for entry in CATALOG[-13:]]
+    migration = (
+        REPO_ROOT / "supabase" / "migrations" / "20260802000000_catalog_sync_p3_sc3.sql"
+    ).read_text()
+    assert migration == generate_catalog_sync_sql(*keys)
 
 
 def test_beds_entry_matches_pinned_contract() -> None:

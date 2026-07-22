@@ -230,6 +230,58 @@ def test_one_sided_inclusive_comparisons_include_boundary() -> None:
     )
 
 
+def test_array_set_matches_are_strict_and_first_match_wins() -> None:
+    types = crit(
+        "property_types",
+        [
+            opt(MatchOp.CONTAINS_ALL, ["townhome", "loft"], 1.0),
+            opt(MatchOp.CONTAINS_ANY, ["townhome", "duplex"], 0.5),
+        ],
+    )
+    both = score(
+        [types],
+        {"property_types": ["loft", "townhome", "townhome"]},
+        rubric_version=1,
+    )
+    assert both.to_contract()["criteria"] == [
+        {
+            "key": "property_types",
+            "value": ["loft", "townhome", "townhome"],
+            "matched": {"op": "contains_all", "value": ["townhome", "loft"]},
+            "delta": 1.0,
+        }
+    ]
+
+    any_only = score([types], {"property_types": ["apartment", "duplex"]}, rubric_version=1)
+    assert any_only.criteria[0].delta == 0.5
+
+    for wrong_shape in ("townhome", {"townhome": True}, 1):
+        unmatched = score([types], {"property_types": wrong_shape}, rubric_version=1)
+        assert unmatched.criteria[0].delta == 0.0
+
+
+def test_array_set_match_requires_a_non_empty_configured_set() -> None:
+    criterion = crit("property_types", [opt(MatchOp.CONTAINS_ALL, [], 1.0)])
+    breakdown = score([criterion], {"property_types": ["apartment"]}, rubric_version=1)
+    assert breakdown.criteria[0].matched is None
+    assert breakdown.total == 10.0
+
+
+def test_floor_plan_unit_types_overlay_generalized_values() -> None:
+    plan = FloorPlan(
+        property_id=uuid4(),
+        source_id=uuid4(),
+        plan_name="Loft A",
+        beds=1,
+        baths=1,
+        unit_types=["loft"],
+    )
+    unit_types = crit("unit_types", [opt(MatchOp.CONTAINS_ANY, ["loft"], 0.5)])
+    breakdown = score([unit_types], {"unit_types": ["apartment"]}, plan, rubric_version=1)
+    assert breakdown.criteria[0].value == ["loft"]
+    assert breakdown.total == 10.5
+
+
 def test_multi_plan_group_scores_independently_best_displayed() -> None:
     """§9.4: each floor plan scored independently; group displays best unless pinned."""
 
