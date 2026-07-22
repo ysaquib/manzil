@@ -342,7 +342,14 @@ export function CriterionCard({
                       ...criterion,
                       options: [
                         ...criterion.options,
-                        { match: { op: "eq", value: null }, delta: 0, dealbreaker_set_score: null },
+                        {
+                          match: {
+                            op: entry.value_schema.type === "array" ? "contains_any" : "eq",
+                            value: entry.value_schema.type === "array" ? [] : null,
+                          },
+                          delta: 0,
+                          dealbreaker_set_score: null,
+                        },
                       ],
                     })
                   }

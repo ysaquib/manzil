@@ -2,7 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import type { RubricOption } from "../../lib/contracts";
 import type { CatalogEntry, RubricCriterion } from "./api";
-import { deriveIsBonus, draftToPayload, initDraft, validateDraft, validateMatch } from "./rubricDraft";
+import {
+  deriveIsBonus,
+  draftToPayload,
+  initDraft,
+  overlapWarnings,
+  validateDraft,
+  validateMatch,
+} from "./rubricDraft";
 
 const bedsEntry: CatalogEntry = {
   key: "beds",
@@ -109,6 +116,44 @@ describe("validateMatch (mirrors the API's value_schema check)", () => {
   it("rejects bool matches on non-boolean criteria", () => {
     expect(validateMatch({ op: "bool", value: true }, intSchema)).toMatch(/non-boolean/);
     expect(validateMatch({ op: "bool", value: true }, { type: "boolean" })).toBeNull();
+  });
+
+  it("validates controlled array/set matches and rejects exact equality", () => {
+    const setSchema = {
+      type: "array" as const,
+      items: { type: "string" as const, enum: ["apartment", "townhome", "loft"] },
+      minItems: 1,
+      uniqueItems: true,
+    };
+    expect(validateMatch({ op: "contains_any", value: ["townhome"] }, setSchema)).toBeNull();
+    expect(validateMatch({ op: "contains_all", value: [] }, setSchema)).toMatch(/at least one/);
+    expect(validateMatch({ op: "contains_any", value: ["castle"] }, setSchema)).toMatch(/one of/);
+    expect(validateMatch({ op: "eq", value: ["townhome"] }, setSchema)).toMatch(/array criteria/);
+  });
+});
+
+describe("overlapWarnings", () => {
+  it("warns without invalidating array options whose match spaces can overlap", () => {
+    const entry: CatalogEntry = {
+      ...bedsEntry,
+      key: "property_types",
+      category: "property",
+      fact_scope: "property",
+      value_schema: {
+        type: "array",
+        items: { type: "string", enum: ["apartment", "townhome", "loft"] },
+        minItems: 1,
+        uniqueItems: true,
+      },
+    };
+    const draft = initDraft([entry], []);
+    draft[0].enabled = true;
+    draft[0].options = [
+      option({ match: { op: "contains_any", value: ["apartment", "loft"] } }),
+      option({ match: { op: "contains_all", value: ["townhome"] } }),
+    ];
+    expect(validateDraft(draft, [entry])).toEqual([]);
+    expect(overlapWarnings(draft, [entry])[0].message).toMatch(/first match wins/);
   });
 });
 

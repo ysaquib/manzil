@@ -925,7 +925,7 @@ export interface components {
          * MatchOp
          * @enum {string}
          */
-        MatchOp: "eq" | "lt" | "lte" | "gt" | "gte" | "range" | "in" | "bool";
+        MatchOp: "eq" | "lt" | "lte" | "gt" | "gte" | "range" | "in" | "bool" | "contains_any" | "contains_all";
         /** MemberPatch */
         MemberPatch: {
             /** Color */

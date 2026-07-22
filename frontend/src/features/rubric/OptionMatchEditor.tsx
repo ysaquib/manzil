@@ -14,7 +14,9 @@ import { WidgetForSchema } from "./widgets/widgetForSchema";
 
 function defaultValueForOp(op: MatchOp, previous: OptionMatch): unknown {
   if (op === "range") return Array.isArray(previous.value) ? previous.value : [null, null];
-  if (op === "in") return Array.isArray(previous.value) ? previous.value : [];
+  if (op === "in" || op === "contains_any" || op === "contains_all") {
+    return Array.isArray(previous.value) ? previous.value : [];
+  }
   if (Array.isArray(previous.value)) return null;
   return previous.value;
 }
@@ -33,7 +35,7 @@ export function OptionMatchEditor({
   onChange: (match: OptionMatch) => void;
 }) {
   const ops = opsForSchema(schema);
-  const isEnum = Boolean(schema.enum);
+  const isEnum = Boolean(schema.enum) || schema.type === "array";
   const range = Array.isArray(match.value) ? (match.value as (number | null)[]) : [null, null];
   const unit = criterionUnit(criterionKey);
 
@@ -104,11 +106,11 @@ export function OptionMatchEditor({
             />
           </div>
         </>
-      ) : match.op === "in" ? (
+      ) : match.op === "in" || match.op === "contains_any" || match.op === "contains_all" ? (
         <div style={flexCell}>
           <MultiSelect
             aria-label="match values"
-            data={(schema.enum ?? []).map((v) => ({
+            data={(schema.type === "array" ? schema.items?.enum ?? [] : schema.enum ?? []).map((v) => ({
               value: String(v),
               label: String(v).replaceAll("_", " "),
             }))}

@@ -81,6 +81,20 @@ describe("deriveUnitGroups", () => {
     expect(rows[0].plans).toHaveLength(2);
   });
 
+  it("unions Floor Plan unit types without implying every plan shares them", () => {
+    const rows = deriveUnitGroups(
+      listing(
+        [
+          plan({ id: "a", unit_types: ["apartment", "loft"] }),
+          plan({ id: "b", unit_types: ["apartment", "townhome"] }),
+        ],
+        [],
+      ),
+    );
+    expect(rows[0].unitTypes).toEqual(["apartment", "loft", "townhome"]);
+    expect(rows[0].plans[0].unit_types).toEqual(["apartment", "loft"]);
+  });
+
   it("excludes retired Source-local Floor Plans", () => {
     const rows = deriveUnitGroups(
       listing(

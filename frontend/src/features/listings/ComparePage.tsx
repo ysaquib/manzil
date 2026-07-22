@@ -355,6 +355,11 @@ export function ComparePage() {
                         {`${group.beds === 0 ? "Studio" : `${group.beds} bd`} / ${group.baths} ba`}
                         {group.plans.length > 1 ? ` · ${group.plans.length} plans` : ""}
                       </Text>
+                      {group.unitTypes.length > 0 && (
+                        <Text size="xs" c="dimmed">
+                          {group.unitTypes.map((type) => sentenceCase(type)).join(", ")}
+                        </Text>
+                      )}
                     </Table.Td>
                   );
                 })}

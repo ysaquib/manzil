@@ -4,11 +4,13 @@
 import type { ComponentType } from "react";
 
 import { BoolWidget } from "./BoolWidget";
+import { ArrayWidget } from "./ArrayWidget";
 import { EnumWidget } from "./EnumWidget";
 import { NumberWidget } from "./NumberWidget";
 import type { ValueSchema, WidgetProps } from "./types";
 
 export function selectWidget(schema: ValueSchema): ComponentType<WidgetProps> {
+  if (schema.type === "array") return ArrayWidget;
   if (schema.type === "boolean") return BoolWidget;
   if (schema.type === "string" && schema.enum) return EnumWidget;
   if (schema.type === "integer" || schema.type === "number") return NumberWidget;

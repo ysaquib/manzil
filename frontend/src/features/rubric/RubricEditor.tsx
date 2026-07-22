@@ -18,7 +18,8 @@ import { ApiError } from "../../lib/apiClient";
 import type { CatalogEntry, RubricCriterion } from "./api";
 import { usePutRubric } from "./api";
 import { CriterionCard } from "./CriterionCard";
-import { draftToPayload, initDraft, validateDraft } from "./rubricDraft";
+import { groupCatalog } from "./catalogGroups";
+import { draftToPayload, initDraft, overlapWarnings, validateDraft } from "./rubricDraft";
 
 function isDirty(
   draft: RubricCriterion[],
@@ -46,7 +47,11 @@ export function RubricEditor({
 
   const entryByKey = new Map(catalog.map((e) => [e.key, e]));
   const issues = validateDraft(draft, catalog);
+  const warnings = overlapWarnings(draft, catalog);
   const enabledCount = draft.filter((c) => c.enabled).length;
+  const criterionByKey = new Map(
+    draft.filter((criterion) => criterion.catalog_key !== null).map((criterion) => [criterion.catalog_key, criterion]),
+  );
 
   const setCriterion = (next: RubricCriterion) =>
     setDraft((prev) => prev.map((c) => (c.catalog_key === next.catalog_key ? next : c)));
@@ -112,21 +117,40 @@ export function RubricEditor({
         </Alert>
       )}
 
-      {/* Two columns max: edit rows (op + value + points + actions) need the
-          width; the read-only view keeps its denser three-column grid. */}
-      <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
-        {draft.map((criterion) => {
-          const entry = entryByKey.get(criterion.catalog_key ?? "");
-          return entry ? (
-            <CriterionCard
-              key={entry.key}
-              criterion={criterion}
-              entry={entry}
-              onChange={setCriterion}
-            />
-          ) : null;
-        })}
-      </SimpleGrid>
+      {warnings.length > 0 && (
+        <Alert color="yellow" title="Review overlapping options">
+          <Stack gap={4}>
+            {warnings.map((warning, i) => (
+              <Text size="sm" key={i}>
+                {entryByKey.get(warning.catalogKey)?.label ?? warning.catalogKey}: {warning.message}
+              </Text>
+            ))}
+          </Stack>
+        </Alert>
+      )}
+
+      {groupCatalog(catalog).map((group) => (
+        <Stack gap="sm" key={group.category}>
+          <Text fw={700} size="lg">
+            {group.label}
+          </Text>
+          {/* Two columns max: edit rows (op + value + points + actions) need the
+              width; the read-only view keeps its denser three-column grid. */}
+          <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+            {group.entries.map((entry) => {
+              const criterion = criterionByKey.get(entry.key);
+              return criterion ? (
+                <CriterionCard
+                  key={entry.key}
+                  criterion={criterion}
+                  entry={entry}
+                  onChange={setCriterion}
+                />
+              ) : null;
+            })}
+          </SimpleGrid>
+        </Stack>
+      ))}
 
       <Modal opened={discardOpen} onClose={() => setDiscardOpen(false)} title="Discard changes?">
         <Stack>

@@ -33,6 +33,18 @@ const catalog: CatalogEntry[] = [
     requires_tool: null,
     refresh_class: "listing_details",
   },
+  {
+    key: "pool",
+    label: "Pool",
+    category: "property",
+    domain: "rent",
+    fact_scope: "property",
+    value_schema: { type: "string", enum: ["outdoor", "none"] },
+    default_options: [],
+    extraction_hint: "",
+    requires_tool: null,
+    refresh_class: "listing_details",
+  },
 ];
 
 const normalBreakdown: ScoreBreakdown = {
@@ -44,6 +56,14 @@ const normalBreakdown: ScoreBreakdown = {
   criteria: [
     { key: "beds", value: 2, matched: { op: "eq", value: 2 }, delta: 0.5 },
     { key: "in_unit_laundry", value: null, matched: null, delta: -1.0, unknown: true },
+  ],
+};
+
+const scopedBreakdown: ScoreBreakdown = {
+  ...normalBreakdown,
+  criteria: [
+    { key: "pool", value: "outdoor", matched: { op: "eq", value: "outdoor" }, delta: 0.25 },
+    ...normalBreakdown.criteria,
   ],
 };
 
@@ -143,6 +163,13 @@ describe("CriterionBreakdown", () => {
     expect(screen.getByText("+0.5")).toBeInTheDocument();
     expect(screen.getByText("-1")).toBeInTheDocument();
     expect(screen.getByText("unknown")).toBeInTheDocument();
+  });
+
+  it("separates Property facts from Floor Plan facts and renders each Property fact once", () => {
+    renderBreakdown(scopedBreakdown);
+    expect(screen.getByText("Property facts")).toBeInTheDocument();
+    expect(screen.getByText("Floor plan facts")).toBeInTheDocument();
+    expect(screen.getAllByText("Pool")).toHaveLength(1);
   });
 
   it("says a gate fired instead of showing a hollow list (§9.3)", () => {

@@ -486,6 +486,11 @@ export function OverviewTable({
                     ? "—"
                     : `${group.beds === 0 ? "Studio" : `${group.beds} bd`} / ${group.baths} ba`}
                 </Text>
+                {group && group.unitTypes.length > 0 && (
+                  <Text size="xs" c="dimmed" mt={4}>
+                    {group.unitTypes.map((type) => sentenceCase(type)).join(", ")}
+                  </Text>
+                )}
               </Table.Td>
               <Table.Td>
                 <Text size="sm">

@@ -103,3 +103,55 @@ async def test_put_rubric_derives_dealbreaker_as_not_bonus(client: AsyncClient, 
         assert response.json()[0]["is_bonus"] is False
     finally:
         await db_pool.execute("delete from hunts where id = $1", hunt_id)
+
+
+@pytest.mark.asyncio
+async def test_put_rubric_validates_array_set_operators(client: AsyncClient, db_pool) -> None:
+    hunt_id = uuid4()
+    await db_pool.execute(
+        "insert into hunts (id, name, owner_id) values ($1, 'Array rubric', $2)",
+        hunt_id,
+        FAKE_USER.id,
+    )
+    try:
+        valid = await client.put(
+            f"/v1/hunts/{hunt_id}/rubric",
+            json={
+                "criteria": [
+                    {
+                        "catalog_key": "property_types",
+                        "options": [
+                            {
+                                "match": {
+                                    "op": "contains_any",
+                                    "value": ["townhome", "duplex"],
+                                },
+                                "delta": 0.5,
+                            }
+                        ],
+                    }
+                ]
+            },
+        )
+        assert valid.status_code == 200
+
+        for match in (
+            {"op": "contains_all", "value": []},
+            {"op": "contains_any", "value": ["castle"]},
+            {"op": "eq", "value": ["townhome"]},
+        ):
+            response = await client.put(
+                f"/v1/hunts/{hunt_id}/rubric",
+                json={
+                    "criteria": [
+                        {
+                            "catalog_key": "property_types",
+                            "options": [{"match": match, "delta": 0.5}],
+                        }
+                    ]
+                },
+            )
+            assert response.status_code == 422, match
+            assert response.json()["code"] == "invalid_rubric_option"
+    finally:
+        await db_pool.execute("delete from hunts where id = $1", hunt_id)

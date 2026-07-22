@@ -9,6 +9,8 @@ export interface UnitGroupRow {
   key: string;
   beds: number;
   baths: number;
+  /** Honest set-union of the types represented by the group's Floor Plans. */
+  unitTypes: string[];
   plans: FloorPlan[];
   /** number of plans in this group that have a score */
   scoredPlanCount: number;
@@ -69,6 +71,7 @@ export function deriveUnitGroups(listing: Listing): UnitGroupRow[] {
       key,
       beds: plans[0].beds,
       baths: plans[0].baths,
+      unitTypes: [...new Set(plans.flatMap((plan) => plan.unit_types ?? []))].sort(),
       plans,
       scoredPlanCount: scored.length,
       displayPlan,

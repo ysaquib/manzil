@@ -44,6 +44,7 @@ export interface FloorPlan {
   plan_name: string;
   beds: number;
   baths: number;
+  unit_types?: string[];
   sqft_min: number | null;
   sqft_max: number | null;
   rent_min: number | null;

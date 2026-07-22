@@ -31,12 +31,44 @@ def _validate_option(catalog_key: str, option: RubricOption) -> None:
     entry = _CATALOG_BY_KEY.get(catalog_key)
     if entry is None:
         raise InvalidRubricOption(f"Unknown catalog key: {catalog_key}")
-    # Threshold/range ops carry composite match values — only scalar matches are
-    # validated against value_schema (DESIGN §9.2; RANGE/LT/GT are not page values).
-    if option.match.op not in (MatchOp.EQ, MatchOp.IN, MatchOp.BOOL):
-        return
+    schema = entry.value_schema
+    schema_type = schema.get("type")
+    op = option.match.op
+    array_ops = (MatchOp.CONTAINS_ANY, MatchOp.CONTAINS_ALL)
+    if schema_type == "array":
+        if op not in array_ops:
+            raise InvalidRubricOption(
+                f"Option operator for {catalog_key} invalid: array criteria use "
+                "contains_any or contains_all"
+            )
+        instance = option.match.value
+    else:
+        if op in array_ops:
+            raise InvalidRubricOption(
+                f"Option operator for {catalog_key} invalid: {op.value} requires an array criterion"
+            )
+        if op is MatchOp.IN:
+            values = option.match.value
+            if not isinstance(values, list) or not values:
+                raise InvalidRubricOption(
+                    f"Option value for {catalog_key} invalid: in requires a non-empty array"
+                )
+            try:
+                for value in values:
+                    jsonschema.validate(instance=value, schema=schema)
+            except jsonschema.ValidationError as error:
+                raise InvalidRubricOption(
+                    f"Option value for {catalog_key} invalid: {error.message}"
+                ) from error
+            return
+        # Threshold/range ops carry composite match values and are validated by
+        # their operator-specific frontend/backend shape. Scalar equality/bool
+        # values validate directly against Catalog truth.
+        if op not in (MatchOp.EQ, MatchOp.BOOL):
+            return
+        instance = option.match.value
     try:
-        jsonschema.validate(instance=option.match.value, schema=entry.value_schema)
+        jsonschema.validate(instance=instance, schema=schema)
     except jsonschema.ValidationError as error:
         raise InvalidRubricOption(
             f"Option value for {catalog_key} invalid: {error.message}"
