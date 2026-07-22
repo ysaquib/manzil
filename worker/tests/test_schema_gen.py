@@ -26,6 +26,19 @@ EXPECTED_KEYS = {
     "cooling",
     "dishwasher",
     "min_lease_months",
+    "pool",
+    "fitness_center",
+    "clubhouse",
+    "emergency_maintenance",
+    "maintenance_on_site",
+    "management_on_site",
+    "online_payments",
+    "online_maintenance_requests",
+    "package_handling",
+    "smoking_policy",
+    "property_types",
+    "unit_types",
+    "internet_readiness",
 }
 
 
@@ -168,6 +181,37 @@ def test_enum_and_bounds_are_enforced() -> None:
     out_of_bounds = extraction_payload(beds=field_payload(7))  # catalog max is 5
     with pytest.raises(ValidationError, match="beds"):
         schema.model_validate(out_of_bounds)
+
+
+def test_array_schema_enforces_item_vocabulary_and_uniqueness() -> None:
+    schema = build_extraction_schema()
+    parsed = schema.model_validate(
+        extraction_payload(property_types=field_payload(["apartment", "loft"]))
+    )
+    assert parsed.property_types.value == ["apartment", "loft"]
+
+    with pytest.raises(ValidationError, match="property_types"):
+        schema.model_validate(extraction_payload(property_types=field_payload(["castle"])))
+    with pytest.raises(ValidationError, match="unique"):
+        schema.model_validate(
+            extraction_payload(property_types=field_payload(["apartment", "apartment"]))
+        )
+
+
+def test_floor_plan_unit_types_use_the_same_controlled_vocabulary() -> None:
+    payload = extraction_payload(
+        floor_plans=[{"response_key": "loft-a", "plan_name": "Loft A", "unit_types": ["loft"]}]
+    )
+    parsed = build_extraction_schema().model_validate(payload)
+    assert parsed.floor_plans[0].unit_types == ["loft"]
+
+    payload["floor_plans"][0]["unit_types"] = ["castle"]
+    with pytest.raises(ValidationError, match="floor_plans"):
+        build_extraction_schema().model_validate(payload)
+
+    payload["floor_plans"][0]["unit_types"] = ["loft", "loft"]
+    with pytest.raises(ValidationError, match="unique"):
+        build_extraction_schema().model_validate(payload)
 
 
 def test_extraction_hints_ride_in_field_descriptions() -> None:

@@ -206,6 +206,42 @@ def split_property_cmd(
     asyncio.run(run())
 
 
+@app.command("seed-dev-rubric")
+def seed_dev_rubric_cmd(
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Replace a locally modified development Rubric with the checked-in template",
+    ),
+) -> None:
+    """Install the versioned P3-SC3 Rubric into its dedicated development Hunt."""
+    import asyncpg
+
+    from manzil_worker.dev_rubric import DevRubricDriftError, install_dev_rubric
+
+    async def run() -> None:
+        dsn = os.environ.get("DATABASE_URL")
+        if not dsn:
+            typer.echo("DATABASE_URL is not set — seed-dev-rubric needs the local DB URL", err=True)
+            raise typer.Exit(code=2)
+        conn = await asyncpg.connect(dsn)
+        try:
+            async with conn.transaction():
+                try:
+                    result = await install_dev_rubric(conn, force=force)
+                except DevRubricDriftError as error:
+                    typer.echo(f"error: {error}", err=True)
+                    raise typer.Exit(code=1) from None
+        finally:
+            await conn.close()
+        typer.echo(
+            f"development Rubric v{result.template_version} {result.status}: "
+            f"{result.criteria_count} criteria in Hunt {result.hunt_id}"
+        )
+
+    asyncio.run(run())
+
+
 @app.command("llm-smoke")
 def llm_smoke_cmd() -> None:
     """One structured call through the LLM seam (P0-7 gate: trace visible in Langfuse).
@@ -233,13 +269,14 @@ def llm_smoke_cmd() -> None:
 
 @app.command("clean-corpus")
 def clean_corpus_cmd(
-    slugs: list[str] = typer.Option([], "--slug", help="Corpus slugs to clean")
+    slugs: list[str] = typer.Option([], "--slug", help="Corpus slugs to clean"),
 ) -> None:
     """
     Regenerate cleaned.txt for every corpus page (run after cleaner changes).
     If slugs are provided, only clean the specified pages.
     """
     from manzil_worker.fetching.corpus import regenerate_cleaned
+
     report = regenerate_cleaned(slugs)
     if not report:
         typer.echo("corpus is empty — save pages with `manzil save-page`", err=True)
@@ -353,6 +390,7 @@ def bench_run(
     from manzil_worker.llm.config import model_for_stage
     from manzil_worker.phase0_rubric import phase0_rubric
     from manzil_worker.stages.base import StageCtx
+
     try:
         # Unfinished-skeleton labels (null/empty values) are partitioned into
         # `skipped` and reported, not graded; only broken labels abort.
