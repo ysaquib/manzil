@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from manzil_shared.models import (
     CheckpointPrompt,
@@ -21,6 +21,8 @@ from manzil_shared.models import (
     FetchOutcome,
     JobState,
     JobType,
+    TargetScope,
+    UnitApplicability,
 )
 from pydantic import BaseModel, Field
 
@@ -31,21 +33,34 @@ VerifyCheck = Literal["evidence", "conformance", "plausibility", "consistency"]
 UtilityKind = Literal["water", "sewer", "trash", "gas", "electric", "heat", "internet", "cable"]
 
 
-class FieldExtraction(BaseModel):
-    """One extracted fact with its provenance (IMPL §3)."""
+class SourceClaim(BaseModel):
+    """One sparse Source claim before/after Source-local target resolution."""
 
+    criterion_key: str
     value: Any = None
     confidence: Confidence
     evidence_quote: str | None = None
     source_id: str | None = None  # Phase 0: the source URL; UUIDs arrive with the DB rows
     model: str
     prompt_version: int
+    target_scope: TargetScope = TargetScope.PROPERTY
+    floor_plan_ref: str | None = None
+    floor_plan_id: UUID | None = None
+    applicability: UnitApplicability | None = None
+    claim_group_id: UUID = Field(default_factory=uuid4)
+    origin_key: str | None = None
+    resolution_rule: str | None = None
+    disputed: bool = False
+    candidate_claim_group_ids: list[UUID] = Field(default_factory=list)
 
 
 class FloorPlanIn(BaseModel):
     """A floor plan as extracted from a page — plain JSON types; conversion to
     the shared FloorPlan model happens at the scoring/persistence boundary."""
 
+    response_key: str | None = None
+    source_native_id: str | None = None
+    detail_url: str | None = None
     plan_name: str | None = None
     beds: int | None = None
     baths: float | None = None
@@ -154,6 +169,7 @@ class SourceState(BaseModel):
     cleaned_hash: str = ""
     fee_tables_found: int = 0
     image_urls: list[str] = Field(default_factory=list)
+    authoritative_extraction: bool = False
 
 
 class PropertyImageIn(BaseModel):
@@ -334,8 +350,8 @@ class RunState(BaseModel):
     sources: list[SourceState] = Field(default_factory=list)
     property_images: list[PropertyImageIn] = Field(default_factory=list)
     image_fetch_completed: bool = False
-    extractions: dict[str, list[FieldExtraction]] = Field(default_factory=dict)
-    reconciled: dict[str, FieldExtraction] = Field(default_factory=dict)
+    source_claims: list[SourceClaim] = Field(default_factory=list)
+    resolved_claims: list[SourceClaim] = Field(default_factory=list)
     floor_plans: list[FloorPlanIn] = Field(default_factory=list)
     property_identity: PropertyIdentityIn | None = None
     pet_costs: PetCostsIn | None = None

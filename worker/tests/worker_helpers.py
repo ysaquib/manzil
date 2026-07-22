@@ -15,7 +15,7 @@ from manzil_worker.fetching.results import FetchResult
 from manzil_worker.llm.client import call_structured
 from manzil_worker.llm.tools import AgentResult
 from manzil_worker.stages.schema_gen import extractable_entries
-from manzil_worker.state import FieldExtraction, RunState, SourceState
+from manzil_worker.state import RunState, SourceClaim, SourceState
 
 PAGES = Path(__file__).parent / "fixtures" / "pages"
 RECORDED = Path(__file__).parent / "fixtures" / "recorded"
@@ -135,8 +135,9 @@ def make_state(url: str = "https://example.test/listing", cleaned_text: str = ""
 
 def fe(
     value: Any, quote: str | None = None, confidence: Confidence = Confidence.HIGH
-) -> FieldExtraction:
-    return FieldExtraction(
+) -> SourceClaim:
+    return SourceClaim(
+        criterion_key="",
         value=value,
         confidence=confidence,
         evidence_quote=quote,
@@ -144,3 +145,13 @@ def fe(
         model="test-model",
         prompt_version=1,
     )
+
+
+def set_claim(state: RunState, key: str, extraction: SourceClaim) -> None:
+    extraction.criterion_key = key
+    state.source_claims = [claim for claim in state.source_claims if claim.criterion_key != key]
+    state.source_claims.append(extraction)
+
+
+def get_claim(state: RunState, key: str) -> SourceClaim:
+    return next(claim for claim in state.source_claims if claim.criterion_key == key)

@@ -173,7 +173,17 @@ async def test_empty_utilities_list_still_writes_extraction(pg_pool: asyncpg.Poo
             "where property_id = $1 and criterion_key = 'utilities_included'",
             property_id,
         )
-        assert count == 1
+        # Append-only truth stores the Source candidate and its resolved row;
+        # current_extractions still exposes one effective resolution.
+        assert count == 2
+        assert (
+            await pg_pool.fetchval(
+                "select count(*) from current_extractions "
+                "where property_id = $1 and criterion_key = 'utilities_included'",
+                property_id,
+            )
+            == 1
+        )
     finally:
         await _cleanup(pg_pool, hunt_id, property_id)
 

@@ -240,9 +240,7 @@ async def test_rescore_recomposes_and_mode_flip_changes_total(pg_pool: asyncpg.P
         breakdown = await pg_pool.fetchval(
             "select breakdown from scores where hunt_listing_id = $1", listing_id
         )
-        entry = next(
-            c for c in json.loads(breakdown)["criteria"] if c["key"] == "all_in_monthly"
-        )
+        entry = next(c for c in json.loads(breakdown)["criteria"] if c["key"] == "all_in_monthly")
         # rent 1500 + valet trash 25 + amenity 10 + electric 120 + gas_heat 150
         # + water 55 + sewer 45 (trash estimate suppressed by billed fee) = 1905
         assert entry["value"] == 1905.0
@@ -266,14 +264,18 @@ async def test_rescore_recomposes_and_mode_flip_changes_total(pg_pool: asyncpg.P
         # An all_in_monthly override beats the composition (§9.6): the scored
         # value is the human's figure and the display plan is marked overridden.
         await pg_pool.execute(
-            "insert into overrides (hunt_listing_id, criterion_key, value, user_id) "
-            "values ($1, 'all_in_monthly', '1800'::jsonb, $2)",
+            "insert into overrides "
+            "(hunt_listing_id, criterion_key, target_scope, value, user_id) "
+            "values ($1, 'all_in_monthly', 'property', '1800'::jsonb, $2)",
             listing_id,
             uuid4(),
         )
         async with pg_pool.acquire() as conn, conn.transaction():
             await rescore_hunt(
-                conn, hunt_id=hunt_id, rubric=rubric, rubric_version=2,
+                conn,
+                hunt_id=hunt_id,
+                rubric=rubric,
+                rubric_version=2,
                 min_confidence=Confidence.MEDIUM,
             )
         overridden = json.loads(
@@ -296,14 +298,18 @@ async def test_rescore_recomposes_and_mode_flip_changes_total(pg_pool: asyncpg.P
         # Appending a null override is the revert tombstone (§9.6, append-only):
         # the composition's own figure returns and the overridden mark drops.
         await pg_pool.execute(
-            "insert into overrides (hunt_listing_id, criterion_key, value, user_id) "
-            "values ($1, 'all_in_monthly', 'null'::jsonb, $2)",
+            "insert into overrides "
+            "(hunt_listing_id, criterion_key, target_scope, value, user_id) "
+            "values ($1, 'all_in_monthly', 'property', 'null'::jsonb, $2)",
             listing_id,
             uuid4(),
         )
         async with pg_pool.acquire() as conn, conn.transaction():
             await rescore_hunt(
-                conn, hunt_id=hunt_id, rubric=rubric, rubric_version=2,
+                conn,
+                hunt_id=hunt_id,
+                rubric=rubric,
+                rubric_version=2,
                 min_confidence=Confidence.MEDIUM,
             )
         reverted = json.loads(
@@ -327,9 +333,7 @@ async def test_rescore_recomposes_and_mode_flip_changes_total(pg_pool: asyncpg.P
         breakdown = await pg_pool.fetchval(
             "select breakdown from scores where hunt_listing_id = $1", listing_id
         )
-        entry = next(
-            c for c in json.loads(breakdown)["criteria"] if c["key"] == "all_in_monthly"
-        )
+        entry = next(c for c in json.loads(breakdown)["criteria"] if c["key"] == "all_in_monthly")
         # 1500 + 35 fees + (80 + 90 + 40 + 35) median estimates = 1780
         assert entry["value"] == 1780.0
     finally:

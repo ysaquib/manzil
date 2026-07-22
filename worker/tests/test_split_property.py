@@ -72,19 +72,24 @@ async def _seed(pool: asyncpg.Pool, fx: _Fixture) -> None:
                 f"properties/{fx.property_id}/{suffix}.webp",
                 suffix,
             )
-        # Extractions split across the two source ids (catalog facts: hunt_id null).
+        # Candidate Extractions split across the two source ids (catalog facts:
+        # hunt_id null). A separate test covers moving resolved companions.
         for source_id, key, value in (
             (fx.source1_id, "beds", "1"),
             (fx.source2_id, "beds", "2"),
             (fx.source2_id, "in_unit_laundry", '"in_unit"'),
         ):
             await conn.execute(
-                "insert into extractions (property_id, hunt_id, criterion_key, value, confidence, "
-                "source_id, model) values ($1, null, $2, $3::jsonb, $4::confidence, $5, 'test')",
+                "insert into extractions "
+                "(property_id, hunt_id, criterion_key, record_kind, origin_key, "
+                "source_id, target_scope, applicability, value, confidence, model) "
+                "values ($1, null, $2, 'candidate', $5, $6, 'property', "
+                "'unit_scope_unspecified', $3::jsonb, $4::confidence, 'test')",
                 fx.property_id,
                 key,
                 value,
                 Confidence.HIGH.value,
+                f"property_source:{source_id}",
                 source_id,
             )
         # Floor plans, one per source.

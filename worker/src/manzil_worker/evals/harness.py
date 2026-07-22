@@ -196,7 +196,9 @@ def _grade(
         as_of_date=today.isoformat(),
     )
     for key, expected in label.criteria.items():
-        extraction = state.extractions.get(key, [None])[0]
+        extraction = next(
+            (claim for claim in state.source_claims if claim.criterion_key == key), None
+        )
         got = extraction.value if extraction else None
         result.criteria[key] = CriterionResult(
             kind="value",
@@ -206,7 +208,9 @@ def _grade(
             ok=got is not None and _values_equal(expected, got, today=today),
         )
     for key in label.unknown:
-        extraction = state.extractions.get(key, [None])[0]
+        extraction = next(
+            (claim for claim in state.source_claims if claim.criterion_key == key), None
+        )
         got = extraction.value if extraction else None
         result.criteria[key] = CriterionResult(
             kind="unknown",

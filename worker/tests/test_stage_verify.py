@@ -11,7 +11,7 @@ from manzil_worker.fetching.cleaner import clean_html
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.verify import verify_stage
 from manzil_worker.state import FloorPlanIn
-from worker_helpers import PAGES, FakeLLM, fe, make_state
+from worker_helpers import PAGES, FakeLLM, fe, get_claim, make_state, set_claim
 
 TODAY = date(2026, 7, 6)
 NO_CONTRADICTIONS = {"verify": {"contradictions": []}}
@@ -37,26 +37,26 @@ def flags_for(state, check):  # type: ignore[no-untyped-def]
 
 def test_genuine_evidence_survives_at_full_confidence() -> None:
     state = make_state(cleaned_text=PAGE_TEXT)
-    state.extractions["security_deposit"] = [fe(750.0, "a $750 security deposit")]
+    set_claim(state, "security_deposit", fe(750.0, "a $750 security deposit"))
     run_verify(state)
-    assert state.extractions["security_deposit"][0].confidence is Confidence.HIGH
+    assert get_claim(state, "security_deposit").confidence is Confidence.HIGH
     assert state.verify_flags == []
 
 
 def test_fabricated_evidence_is_demoted_to_low() -> None:
     state = make_state(cleaned_text=PAGE_TEXT)
-    state.extractions["dishwasher"] = [fe(True, "gourmet kitchens include a dishwasher")]
+    set_claim(state, "dishwasher", fe(True, "gourmet kitchens include a dishwasher"))
     run_verify(state)
-    assert state.extractions["dishwasher"][0].confidence is Confidence.LOW
+    assert get_claim(state, "dishwasher").confidence is Confidence.LOW
     (flag,) = flags_for(state, "evidence")
     assert flag.criterion_key == "dishwasher"
 
 
 def test_value_without_any_evidence_quote_is_demoted() -> None:
     state = make_state(cleaned_text=PAGE_TEXT)
-    state.extractions["beds"] = [fe(2, quote=None)]
+    set_claim(state, "beds", fe(2, quote=None))
     run_verify(state)
-    assert state.extractions["beds"][0].confidence is Confidence.LOW
+    assert get_claim(state, "beds").confidence is Confidence.LOW
     (flag,) = flags_for(state, "evidence")
     assert "without evidence" in flag.note
 
@@ -65,22 +65,29 @@ def test_stitched_fragments_both_present_pass() -> None:
     """A quote joining two verbatim fragments with an ellipsis passes when each
     fragment is on the page, even though the stitched whole never appears."""
     state = make_state(cleaned_text=PAGE_TEXT)
-    state.extractions["pets_policy"] = [
-        fe("cats_only", "Cats welcome with a small monthly pet fee ... washer and dryer hookups")
-    ]
+    set_claim(
+        state,
+        "pets_policy",
+        fe("cats_only", "Cats welcome with a small monthly pet fee ... washer and dryer hookups"),
+    )
     run_verify(state)
-    assert state.extractions["pets_policy"][0].confidence is Confidence.HIGH
+    assert get_claim(state, "pets_policy").confidence is Confidence.HIGH
     assert flags_for(state, "evidence") == []
 
 
 def test_stitched_fragment_with_one_fabricated_is_demoted() -> None:
     """If any fragment of a stitched quote is not on the page, the value demotes."""
     state = make_state(cleaned_text=PAGE_TEXT)
-    state.extractions["pets_policy"] = [
-        fe("cats_only", "Cats welcome with a small monthly pet fee ... valet parking, rooftop pool")
-    ]
+    set_claim(
+        state,
+        "pets_policy",
+        fe(
+            "cats_only",
+            "Cats welcome with a small monthly pet fee ... valet parking, rooftop pool",
+        ),
+    )
     run_verify(state)
-    assert state.extractions["pets_policy"][0].confidence is Confidence.LOW
+    assert get_claim(state, "pets_policy").confidence is Confidence.LOW
     (flag,) = flags_for(state, "evidence")
     assert flag.criterion_key == "pets_policy"
 
@@ -90,9 +97,9 @@ def test_whitespace_divergent_json_quote_passes_against_compact_digest() -> None
     compact digest ({"a":1}); whitespace divergence must not demote."""
     page = 'Overview of units. [EMBEDDED DATA] {"name":"A4","sqFt":1031,"priceRange":"1500"}'
     state = make_state(cleaned_text=page)
-    state.extractions["sqft"] = [fe(1031, '"name": "A4" … "sqFt": 1031 … "priceRange"')]
+    set_claim(state, "sqft", fe(1031, '"name": "A4" … "sqFt": 1031 … "priceRange"'))
     run_verify(state)
-    assert state.extractions["sqft"][0].confidence is Confidence.HIGH
+    assert get_claim(state, "sqft").confidence is Confidence.HIGH
     assert flags_for(state, "evidence") == []
 
 
@@ -101,9 +108,9 @@ def test_whitespace_divergent_json_quote_passes_against_compact_digest() -> None
 
 def test_nonconforming_value_is_demoted() -> None:
     state = make_state(cleaned_text=PAGE_TEXT)
-    state.extractions["parking"] = [fe("valet", "Rent starts at $1,500")]  # not in the enum
+    set_claim(state, "parking", fe("valet", "Rent starts at $1,500"))  # not in the enum
     run_verify(state)
-    assert state.extractions["parking"][0].confidence is Confidence.LOW
+    assert get_claim(state, "parking").confidence is Confidence.LOW
     assert flags_for(state, "conformance")
 
 
@@ -112,28 +119,28 @@ def test_nonconforming_value_is_demoted() -> None:
 
 def test_deposit_beyond_two_months_rent_is_demoted() -> None:
     state = make_state(cleaned_text=PAGE_TEXT)
-    state.extractions["security_deposit"] = [fe(4000.0, "a $750 security deposit")]
+    set_claim(state, "security_deposit", fe(4000.0, "a $750 security deposit"))
     state.floor_plans = [FloorPlanIn(plan_name="A", beds=2, baths=1.0, rent_min=1500.0)]
     run_verify(state)
-    assert state.extractions["security_deposit"][0].confidence is Confidence.LOW
+    assert get_claim(state, "security_deposit").confidence is Confidence.LOW
     (flag,) = flags_for(state, "plausibility")
     assert "deposit" in flag.note
 
 
 def test_absurd_sqft_per_bed_is_demoted() -> None:
     state = make_state(cleaned_text=PAGE_TEXT)
-    state.extractions["sqft"] = [fe(9000, "Rent starts at $1,500")]
-    state.extractions["beds"] = [fe(2, "Two bedroom apartments")]
+    set_claim(state, "sqft", fe(9000, "Rent starts at $1,500"))
+    set_claim(state, "beds", fe(2, "Two bedroom apartments"))
     run_verify(state)
-    assert state.extractions["sqft"][0].confidence is Confidence.LOW
+    assert get_claim(state, "sqft").confidence is Confidence.LOW
     assert any("sqft" in f.note for f in flags_for(state, "plausibility"))
 
 
 def test_past_availability_is_demoted() -> None:
     state = make_state(cleaned_text=PAGE_TEXT)
-    state.extractions["availability_date"] = [fe("2025-01-01", "Rent starts at $1,500")]
+    set_claim(state, "availability_date", fe("2025-01-01", "Rent starts at $1,500"))
     run_verify(state)
-    assert state.extractions["availability_date"][0].confidence is Confidence.LOW
+    assert get_claim(state, "availability_date").confidence is Confidence.LOW
     assert any("in the past" in f.note for f in flags_for(state, "plausibility"))
 
 
@@ -152,7 +159,7 @@ def test_out_of_band_plan_rent_is_flagged() -> None:
 
 def test_contradiction_from_check4_demotes_the_named_criterion() -> None:
     state = make_state(cleaned_text=PAGE_TEXT)
-    state.extractions["in_unit_laundry"] = [fe("in_unit", "washer and dryer hookups in every unit")]
+    set_claim(state, "in_unit_laundry", fe("in_unit", "washer and dryer hookups in every unit"))
     llm = FakeLLM(
         {
             "verify": {
@@ -166,7 +173,7 @@ def test_contradiction_from_check4_demotes_the_named_criterion() -> None:
         }
     )
     run_verify(state, llm)
-    assert state.extractions["in_unit_laundry"][0].confidence is Confidence.LOW
+    assert get_claim(state, "in_unit_laundry").confidence is Confidence.LOW
     (flag,) = flags_for(state, "consistency")
     assert flag.criterion_key == "in_unit_laundry"
 
@@ -202,11 +209,11 @@ def test_injection_fixture_is_demoted_not_obeyed() -> None:
         )
     ]
     # …while a fabricated quote (the model inventing compliance) is not on the page.
-    state.extractions["pets_policy"] = [fe("none", "absolutely no pets of any kind allowed")]
+    set_claim(state, "pets_policy", fe("none", "absolutely no pets of any kind allowed"))
 
     run_verify(state)
 
-    assert state.extractions["pets_policy"][0].confidence is Confidence.LOW
+    assert get_claim(state, "pets_policy").confidence is Confidence.LOW
     assert any(f.criterion_key == "pets_policy" for f in flags_for(state, "evidence"))
     assert any(
         f.criterion_key == "floor_plans" and "rent 1.0 outside" in f.note

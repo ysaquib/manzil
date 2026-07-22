@@ -15,9 +15,9 @@ gate; nothing user-facing reaches this function.
 What moves, and what does not:
 
 * `property_sources` — the one moved Source row (by id) → new Property.
-* `extractions` where `source_id` = the moved Source → new Property. These are
-  the facts that Source contributed; they follow it so the new Property owns its
-  own provenance and the next refresh re-reconciles cleanly.
+* Source candidate `extractions` and their single-Source resolved rows → new
+  Property. P3-6 extends this operation before multi-candidate resolutions can
+  exist; P3-SC2 never leaves a cross-Property provenance edge.
 * `floor_plans` where `source_id` = the moved Source → new Property.
 * `hunt_listings` for the affected Listings → new Property (see below).
 * `scores` are NOT touched: they key on `(hunt_listing_id, floor_plan_id)` and
@@ -174,10 +174,52 @@ async def split_property(
             new_property_id,
             source_id,
         )
+        # P3-SC2 currently writes one candidate + one single_source resolution.
+        # Resolve the companion rows before moving either side. A mixed-source
+        # graph is impossible until P3-6, which owns extending this split path
+        # alongside the reconciliation ladder.
+        mixed_resolution = await conn.fetchval(
+            """
+            select exists (
+                select 1
+                from extraction_resolution_candidates moved_edge
+                join extractions moved on moved.id = moved_edge.candidate_extraction_id
+                where moved.source_id = $1
+                  and exists (
+                      select 1
+                      from extraction_resolution_candidates other_edge
+                      join extractions other on other.id = other_edge.candidate_extraction_id
+                      where other_edge.resolution_extraction_id =
+                            moved_edge.resolution_extraction_id
+                        and other.source_id is distinct from $1
+                  )
+            )
+            """,
+            source_id,
+        )
+        if mixed_resolution:
+            raise SplitError(
+                "split encountered a multi-Source resolution graph; P3-6 reconciliation "
+                "must recompute both sides before this split can proceed"
+            )
+        resolution_ids = await conn.fetch(
+            """
+            select distinct erc.resolution_extraction_id as id
+            from extraction_resolution_candidates erc
+            join extractions candidate on candidate.id = erc.candidate_extraction_id
+            where candidate.source_id = $1
+            """,
+            source_id,
+        )
         ext_status = await conn.execute(
             "update extractions set property_id = $1 where source_id = $2",
             new_property_id,
             source_id,
+        )
+        resolution_status = await conn.execute(
+            "update extractions set property_id = $1 where id = any($2::uuid[])",
+            new_property_id,
+            [row["id"] for row in resolution_ids],
         )
         fp_status = await conn.execute(
             "update floor_plans set property_id = $1 where source_id = $2",
@@ -223,7 +265,7 @@ async def split_property(
         moved_source_id=source_id,
         moved_listing_ids=affected_listing_ids,
         rescored_hunt_ids=rescored_hunt_ids,
-        moved_extraction_count=_rowcount(ext_status),
+        moved_extraction_count=_rowcount(ext_status) + _rowcount(resolution_status),
         moved_floor_plan_count=_rowcount(fp_status),
         moved_image_count=_rowcount(image_status),
     )

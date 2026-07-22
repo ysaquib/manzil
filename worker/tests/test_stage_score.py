@@ -11,7 +11,7 @@ from manzil_worker.phase0_rubric import PHASE0_RUBRIC_VERSION, phase0_rubric
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.score import score_stage
 from manzil_worker.state import FloorPlanIn, PetCostsIn
-from worker_helpers import fe, make_state
+from worker_helpers import fe, get_claim, make_state, set_claim
 
 
 def _all_in(breakdown: dict) -> float | None:  # type: ignore[type-arg]
@@ -25,12 +25,10 @@ def make_ctx() -> StageCtx:
 
 def seeded_state():  # type: ignore[no-untyped-def]
     state = make_state()
-    state.extractions = {
-        "beds": [fe(2, "2 bed")],
-        "in_unit_laundry": [fe("in_unit", "washer and dryer in unit")],
-        "pets_policy": [fe("cats_and_dogs", "cats and dogs welcome")],
-        "patio_balcony": [fe(True, "private balcony")],
-    }
+    set_claim(state, "beds", fe(2, "2 bed"))
+    set_claim(state, "in_unit_laundry", fe("in_unit", "washer and dryer in unit"))
+    set_claim(state, "pets_policy", fe("cats_and_dogs", "cats and dogs welcome"))
+    set_claim(state, "patio_balcony", fe(True, "private balcony"))
     return state
 
 
@@ -81,7 +79,7 @@ def test_no_plans_scores_once_property_level_with_all_in_unknown() -> None:
 def test_reconciled_and_effective_values_are_recorded() -> None:
     state = seeded_state()
     state = asyncio.run(score_stage(state, make_ctx()))
-    assert state.reconciled["beds"].value == 2
+    assert get_claim(state, "beds").value == 2
     assert state.effective_values["beds"] == 2
     assert "sqft" not in state.effective_values  # unknowns stay absent, not None
 
@@ -91,16 +89,18 @@ def test_low_confidence_value_scores_as_unknown_and_fires_its_gate() -> None:
     VERIFY-demoted value cannot pass a gate — suspect data scores as unknown
     while the value itself stays on `reconciled` as provenance."""
     state = seeded_state()
-    state.extractions["pets_policy"] = [
-        fe("cats_and_dogs", "cats and dogs welcome", confidence=Confidence.LOW)
-    ]
+    set_claim(
+        state,
+        "pets_policy",
+        fe("cats_and_dogs", "cats and dogs welcome", confidence=Confidence.LOW),
+    )
     state.floor_plans = [
         FloorPlanIn(plan_name="A", beds=2, baths=1.0, rent_min=1700.0, rent_max=1750.0)
     ]
     state = asyncio.run(score_stage(state, make_ctx()))
 
     assert "pets_policy" not in state.effective_values  # thresholded out
-    assert state.reconciled["pets_policy"].value == "cats_and_dogs"  # provenance kept
+    assert get_claim(state, "pets_policy").value == "cats_and_dogs"  # provenance kept
     breakdown = state.scores[0].breakdown
     assert {"key": "pets_policy", "kind": "non_negotiable", "set_score": 2.0} in breakdown["gates"]
 
@@ -169,9 +169,11 @@ def test_all_in_unchanged_when_pet_costs_absent() -> None:
 
 def test_min_confidence_low_admits_demoted_values() -> None:
     state = seeded_state()
-    state.extractions["pets_policy"] = [
-        fe("cats_and_dogs", "cats and dogs welcome", confidence=Confidence.LOW)
-    ]
+    set_claim(
+        state,
+        "pets_policy",
+        fe("cats_and_dogs", "cats and dogs welcome", confidence=Confidence.LOW),
+    )
     state.floor_plans = [
         FloorPlanIn(plan_name="A", beds=2, baths=1.0, rent_min=1700.0, rent_max=1750.0)
     ]

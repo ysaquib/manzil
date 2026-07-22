@@ -2,7 +2,7 @@
 ratings stage 1 (Google Places), deterministic dispatch — no tool loop (§10.2:
 ENRICH is not a loop stage; the Maps seams are plain injected calls).
 
-What it emits (into `state.extractions`, downstream of VERIFY by design so the
+What it emits (into `state.source_claims`, downstream of VERIFY by design so the
 page-evidence audit never runs on API-derived values):
 - `grocery_proximity` — minutes to the nearest grocery per the hunt's
   `proximity_mode` setting (places_nearby → commute_time).
@@ -32,7 +32,7 @@ from manzil_worker.enrich.maps import MapsError
 from manzil_worker.llm.config import model_for_stage
 from manzil_worker.llm.prompt_loader import load_prompt
 from manzil_worker.stages.base import CommuteMinutes, NearbyPlaces, StageCtx
-from manzil_worker.state import FieldExtraction, RunState
+from manzil_worker.state import RunState, SourceClaim
 
 log = structlog.get_logger()
 
@@ -70,8 +70,9 @@ async def nearest_grocery_minutes(
     return (minutes, nearest.get("name") or "unnamed")
 
 
-def grocery_extraction(minutes: float, place_name: str, mode: str) -> FieldExtraction:
-    return FieldExtraction(
+def grocery_extraction(minutes: float, place_name: str, mode: str) -> SourceClaim:
+    return SourceClaim(
+        criterion_key="grocery_proximity",
         value=minutes,
         confidence=Confidence.HIGH,
         evidence_quote=f"Nearest grocery: {place_name} — {minutes} min {mode} (Google Maps)",
@@ -114,9 +115,7 @@ async def enrich_stage(state: RunState, ctx: StageCtx) -> RunState:
         found = None
     if found is not None:
         minutes, place_name = found
-        state.extractions["grocery_proximity"] = [
-            grocery_extraction(minutes, place_name, ctx.proximity_mode)
-        ]
+        state.source_claims.append(grocery_extraction(minutes, place_name, ctx.proximity_mode))
 
     # management_reviews — ratings stage 1 (§10.12): one Place Details call; the
     # summary synthesis fires only when Google returned review text.
@@ -137,8 +136,9 @@ async def enrich_stage(state: RunState, ctx: StageCtx) -> RunState:
             model = model_for_stage("enrich_reviews")
             prompt_version = load_prompt("enrich_reviews").version
         total = details.get("user_ratings_total") or 0
-        state.extractions["management_reviews"] = [
-            FieldExtraction(
+        state.source_claims.append(
+            SourceClaim(
+                criterion_key="management_reviews",
                 value={"rating": details["rating"], "summary": summary},
                 confidence=Confidence.HIGH,
                 evidence_quote=f"Google Places rating {details['rating']} ({total} ratings)",
@@ -146,7 +146,7 @@ async def enrich_stage(state: RunState, ctx: StageCtx) -> RunState:
                 model=model,
                 prompt_version=prompt_version,
             )
-        ]
+        )
 
     # location_safety — deliberately nothing (§20 2026-07-18): override-first
     # placeholder until the P3-17 module; an emitted guess would score.

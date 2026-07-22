@@ -17,6 +17,7 @@ from worker_helpers import (
     FakeLLM,
     extraction_payload,
     field_payload,
+    get_claim,
     make_state,
     maple_extraction,
 )
@@ -29,15 +30,17 @@ def test_extract_populates_every_criterion_with_provenance() -> None:
     state = make_state(cleaned_text=CLEANED)
     state = asyncio.run(extract_stage(state, StageCtx(call_structured=llm)))
 
-    assert set(state.extractions) == {e.key for e in extractable_entries()}
-    beds = state.extractions["beds"][0]
+    assert {claim.criterion_key for claim in state.source_claims} == {
+        e.key for e in extractable_entries()
+    }
+    beds = get_claim(state, "beds")
     assert beds.value == 2
     assert beds.source_id == state.sources[0].url
     assert beds.model == model_for_stage("extract")
     from manzil_worker.llm.prompt_loader import load_prompt
 
     assert beds.prompt_version == load_prompt("extract").version  # provenance, not a pin
-    unknown = state.extractions["private_entry"][0]
+    unknown = get_claim(state, "private_entry")
     assert unknown.value is None
     assert unknown.confidence == "not_found"
     assert [p.plan_name for p in state.floor_plans] == ["The Maple"]
@@ -105,7 +108,7 @@ def test_invalid_first_response_gets_one_corrective_retry() -> None:
     state = make_state(cleaned_text=CLEANED)
     state = asyncio.run(extract_stage(state, StageCtx(call_structured=llm)))
 
-    assert state.extractions["beds"][0].value == 2
+    assert get_claim(state, "beds").value == 2
     assert len(llm.calls) == 2
     retry_content = llm.calls[1][1]
     assert "failed schema validation" in retry_content
@@ -138,8 +141,8 @@ def test_available_now_sentinel_rewrites_to_run_date() -> None:
     frozen = date(2026, 7, 16)
     state = asyncio.run(extract_stage(state, StageCtx(call_structured=llm, today=lambda: frozen)))
 
-    assert state.extractions["availability_date"][0].value == "2026-07-16"
-    assert state.extractions["availability_date"][0].evidence_quote == quote
+    assert get_claim(state, "availability_date").value == "2026-07-16"
+    assert get_claim(state, "availability_date").evidence_quote == quote
     assert state.floor_plans[0].availability_date == "2026-07-16"
     assert state.floor_plans[0].evidence_quote == quote
 
@@ -153,7 +156,7 @@ def test_iso_availability_date_is_left_untouched() -> None:
         extract_stage(state, StageCtx(call_structured=llm, today=lambda: date(2026, 7, 16)))
     )
 
-    assert state.extractions["availability_date"][0].value == "2026-08-01"
+    assert get_claim(state, "availability_date").value == "2026-08-01"
     assert state.floor_plans[0].availability_date == "2026-08-01"
 
 
