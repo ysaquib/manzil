@@ -58,6 +58,7 @@ function makeListing(
     added_by: "user-1",
     status: "active",
     source_policy: "tiers_1_2_3",
+    single_source_reason: null,
     pins: {},
     created_at: "2026-07-08T00:00:00Z",
     unavailable_at,

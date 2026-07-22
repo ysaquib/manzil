@@ -21,6 +21,7 @@ declared at all · `implemented` = working · `no table` = table not yet in a mi
 | `DELETE /v1/listings/{id}` | *(no hook — superseded in the UI by the status patch below; endpoint kept)* | generated (204) | P1-7 | implemented |
 | `PATCH /v1/listings/{id}/status` | `usePatchListingStatus` (`features/listings/api.ts`) | generated `ListingStatusPatch`/`ListingResponse`; Owner-only archive/restore | m6/m7 (2026-07-19) | implemented |
 | `PATCH /v1/listings/{id}/pins` | `usePatchPins` (`features/listings/api.ts`) | generated `PinsPatch` | P1-11 mini-endpoint | implemented |
+| `PATCH /v1/listings/{id}/source-policy` | `usePatchSourcePolicy` (`features/listings/api.ts`) | generated `SourcePolicyPatch`/`ListingResponse`; Owner or submitter; relaxing atomically queues a `refresh(scope=discover)` Job | P3-5 | implemented |
 | `PATCH /v1/listings/{id}/unit-groups/{unit_group_key}/state` | `usePatchUnitGroupState` (`features/listings/api.ts`) | generated `UnitGroupStatePatch`/`UnitGroupStateResponse` | DESIGN v3.5 | implemented |
 | `GET /v1/hunts/{id}/jobs?state=…` | `useActiveJobs` (`features/jobs/api.ts`) — the one polled read, 3s | generated `JobResponse` + optional `checkpoint`; `started_at` drives elapsed time for running jobs | P1-7 / P1-13 | implemented |
 

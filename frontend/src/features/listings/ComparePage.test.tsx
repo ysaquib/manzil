@@ -30,6 +30,7 @@ function makeListing(id: string, name: string, laundry: unknown): Listing {
     added_by: "u1",
     status: "active",
     source_policy: "tiers_1_2_3",
+    single_source_reason: null,
     pins: {},
     created_at: "2026-07-01T00:00:00Z",
     unavailable_at: null,

@@ -165,6 +165,7 @@ export interface Listing {
   added_by: string;
   status: "active" | "archived";
   source_policy: SourcePolicy;
+  single_source_reason: SingleSourceReason | null;
   pins: Record<string, string>;
   created_at: string;
   // Set when ingest/refresh found no available floor plans (§8.2); null while
@@ -174,3 +175,8 @@ export interface Listing {
   property: Property & { floor_plans: FloorPlan[]; sources: PropertySource[] };
   scores: Score[];
 }
+
+export type SingleSourceReason =
+  | "trust_link"
+  | "discover_exhausted"
+  | "discover_failed";
