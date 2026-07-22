@@ -8,8 +8,11 @@ green — see IMPLEMENTATION §9 2.0.36/2.0.37 and DESIGN §20 2026-07-12).
 **P3-4 landed 2026-07-12** (DEDUPE + `resolve_dedupe` + `split_property`;
 verifier CONFIRMED — IMPLEMENTATION §9 2.0.41, DESIGN §20 2026-07-12; note the
 §20 correction: DEDUPE runs post-EXTRACT, not pre-FETCH as §10.1 once drew). A
-security follow-up from P3-3's review remains a **hard gate before P3-5**: see
-the SSRF row in §1 and the P3-5 prerequisite. **P3-5/P3-6 rescoped 2026-07-13**
+security follow-up from P3-3's review was cleared before the live loop (see the
+SSRF row in §1). **P3-5 landed 2026-07-21** (OpenRouter native search, exact
+same-Property candidate filtering, official link-only persistence, tier/family
+slate, Source Policy edits, and reasoned single-source presentation;
+IMPLEMENTATION 2.0.70 / DESIGN §20). **P3-5/P3-6 rescoped 2026-07-13**
 (DESIGN §20 v3.2 — tier-diverse slate, official site as stored link +
 escalation arbiter, syndication-family voting, bounded escalation ladder); §7
 and §8 below are rewritten to that decision. Originally written 2026-07-11. Written against
@@ -66,7 +69,7 @@ census verdict nor the model pin.
 | P0-14 census verdict | P3-14 existence + scope; fetch-tier choice in P3-15 | finish P0-11..14; then retain/rescope/delete P3-14 with a §20 entry |
 | P0-14 model-pin verdict | default pins for new LLM stages (§2.6) | baseline Haiku/Sonnet pins stand until the bench says otherwise; changing any pin is a §20 entry + bench rerun |
 | Google Maps key (restricted, server-side) | P3-3 and everything downstream of geocode | create the GCP project, restrict the key to Geocoding/Places/Routes, add `GOOGLE_MAPS_API_KEY` to worker env + `infra/.env.example` |
-| DISCOVER web-search provider | P3-5 | decision-with-default in §2.2; verified and recorded in §20 when P3-5 lands |
+| DISCOVER web-search provider | P3-5 | **cleared 2026-07-21:** native `openrouter:web_search`, capped at three searches and $0.01/search; live passthrough + ten-listing yield bench recorded in §20 |
 | Vision reference set (human asset) | P3-7 quality gate | Yusuf hand-picks 3–4 real images per rating level from listings he has rated; versioned per §10.8 before the prompt is validated |
 | Worker-isolation trigger | P3-1 | not observed; task stays parked (§0) |
 | Fetcher-layer SSRF guard | ~~P3-5 and P3-10~~ — **HTTP path landed 2026-07-12** (DESIGN §20; IMPL 2.0.40): `fetching/ssrf.py` deny-set + tier-1 IP-pinning closes the DNS-rebinding TOCTOU. Two smoke checks before wiring Chromium into a live loop: manual tier-2 browser smoke test + one live-HTTPS fetch confirming the pin's cert path |
@@ -93,10 +96,9 @@ first-class: a stage the planner skipped is simply absent from the run's list,
 recorded under `plan.skipped` with its reason, and visible in the Tasks UI.
 Persist-before-advance is untouched.
 
-### 2.2 Tool registry + DISCOVER's search (decision-with-default)
+### 2.2 Tool registry + DISCOVER's search (landed)
 
-`call_agent` is a stub (`llm/client.py:387-396`) and no tool registry exists.
-P3-3/P3-5 build the §10.2 mechanics exactly as pinned: a name→callable registry
+P3-3/P3-5 built the §10.2 mechanics exactly as pinned: a name→callable registry
 with a small `@tool` decorator deriving JSON schemas from signatures
 (`llm/tools.py`), per-stage **allow-lists** (extraction stages get zero tools —
 §16 hard invariant), the turn-budgeted loop shape from §10.2 verbatim
@@ -106,15 +108,16 @@ tool-using stages inherit the registry, rate limits, and politeness — and it
 runs the VALIDATE_URL host checks first, so a tool loop cannot be steered into
 fetching private/loopback targets (SSRF posture identical to submission).
 
-**Search provider:** DESIGN §10.2 wants provider-hosted web search for
-DISCOVER. Default: **Anthropic's server-side `web_search` tool passed through
-OpenRouter** on the pinned provider route — zero local handler, results arrive
-as tool blocks the loop already understands. Verify passthrough works at
-implementation time; if OpenRouter drops it, fall back to OpenRouter's `web`
-plugin, and only if both fail wire a keyed search API (Brave/Serper) as an
-ordinary custom tool. Whichever lands is recorded in §20 with its per-call cost
-and the §16 note (search snippets are untrusted input; they feed the same
-judgment call that already treats page text as untrusted).
+**Search provider:** landed as OpenRouter's current native
+`openrouter:web_search` server tool on the pinned Anthropic route — zero local
+handler, maximum three searches, five results/search and twelve total/turn,
+$0.01/search at landing. The older OpenRouter `web` plugin is deprecated and
+was not used; no new search credential was added. Provider-hosted events flow
+through the same Job Event sink as local tools. When OpenRouter's compatible
+response omits its native search count/citations, one opaque search event is
+recorded for the DISCOVER turn; provider-reported total cost remains
+authoritative. Search snippets are untrusted input and candidate identity is
+filtered before persistence (DESIGN §16/§20 2026-07-21).
 
 ### 2.3 Maps: three tools, forever-cache in existing columns, no new tables
 
@@ -221,7 +224,7 @@ Full task detail in §4–§13; every task below carries its what/why.
 | P3-2 | A | Planner v1 (ingest manifests) + manifest-driven runner + cost persistence | resumable multi-stage runs need a stage list that travels with the job; debugging and NFR1 need the plan and the bill visible |
 | P3-3 | A | Maps tools + tool registry + forever-cache | geocode is the substrate for DEDUPE, ENRICH, and Places ratings; the tool registry is the §10.2 mechanics everything P3 shares |
 | P3-4 | B | DEDUPE + `resolve_dedupe` + `split_property` | shared global facts are only safe if two URLs for one building become one property — and a wrong merge must be reversible (R5) |
-| P3-5 | B | DISCOVER: official-link capture + tier-diverse slate + candidate pool + Source Policy enforcement + single-source badge | cross-source outvoting is the core trust mechanism (R3/R4); tier/family diversity is what makes the votes independent; policy caps keep the user in control of the cost/assurance trade |
+| P3-5 ✅ | B | **Landed 2026-07-21:** DISCOVER official-link capture + tier-diverse slate + candidate pool + Source Policy enforcement + reasoned single-source badge | cross-source outvoting is the core trust mechanism (R3/R4); tier/family diversity is what makes the votes independent; policy caps keep the user in control of the cost/assurance trade |
 | P3-6 | B | Multi-source fan-out + RECONCILE ladder v2 + bounded escalation | conflicting sources need a deterministic, recorded resolution — this is where `resolution_rule`, `disputed`, and the escalation ladder become real |
 | P3-7 | C | Images + VISION with versioned reference set | kitchen/flooring quality are rubric criteria only vision can score; reference anchoring is the consistency control (R6) |
 | P3-8 | C | ENRICH: proximity, commute, Places ratings (priority slice), safety | location and reputation criteria are the remaining unscoreable catalog rows; Places is near-free and covers almost every complex |
@@ -316,6 +319,12 @@ both hunts' scores recompute.
 
 ## 7. P3-5 — DISCOVER + Source Policy enforcement (Wave B)
 
+**Landed 2026-07-21** — implementation truth is DESIGN v3.8 and
+IMPLEMENTATION 2.0.70. The canonical ten-listing live search-seam bench found
+the correct official URL for 10/10 and at least one sibling for 10/10, without
+fetching an official site; this validates discovery yield, not P3-6 extraction
+or reconciliation quality.
+
 **What/why (rescoped 2026-07-13, DESIGN §20 v3.2):** the bounded tool loop
 that (a) finds the **official site and stores it as a link only** —
 `property_sources.is_official`, displayed in the drawer's sources section,
@@ -335,11 +344,10 @@ contributes no slot (`skip: policy_tier_cap`); the tier-3 slot also requires a
 configured provider key (census gate); a missing tier substitutes from the
 next cheaper one, recorded in the manifest.
 
-**Prerequisite (hard):** the fetcher-layer SSRF guard from the §1 gate table
-**landed 2026-07-12** (HTTP path closed with tier-1 IP-pinning). Before this task
-wires live fetchers into the loop, run the two remaining smoke checks — a manual
-browser smoke test of tier-2's route-guard/`page.url` backstop, and one
-live-HTTPS fetch confirming the pin's cert path (both unprovable in CI).
+**Prerequisite (cleared):** the fetcher-layer SSRF guard landed 2026-07-12 and
+both required live smoke checks passed 2026-07-17 before DISCOVER was wired.
+The browser check found and closed the redirect-chain gap; the accepted residual
+tier-2 DNS-rebinding window is recorded in DESIGN §20.
 
 **Files:** `stages/discover.py` (P3 pattern — search tool + `fetch_page`,
 turn-budgeted, `DISCOVER_MAX_TURNS` tunable; emits slate + official link +
@@ -348,9 +356,11 @@ pool ranking via the pinned `plan_assist` call when >3 candidates);
 `docs/hostile-domain-census.csv` gains a **`syndication_family`** column
 (slate-building never picks two same-family sources; RECONCILE counts one
 vote per family); search provider per §2.2 (§20 entry at landing); frontend:
-fill the `SingleSourceBadge` slot (`ListingBadges.tsx`) — two recorded
-reasons, `trust_link` ("not cross-checked — by choice") and
-`discover_exhausted` ("only one site lists this property") — and the drawer's
+fill the `SingleSourceBadge` slot (`ListingBadges.tsx`) — three recorded
+reasons, `trust_link` ("not cross-checked — by choice"),
+`discover_exhausted` ("only one site lists this property"), and
+`discover_failed` (discovery was unavailable or exhausted its bounded budget)
+— and the drawer's
 sources section gains the policy (changeable — relaxing enqueues a refresh
 that discovers newly allowed sources, per §13.2) plus the always-shown
 official link. The submit `Select` already ships (§2.10).
@@ -358,14 +368,17 @@ official link. The submit `Select` already ships (§2.10).
 the 2026-07-09 audit named this the arrival point) — with `last_fetched_at`
 null until escalation ever fetches it.
 
-**Done when:** official link stored + displayed for ≥70% of local bench
+**Done:** official link stored + displayed for 100% (10/10) of the local bench
 complexes **with zero fetches of it**; the slate holds one sibling per
 permitted tier with no syndication family twice; `trust_link` run has zero
 DISCOVER job events and wears the permanent badge; a DISCOVER that finds no
 siblings completes single-source with reason `discover_exhausted`; an
 over-cap sibling appears in the manifest as skipped; the census-named hostile
 domains are *not* fetched at sibling positions when the policy caps below
-their registry tier.
+their registry tier. Synthetic, persistence, API-permission, and refresh tests
+pin those mechanics. A prefaced fenced-JSON response seen live is accepted only
+when the fenced body is itself one valid object; arbitrary brace scraping stays
+forbidden.
 
 ## 8. P3-6 — Multi-source fan-out + RECONCILE ladder v2 (Wave B)
 
@@ -486,7 +499,8 @@ bench property scores its location criteria end-to-end.
 > **Landed 2026-07-18 ◐** (IMPLEMENTATION 2.0.59, DESIGN §20 2026-07-18). As
 > this section required, P3-9 landed the scheduler-tick scaffold (P3-11/P3-12
 > add duties) and the §20 entry records the jobs-vs-tick distinction. Deltas
-> ruled at landing: search-less baselines pass until P3-5's plumbing; graduated
+> ruled at landing: search-less baselines pass; P3-5 now exposes shared search
+> plumbing, but adopting it here remains a separate output-affecting follow-up; graduated
 > unknown rule (no-baselines metro → v1 slice + badge; partial coverage →
 > withheld total); billed fee suppresses the matching estimate; metro =
 > `properties.city`; composition detail on `hunt_listings.all_in_components`.
