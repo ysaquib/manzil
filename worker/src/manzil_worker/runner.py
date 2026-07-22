@@ -28,6 +28,7 @@ from manzil_shared.models import JobState
 from manzil_worker.llm.client import RunContext, cost_tally, run_context
 from manzil_worker.stages.base import Stage, StageCtx
 from manzil_worker.stages.dedupe import dedupe_stage
+from manzil_worker.stages.discover import discover_stage
 from manzil_worker.stages.enrich import enrich_stage
 from manzil_worker.stages.extract import extract_stage
 from manzil_worker.stages.fetch import fetch_stage
@@ -68,6 +69,7 @@ INGEST_STAGES: list[tuple[str, Stage]] = [
     ("VALIDATE", validate_stage),
     ("EXTRACT", extract_stage),
     ("DEDUPE", dedupe_stage),
+    ("DISCOVER", discover_stage),
     ("IMAGE_FETCH", image_fetch_stage),
     ("VISION", vision_stage),
     ("VERIFY", verify_stage),

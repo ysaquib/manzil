@@ -13,6 +13,7 @@ from uuid import uuid4
 from manzil_shared.models import Confidence, FetchOutcome, JobType
 from manzil_worker.fetching.results import FetchResult
 from manzil_worker.llm.client import call_structured
+from manzil_worker.llm.tools import AgentResult
 from manzil_worker.stages.schema_gen import extractable_entries
 from manzil_worker.state import FieldExtraction, RunState, SourceState
 
@@ -63,6 +64,12 @@ class FakeLLM:
         handler = self.handlers[stage]
         payload = handler.pop(0) if isinstance(handler, list) else handler
         return schema.model_validate(payload)
+
+
+async def empty_discovery_agent(stage, task, tools, max_turns):  # type: ignore[no-untyped-def]
+    """Deterministic no-sibling DISCOVER result for non-DISCOVER integration tests."""
+    assert stage == "discover"
+    return AgentResult(final_text='{"candidates": []}', turns=1)
 
 
 def field_payload(value: Any, quote: str | None = None, confidence: str = "high") -> dict[str, Any]:

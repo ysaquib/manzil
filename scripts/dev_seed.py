@@ -37,9 +37,10 @@ if os.environ.get("MANZIL_LLM_MODE") != "record":
     os.environ["MANZIL_LLM_MODE"] = "replay"
 
 from manzil_worker.fetching.results import FetchResult  # noqa: E402
+from manzil_worker.llm.tools import AgentResult  # noqa: E402
 from manzil_worker.phase0_rubric import phase0_rubric  # noqa: E402
 from manzil_worker.queue import build_dispatch, run_worker_loop  # noqa: E402
-from manzil_worker.stages.base import CallStructured  # noqa: E402
+from manzil_worker.stages.base import CallAgent, CallStructured  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PAGES_DIR = REPO_ROOT / "worker" / "tests" / "fixtures" / "pages"
@@ -83,6 +84,20 @@ class FixtureFetcher:
 
     async def fetch(self, url: str, *, capture_screenshot: bool = False) -> FetchResult:
         return FetchResult(url=url, final_url=url, status_code=200, body=self._bodies[url], tier=1)
+
+
+async def _offline_discovery_agent(
+    stage: str, task: str, tools: list[object], max_turns: int
+) -> AgentResult:
+    """Keep the synthetic `.example` seed deterministic and network-free.
+
+    The real DISCOVER stage still runs and persists `discover_exhausted`; only
+    its provider boundary is replaced because web search cannot resolve these
+    intentionally fictional Properties.
+    """
+    if stage != "discover":
+        raise RuntimeError(f"unexpected agent stage in dev seed: {stage}")
+    return AgentResult(final_text='{"candidates": []}', turns=1)
 
 
 def _fixture_bodies() -> dict[str, str]:
@@ -182,7 +197,10 @@ async def _report(conn: asyncpg.Connection) -> tuple[int, int, int]:
 
 
 async def seed(
-    pool: asyncpg.Pool, *, call_structured: CallStructured | None = None
+    pool: asyncpg.Pool,
+    *,
+    call_structured: CallStructured | None = None,
+    call_agent: CallAgent = _offline_discovery_agent,
 ) -> tuple[int, int, int]:
     """Seed idempotently and drain the ingest jobs. Returns
     (hunts, listings, non-zero scores) so callers can assert the P1-1 done-when."""
@@ -195,6 +213,7 @@ async def seed(
         pool,
         fetchers_factory=lambda: {1: FixtureFetcher(_fixture_bodies())},
         call_structured=call_structured,
+        call_agent=call_agent,
     )
     await run_worker_loop(pool, asyncio.Event(), dispatch=dispatch, until_empty=True)
 

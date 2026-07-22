@@ -13,6 +13,7 @@ from uuid import uuid4
 
 import pytest
 from manzil_shared.models import JobType
+from manzil_worker.llm.tools import AgentResult
 from manzil_worker.runner import INGEST_STAGE_NAMES, STAGE_REGISTRY, run_job
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.fetch import fetch_stage
@@ -27,6 +28,7 @@ LIVE_STAGES = [
     "VALIDATE",
     "EXTRACT",
     "DEDUPE",
+    "DISCOVER",
     "IMAGE_FETCH",
     "VISION",
     "VERIFY",
@@ -48,6 +50,11 @@ def _fresh_lookup(row: SourceFreshness | None):  # type: ignore[no-untyped-def]
     return lookup
 
 
+async def _agent_no_candidates(stage, task, tools, max_turns):  # type: ignore[no-untyped-def]
+    assert stage == "discover"
+    return AgentResult(final_text='{"candidates": []}', turns=1)
+
+
 # ── golden manifests ─────────────────────────────────────────────────────────
 
 
@@ -62,7 +69,7 @@ def test_manifest_new_submission() -> None:
         "sources": [{"url": URL, "action": "fetch", "tier": 1}],
         "stages": LIVE_STAGES,
         "skipped": {"VISION": "missing_reference_set"},
-        "est_cost_usd": 0.04,
+        "est_cost_usd": 0.08,
     }
     # Nothing pre-loaded — FETCH will fetch.
     assert state.sources == []
@@ -85,7 +92,7 @@ def test_manifest_same_property_reingest_skips_on_fresh_hash() -> None:
         "sources": [{"url": URL, "action": "skip", "why": "hash_fresh"}],
         "stages": LIVE_STAGES,
         "skipped": {"VISION": "missing_reference_set"},
-        "est_cost_usd": 0.04,
+        "est_cost_usd": 0.08,
     }
     # PLAN handed FETCH the persisted cleaned text so it skips the network.
     assert len(state.sources) == 1
@@ -111,9 +118,10 @@ def test_manifest_trust_link_policy_carried_through() -> None:
     state = asyncio.run(plan_stage(_state(source_policy="trust_link"), StageCtx()))
 
     assert state.plan is not None
-    # Policy recorded; no DISCOVER exists yet, so stages are unchanged (§10.4/P3-5).
     assert state.plan.source_policy == "trust_link"
-    assert state.plan.stages == LIVE_STAGES
+    assert state.plan.stages == [stage for stage in LIVE_STAGES if stage != "DISCOVER"]
+    assert state.single_source_reason == "trust_link"
+    assert state.slate_urls == [URL]
 
 
 def test_manifest_retry_trigger() -> None:
@@ -226,7 +234,7 @@ def test_est_cost_matches_live_stage_estimates() -> None:
     # VISION is fail-closed (reference set absent), so only text LLM stages count.
     state = asyncio.run(plan_stage(_state(), StageCtx()))
     assert state.plan is not None
-    assert state.plan.est_cost_usd == 0.04
+    assert state.plan.est_cost_usd == 0.08
     assert state.plan.stages == list(INGEST_STAGE_NAMES)
 
 
@@ -272,6 +280,7 @@ def test_ingest_stages_walk_runs_plan_first_then_the_spine(tmp_path) -> None:  #
         persistence=FilePersistence(tmp_path / "runs"),
         today=lambda: date(2026, 7, 6),
         geocode_address=_fake_geocode,
+        call_agent=_agent_no_candidates,
     )
     state = RunState(
         job_id=uuid4(), job_type=JobType.INGEST, url="https://maplecourt.test/floorplans"

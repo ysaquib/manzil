@@ -54,8 +54,8 @@ STAGE_MODELS: dict[str, str] = {
 # so this table has exactly two non-empty rows — it IS that rule's enforcement.
 # Every other stage (extract, verify, validate, …) resolves to an empty tuple,
 # and `call_agent` refuses any stage absent from this map.
-#   discover              — P3-5 DISCOVER. `web_search` (provider-hosted) is added
-#                           when P3-5 lands; `fetch_page` is available now.
+#   discover              — P3-5 DISCOVER: provider-hosted `web_search` plus the
+#                           local, SSRF-guarded `fetch_page` tool.
 #   custom_match_location — P3-10 location-type custom-criteria dispatch (the
 #                           second, and last, allowed loop).
 STAGE_TOOLS: dict[str, tuple[str, ...]] = {
@@ -63,11 +63,21 @@ STAGE_TOOLS: dict[str, tuple[str, ...]] = {
     "custom_match_location": ("geocode", "places_nearby", "commute_time", "fetch_page"),
 }
 
+# Provider-hosted tools execute inside OpenRouter and therefore have no local
+# callable in REGISTRY. They are still stage-allow-listed here: DISCOVER is the
+# only workflow stage allowed native web search. The older OpenRouter `web`
+# plugin is deprecated; P3-5 uses `openrouter:web_search` with an explicit cap.
+STAGE_SERVER_TOOLS: dict[str, tuple[str, ...]] = {"discover": ("web_search",)}
+
 
 def allowed_tools(stage: str) -> tuple[str, ...]:
     """The tool names `stage` may use. Empty for every stage not explicitly
     allow-listed — extraction stages included. `call_agent` enforces this."""
     return STAGE_TOOLS.get(stage, ())
+
+
+def allowed_server_tools(stage: str) -> tuple[str, ...]:
+    return STAGE_SERVER_TOOLS.get(stage, ())
 
 
 DEFAULT_MAX_TOKENS = 2048

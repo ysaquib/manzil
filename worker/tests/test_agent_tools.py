@@ -9,7 +9,7 @@ import pytest
 from manzil_shared.errors import StageFatal
 from manzil_worker.enrich.maps import commute_time, geocode, places_nearby
 from manzil_worker.llm.client import call_agent
-from manzil_worker.llm.config import allowed_tools
+from manzil_worker.llm.config import allowed_server_tools, allowed_tools
 from manzil_worker.llm.tools import (
     ToolNotAllowed,
     fetch_page,
@@ -76,6 +76,12 @@ def test_exactly_two_stages_may_run_a_loop() -> None:
 
     non_empty = {s for s, tools in STAGE_TOOLS.items() if tools}
     assert non_empty == {"discover", "custom_match_location"}
+
+
+def test_only_discover_may_use_provider_web_search() -> None:
+    assert allowed_server_tools("discover") == ("web_search",)
+    for stage in ("extract", "verify", "custom_match_location", "score"):
+        assert allowed_server_tools(stage) == ()
 
 
 async def test_call_agent_refuses_an_extraction_stage() -> None:

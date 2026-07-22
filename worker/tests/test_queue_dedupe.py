@@ -26,7 +26,7 @@ from manzil_worker.queue import make_ingest_dispatcher
 from manzil_worker.runner import INGEST_STAGE_NAMES, INGEST_STAGES, run_job
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.state import DedupeDecision, GeocodeIn, RunState
-from worker_helpers import PAGES, FakeFetcher, FakeLLM, maple_extraction
+from worker_helpers import PAGES, FakeFetcher, FakeLLM, empty_discovery_agent, maple_extraction
 
 URL_A = "https://maplecourt.test/official"  # P1's already-known source
 URL_B = "https://aggregator.test/maple-court"  # the second URL we submit
@@ -131,6 +131,7 @@ async def test_second_url_merges_into_canonical_via_checkpoint(pg_pool: asyncpg.
             dsn=None,
             fetchers_factory=lambda: {1: FakeFetcher(1, body)},  # type: ignore[dict-item]
             call_structured=_handlers(),
+            call_agent=empty_discovery_agent,
             geocode_address=_fake_geocode,
         )
         job = await pg_pool.fetchrow("select * from jobs where id = $1", job_id)
@@ -198,6 +199,7 @@ async def test_resume_after_merge_keeps_canonical_property_id(pg_pool: asyncpg.P
             fetchers={1: FakeFetcher(1, body)},  # type: ignore[dict-item]
             registry=InMemoryRegistry(),
             call_structured=_handlers(),
+            call_agent=empty_discovery_agent,
             rubric=phase0_rubric(),
             rubric_version=PHASE0_RUBRIC_VERSION,
             geocode_address=_fake_geocode,  # no candidates seam → no merge
@@ -220,6 +222,7 @@ async def test_resume_after_merge_keeps_canonical_property_id(pg_pool: asyncpg.P
             dsn=None,
             fetchers_factory=lambda: {1: FakeFetcher(1, body)},  # type: ignore[dict-item]
             call_structured=_handlers(),
+            call_agent=empty_discovery_agent,
             geocode_address=_fake_geocode,
         )
         job = await pg_pool.fetchrow("select * from jobs where id = $1", job_id)

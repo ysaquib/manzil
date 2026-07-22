@@ -40,6 +40,17 @@ WORKER_IDLE_BACKOFF_SECONDS = 1.0
 
 # P3 bounded tool loops
 AGENT_MAX_TURNS = 8
+# DISCOVER has its own tighter budgets because each turn uses the judgment-tier
+# model and may invoke paid native web search. OpenRouter's server tool also has
+# an independent per-request search budget; both limits are required.
+DISCOVER_MAX_TURNS = 6
+DISCOVER_MAX_SEARCHES = 3
+DISCOVER_MAX_RESULTS_PER_SEARCH = 5
+DISCOVER_MAX_TOTAL_RESULTS = 12
+# Anthropic native web search is $10 / 1,000 successful searches (2026-07-21).
+# Live OpenRouter calls prefer the provider-reported total; replay uses this
+# explicit price so jobs.cost_actual_usd does not silently omit search spend.
+DISCOVER_WEB_SEARCH_REQUEST_USD = 0.01
 # Tool-call observability (§10.2): a tool result can be a whole page, so the
 # `tool_called` job event stores only a truncated summary — the full result still
 # goes back to the model in the loop.
@@ -72,6 +83,7 @@ STAGE_COST_ESTIMATES_USD = {
     "VALIDATE": 0.005,
     "EXTRACT": 0.02,
     "DEDUPE": 0.0,  # geocode is a Maps call, not an LLM call; no LLM cost here
+    "DISCOVER": 0.04,  # judgment call + up to 3 native searches
     "IMAGE_FETCH": 0.0,
     "VISION": 0.03,
     "VERIFY": 0.01,

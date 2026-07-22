@@ -29,7 +29,14 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from manzil_shared.config import AGENT_MAX_TURNS
+from manzil_shared.config import (
+    AGENT_MAX_TURNS,
+    DISCOVER_MAX_RESULTS_PER_SEARCH,
+    DISCOVER_MAX_SEARCHES,
+    DISCOVER_MAX_TOTAL_RESULTS,
+    DISCOVER_WEB_SEARCH_REQUEST_USD,
+)
+from manzil_shared.errors import AgentBudgetExceeded
 from pydantic import BaseModel
 
 from manzil_worker.llm.config import (
@@ -49,6 +56,7 @@ from manzil_worker.llm.recording import (
 )
 from manzil_worker.llm.tools import (
     AgentResult,
+    ServerToolEvent,
     ToolCall,
     ToolSpec,
     TurnResponse,
@@ -589,6 +597,8 @@ class _AgentTurnRaw:
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
     reported_cost_usd: float | None = None
+    server_tool_events: tuple[ServerToolEvent, ...] = ()
+    web_search_requests: int = 0
 
 
 def _optional_prompt(stage: str) -> Prompt | None:
@@ -601,20 +611,55 @@ def _optional_prompt(stage: str) -> Prompt | None:
 
 
 def _agent_usage(model: str, raw: _AgentTurnRaw) -> CallUsage:
+    token_cost = cost_usd(
+        model,
+        input_tokens=raw.input_tokens,
+        output_tokens=raw.output_tokens,
+        cache_read_tokens=raw.cache_read_tokens,
+        cache_write_tokens=raw.cache_write_tokens,
+    )
     return CallUsage(
         model=model,
         input_tokens=raw.input_tokens,
         output_tokens=raw.output_tokens,
         cache_read_tokens=raw.cache_read_tokens,
         cache_write_tokens=raw.cache_write_tokens,
-        cost_usd=cost_usd(
-            model,
-            input_tokens=raw.input_tokens,
-            output_tokens=raw.output_tokens,
-            cache_read_tokens=raw.cache_read_tokens,
-            cache_write_tokens=raw.cache_write_tokens,
+        # OpenRouter's reported total includes native-search charges. Replay or
+        # providers omitting it use Anthropic's published $0.01/search price.
+        cost_usd=(
+            raw.reported_cost_usd
+            if raw.reported_cost_usd is not None
+            else token_cost + raw.web_search_requests * DISCOVER_WEB_SEARCH_REQUEST_USD
         ),
     )
+
+
+def _server_tool_payloads(stage: str) -> list[dict[str, Any]]:
+    from manzil_worker.llm.config import allowed_server_tools
+
+    payloads: list[dict[str, Any]] = []
+    for name in allowed_server_tools(stage):
+        if name != "web_search":
+            raise SeamConfigError(f"stage {stage!r}: unknown server tool {name!r}")
+        payloads.append(
+            {
+                "type": "openrouter:web_search",
+                "parameters": {
+                    "engine": "native",
+                    "max_results": DISCOVER_MAX_RESULTS_PER_SEARCH,
+                    "max_total_results": DISCOVER_MAX_TOTAL_RESULTS,
+                },
+            }
+        )
+    return payloads
+
+
+def _model_extra(value: Any, key: str) -> Any:
+    direct = getattr(value, key, None)
+    if direct is not None:
+        return direct
+    extra = getattr(value, "model_extra", None) or {}
+    return extra.get(key)
 
 
 async def _live_agent_turn_openrouter(
@@ -623,6 +668,7 @@ async def _live_agent_turn_openrouter(
     prompt: Prompt | None,
     messages: list[dict[str, Any]],
     specs: list[ToolSpec],
+    server_search_budget: int | None = None,
 ) -> _AgentTurnRaw:
     from openai import AsyncOpenAI
 
@@ -647,25 +693,37 @@ async def _live_agent_turn_openrouter(
     convo.extend(messages)
 
     client = AsyncOpenAI(api_key=os.environ["OPENROUTER_API_KEY"], base_url=OPENROUTER_BASE_URL)
+    local_tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": s.name,
+                "description": s.description,
+                "parameters": s.parameters,
+            },
+        }
+        for s in specs
+    ]
+    server_tools = _server_tool_payloads(stage) if server_search_budget != 0 else []
     response = await client.chat.completions.create(
         model=model,
         max_tokens=max_tokens_for_stage(stage),
         temperature=0.0,
         messages=convo,  # type: ignore[arg-type]
-        tools=[
-            {
-                "type": "function",
-                "function": {
-                    "name": s.name,
-                    "description": s.description,
-                    "parameters": s.parameters,
-                },
-            }
-            for s in specs
-        ],
+        tools=[*local_tools, *server_tools],  # type: ignore[arg-type]
         tool_choice="auto",
         extra_body={
             "provider": {"order": openrouter_provider_order(model), "allow_fallbacks": False},
+            **(
+                {
+                    "max_tool_calls": min(
+                        DISCOVER_MAX_SEARCHES,
+                        server_search_budget or DISCOVER_MAX_SEARCHES,
+                    )
+                }
+                if server_tools
+                else {}
+            ),
         },
     )
 
@@ -682,6 +740,40 @@ async def _live_agent_turn_openrouter(
     cache_write = _usage_int(details, "cache_write_tokens")
     uncached = max(0, (usage.prompt_tokens or 0) - cached - cache_write)
     reported_cost = getattr(usage, "cost", None)
+    server_use = _model_extra(usage, "server_tool_use") or {}
+    if not isinstance(server_use, dict):
+        server_use = getattr(server_use, "model_dump", lambda: {})()
+    search_requests = int(server_use.get("web_search_requests") or 0)
+    annotations = _model_extra(message, "annotations") or []
+    citations: list[dict[str, Any]] = []
+    for annotation in annotations:
+        item = annotation if isinstance(annotation, dict) else annotation.model_dump()
+        citation = item.get("url_citation") if item.get("type") == "url_citation" else None
+        if citation:
+            citations.append(
+                {
+                    "url": citation.get("url"),
+                    "title": citation.get("title"),
+                }
+            )
+    # OpenRouter's OpenAI-compatible response can omit both the provider-specific
+    # request count and annotations even when native search supplied the answer.
+    # DISCOVER's prompt requires a search on every turn, so conservatively record
+    # one opaque request whenever the native tool was offered and the provider did
+    # not report a count. Provider-reported total cost remains authoritative.
+    if server_tools and search_requests == 0:
+        search_requests = 1
+    event_summary = json.dumps({"citations": citations}, default=str)[
+        : DISCOVER_MAX_TOTAL_RESULTS * 300
+    ]
+    server_events = tuple(
+        ServerToolEvent(
+            name="web_search",
+            input={"request_index": index + 1},
+            result=event_summary,
+        )
+        for index in range(search_requests)
+    )
     return _AgentTurnRaw(
         tool_calls=tool_calls,
         text=message.content,
@@ -691,6 +783,8 @@ async def _live_agent_turn_openrouter(
         cache_read_tokens=cached,
         cache_write_tokens=cache_write,
         reported_cost_usd=float(reported_cost) if reported_cost is not None else None,
+        server_tool_events=server_events,
+        web_search_requests=search_requests,
     )
 
 
@@ -700,6 +794,7 @@ async def _traced_agent_turn(
     prompt: Prompt | None,
     messages: list[dict[str, Any]],
     specs: list[ToolSpec],
+    server_search_budget: int | None = None,
 ) -> _AgentTurnRaw:
     """One agent turn wrapped in its own Langfuse generation — every turn is
     traced (NFR6: an untraced call is a bug)."""
@@ -726,13 +821,24 @@ async def _traced_agent_turn(
             metadata=metadata,
         ) as generation,
     ):
-        raw = await _live_agent_turn_openrouter(stage, model, prompt, messages, specs)
+        raw = await _live_agent_turn_openrouter(
+            stage,
+            model,
+            prompt,
+            messages,
+            specs,
+            server_search_budget,
+        )
         if raw.reported_cost_usd is not None:
             generation.update(metadata={**metadata, "openrouter_cost_usd": raw.reported_cost_usd})
         generation.update(
             output={
                 "text": raw.text,
                 "tool_calls": [{"name": c.name, "input": c.input} for c in raw.tool_calls],
+                "server_tool_events": [
+                    {"name": e.name, "input": e.input, "result": e.result}
+                    for e in raw.server_tool_events
+                ],
             },
             usage_details={
                 "input": raw.input_tokens,
@@ -752,6 +858,7 @@ async def _agent_turn(
     prompt: Prompt | None,
     messages: list[dict[str, Any]],
     specs: list[ToolSpec],
+    server_search_budget: int | None = None,
 ) -> TurnResponse:
     """One model turn with record/replay over the conversation-so-far (fixture per
     turn, keyed by the same `{stage}--{hash16}` convention as structured calls).
@@ -774,9 +881,26 @@ async def _agent_turn(
             output_tokens=rec.output_tokens,
             cache_read_tokens=rec.cache_read_tokens,
             cache_write_tokens=rec.cache_write_tokens,
+            reported_cost_usd=rec.reported_cost_usd,
+            server_tool_events=tuple(
+                ServerToolEvent(
+                    name=event["name"],
+                    input=event.get("input", {}),
+                    result=event.get("result", ""),
+                )
+                for event in (rec.server_tool_events or [])
+            ),
+            web_search_requests=len(rec.server_tool_events or []),
         )
     else:
-        raw = await _traced_agent_turn(stage, model, prompt, messages, specs)
+        raw = await _traced_agent_turn(
+            stage,
+            model,
+            prompt,
+            messages,
+            specs,
+            server_search_budget,
+        )
         if mode == "record":
             save_recording(
                 digest,
@@ -794,11 +918,20 @@ async def _agent_turn(
                     tool_calls=[{"name": c.name, "input": c.input} for c in raw.tool_calls],
                     text=raw.text,
                     stop_reason=raw.stop_reason,
+                    server_tool_events=[
+                        {"name": e.name, "input": e.input, "result": e.result}
+                        for e in raw.server_tool_events
+                    ],
+                    reported_cost_usd=raw.reported_cost_usd,
                 ),
             )
 
     _tally(_agent_usage(model, raw))
-    return TurnResponse(tool_calls=raw.tool_calls, text=raw.text)
+    return TurnResponse(
+        tool_calls=raw.tool_calls,
+        text=raw.text,
+        server_tool_events=raw.server_tool_events,
+    )
 
 
 async def call_agent(
@@ -815,9 +948,20 @@ async def call_agent(
     exhaustion raises `AgentBudgetExceeded`."""
     model = model_for_stage(stage)
     prompt = _optional_prompt(stage)
+    server_searches_used = 0
 
     async def turn_fn(messages: list[dict[str, Any]], specs: list[ToolSpec]) -> TurnResponse:
-        return await _agent_turn(stage, model, prompt, messages, specs)
+        nonlocal server_searches_used
+        budget = (
+            max(0, DISCOVER_MAX_SEARCHES - server_searches_used) if stage == "discover" else None
+        )
+        response = await _agent_turn(stage, model, prompt, messages, specs, budget)
+        server_searches_used += len(response.server_tool_events)
+        if stage == "discover" and server_searches_used > DISCOVER_MAX_SEARCHES:
+            raise AgentBudgetExceeded(
+                f"stage {stage!r}: provider exceeded its {DISCOVER_MAX_SEARCHES}-search budget"
+            )
+        return response
 
     return await run_agent_loop(
         stage=stage, task=task, tools=tools, turn_fn=turn_fn, max_turns=max_turns

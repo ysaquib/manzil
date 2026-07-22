@@ -24,6 +24,7 @@ CSV_FIELDS = [
     "tier3_outcome",
     "required_tier",
     "verdict",
+    "syndication_family",
 ]
 
 
@@ -61,6 +62,7 @@ async def run_census(urls: list[str], fetchers: dict[int, Fetcher], out_path: Pa
                 **outcomes,
                 "required_tier": str(settled_tier),
                 "verdict": _verdict(settled_tier, ladder.outcome, max(fetchers)),
+                "syndication_family": site_domain(url),
             }
         )
 

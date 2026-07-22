@@ -11,7 +11,7 @@ from httpx import AsyncClient
 from manzil_worker.fetching.results import FetchResult
 from manzil_worker.phase0_rubric import phase0_rubric
 from manzil_worker.queue import build_dispatch, run_worker_loop
-from pipeline_helpers import maple_recorded_llm
+from pipeline_helpers import empty_discovery_agent, maple_recorded_llm
 
 FIXTURE_URL = "https://maple-court.seed.example/floorplans"
 PAGE = "e2e_listing.html"
@@ -39,6 +39,7 @@ async def test_e2e_hunt_rubric_listing_override_flow(
         db_pool,
         fetchers_factory=lambda: {1: _FixtureFetcher(body)},
         call_structured=maple_recorded_llm,
+        call_agent=empty_discovery_agent,
     )
 
     hunt_id: str | None = None

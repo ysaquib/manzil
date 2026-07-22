@@ -253,6 +253,27 @@ class DedupeDecision(BaseModel):
     note: str | None = None
 
 
+class DiscoveredSource(BaseModel):
+    """One same-Property Source found by DISCOVER (P3-5).
+
+    Domain, tier, and Syndication Family are deterministic worker metadata; the
+    model supplies only the URL and same-Property judgment/evidence. `rank` is
+    the planner's trust order used by baseline slate selection and P3-6's later
+    escalation round. Official Sources are link-only and never slate members.
+    """
+
+    url: str
+    site_domain: str
+    required_tier: int
+    syndication_family: str
+    is_official: bool = False
+    same_property_confidence: Confidence = Confidence.MEDIUM
+    evidence: str | None = None
+    rank: int = 0
+    selected_for_slate: bool = False
+    selection_reason: str | None = None
+
+
 class PlanSource(BaseModel):
     """One source entry in the §10.4 manifest. Fetch entries carry `tier`; skip
     entries carry `why`. `url` identifies a brand-new submission whose
@@ -300,6 +321,16 @@ class RunState(BaseModel):
     # (dedupe/geocode absent) keep validating.
     geocode: GeocodeIn | None = None
     dedupe: DedupeDecision | None = None
+    # P3-5 DISCOVER outputs. Optional/defaulted so every pre-P3-5 snapshot keeps
+    # validating. The candidate pool is retained even when policy excludes a
+    # Source; P3-6 can draw from it without paying for a second search.
+    discovered_sources: list[DiscoveredSource] = Field(default_factory=list)
+    official_source_url: str | None = None
+    slate_urls: list[str] = Field(default_factory=list)
+    single_source_reason: Literal["trust_link", "discover_exhausted", "discover_failed"] | None = (
+        None
+    )
+    discover_error: str | None = None
     sources: list[SourceState] = Field(default_factory=list)
     property_images: list[PropertyImageIn] = Field(default_factory=list)
     image_fetch_completed: bool = False
