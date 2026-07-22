@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 
 CallStructured = Callable[[str, type[Any], str], Awaitable[Any]]
 CallVision = Callable[[str, type[Any], list[Any]], Awaitable[Any]]
+CallAgent = Callable[[str, str, list[Any], int], Awaitable[Any]]
 
 # PLAN's DB seam (P3-2): given a property id and a source URL, return the
 # persisted source's freshness inputs, or None when no row exists. Injected like
@@ -128,6 +129,7 @@ class StageCtx:
     fetchers: dict[int, Fetcher] = field(default_factory=dict)
     registry: AdapterRegistry | None = None
     call_structured: CallStructured = llm_client.call_structured
+    call_agent: CallAgent = llm_client.call_agent
     call_vision: CallVision = llm_client.call_vision
     rubric: list[RubricCriterion] = field(default_factory=list)
     rubric_version: int = 0
@@ -169,6 +171,9 @@ class StageCtx:
     download_image: DownloadImage | None = None
     image_store: ImageObjectStore | None = None
     existing_image_hashes: ExistingImageHashes = _no_existing_image_hashes
+    # DISCOVER's bounded loop writes every local/server tool use through this
+    # sink. Queue mode wires Postgres; CLI/tests may leave it null (log-only).
+    tool_event_sink: Any = None
 
 
 Stage = Callable[["RunState", StageCtx], Awaitable["RunState"]]

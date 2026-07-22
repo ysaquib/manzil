@@ -10,9 +10,10 @@ maintenance — the worker's scheduler tick (queue.py) spawns it directly as a
 guarded asyncio task, one per due metro, behind a Postgres advisory lock. If a
 pass dies, the next tick retries; a 120-day cadence needs no queue durability.
 
-Search interim (§20 2026-07-18): the pass is a plain structured call with no
-live search until P3-5 lands the provider `web_search` plumbing — `sources`
-records the model's claimed references marked `"search": false`. All-or-nothing
+Search posture (§20 2026-07-18, 2026-07-21): the pass remains a plain
+structured call after P3-5; adopting DISCOVER's provider-search seam here is a
+separate output-affecting change. `sources` records the model's claimed
+references marked `"search": false`. All-or-nothing
 write: a pass that does not cover every (bucket x utility) combination is
 rejected, because partial coverage would trip the composition's strict-unknown
 branch on the gaps it left.
@@ -170,6 +171,5 @@ async def baselines_for_metro(
     if not rows:
         return None
     return {
-        row["utility"]: (float(row["monthly_high"]), float(row["monthly_median"]))
-        for row in rows
+        row["utility"]: (float(row["monthly_high"]), float(row["monthly_median"])) for row in rows
     }

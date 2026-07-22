@@ -35,6 +35,9 @@ class ListingResponse(BaseModel):
     property_id: UUID
     status: str
     source_policy: str
+    single_source_reason: Literal["trust_link", "discover_exhausted", "discover_failed"] | None = (
+        None
+    )
     pins: dict[str, Any]
     created_at: datetime | None = None
     # Set when ingest/refresh found no available floor plans (§8.2); null while
@@ -52,6 +55,12 @@ class PinsPatch(BaseModel):
     """Per-Unit-Group pinned floor plan (DESIGN §8.2 `hunt_listings.pins`)."""
 
     pins: dict[str, Any]
+
+
+class SourcePolicyPatch(BaseModel):
+    """Change one Listing's cross-check policy (DESIGN §10.7, P3-5)."""
+
+    source_policy: SourcePolicy
 
 
 class UnitGroupStatePatch(BaseModel):

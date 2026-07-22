@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from manzil_worker.llm.client import call_structured
+from manzil_worker.llm.tools import AgentResult
 
 _MAPLE_EXTRACT_RECORDING = (
     Path(__file__).resolve().parents[2]
@@ -29,3 +30,8 @@ async def maple_recorded_llm(stage: str, schema: type[Any], content: str) -> Any
         return await call_structured(stage, schema, content)
     recording = json.loads(_MAPLE_EXTRACT_RECORDING.read_text())
     return schema.model_validate(recording["output"])
+
+
+async def empty_discovery_agent(stage, task, tools, max_turns):  # type: ignore[no-untyped-def]
+    assert stage == "discover"
+    return AgentResult(final_text='{"candidates": []}', turns=1)

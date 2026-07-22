@@ -15,6 +15,7 @@ from manzil_api.listings.schemas import (
     ListingResponse,
     ListingStatusPatch,
     PinsPatch,
+    SourcePolicyPatch,
     UnitGroupStatePatch,
     UnitGroupStateResponse,
 )
@@ -122,6 +123,29 @@ async def patch_pins(
     row = await get_listing_row(client, listing_id)
     if row is None:
         raise RuntimeError("listing missing after pins patch")
+    return _to_response(row)
+
+
+async def patch_source_policy(
+    client: Client,
+    listing: dict[str, Any],
+    user_id: str,
+    body: SourcePolicyPatch,
+) -> ListingResponse:
+    """Persist policy and atomically enqueue DISCOVER when assurance relaxes."""
+    role = _role(client, listing["hunt_id"], user_id)
+    if role != "owner" and listing["added_by"] != user_id:
+        raise InsufficientRole("Members and Curators may edit only their own Listings")
+    response = client.rpc(
+        "set_listing_source_policy",
+        {
+            "p_listing_id": listing["id"],
+            "p_source_policy": body.source_policy,
+        },
+    ).execute()
+    row = (response.data or [None])[0]
+    if row is None:
+        raise RuntimeError("source policy update returned no Listing")
     return _to_response(row)
 
 

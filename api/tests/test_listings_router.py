@@ -106,15 +106,11 @@ async def test_patch_status_archives_and_restores(client: AsyncClient, db_pool) 
         FAKE_USER.id,
     )
     try:
-        resp = await client.patch(
-            f"/v1/listings/{listing_id}/status", json={"status": "archived"}
-        )
+        resp = await client.patch(f"/v1/listings/{listing_id}/status", json={"status": "archived"})
         assert resp.status_code == 200
         assert resp.json()["status"] == "archived"
 
-        resp = await client.patch(
-            f"/v1/listings/{listing_id}/status", json={"status": "active"}
-        )
+        resp = await client.patch(f"/v1/listings/{listing_id}/status", json={"status": "active"})
         assert resp.status_code == 200
         assert resp.json()["status"] == "active"
         status = await db_pool.fetchval(
@@ -138,3 +134,91 @@ async def test_curator_updates_unit_group_state_and_member_cannot(
 
     member_response = await as_member.patch(path, json=payload)
     assert member_response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_source_policy_relaxation_queues_discover_refresh_atomically(
+    collab_hunt, as_owner: AsyncClient, db_pool
+) -> None:
+    listing_id = collab_hunt["member_listing_id"]
+    hunt_id = collab_hunt["hunt_id"]
+    submitted = f"https://example.com/listing/{uuid4()}"
+    await db_pool.execute(
+        """insert into jobs (hunt_id, hunt_listing_id, type, state, payload)
+           values ($1, $2, 'ingest', 'done', $3::jsonb)""",
+        hunt_id,
+        listing_id,
+        json.dumps({"url": submitted, "source_policy": "tiers_1_2_3"}),
+    )
+    # Tighten first: metadata changes, but no DISCOVER refresh is useful.
+    tightened = await as_owner.patch(
+        f"/v1/listings/{listing_id}/source-policy",
+        json={"source_policy": "tier_1"},
+    )
+    assert tightened.status_code == 200
+    assert tightened.json()["source_policy"] == "tier_1"
+    refreshes = await db_pool.fetchval(
+        "select count(*) from jobs where hunt_listing_id = $1 and type = 'refresh'",
+        listing_id,
+    )
+    assert refreshes == 0
+
+    # The official link is discovered under every non-trust policy, so enabling
+    # only its future P3-6 fetch carve-out must not pay for a no-op DISCOVER.
+    official_carveout = await as_owner.patch(
+        f"/v1/listings/{listing_id}/source-policy",
+        json={"source_policy": "tier_1_plus_official"},
+    )
+    assert official_carveout.status_code == 200
+    refreshes = await db_pool.fetchval(
+        "select count(*) from jobs where hunt_listing_id = $1 and type = 'refresh'",
+        listing_id,
+    )
+    assert refreshes == 0
+
+    relaxed = await as_owner.patch(
+        f"/v1/listings/{listing_id}/source-policy",
+        json={"source_policy": "tiers_1_2"},
+    )
+    assert relaxed.status_code == 200
+    assert relaxed.json()["source_policy"] == "tiers_1_2"
+    job = await db_pool.fetchrow(
+        """select state, payload from jobs
+           where hunt_listing_id = $1 and type = 'refresh'""",
+        listing_id,
+    )
+    assert job is not None and job["state"] == "queued"
+    payload = json.loads(job["payload"]) if isinstance(job["payload"], str) else job["payload"]
+    assert payload == {
+        "url": submitted,
+        "scope": "discover",
+        "hunt_id": hunt_id,
+        "listing_id": listing_id,
+        "source_policy": "tiers_1_2",
+    }
+
+
+@pytest.mark.asyncio
+async def test_source_policy_edit_is_owner_or_submitter_only(
+    collab_hunt, as_curator: AsyncClient, as_member: AsyncClient, db_pool
+) -> None:
+    owner_listing = collab_hunt["owner_listing_id"]
+    member_listing = collab_hunt["member_listing_id"]
+    forbidden = await as_curator.patch(
+        f"/v1/listings/{member_listing}/source-policy",
+        json={"source_policy": "trust_link"},
+    )
+    assert forbidden.status_code == 403
+
+    own = await as_member.patch(
+        f"/v1/listings/{member_listing}/source-policy",
+        json={"source_policy": "trust_link"},
+    )
+    assert own.status_code == 200
+    assert own.json()["single_source_reason"] == "trust_link"
+
+    other = await as_member.patch(
+        f"/v1/listings/{owner_listing}/source-policy",
+        json={"source_policy": "trust_link"},
+    )
+    assert other.status_code == 403

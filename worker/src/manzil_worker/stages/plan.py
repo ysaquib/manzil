@@ -20,17 +20,64 @@ property row" reuse is DEDUPE's job (P3-4) and out of scope here.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 
 import structlog
 from manzil_shared.config import PLAN_FRESH_TTL_HOURS, STAGE_COST_ESTIMATES_USD
 from manzil_shared.models import FetchOutcome
+from pydantic import BaseModel
 
 from manzil_worker.stages.base import StageCtx
-from manzil_worker.state import PlanManifest, PlanSource, RunState, SourceState
+from manzil_worker.state import DiscoveredSource, PlanManifest, PlanSource, RunState, SourceState
 from manzil_worker.vision_refs import vision_references_ready
 
 log = structlog.get_logger()
+
+
+class _CandidateRanking(BaseModel):
+    ordered_urls: list[str]
+
+
+async def rank_discovered_sources(
+    candidates: list[DiscoveredSource], state: RunState, ctx: StageCtx
+) -> list[DiscoveredSource]:
+    """The §10.4 optional judgment: rank a pool only when it exceeds three.
+
+    Bad/missing ranking output falls back to DISCOVER's deterministic confidence
+    order; source selection must never fail because this optional assist did.
+    """
+    if len(candidates) <= 3:
+        return candidates
+    expected = {candidate.url for candidate in candidates}
+    content = json.dumps(
+        {
+            "property": state.property_identity.model_dump() if state.property_identity else None,
+            "candidates": [
+                {
+                    "url": candidate.url,
+                    "confidence": candidate.same_property_confidence.value,
+                    "evidence": candidate.evidence,
+                }
+                for candidate in candidates
+            ],
+        },
+        sort_keys=True,
+    )
+    try:
+        ranked = await ctx.call_structured("plan_assist", _CandidateRanking, content)
+        if len(ranked.ordered_urls) != len(candidates) or set(ranked.ordered_urls) != expected:
+            raise ValueError("ranking must contain every candidate URL exactly once")
+    except Exception as error:
+        log.warning(
+            "plan_assist_fallback",
+            job_id=str(state.job_id),
+            candidates=len(candidates),
+            error=repr(error),
+        )
+        return candidates
+    by_url = {candidate.url: candidate for candidate in candidates}
+    return [by_url[url] for url in ranked.ordered_urls]
 
 
 def _est_cost(stages: list[str], skipped: dict[str, str]) -> float:
@@ -74,6 +121,10 @@ async def plan_stage(state: RunState, ctx: StageCtx) -> RunState:
         source_entry = PlanSource(url=state.url, action="fetch", tier=1)
 
     stages = list(INGEST_STAGE_NAMES)
+    if state.source_policy == "trust_link":
+        stages.remove("DISCOVER")
+        state.single_source_reason = "trust_link"
+        state.slate_urls = [state.url]
     # P3-7 is fail-closed until the complete, versioned human reference set is
     # present. IMAGE_FETCH still runs so assets/hashes can be prepared safely.
     skipped: dict[str, str] = (

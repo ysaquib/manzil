@@ -15,6 +15,7 @@ from manzil_api.listings.schemas import (
     ListingResponse,
     ListingStatusPatch,
     PinsPatch,
+    SourcePolicyPatch,
     UnitGroupStatePatch,
     UnitGroupStateResponse,
 )
@@ -77,6 +78,17 @@ async def patch_pins(
     client: UserClient,
 ) -> ListingResponse:
     return await service.patch_pins(client, listing, user.id, body)
+
+
+@router.patch("/listings/{listing_id}/source-policy", response_model=ListingResponse)
+async def patch_source_policy(
+    listing_id: UUID,
+    body: SourcePolicyPatch,
+    listing: ValidListing,
+    user: CurrentUser,
+    client: UserClient,
+) -> ListingResponse:
+    return await service.patch_source_policy(client, listing, user.id, body)
 
 
 @router.patch(

@@ -46,6 +46,10 @@ class Recording:
     tool_calls: list[dict] | None = None  # [{"name": ..., "input": {...}}, …]
     text: str | None = None  # the assistant's final (non-tool) message
     stop_reason: str | None = None  # "tool_use" | "stop"
+    # Provider-hosted tool uses (P3-5 native web search) are already executed in
+    # the response; replay retains their observability and exact provider cost.
+    server_tool_events: list[dict] | None = None
+    reported_cost_usd: float | None = None
     # P4 recordings retain the exact input identity without committing image bytes.
     image_hashes: list[str] | None = None
 

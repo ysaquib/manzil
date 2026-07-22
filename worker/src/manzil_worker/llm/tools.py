@@ -209,6 +209,16 @@ class TurnResponse:
 
     tool_calls: list[ToolCall]
     text: str | None = None
+    server_tool_events: tuple[ServerToolEvent, ...] = ()
+
+
+@dataclass(frozen=True)
+class ServerToolEvent:
+    """One provider-hosted tool use already executed inside a model turn."""
+
+    name: str
+    input: dict[str, Any]
+    result: str
 
 
 @dataclass(frozen=True)
@@ -297,6 +307,10 @@ async def run_agent_loop(
     messages: list[dict[str, Any]] = [{"role": "user", "content": task}]
     for turn in range(max_turns):
         response = await turn_fn(messages, specs)
+        # Server tools have already executed provider-side; emit the same
+        # observable `tool_called` event as local tools before returning/looping.
+        for event in response.server_tool_events:
+            await _emit_tool_event(stage, event.name, event.input, event.result)
         if not response.tool_calls:
             return AgentResult(final_text=response.text or "", turns=turn + 1)
         # Deterministic ids so the recorded/replayed conversation hashes match.

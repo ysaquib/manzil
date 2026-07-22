@@ -49,7 +49,7 @@ from manzil_worker.enrich.images import SupabaseImageStore
 from manzil_worker.fetching.registry import InMemoryRegistry, PostgresRegistry
 from manzil_worker.fetching.tiers import Fetcher, site_domain
 from manzil_worker.llm.config import model_for_stage
-from manzil_worker.postgres_persistence import PostgresPersistence
+from manzil_worker.postgres_persistence import PostgresPersistence, make_tool_event_sink
 from manzil_worker.runner import (
     INGEST_STAGE_NAMES,
     INGEST_STAGES,
@@ -60,12 +60,20 @@ from manzil_worker.runner import (
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.pet_costs import slot_for_fee, slot_for_one_time_fee
 from manzil_worker.stages.rescore import rescore_hunt
-from manzil_worker.state import DedupeCandidate, RunState, SourceFreshness
+from manzil_worker.state import (
+    DedupeCandidate,
+    PlanManifest,
+    PlanSource,
+    PropertyIdentityIn,
+    RunState,
+    SourceFreshness,
+)
 
 if TYPE_CHECKING:
     import asyncpg
 
     from manzil_worker.stages.base import (
+        CallAgent,
         CallStructured,
         CommuteMinutes,
         DedupeCandidates,
@@ -234,6 +242,51 @@ def _default_fetchers() -> dict[int, Fetcher]:
     return fetchers
 
 
+async def _persist_discovery_results(
+    conn: asyncpg.Connection,
+    *,
+    hunt_listing_id: UUID,
+    property_id: UUID,
+    submitted_url: str,
+    state: RunState,
+) -> None:
+    """Persist DISCOVER's link-only Source pool and Listing assurance state.
+
+    This projection is shared by a full ingest and the P3-5 policy-relaxation
+    refresh. It never fetches or deletes Sources: discovery is append-only, and
+    an existing URL owned by another Property is left in place for DEDUPE rather
+    than silently re-parented.
+    """
+    for discovered in state.discovered_sources:
+        if discovered.url == submitted_url:
+            continue
+        await conn.execute(
+            """
+            insert into property_sources (property_id, url, site_domain, is_official)
+            values ($1, $2, $3, $4)
+            on conflict (url) do update set
+                is_official = property_sources.is_official or excluded.is_official
+            where property_sources.property_id = excluded.property_id
+            """,
+            property_id,
+            discovered.url,
+            discovered.site_domain,
+            discovered.is_official,
+        )
+
+    if state.official_source_url is not None:
+        await conn.execute(
+            "update properties set official_url = $2 where id = $1",
+            property_id,
+            state.official_source_url,
+        )
+    await conn.execute(
+        "update hunt_listings set single_source_reason = $2 where id = $1",
+        hunt_listing_id,
+        state.single_source_reason,
+    )
+
+
 async def _persist_ingest_results(
     conn: asyncpg.Connection,
     *,
@@ -259,13 +312,15 @@ async def _persist_ingest_results(
     plans are found the marker is cleared, so the state reverses on refresh."""
 
     source = state.sources[0]
+    submitted_is_official = state.official_source_url == source.url
     source_id = await conn.fetchval(
         """
         insert into property_sources
-            (property_id, url, site_domain, cleaned_text_hash, cleaned_text,
-             image_urls, last_fetched_at, last_success_at)
-        values ($1, $2, $3, $4, $5, $6::jsonb, now(), now())
+            (property_id, url, site_domain, is_official, cleaned_text_hash,
+             cleaned_text, image_urls, last_fetched_at, last_success_at)
+        values ($1, $2, $3, $4, $5, $6, $7::jsonb, now(), now())
         on conflict (url) do update set
+            is_official = property_sources.is_official or excluded.is_official,
             cleaned_text_hash = excluded.cleaned_text_hash,
             cleaned_text = excluded.cleaned_text,
             image_urls = excluded.image_urls,
@@ -276,9 +331,18 @@ async def _persist_ingest_results(
         property_id,
         source.url,
         site_domain(source.url),
+        submitted_is_official,
         source.cleaned_hash,
         source.cleaned_text,
         json.dumps(source.image_urls),
+    )
+
+    await _persist_discovery_results(
+        conn,
+        hunt_listing_id=hunt_listing_id,
+        property_id=property_id,
+        submitted_url=source.url,
+        state=state,
     )
 
     # IMAGE_FETCH outputs are content-addressed. The later scheduler cleanup
@@ -705,6 +769,7 @@ def make_ingest_dispatcher(
     dsn: str | None,
     fetchers_factory: FetchersFactory,
     call_structured: CallStructured | None = None,
+    call_agent: CallAgent | None = None,
     geocode_address: GeocodeAddress | None = None,
 ) -> Dispatcher:
     """Build the `ingest` handler. `fetchers_factory` is the injection seam the
@@ -816,8 +881,10 @@ def make_ingest_dispatcher(
             dedupe_candidates=_make_dedupe_candidates(pool, listing["property_id"]),
             image_store=SupabaseImageStore.from_env(),
             existing_image_hashes=_make_existing_image_hashes(pool),
+            tool_event_sink=make_tool_event_sink(pool, job_id),
             plan_trigger="user:retry" if resumed else "user:submit",
             **({} if call_structured is None else {"call_structured": call_structured}),
+            **({} if call_agent is None else {"call_agent": call_agent}),
             **({} if geocode_address is None else {"geocode_address": geocode_address}),
         )
 
@@ -1110,12 +1177,132 @@ def make_enrich_refresh_dispatcher(
     return dispatch
 
 
+def make_discover_refresh_dispatcher(
+    *,
+    dsn: str | None,
+    fetchers_factory: FetchersFactory,
+    call_structured: CallStructured | None = None,
+    call_agent: CallAgent | None = None,
+) -> Dispatcher:
+    """Run only DISCOVER after a Listing's Source Policy is relaxed (P3-5).
+
+    The submitted Source is already durable, so this refresh neither refetches
+    nor re-extracts it. The one-stage manifest still uses the ordinary runner
+    and PostgresPersistence contract: state/tool events, cost, and the terminal
+    link projection are durable and resumable exactly like ingest.
+    """
+
+    async def dispatch(pool: asyncpg.Pool, job: asyncpg.Record) -> None:
+        job_id: UUID = job["id"]
+        payload = json.loads(job["payload"])
+        if payload.get("scope") != "discover":
+            await _mark_failed(pool, job_id, "refresh: expected scope 'discover'")
+            return
+        if job["hunt_listing_id"] is None:
+            await _mark_failed(pool, job_id, "refresh: discover job has no hunt_listing_id")
+            return
+        submitted_url = payload.get("url")
+        if not isinstance(submitted_url, str) or not submitted_url:
+            await _mark_failed(pool, job_id, "refresh: discover payload missing url")
+            return
+
+        async with pool.acquire() as conn:
+            listing = await conn.fetchrow(
+                """
+                select hl.property_id, hl.hunt_id, hl.source_policy,
+                       p.name, p.canonical_address, p.official_url
+                from hunt_listings hl
+                join properties p on p.id = hl.property_id
+                where hl.id = $1
+                """,
+                job["hunt_listing_id"],
+            )
+        if listing is None:
+            await _mark_failed(pool, job_id, "refresh: hunt_listing not found")
+            return
+
+        source_policy = str(listing["source_policy"])
+        state = _build_run_state(job)
+        state.property_id = listing["property_id"]
+        state.source_policy = source_policy
+        state.property_identity = PropertyIdentityIn(
+            name=listing["name"],
+            address=listing["canonical_address"],
+            official_url=listing["official_url"],
+        )
+        state.plan = PlanManifest(
+            job_type=JobType.REFRESH.value,
+            trigger="user:source_policy",
+            source_policy=source_policy,
+            sources=[PlanSource(url=submitted_url, action="skip", why="existing_source")],
+            stages=["DISCOVER"],
+            skipped={},
+            est_cost_usd=0.04,
+        )
+
+        async def project(conn: asyncpg.Connection, done_state: RunState) -> None:
+            await _persist_discovery_results(
+                conn,
+                hunt_listing_id=job["hunt_listing_id"],
+                property_id=listing["property_id"],
+                submitted_url=submitted_url,
+                state=done_state,
+            )
+
+        persistence = PostgresPersistence(
+            pool,
+            job_id,
+            ["DISCOVER"],
+            start_cursor=state.cursor,
+            on_done=project,
+        )
+        registry = PostgresRegistry(dsn) if dsn else InMemoryRegistry()
+        ctx = StageCtx(
+            fetchers=fetchers_factory(),
+            registry=registry,
+            persistence=persistence,
+            tool_event_sink=make_tool_event_sink(pool, job_id),
+            **({} if call_structured is None else {"call_structured": call_structured}),
+            **({} if call_agent is None else {"call_agent": call_agent}),
+        )
+        await run_job(state, ctx)
+
+    return dispatch
+
+
+def make_refresh_dispatcher(
+    *,
+    dsn: str | None,
+    fetchers_factory: FetchersFactory,
+    call_structured: CallStructured | None = None,
+    call_agent: CallAgent | None = None,
+) -> Dispatcher:
+    """Route the refresh scopes that have landed before P3-12's full planner."""
+    enrich = make_enrich_refresh_dispatcher()
+    discover = make_discover_refresh_dispatcher(
+        dsn=dsn,
+        fetchers_factory=fetchers_factory,
+        call_structured=call_structured,
+        call_agent=call_agent,
+    )
+
+    async def dispatch(pool: asyncpg.Pool, job: asyncpg.Record) -> None:
+        payload = json.loads(job["payload"])
+        if payload.get("scope") == "discover":
+            await discover(pool, job)
+        else:
+            await enrich(pool, job)
+
+    return dispatch
+
+
 def build_dispatch(
     pool: asyncpg.Pool,
     *,
     dsn: str | None = None,
     fetchers_factory: FetchersFactory | None = None,
     call_structured: CallStructured | None = None,
+    call_agent: CallAgent | None = None,
 ) -> dict[JobType, Dispatcher]:
     """The `job_type -> dispatcher` table. `ingest` and `rescore` (P1-6).
     `dsn` (when given) backs the per-domain adapter registry."""
@@ -1125,9 +1312,15 @@ def build_dispatch(
             dsn=dsn,
             fetchers_factory=fetchers_factory or _default_fetchers,
             call_structured=call_structured,
+            call_agent=call_agent,
         ),
         JobType.RESCORE: make_rescore_dispatcher(),
-        JobType.REFRESH: make_enrich_refresh_dispatcher(),
+        JobType.REFRESH: make_refresh_dispatcher(
+            dsn=dsn,
+            fetchers_factory=fetchers_factory or _default_fetchers,
+            call_structured=call_structured,
+            call_agent=call_agent,
+        ),
     }
 
 

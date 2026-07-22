@@ -19,7 +19,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from manzil_worker.fetching.results import FetchResult
 from manzil_worker.phase0_rubric import phase0_rubric
-from pipeline_helpers import maple_recorded_llm
+from pipeline_helpers import empty_discovery_agent, maple_recorded_llm
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL", "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
@@ -143,6 +143,7 @@ async def test_inprocess_loop_processes_a_job_while_serving_and_drains(monkeypat
             pool,
             dsn=dsn,
             call_structured=maple_recorded_llm,
+            call_agent=empty_discovery_agent,
         )
 
     monkeypatch.setattr(worker_loop_mod, "build_dispatch", build_test_dispatch)
