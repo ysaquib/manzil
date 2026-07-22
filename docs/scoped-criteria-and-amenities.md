@@ -1,12 +1,14 @@
 # Criterion Scope, Property Amenities, and Floor Plan Details — Finalized Design Plan
 
-Status: **supplementary finalized decision workbook, 2026-07-21**. Product and
+Status: **supplementary finalized decision workbook; implementation current through P3-SC3, 2026-07-22**. Product and
 architecture choices are approved or explicitly deferred. P3-SC1 promoted them
 into `DESIGN.md` v3.7 and its §20 Decision Log, recorded selected mechanics and
 the Extraction-consumer audit in `IMPLEMENTATION.md` v2.0.68, and sequenced the
-P3-SC task series. Those two root documents are authoritative; this file keeps
-the fuller rationale. The canonical ten-case bench selection/coverage pass
-remains an execution gate for P3-SC4, not an unresolved design decision.
+P3-SC task series. P3-SC2 and P3-SC3 subsequently landed the scoped substrate
+and first Property/set-valued Catalog tranche. `DESIGN.md` v3.10 and
+`IMPLEMENTATION.md` v2.0.72 are authoritative; this file keeps the fuller
+rationale. The canonical ten-case bench selection/coverage pass remains an
+execution gate for P3-SC4, not an unresolved design decision.
 
 Written 2026-07-20 against `DESIGN.md` v3.6 and promoted 2026-07-21 into v3.7,
 `docs/catalog-and-rubric-review.md`, and the current implementation. This work
@@ -1253,7 +1255,7 @@ workstream visible while the dependency column supplies its actual order.
 |---|---|---|
 | `P3-SC1` ✅ | Promoted this plan into DESIGN + §20; audited all Extraction queries; recorded exact schema/current-value/reset contracts in IMPLEMENTATION (completed 2026-07-21) | Complete; prerequisite cleared |
 | **`P3-SC2` ✅** | Unified append-only scoped Extraction foundation: schema/domain models, sparse claims, Floor Plan identity resolution, effective values, Overrides, refresh/split/RLS | Landed 2026-07-21; prerequisite cleared |
-| `P3-SC3` | `property` category, array/set plumbing needed by approved Property/Unit types, first Property tranche including general internet readiness, and saved dev Rubric | After `P3-SC2`; before P3-6 so policy/catalog paths are exercised against the final substrate |
+| **`P3-SC3` ✅** | Landed 2026-07-22: `property` category, array/set plumbing, Property/Unit types, first Property tranche including general internet readiness, and guarded saved dev Rubric | Complete; prerequisite cleared |
 | `P3-SC4` | Migrate existing unit Criteria to exact/all/select/unspecified semantics; extend the canonical bench contract and establish the current-pin baseline | After `P3-SC2`/`P3-SC3`; hard prerequisite for P3-6 |
 | **`P3-5` ✅** | Existing DISCOVER branch: native search, official/candidate Source links, tier/family slate, Source Policy enforcement | Landed 2026-07-21; its half of the P3-6 join is cleared |
 | **`P3-6`** | Existing multi-Source fan-out and RECONCILE ladder, now operating on Property and scoped Floor Plan candidates | After `P3-SC4`; `P3-5` is complete; retain the established task ID |
@@ -1264,7 +1266,7 @@ workstream visible while the dependency column supplies its actual order.
 
 Run the relevant synthetic fixtures and local canonical bench after each
 output-affecting tranche; do not postpone all evaluation until `P3-SC8`.
-The next single-implementer task is `P3-SC3`.
+The next single-implementer task is `P3-SC4`.
 
 ### P3-SC1 — finish and promote the design
 
@@ -1317,6 +1319,14 @@ transitional dual-read or legacy-data backfill path.
 
 ### P3-SC3 — Property category, first tranche, and dev Rubric
 
+**Completed 2026-07-22.** The authoritative result is DESIGN v3.10,
+IMPLEMENTATION v2.0.72, migration
+`supabase/migrations/20260802000000_catalog_sync_p3_sc3.sql`, and the current
+Catalog/dev-Rubric mechanics recorded in IMPLEMENTATION §3. The saved Rubric
+is `worker/fixtures/dev_rubric.v1.json`; `manzil seed-dev-rubric` installs it
+into its deterministic development Hunt and requires `--force` to replace
+Rubric drift.
+
 1. Add `property` and array/set support to shared vocabulary, database
    constraints/catalog sync, API validation, scoring, and frontend grouping.
 2. Add Property/Unit types plus the approved first Property tranche, including
@@ -1324,10 +1334,11 @@ transitional dual-read or legacy-data backfill path.
 3. Regenerate the catalog seed and add a catalog-sync migration.
 4. Add the saved/versioned dev Rubric and idempotent seed command.
 5. Add scoring, API, and frontend tests.
-6. Extend labels for the new Property Criteria and refresh recorded EXTRACT
-   responses.
-7. Promote only if existing Gate accuracy and invented-value rate remain
-   acceptable.
+6. Keep production Extraction strict while adapting only the legacy synthetic
+   seed/API replay helpers with explicit `not_found` Property values.
+7. Leave the human-labeled scoped schema, canonical recording refresh, Gate
+   regression report, and current-pin quality verdict in P3-SC4, where the
+   existing unit Criteria acquire their final output semantics.
 
 ### P3-SC4 — migrate existing unit Criteria
 
