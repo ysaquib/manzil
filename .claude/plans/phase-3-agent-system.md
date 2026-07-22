@@ -23,6 +23,12 @@ implementation-prep draft (2026-07-11), which this plan elaborates and — per t
 Code facts verified against the working tree on 2026-07-11 (Phase 2 batch,
 uncommitted).
 
+**P3-SC2 landed 2026-07-21** (unified append-only scoped Extraction,
+Source-local Floor Plan identity, centralized current views/effective resolver,
+scoped Overrides, authoritative refresh, split/merge/RLS/UI consumers;
+IMPLEMENTATION 2.0.71 / DESIGN v3.9). Next scoped task: P3-SC3, then P3-SC4
+before the P3-5/P3-SC join at P3-6.
+
 **Security note for execution:** Phase 3 feeds untrusted page content into more
 machinery (tool loops, web search, image pipelines) and adds external API
 credentials. P3-5 (DISCOVER tool loop), the `fetch_page` tool, and every new
