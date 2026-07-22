@@ -86,6 +86,40 @@ class CriterionCategory(StrEnum):
     REPUTATION = "reputation"
 
 
+class FactScope(StrEnum):
+    PROPERTY = "property"
+    FLOOR_PLAN = "floor_plan"
+    MIXED = "mixed"
+    COMPOSED = "composed"
+
+
+class TargetScope(StrEnum):
+    PROPERTY = "property"
+    FLOOR_PLAN = "floor_plan"
+
+
+class UnitApplicability(StrEnum):
+    SPECIFIC_FLOOR_PLANS = "specific_floor_plans"
+    ALL_UNITS = "all_units"
+    SELECT_UNITS = "select_units"
+    UNIT_SCOPE_UNSPECIFIED = "unit_scope_unspecified"
+
+
+class ExtractionRecordKind(StrEnum):
+    CANDIDATE = "candidate"
+    RESOLVED = "resolved"
+
+
+class EscalationPolicy(StrEnum):
+    DECISION_RELEVANT = "decision_relevant"
+    AVAILABLE_SOURCES_ONLY = "available_sources_only"
+
+
+class ConflictPolicy(StrEnum):
+    STANDARD_LADDER = "standard_ladder"
+    VERIFIED_POSITIVE_PREFERRED = "verified_positive_preferred"
+
+
 class RequiresTool(StrEnum):
     MAPS = "maps"
     VISION = "vision"
@@ -159,11 +193,15 @@ class CatalogEntry(BaseModel):
     label: str
     category: CriterionCategory
     domain: CriterionDomain
+    fact_scope: FactScope = FactScope.PROPERTY
     value_schema: dict[str, Any]
+    claim_value_schema: dict[str, Any] | None = None
     default_options: list[RubricOption]
     extraction_hint: str
     requires_tool: RequiresTool | None = None
     refresh_class: RefreshClass
+    escalation_policy: EscalationPolicy = EscalationPolicy.DECISION_RELEVANT
+    conflict_policy: ConflictPolicy = ConflictPolicy.STANDARD_LADDER
 
 
 class NonNegotiable(BaseModel):
@@ -214,8 +252,11 @@ class PropertySource(BaseModel):
 
 
 class FloorPlan(BaseModel):
+    id: UUID | None = None
     property_id: UUID
     source_id: UUID
+    source_native_id: str | None = None
+    detail_url: str | None = None
     plan_name: str
     beds: int
     baths: float
@@ -243,18 +284,26 @@ class UnitGroup(BaseModel):
 
 
 class Extraction(BaseModel):
-    """Append-only agent-derived fact; current value = latest row per
-    (property, hunt_id, criterion). `hunt_id` set only for custom criteria."""
+    """One row in the unified append-only scoped fact store (DESIGN §8.2)."""
 
+    id: UUID | None = None
     property_id: UUID
     hunt_id: UUID | None = None
     criterion_key: str
+    record_kind: ExtractionRecordKind
+    origin_key: str
+    target_scope: TargetScope
+    floor_plan_id: UUID | None = None
+    applicability: UnitApplicability | None = None
+    claim_group_id: UUID
     value: Any = None
     confidence: Confidence
     evidence_quote: str | None = None
     source_id: UUID | None = None
     model: str
     resolution_rule: str | None = None
+    disputed: bool = False
+    job_id: UUID | None = None
     extracted_at: datetime
 
 
@@ -333,6 +382,9 @@ class Override(BaseModel):
 
     hunt_listing_id: UUID
     criterion_key: str
+    target_scope: TargetScope = TargetScope.PROPERTY
+    floor_plan_id: UUID | None = None
+    applicability: UnitApplicability | None = None
     value: Any = None
     user_id: UUID
     note: str | None = None

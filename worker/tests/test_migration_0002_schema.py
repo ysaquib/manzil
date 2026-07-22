@@ -45,14 +45,15 @@ EXPECTED_ENUMS = {
     "value_state": {"extracted", "manual", "estimated", "unknown"},
 }
 
-# Indexes the P1-1 row names (claim/heartbeat, job_events, hunt-scoped extraction,
-# latest override).
+# Current migration-chain indexes (P1 queue/history plus P3-SC2 scoped facts).
 EXPECTED_INDEXES = {
     "jobs_claim_idx",
     "jobs_heartbeat_idx",
     "job_events_job_id_idx",
-    "extractions_hunt_criterion_idx",
-    "overrides_latest_idx",
+    "extractions_current_candidate_hunt_idx",
+    "extractions_current_resolved_hunt_idx",
+    "overrides_current_property_idx",
+    "overrides_current_floor_plan_idx",
 }
 
 
