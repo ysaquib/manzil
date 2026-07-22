@@ -202,6 +202,23 @@ export function usePatchPins(huntId: string) {
   });
 }
 
+export function usePatchSourcePolicy(huntId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ listingId, sourcePolicy }: {
+      listingId: string;
+      sourcePolicy: Listing["source_policy"];
+    }) => apiFetch<ListingResponse>(`/v1/listings/${listingId}/source-policy`, {
+      method: "PATCH",
+      body: { source_policy: sourcePolicy },
+    }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["hunt_listings", huntId] });
+      void qc.invalidateQueries({ queryKey: ["jobs", huntId] });
+    },
+  });
+}
+
 export function useCreateOverride(huntId: string, listingId: string) {
   const qc = useQueryClient();
   return useMutation({

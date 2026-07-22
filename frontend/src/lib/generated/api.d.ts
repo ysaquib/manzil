@@ -371,6 +371,23 @@ export interface paths {
         patch: operations["patch_pins_v1_listings__listing_id__pins_patch"];
         trace?: never;
     };
+    "/v1/listings/{listing_id}/source-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Source Policy */
+        patch: operations["patch_source_policy_v1_listings__listing_id__source_policy_patch"];
+        trace?: never;
+    };
     "/v1/listings/{listing_id}/unit-groups/{unit_group_key}/state": {
         parameters: {
             query?: never;
@@ -882,6 +899,8 @@ export interface components {
             status: string;
             /** Source Policy */
             source_policy: string;
+            /** Single Source Reason */
+            single_source_reason?: ("trust_link" | "discover_exhausted" | "discover_failed") | null;
             /** Pins */
             pins: {
                 [key: string]: unknown;
@@ -1163,6 +1182,17 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /**
+         * SourcePolicyPatch
+         * @description Change one Listing's cross-check policy (DESIGN §10.7, P3-5).
+         */
+        SourcePolicyPatch: {
+            /**
+             * Source Policy
+             * @enum {string}
+             */
+            source_policy: "trust_link" | "tier_1" | "tiers_1_2" | "tiers_1_2_3" | "tier_1_plus_official";
         };
         /** TransferOwnershipRequest */
         TransferOwnershipRequest: {
@@ -2219,6 +2249,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["PinsPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_source_policy_v1_listings__listing_id__source_policy_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourcePolicyPatch"];
             };
         };
         responses: {

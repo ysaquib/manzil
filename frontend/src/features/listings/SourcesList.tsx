@@ -1,22 +1,45 @@
-// Sources (P1-11, §13.2): URL, official flag, last_fetched_at, plus the
-// listing's Source Policy — read-only in Phase 1 (relaxing it triggers a
-// refresh that needs DISCOVER, which is Phase 3).
-import { Anchor, Badge, Group, Stack, Text } from "@mantine/core";
+// Sources (P3-5, §13.2): retained links, fetch state, assurance badge, and the
+// Listing's editable Source Policy. Relaxing the policy queues DISCOVER.
+import { Anchor, Badge, Group, Select, Stack, Text } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 
+import { SingleSourceBadge } from "../../components/badges/ListingBadges";
 import { SOURCE_POLICIES, type SourcePolicy } from "../../lib/contracts";
-import type { PropertySource } from "./types";
+import { usePatchSourcePolicy } from "./api";
+import type { PropertySource, SingleSourceReason } from "./types";
 
 export function SourcesList({
   sources,
   sourcePolicy,
+  huntId,
+  listingId,
+  singleSourceReason,
+  canEdit,
 }: {
   sources: PropertySource[];
   sourcePolicy: SourcePolicy;
+  huntId: string;
+  listingId: string;
+  singleSourceReason: SingleSourceReason | null;
+  canEdit: boolean;
 }) {
-  const policyLabel =
-    SOURCE_POLICIES.find((p) => p.value === sourcePolicy)?.label ?? sourcePolicy;
+  const patchPolicy = usePatchSourcePolicy(huntId);
+  const changePolicy = (value: string | null) => {
+    if (!value || value === sourcePolicy) return;
+    patchPolicy.mutate(
+      { listingId, sourcePolicy: value as SourcePolicy },
+      {
+        onError: (error) => notifications.show({
+          color: "red",
+          title: "Could not update Source Policy",
+          message: error instanceof Error ? error.message : "Try again.",
+        }),
+      },
+    );
+  };
   return (
     <Stack gap="xs">
+      {singleSourceReason && <SingleSourceBadge reason={singleSourceReason} />}
       {sources.map((source) => (
         <Group key={source.id} gap="xs" wrap="nowrap">
           <Anchor href={source.url} target="_blank" rel="noreferrer" size="sm" lineClamp={1}>
@@ -39,9 +62,16 @@ export function SourcesList({
           No sources recorded yet.
         </Text>
       )}
-      <Text size="xs" c="dimmed">
-        Source policy: {policyLabel}
-      </Text>
+      <Select
+        label="Source Policy"
+        description="Relaxing this policy starts a source-discovery refresh."
+        data={SOURCE_POLICIES}
+        value={sourcePolicy}
+        onChange={changePolicy}
+        disabled={!canEdit || patchPolicy.isPending}
+        allowDeselect={false}
+        size="xs"
+      />
     </Stack>
   );
 }

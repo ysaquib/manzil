@@ -385,7 +385,16 @@ function DrawerShell({
             </Section>
 
             <Section title="Sources">
-              <SourcesList sources={listing.property.sources} sourcePolicy={listing.source_policy} />
+              <SourcesList
+                sources={listing.property.sources}
+                sourcePolicy={listing.source_policy}
+                huntId={huntId}
+                listingId={listing.id}
+                singleSourceReason={listing.single_source_reason}
+                canEdit={
+                  currentMember?.role === "owner" || currentMember?.user_id === listing.added_by
+                }
+              />
             </Section>
           </Stack>
         </Box>

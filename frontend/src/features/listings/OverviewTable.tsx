@@ -24,6 +24,7 @@ import {
 } from "@tabler/icons-react";
 
 import { AllInCell } from "./AllInCost";
+import { SingleSourceBadge } from "../../components/badges/ListingBadges";
 import { COMPARE_LIMIT, rowEntry, useCompareSet } from "./compareSet";
 import { ScoreCell } from "./ScoreCell";
 import { RatingDots } from "../collaboration/RatingDots";
@@ -467,9 +468,14 @@ export function OverviewTable({
                 )}
               </Table.Td>
               <Table.Td>
-                <Text size="sm" fw={600}>
-                  {row.listing.property.name}
-                </Text>
+                <Group gap="xs" wrap="wrap">
+                  <Text size="sm" fw={600}>
+                    {row.listing.property.name}
+                  </Text>
+                  {row.listing.single_source_reason && (
+                    <SingleSourceBadge reason={row.listing.single_source_reason} />
+                  )}
+                </Group>
                 <Text size="xs" c="dimmed">
                   {row.listing.property.canonical_address}
                 </Text>
