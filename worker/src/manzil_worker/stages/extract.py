@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import structlog
 from manzil_shared.errors import ExtractionInvalid
+from manzil_shared.models import FactScope, TargetScope, UnitApplicability
 from pydantic import ValidationError
 
 from manzil_worker.llm.config import model_for_stage
@@ -21,7 +22,6 @@ from manzil_worker.llm.prompt_loader import load_prompt
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.schema_gen import build_extraction_schema, extractable_entries
 from manzil_worker.state import (
-    FieldExtraction,
     FloorPlanIn,
     HeatingIn,
     MandatoryFeesIn,
@@ -29,6 +29,7 @@ from manzil_worker.state import (
     PetCostsIn,
     PropertyIdentityIn,
     RunState,
+    SourceClaim,
     UtilitiesIn,
 )
 
@@ -42,9 +43,9 @@ AVAILABLE_NOW_SENTINEL = "available_now"
 
 def normalize_availability_dates(state: RunState, today_iso: str) -> None:
     """Rewrite available_now sentinels to the run date in place."""
-    for extraction in state.extractions.get("availability_date", []):
-        if extraction.value == AVAILABLE_NOW_SENTINEL:
-            extraction.value = today_iso
+    for claim in state.source_claims:
+        if claim.criterion_key == "availability_date" and claim.value == AVAILABLE_NOW_SENTINEL:
+            claim.value = today_iso
     for plan in state.floor_plans:
         if plan.availability_date == AVAILABLE_NOW_SENTINEL:
             plan.availability_date = today_iso
@@ -83,18 +84,25 @@ async def extract_stage(state: RunState, ctx: StageCtx) -> RunState:
 
     model = model_for_stage("extract")
     prompt_version = load_prompt("extract").version
+    state.source_claims = []
     for entry in extractable_entries():
         raw = getattr(extraction, entry.key)
-        state.extractions[entry.key] = [
-            FieldExtraction(
+        generalized_unit = entry.fact_scope in {FactScope.FLOOR_PLAN, FactScope.MIXED}
+        state.source_claims.append(
+            SourceClaim(
+                criterion_key=entry.key,
                 value=raw.value,
                 confidence=raw.confidence,
                 evidence_quote=raw.evidence_quote,
                 source_id=source.url,
                 model=model,
                 prompt_version=prompt_version,
+                target_scope=TargetScope.PROPERTY,
+                applicability=(
+                    UnitApplicability.UNIT_SCOPE_UNSPECIFIED if generalized_unit else None
+                ),
             )
-        ]
+        )
     plans = extraction.floor_plans
     assert isinstance(plans, list)
     state.floor_plans = [FloorPlanIn.model_validate(p, from_attributes=True) for p in plans]
@@ -134,11 +142,12 @@ async def extract_stage(state: RunState, ctx: StageCtx) -> RunState:
         else None
     )
     normalize_availability_dates(state, ctx.today().isoformat())
+    source.authoritative_extraction = True
     log.info(
         "extracted",
         job_id=str(state.job_id),
         stage="extract",
-        fields=len(state.extractions),
+        fields=len(state.source_claims),
         floor_plans=len(state.floor_plans),
         identity=state.property_identity is not None,
         pet_costs=state.pet_costs is not None,

@@ -51,7 +51,7 @@ def test_runs_extract_then_verify_without_a_label(tmp_path: Path) -> None:
     assert result.slug == SLUG
     assert result.url == URL
     assert result.as_of_date == date(2026, 7, 2)
-    assert result.extractions["beds"][0].value == 2
+    assert next(c for c in result.source_claims if c.criterion_key == "beds").value == 2
     assert result.floor_plans[0].plan_name == "The Maple"
     assert result.property_identity is not None
     assert result.property_identity.name == "Maple Court Apartments"
@@ -76,7 +76,7 @@ def test_surfaces_verify_checkpoint_without_losing_audit_result(tmp_path: Path) 
         )
     )
 
-    assert result.extractions["beds"][0].value == 2
+    assert next(c for c in result.source_claims if c.criterion_key == "beds").value == 2
     assert any(flag.criterion_key == "beds" for flag in result.verify_flags)
     assert result.checkpoint is not None
     assert result.checkpoint.context_ref == "beds"

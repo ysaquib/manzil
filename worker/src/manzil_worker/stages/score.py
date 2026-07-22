@@ -22,11 +22,18 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from uuid import uuid4
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 import structlog
 from manzil_shared.models import Confidence, FloorPlan
-from manzil_shared.scoring.engine import score, select_display_score
+from manzil_shared.scoped_facts import (
+    ScopedValue,
+    resolve_effective_values,
+)
+from manzil_shared.scoped_facts import (
+    meets_confidence as scoped_meets_confidence,
+)
+from manzil_shared.scoring.engine import criterion_key, score, select_display_score
 
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.pet_costs import beds_bucket, compose_all_in, pet_monthly
@@ -34,26 +41,29 @@ from manzil_worker.state import FloorPlanIn, PlanScore, RunState
 
 log = structlog.get_logger()
 
-_CONFIDENCE_RANK = {
-    Confidence.NOT_FOUND: 0,
-    Confidence.LOW: 1,
-    Confidence.MEDIUM: 2,
-    Confidence.HIGH: 3,
-}
-
 
 def meets_confidence(confidence: Confidence, minimum: Confidence) -> bool:
-    return _CONFIDENCE_RANK[confidence] >= _CONFIDENCE_RANK[minimum]
+    return scoped_meets_confidence(confidence, minimum)
 
 
-def _to_floor_plan(plan: FloorPlanIn) -> FloorPlan | None:
+def floor_plan_runtime_id(plan: FloorPlanIn, source_url: str, index: int) -> UUID:
+    identity = (
+        plan.response_key
+        or plan.source_native_id
+        or (f"{plan.plan_name or 'unnamed'}|{plan.beds}|{plan.baths}|{index}")
+    )
+    return uuid5(NAMESPACE_URL, f"{source_url}#{identity}")
+
+
+def _to_floor_plan(plan: FloorPlanIn, source_url: str, index: int) -> FloorPlan | None:
     """Engine overlay needs the shared model; beds+baths are its required core.
     Placeholder UUIDs — Phase 0 has no property/source rows yet."""
     if plan.beds is None or plan.baths is None:
         return None
     return FloorPlan(
-        property_id=uuid4(),
-        source_id=uuid4(),
+        id=floor_plan_runtime_id(plan, source_url, index),
+        property_id=uuid5(NAMESPACE_URL, source_url),
+        source_id=uuid5(NAMESPACE_URL, source_url),
         plan_name=plan.plan_name or "unnamed",
         beds=plan.beds,
         baths=plan.baths,
@@ -75,16 +85,37 @@ def conservative_rent(plan: FloorPlanIn) -> float | None:
 
 
 async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
-    state.reconciled = {
-        key: extractions[0] for key, extractions in state.extractions.items() if extractions
+    state.resolved_claims = [
+        claim.model_copy(
+            update={
+                "resolution_rule": "single_source",
+                "candidate_claim_group_ids": [claim.claim_group_id],
+            },
+            deep=True,
+        )
+        for claim in state.source_claims
+    ]
+    criterion_keys = [criterion_key(criterion) for criterion in ctx.rubric]
+    plan_ids_by_ref = {
+        plan.response_key: floor_plan_runtime_id(plan, state.sources[0].url, index)
+        for index, plan in enumerate(state.floor_plans)
+        if plan.response_key is not None
     }
-    base_values = {
-        key: extraction.value
-        for key, extraction in state.reconciled.items()
-        if extraction.value is not None
-        and meets_confidence(extraction.confidence, ctx.min_confidence)
-    }
-    state.effective_values = dict(base_values)
+    scoped_rows = [
+        ScopedValue(
+            criterion_key=claim.criterion_key,
+            value=claim.value,
+            confidence=claim.confidence,
+            target_scope=claim.target_scope,
+            floor_plan_id=(
+                plan_ids_by_ref.get(claim.floor_plan_ref)
+                if claim.floor_plan_ref is not None
+                else claim.floor_plan_id
+            ),
+            applicability=claim.applicability,
+        )
+        for claim in state.resolved_claims
+    ]
 
     # §9.5 v1: pet rent folds into all_in_monthly. Counts are hunt settings (ctx);
     # per-pet rents are this run's extracted pet_costs. Composed once — same for
@@ -101,20 +132,33 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
     # §9.5 P3-9 composition inputs, identical for every plan on the page; the
     # per-plan pieces (rent, beds bucket) vary inside the loop.
     metro = state.geocode.city if state.geocode else None
-    fees = [(f.name, f.amount_monthly) for f in state.mandatory_fees.fees] if (
-        state.mandatory_fees
-    ) else []
-    included = list(state.utilities.included) if (
-        state.utilities and state.utilities.included is not None
-    ) else None
+    fees = (
+        [(f.name, f.amount_monthly) for f in state.mandatory_fees.fees]
+        if (state.mandatory_fees)
+        else []
+    )
+    included = (
+        list(state.utilities.included)
+        if (state.utilities and state.utilities.included is not None)
+        else None
+    )
     heating = state.heating.heating if state.heating else None
 
-    scorable = [(p, fp) for p in state.floor_plans if (fp := _to_floor_plan(p)) is not None]
+    scorable = [
+        (plan, floor_plan)
+        for index, plan in enumerate(state.floor_plans)
+        if (floor_plan := _to_floor_plan(plan, state.sources[0].url, index)) is not None
+    ]
     if scorable:
         breakdowns = []
         compositions = []
         for plan_in, floor_plan in scorable:
-            values = dict(base_values)
+            values = resolve_effective_values(
+                criterion_keys=criterion_keys,
+                floor_plan_id=floor_plan.id,
+                extractions=scoped_rows,
+                min_confidence=ctx.min_confidence,
+            )
             rent = conservative_rent(plan_in)
             composition = None
             if rent is not None:
@@ -154,11 +198,25 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
             for (name, b), comp in zip(breakdowns, compositions, strict=True)
         ]
         state.display_score_index = select_display_score([b for _, b in breakdowns])
+        display_floor_plan = scorable[state.display_score_index][1]
+        state.effective_values = resolve_effective_values(
+            criterion_keys=criterion_keys,
+            floor_plan_id=display_floor_plan.id,
+            extractions=scoped_rows,
+            min_confidence=ctx.min_confidence,
+        )
         display_composition = compositions[state.display_score_index]
         state.all_in_components = (
             display_composition.to_json() if display_composition is not None else None
         )
     else:
+        base_values = resolve_effective_values(
+            criterion_keys=criterion_keys,
+            floor_plan_id=None,
+            extractions=scoped_rows,
+            min_confidence=ctx.min_confidence,
+        )
+        state.effective_values = dict(base_values)
         breakdown = score(ctx.rubric, base_values, None, rubric_version=ctx.rubric_version)
         state.scores = [PlanScore(plan_name=None, breakdown=breakdown.to_contract())]
         state.display_score_index = 0

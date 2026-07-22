@@ -20,7 +20,7 @@ import asyncpg
 import pytest
 from manzil_shared.models import Confidence
 from manzil_worker.queue import _persist_ingest_results
-from manzil_worker.state import FieldExtraction, FloorPlanIn, PlanScore, RunState, SourceState
+from manzil_worker.state import FloorPlanIn, PlanScore, RunState, SourceClaim, SourceState
 
 
 async def _seed_listing(pool: asyncpg.Pool) -> tuple:
@@ -47,11 +47,16 @@ def _state(url: str, floor_plans: list[FloorPlanIn], scores: list[PlanScore]) ->
         job_type="ingest",  # type: ignore[arg-type]
         url=url,
         sources=[SourceState(url=url, cleaned_hash="h")],
-        reconciled={
-            "beds": FieldExtraction(
-                value=2, confidence=Confidence.HIGH, model="m", prompt_version=1
+        source_claims=[
+            SourceClaim(
+                criterion_key="beds",
+                value=2,
+                confidence=Confidence.HIGH,
+                source_id=url,
+                model="m",
+                prompt_version=1,
             )
-        },
+        ],
         floor_plans=floor_plans,
         scores=scores,
     )

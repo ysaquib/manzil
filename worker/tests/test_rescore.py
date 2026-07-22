@@ -96,12 +96,31 @@ async def _seed_rescore_fixture(pool: asyncpg.Pool) -> tuple:  # type: ignore[no
             property_id,
             source_id,
         )
-        # Extraction says 1 bed (would fail gate) — override should win.
+        # Exact Floor Plan Extraction says 1 bed (would fail gate) — the
+        # exact Floor Plan Override should win.
         await conn.execute(
             """
             insert into extractions
-                (property_id, hunt_id, criterion_key, value, confidence, model)
-            values ($1, null, 'beds', '1'::jsonb, $2::confidence, 'test')
+                (property_id, hunt_id, criterion_key, record_kind, origin_key,
+                 target_scope, floor_plan_id, applicability, value, confidence,
+                 model, resolution_rule)
+            values ($1, null, 'beds', 'resolved', 'fixture:beds',
+                    'floor_plan', $2, 'specific_floor_plans', '1'::jsonb,
+                    $3::confidence, 'test', 'fixture')
+            """,
+            property_id,
+            floor_plan_id,
+            Confidence.HIGH.value,
+        )
+        await conn.execute(
+            """
+            insert into extractions
+                (property_id, hunt_id, criterion_key, record_kind, origin_key,
+                 target_scope, applicability, value, confidence, model,
+                 resolution_rule)
+            values ($1, null, 'in_unit_laundry', 'resolved', 'fixture:laundry',
+                    'property', 'all_units', '"in_unit"'::jsonb,
+                    $2::confidence, 'test', 'fixture')
             """,
             property_id,
             Confidence.HIGH.value,
@@ -109,27 +128,25 @@ async def _seed_rescore_fixture(pool: asyncpg.Pool) -> tuple:  # type: ignore[no
         await conn.execute(
             """
             insert into extractions
-                (property_id, hunt_id, criterion_key, value, confidence, model)
-            values ($1, null, 'in_unit_laundry', '"in_unit"'::jsonb, $2::confidence, 'test')
+                (property_id, hunt_id, criterion_key, record_kind, origin_key,
+                 target_scope, value, confidence, model, resolution_rule)
+            values ($1, null, 'pets_policy', 'resolved', 'fixture:pets',
+                    'property', '"cats_only"'::jsonb, $2::confidence,
+                    'test', 'fixture')
             """,
             property_id,
             Confidence.HIGH.value,
         )
         await conn.execute(
             """
-            insert into extractions
-                (property_id, hunt_id, criterion_key, value, confidence, model)
-            values ($1, null, 'pets_policy', '"cats_only"'::jsonb, $2::confidence, 'test')
-            """,
-            property_id,
-            Confidence.HIGH.value,
-        )
-        await conn.execute(
-            """
-            insert into overrides (hunt_listing_id, criterion_key, value, user_id)
-            values ($1, 'beds', '2'::jsonb, $2)
+            insert into overrides
+                (hunt_listing_id, criterion_key, target_scope, floor_plan_id,
+                 applicability, value, user_id)
+            values ($1, 'beds', 'floor_plan', $2, 'specific_floor_plans',
+                    '2'::jsonb, $3)
             """,
             listing_id,
+            floor_plan_id,
             user_id,
         )
     return hunt_id, listing_id, floor_plan_id

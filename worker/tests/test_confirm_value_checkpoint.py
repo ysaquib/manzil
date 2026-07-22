@@ -12,7 +12,7 @@ from manzil_worker.phase0_rubric import phase0_rubric
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.score import score_stage
 from manzil_worker.stages.verify import verify_stage
-from worker_helpers import FakeLLM, fe, make_state
+from worker_helpers import FakeLLM, fe, get_claim, make_state, set_claim
 
 TODAY = date(2026, 7, 6)
 NO_CONTRADICTIONS = {"verify": {"contradictions": []}}
@@ -33,7 +33,7 @@ def _ctx() -> StageCtx:
 
 def test_gate_relevant_demotion_raises_confirm_value() -> None:
     state = make_state(cleaned_text=PAGE_TEXT)
-    state.extractions["beds"] = [fe(2, "this quote is not on the page at all")]
+    set_claim(state, "beds", fe(2, "this quote is not on the page at all"))
 
     with pytest.raises(CheckpointRaised) as raised:
         asyncio.run(verify_stage(state, _ctx()))
@@ -46,12 +46,12 @@ def test_gate_relevant_demotion_raises_confirm_value() -> None:
 
 def test_checkpoint_answer_yes_upgrades_confidence_for_score() -> None:
     state = make_state(cleaned_text=PAGE_TEXT)
-    state.extractions["beds"] = [fe(2, "this quote is not on the page at all")]
-    state.extractions["in_unit_laundry"] = [fe("in_unit", "washer and dryer hookups in every unit")]
+    set_claim(state, "beds", fe(2, "this quote is not on the page at all"))
+    set_claim(state, "in_unit_laundry", fe("in_unit", "washer and dryer hookups in every unit"))
     state.checkpoint_answer = {"choice": "yes", "context_ref": "beds"}
 
     asyncio.run(verify_stage(state, _ctx()))
-    assert state.extractions["beds"][0].confidence is Confidence.MEDIUM
+    assert get_claim(state, "beds").confidence is Confidence.MEDIUM
 
     asyncio.run(score_stage(state, _ctx()))
     assert state.effective_values.get("beds") == 2
@@ -59,10 +59,10 @@ def test_checkpoint_answer_yes_upgrades_confidence_for_score() -> None:
 
 def test_checkpoint_answer_no_leaves_demoted() -> None:
     state = make_state(cleaned_text=PAGE_TEXT)
-    state.extractions["beds"] = [fe(2, "this quote is not on the page at all")]
-    state.extractions["in_unit_laundry"] = [fe("in_unit", "washer and dryer hookups in every unit")]
+    set_claim(state, "beds", fe(2, "this quote is not on the page at all"))
+    set_claim(state, "in_unit_laundry", fe("in_unit", "washer and dryer hookups in every unit"))
     state.checkpoint_answer = {"choice": "no", "context_ref": "beds"}
 
     asyncio.run(verify_stage(state, _ctx()))
-    assert state.extractions["beds"][0].confidence is Confidence.LOW
+    assert get_claim(state, "beds").confidence is Confidence.LOW
     assert "beds" in state.confirm_value_resolved

@@ -29,7 +29,6 @@ from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.extract import extract_stage
 from manzil_worker.stages.verify import verify_stage
 from manzil_worker.state import (
-    FieldExtraction,
     FloorPlanIn,
     HeatingIn,
     MandatoryFeesIn,
@@ -37,6 +36,7 @@ from manzil_worker.state import (
     PetCostsIn,
     PropertyIdentityIn,
     RunState,
+    SourceClaim,
     SourceState,
     UtilitiesIn,
     VerifyFlag,
@@ -62,7 +62,7 @@ class CorpusRunResult(BaseModel):
     models: dict[str, str]
     prompt_versions: dict[str, int]
     recordings_dir: str | None = None
-    extractions: dict[str, list[FieldExtraction]]
+    source_claims: list[SourceClaim]
     floor_plans: list[FloorPlanIn]
     property_identity: PropertyIdentityIn | None
     pet_costs: PetCostsIn | None
@@ -139,7 +139,7 @@ async def run_corpus_extraction(
         models={stage: model_for_stage(stage) for stage in ("extract", "verify")},
         prompt_versions={stage: load_prompt(stage).version for stage in ("extract", "verify")},
         recordings_dir=str(recorded_dir()) if mode == "record" else None,
-        extractions=state.extractions,
+        source_claims=state.source_claims,
         floor_plans=state.floor_plans,
         property_identity=state.property_identity,
         pet_costs=state.pet_costs,

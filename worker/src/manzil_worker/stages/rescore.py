@@ -14,9 +14,15 @@ from uuid import UUID
 
 import structlog
 from manzil_shared.models import Confidence, FloorPlan, RubricCriterion
+from manzil_shared.scoped_facts import resolve_effective_value, resolve_effective_values
 from manzil_shared.scoring.engine import criterion_key, score, select_display_score
 
 from manzil_worker.enrich.utility_baselines import baselines_for_metro
+from manzil_worker.scoped_facts import (
+    load_current_extractions,
+    load_current_overrides,
+    property_values,
+)
 from manzil_worker.stages.pet_costs import (
     MANDATORY_FEE_SLOTS,
     beds_bucket,
@@ -24,93 +30,11 @@ from manzil_worker.stages.pet_costs import (
     pet_monthly,
     slot_for_fee,
 )
-from manzil_worker.stages.score import meets_confidence
 
 if True:  # TYPE_CHECKING without import cycle
     import asyncpg
 
 log = structlog.get_logger()
-
-
-def _json_value(raw: Any) -> Any:
-    if isinstance(raw, str):
-        return json.loads(raw)
-    return raw
-
-
-async def _latest_catalog_extractions(
-    conn: asyncpg.Connection, property_id: UUID
-) -> dict[str, tuple[Any, Confidence]]:
-    rows = await conn.fetch(
-        """
-        select distinct on (criterion_key) criterion_key, value, confidence
-        from extractions
-        where property_id = $1 and hunt_id is null
-        order by criterion_key, extracted_at desc
-        """,
-        property_id,
-    )
-    return {
-        row["criterion_key"]: (_json_value(row["value"]), Confidence(row["confidence"]))
-        for row in rows
-    }
-
-
-async def _latest_hunt_extractions(
-    conn: asyncpg.Connection, property_id: UUID, hunt_id: UUID
-) -> dict[str, tuple[Any, Confidence]]:
-    rows = await conn.fetch(
-        """
-        select distinct on (criterion_key) criterion_key, value, confidence
-        from extractions
-        where property_id = $1 and hunt_id = $2
-        order by criterion_key, extracted_at desc
-        """,
-        property_id,
-        hunt_id,
-    )
-    return {
-        row["criterion_key"]: (_json_value(row["value"]), Confidence(row["confidence"]))
-        for row in rows
-    }
-
-
-async def _latest_overrides(conn: asyncpg.Connection, hunt_listing_id: UUID) -> dict[str, Any]:
-    rows = await conn.fetch(
-        """
-        select distinct on (criterion_key) criterion_key, value
-        from overrides
-        where hunt_listing_id = $1
-        order by criterion_key, created_at desc
-        """,
-        hunt_listing_id,
-    )
-    return {row["criterion_key"]: _json_value(row["value"]) for row in rows}
-
-
-def _resolve_effective_values(
-    rubric: list[RubricCriterion],
-    catalog_ext: dict[str, tuple[Any, Confidence]],
-    hunt_ext: dict[str, tuple[Any, Confidence]],
-    overrides: dict[str, Any],
-    min_confidence: Confidence,
-) -> dict[str, Any]:
-    values: dict[str, Any] = {}
-    for crit in rubric:
-        key = criterion_key(crit)
-        # A null override is the revert tombstone (§9.6, §20 2026-07-18):
-        # overrides are append-only, so "back to original" is expressed by
-        # appending null and falling through to the extraction below.
-        if overrides.get(key) is not None:
-            values[key] = overrides[key]
-            continue
-        source = catalog_ext if crit.catalog_key is not None else hunt_ext
-        if key not in source:
-            continue
-        value, confidence = source[key]
-        if value is not None and meets_confidence(confidence, min_confidence):
-            values[key] = value
-    return values
 
 
 async def _latest_pet_rents(
@@ -140,9 +64,7 @@ async def _latest_pet_rents(
     )
 
 
-def _composition_json(
-    composition: Any, all_in_override: Any
-) -> dict[str, Any] | None:
+def _composition_json(composition: Any, all_in_override: Any) -> dict[str, Any] | None:
     """The display-metadata JSON for one plan's composition. A live
     all_in_monthly override replaces the total and marks the plan overridden
     (§9.6) — components stay as composed, so the drawer can still show what
@@ -223,12 +145,12 @@ async def rescore_hunt(
         listing_id: UUID = listing["id"]
         property_id: UUID = listing["property_id"]
         metro: str | None = listing["city"]
-        catalog_ext = await _latest_catalog_extractions(conn, property_id)
-        hunt_ext = await _latest_hunt_extractions(conn, property_id, hunt_id)
-        overrides = await _latest_overrides(conn, listing_id)
-        base_values = _resolve_effective_values(
-            rubric, catalog_ext, hunt_ext, overrides, min_confidence
+        current_extractions = await load_current_extractions(
+            conn, property_id=property_id, hunt_id=hunt_id
         )
+        current_overrides = await load_current_overrides(conn, hunt_listing_id=listing_id)
+        catalog_ext = property_values(current_extractions)
+        rubric_keys = [criterion_key(criterion) for criterion in rubric]
         cat_rent, dog_rent, generic_rent = await _latest_pet_rents(conn, listing_id)
         pet_add = pet_monthly(
             cats=cats,
@@ -247,7 +169,7 @@ async def rescore_hunt(
         baselines_by_bucket: dict[int, dict[str, tuple[float, float]] | None] = {}
 
         floor_plans = await conn.fetch(
-            "select * from floor_plans where property_id = $1",
+            "select * from floor_plans where property_id = $1 and is_current",
             property_id,
         )
         breakdown_objs = []
@@ -268,13 +190,25 @@ async def rescore_hunt(
                 deposit=fp["deposit"],
                 availability_date=fp["availability_date"],
             )
-            values = dict(base_values)
+            values = resolve_effective_values(
+                criterion_keys=rubric_keys,
+                floor_plan_id=fp["id"],
+                extractions=current_extractions,
+                overrides=current_overrides,
+                min_confidence=min_confidence,
+            )
             rent = _conservative_rent(fp["rent_min"], fp["rent_max"])
             composition = None
             # A live all_in_monthly override beats the composition (§9.6, §20
             # 2026-07-18): the scored value is the human's figure (already in
-            # base_values), and the display plan is marked overridden.
-            all_in_override = overrides.get("all_in_monthly")
+            # effective values), and the display plan is marked overridden.
+            all_in_override = resolve_effective_value(
+                criterion_key="all_in_monthly",
+                floor_plan_id=fp["id"],
+                extractions=(),
+                overrides=current_overrides,
+                min_confidence=min_confidence,
+            )
             if rent is not None:
                 bucket = beds_bucket(fp["beds"])
                 if bucket not in baselines_by_bucket:

@@ -18,7 +18,7 @@ import pytest_asyncio
 from manzil_shared.models import Confidence, FetchOutcome, JobState, JobType
 from manzil_worker.persistence import FilePersistence
 from manzil_worker.postgres_persistence import PostgresPersistence
-from manzil_worker.state import FieldExtraction, RunState, SourceState
+from manzil_worker.state import RunState, SourceClaim, SourceState
 
 # Defined inline (not imported from conftest) so a sibling test package's
 # same-named conftest can never shadow it — see test_migration_0002_schema.py.
@@ -42,9 +42,15 @@ def _sample_state(job_id) -> RunState:  # type: ignore[no-untyped-def]
             cleaned_hash="deadbeef",
         )
     ]
-    state.extractions = {
-        "beds": [FieldExtraction(value=2, confidence=Confidence.HIGH, model="m", prompt_version=1)]
-    }
+    state.source_claims = [
+        SourceClaim(
+            criterion_key="beds",
+            value=2,
+            confidence=Confidence.HIGH,
+            model="m",
+            prompt_version=1,
+        )
+    ]
     return state
 
 
@@ -101,8 +107,9 @@ async def test_save_round_trips_run_state(persistence_case) -> None:  # type: ig
     assert loaded.status is JobState.RUNNING
     assert loaded.cost_usd == pytest.approx(0.4217)
     assert loaded.sources[0].cleaned_hash == "deadbeef"
-    assert loaded.extractions["beds"][0].value == 2
-    assert loaded.extractions["beds"][0].confidence is Confidence.HIGH
+    assert loaded.source_claims[0].criterion_key == "beds"
+    assert loaded.source_claims[0].value == 2
+    assert loaded.source_claims[0].confidence is Confidence.HIGH
 
 
 async def test_save_reflects_the_cursor_it_was_called_with(persistence_case) -> None:  # type: ignore[no-untyped-def]

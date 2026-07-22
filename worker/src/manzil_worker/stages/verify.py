@@ -37,7 +37,7 @@ from rapidfuzz import fuzz
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.schema_gen import extractable_entries, field_model
 from manzil_worker.stages.score import meets_confidence
-from manzil_worker.state import FieldExtraction, RunState, VerifyCheck, VerifyFlag
+from manzil_worker.state import RunState, SourceClaim, VerifyCheck, VerifyFlag
 
 log = structlog.get_logger()
 
@@ -52,7 +52,7 @@ class ConsistencyReport(BaseModel):
 
 
 def _demote(
-    state: RunState, extraction: FieldExtraction, key: str, check: VerifyCheck, note: str
+    state: RunState, extraction: SourceClaim, key: str, check: VerifyCheck, note: str
 ) -> None:
     if extraction.confidence in (Confidence.HIGH, Confidence.MEDIUM):
         extraction.confidence = Confidence.LOW
@@ -101,20 +101,25 @@ def evidence_locatable(quote: str, page_text: str) -> bool:
 
 
 def _check_evidence(state: RunState, page_text: str) -> None:
-    for key, extractions in state.extractions.items():
-        for extraction in extractions:
-            if extraction.value is None:
-                continue
-            if not extraction.evidence_quote:
-                _demote(state, extraction, key, "evidence", "non-null value without evidence quote")
-            elif not evidence_locatable(extraction.evidence_quote, page_text):
-                _demote(
-                    state,
-                    extraction,
-                    key,
-                    "evidence",
-                    f"evidence quote not found in page: {extraction.evidence_quote!r}",
-                )
+    for claim in state.source_claims:
+        if claim.value is None:
+            continue
+        if not claim.evidence_quote:
+            _demote(
+                state,
+                claim,
+                claim.criterion_key,
+                "evidence",
+                "non-null value without evidence quote",
+            )
+        elif not evidence_locatable(claim.evidence_quote, page_text):
+            _demote(
+                state,
+                claim,
+                claim.criterion_key,
+                "evidence",
+                f"evidence quote not found in page: {claim.evidence_quote!r}",
+            )
     for plan in state.floor_plans:
         if plan.evidence_quote and not evidence_locatable(plan.evidence_quote, page_text):
             _flag(
@@ -132,29 +137,47 @@ _FIELD_MODELS = {entry.key: field_model(entry) for entry in extractable_entries(
 def _check_conformance(state: RunState) -> None:
     """Check 2: schema conformance re-checked post-parse — guards against any
     mutation between EXTRACT and here."""
-    for key, extractions in state.extractions.items():
+    plan_refs = {plan.response_key for plan in state.floor_plans if plan.response_key is not None}
+    for claim in state.source_claims:
+        key = claim.criterion_key
         model = _FIELD_MODELS.get(key)
         if model is None:
             continue
-        for extraction in extractions:
-            if extraction.value is None:
-                continue
-            try:
-                model.model_validate({"value": extraction.value, "confidence": "high"})
-            except ValidationError as error:
-                _demote(
-                    state,
-                    extraction,
-                    key,
-                    "conformance",
-                    f"value no longer conforms to catalog schema: {error.errors()[0]['msg']}",
-                )
+        if claim.target_scope.value == "floor_plan" and (
+            claim.floor_plan_ref is None or claim.floor_plan_ref not in plan_refs
+        ):
+            _demote(
+                state,
+                claim,
+                key,
+                "conformance",
+                "exact claim references no Source-local Floor Plan in this response",
+            )
+        if claim.value is None:
+            continue
+        try:
+            model.model_validate({"value": claim.value, "confidence": "high"})
+        except ValidationError as error:
+            _demote(
+                state,
+                claim,
+                key,
+                "conformance",
+                f"value no longer conforms to catalog schema: {error.errors()[0]['msg']}",
+            )
 
 
-def _first_value(state: RunState, key: str) -> tuple[FieldExtraction | None, Any]:
-    extractions = state.extractions.get(key, [])
-    if extractions and extractions[0].value is not None:
-        return extractions[0], extractions[0].value
+def _first_value(state: RunState, key: str) -> tuple[SourceClaim | None, Any]:
+    claim = next(
+        (
+            claim
+            for claim in state.source_claims
+            if claim.criterion_key == key and claim.value is not None
+        ),
+        None,
+    )
+    if claim is not None:
+        return claim, claim.value
     return None, None
 
 
@@ -255,9 +278,9 @@ def _check_plausibility(state: RunState, today: date) -> None:
 async def _check_consistency(state: RunState, ctx: StageCtx, page_text: str) -> None:
     """Check 4 — the one narrow LLM judgment in this P2 stage."""
     known = {
-        key: {"value": exts[0].value, "evidence": exts[0].evidence_quote}
-        for key, exts in state.extractions.items()
-        if exts and exts[0].value is not None
+        claim.criterion_key: {"value": claim.value, "evidence": claim.evidence_quote}
+        for claim in state.source_claims
+        if claim.value is not None
     }
     if not known:
         return
@@ -270,11 +293,18 @@ async def _check_consistency(state: RunState, ctx: StageCtx, page_text: str) -> 
     content = "Extracted values:\n" + "\n".join(lines) + f"\n\nPage text:\n{page_text}"
     report = await ctx.call_structured("verify", ConsistencyReport, content)
     for contradiction in report.contradictions:
-        extractions = state.extractions.get(contradiction.criterion_key)
-        if extractions and extractions[0].value is not None:
+        claim = next(
+            (
+                claim
+                for claim in state.source_claims
+                if claim.criterion_key == contradiction.criterion_key and claim.value is not None
+            ),
+            None,
+        )
+        if claim is not None:
             _demote(
                 state,
-                extractions[0],
+                claim,
                 contradiction.criterion_key,
                 "consistency",
                 contradiction.note,
@@ -306,9 +336,9 @@ def _apply_checkpoint_answer(state: RunState, ctx: StageCtx) -> None:
     key = answer.get("context_ref")
     choice = answer.get("choice", "yes")
     if key and choice == "yes":
-        extractions = state.extractions.get(key, [])
-        if extractions:
-            extractions[0].confidence = ctx.min_confidence
+        claim = next((claim for claim in state.source_claims if claim.criterion_key == key), None)
+        if claim is not None:
+            claim.confidence = ctx.min_confidence
     if key:
         state.confirm_value_resolved.append(key)
     state.checkpoint_answer = None
@@ -322,10 +352,12 @@ def _maybe_raise_confirm_value(state: RunState, ctx: StageCtx) -> None:
         criterion = by_key.get(flag.criterion_key)
         if criterion is None or not _is_gate_relevant(criterion):
             continue
-        extractions = state.extractions.get(flag.criterion_key, [])
-        if not extractions or extractions[0].value is None:
+        extraction = next(
+            (claim for claim in state.source_claims if claim.criterion_key == flag.criterion_key),
+            None,
+        )
+        if extraction is None or extraction.value is None:
             continue
-        extraction = extractions[0]
         if meets_confidence(extraction.confidence, ctx.min_confidence):
             continue
         label = criterion.catalog_key or str(

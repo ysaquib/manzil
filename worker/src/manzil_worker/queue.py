@@ -43,6 +43,7 @@ from manzil_shared.models import (
     NonNegotiable,
     RubricCriterion,
     RubricOption,
+    TargetScope,
 )
 
 from manzil_worker.enrich.images import SupabaseImageStore
@@ -57,15 +58,18 @@ from manzil_worker.runner import (
     PHASE0_STAGES,
     run_job,
 )
+from manzil_worker.scoped_facts import append_candidate_resolution, persist_single_source_claims
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.pet_costs import slot_for_fee, slot_for_one_time_fee
 from manzil_worker.stages.rescore import rescore_hunt
 from manzil_worker.state import (
     DedupeCandidate,
+    FloorPlanIn,
     PlanManifest,
     PlanSource,
     PropertyIdentityIn,
     RunState,
+    SourceClaim,
     SourceFreshness,
 )
 
@@ -287,6 +291,118 @@ async def _persist_discovery_results(
     )
 
 
+async def _upsert_floor_plans(
+    conn: asyncpg.Connection,
+    *,
+    property_id: UUID,
+    source_id: UUID,
+    state: RunState,
+) -> tuple[list[FloorPlanIn], list[UUID], dict[str, UUID]]:
+    """Persist Source-local Floor Plans before scoped claims (P3-SC2 order)."""
+    scorable = [
+        plan for plan in state.floor_plans if plan.beds is not None and plan.baths is not None
+    ]
+    floor_plan_ids: list[UUID] = []
+    ids_by_ref: dict[str, UUID] = {}
+    for index, plan in enumerate(scorable):
+        if plan.response_key is None:
+            plan.response_key = f"plan:{index}"
+        conflict = (
+            "(source_id, source_native_id) where source_native_id is not null"
+            if plan.source_native_id is not None
+            else "(source_id, plan_name, beds, baths) where source_native_id is null"
+        )
+        floor_plan_id: UUID = await conn.fetchval(
+            f"""
+            insert into floor_plans
+                (property_id, source_id, source_native_id, detail_url, plan_name, beds, baths,
+                 sqft_min, sqft_max, rent_min, rent_max, deposit, availability_date,
+                 last_seen_at, is_current, raw)
+            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+                    now(), true, $14::jsonb)
+            on conflict {conflict} do update set
+                detail_url = coalesce(excluded.detail_url, floor_plans.detail_url),
+                sqft_min = excluded.sqft_min,
+                sqft_max = excluded.sqft_max,
+                rent_min = excluded.rent_min,
+                rent_max = excluded.rent_max,
+                deposit = excluded.deposit,
+                availability_date = excluded.availability_date,
+                last_seen_at = now(),
+                is_current = true,
+                raw = excluded.raw
+            returning id
+            """,
+            property_id,
+            source_id,
+            plan.source_native_id,
+            plan.detail_url,
+            plan.plan_name or "unnamed",
+            plan.beds,
+            Decimal(str(plan.baths)),
+            plan.sqft_min,
+            plan.sqft_max,
+            None if plan.rent_min is None else Decimal(str(plan.rent_min)),
+            None if plan.rent_max is None else Decimal(str(plan.rent_max)),
+            None if plan.deposit is None else Decimal(str(plan.deposit)),
+            date.fromisoformat(plan.availability_date) if plan.availability_date else None,
+            json.dumps(plan.model_dump(mode="json")),
+        )
+        floor_plan_ids.append(floor_plan_id)
+        ids_by_ref[plan.response_key] = floor_plan_id
+
+    if state.sources[0].authoritative_extraction:
+        await conn.execute(
+            """
+            update floor_plans set is_current = false
+            where source_id = $1 and is_current
+              and not (id = any($2::uuid[]))
+            """,
+            source_id,
+            floor_plan_ids,
+        )
+    return list(scorable), floor_plan_ids, ids_by_ref
+
+
+def _auxiliary_claims(state: RunState, source_url: str) -> list[SourceClaim]:
+    """Convert non-Catalog EXTRACT blocks into ordinary scoped claims."""
+    model = next((claim.model for claim in state.source_claims), None) or model_for_stage("extract")
+    prompt_version = next((claim.prompt_version for claim in state.source_claims), 0)
+    claims: list[SourceClaim] = []
+
+    def add(key: str, value: object, evidence: str | None) -> None:
+        claims.append(
+            SourceClaim(
+                criterion_key=key,
+                value=value,
+                confidence=Confidence.HIGH,
+                evidence_quote=evidence,
+                source_id=source_url,
+                model=model,
+                prompt_version=prompt_version,
+                target_scope=TargetScope.PROPERTY,
+            )
+        )
+
+    if state.utilities is not None and state.utilities.included is not None:
+        add("utilities_included", list(state.utilities.included), state.utilities.evidence_quote)
+    if state.mandatory_fees is not None and state.mandatory_fees.fees:
+        add(
+            "mandatory_fees",
+            [fee.model_dump(mode="json") for fee in state.mandatory_fees.fees],
+            state.mandatory_fees.evidence_quote,
+        )
+    if state.one_time_fees is not None and state.one_time_fees.fees:
+        add(
+            "one_time_fees",
+            [fee.model_dump(mode="json") for fee in state.one_time_fees.fees],
+            state.one_time_fees.evidence_quote,
+        )
+    if state.heating is not None and state.heating.heating is not None:
+        add("heating_type", state.heating.heating, state.heating.evidence_quote)
+    return claims
+
+
 async def _persist_ingest_results(
     conn: asyncpg.Connection,
     *,
@@ -429,27 +545,27 @@ async def _persist_ingest_results(
             geocode.city,
         )
 
-    for key, ext in state.reconciled.items():
-        # ENRICH values are API-derived (RunState source_id "google_maps:…" /
-        # "google_places:…"), not page facts: attributing them to the fetched
-        # property_sources row would be false provenance — persist NULL instead;
-        # the evidence_quote and model columns carry the real origin (P3-8).
-        from_page = ext.source_id == source.url
-        await conn.execute(
-            """
-            insert into extractions
-                (property_id, hunt_id, criterion_key, value, confidence,
-                 evidence_quote, source_id, model)
-            values ($1, null, $2, $3::jsonb, $4::confidence, $5, $6, $7)
-            """,
-            property_id,
-            key,
-            json.dumps(ext.value),
-            ext.confidence.value,
-            ext.evidence_quote,
-            source_id if from_page else None,
-            ext.model,
-        )
+    # P3-SC2's load-bearing persistence order: Floor Plans first so response-local
+    # references can resolve, then candidate/resolution facts + lineage, then
+    # scores/projection. No scoped fact can point across Properties.
+    scorable, floor_plan_ids, floor_plan_ids_by_ref = await _upsert_floor_plans(
+        conn,
+        property_id=property_id,
+        source_id=source_id,
+        state=state,
+    )
+    persisted_job_id = await conn.fetchval("select id from jobs where id = $1", state.job_id)
+    await persist_single_source_claims(
+        conn,
+        property_id=property_id,
+        hunt_id=None,
+        source_id=source_id,
+        source_url=source.url,
+        job_id=persisted_job_id,
+        claims=[*state.source_claims, *_auxiliary_claims(state, source.url)],
+        floor_plan_ids_by_ref=floor_plan_ids_by_ref,
+        authoritative=source.authoritative_extraction,
+    )
 
     # §9.5 v1 species-specific pet rent → fee_checklist slots. Extracted amounts
     # never clobber a human 'manual' entry (the DO UPDATE's WHERE guards that);
@@ -483,47 +599,9 @@ async def _persist_ingest_results(
                 pet_costs.evidence_quote,
             )
 
-    # §9.5 v1 utilities-included → one append-only `utilities_included` extraction
-    # (property-level, hunt_id NULL; latest row wins by design). Only when the
-    # block is present and `included` was resolved (empty list = "none included").
-    utilities = state.utilities
-    if utilities is not None and utilities.included is not None:
-        model = next((e.model for e in state.reconciled.values()), None) or model_for_stage(
-            "extract"
-        )
-        await conn.execute(
-            """
-            insert into extractions
-                (property_id, hunt_id, criterion_key, value, confidence,
-                 evidence_quote, source_id, model)
-            values ($1, null, 'utilities_included', $2::jsonb, 'high'::confidence, $3, $4, $5)
-            """,
-            property_id,
-            json.dumps(utilities.included),
-            utilities.evidence_quote,
-            source_id,
-            model,
-        )
-
-    # §9.5 P3-9 blocks → append-only extractions (rescore parity) + fee slots.
+    # §9.5 blocks are facts above and also project into editable fee slots.
     mandatory = state.mandatory_fees
     if mandatory is not None and mandatory.fees:
-        model = next((e.model for e in state.reconciled.values()), None) or model_for_stage(
-            "extract"
-        )
-        await conn.execute(
-            """
-            insert into extractions
-                (property_id, hunt_id, criterion_key, value, confidence,
-                 evidence_quote, source_id, model)
-            values ($1, null, 'mandatory_fees', $2::jsonb, 'high'::confidence, $3, $4, $5)
-            """,
-            property_id,
-            json.dumps([f.model_dump(mode="json") for f in mandatory.fees]),
-            mandatory.evidence_quote,
-            source_id,
-            model,
-        )
         # Mappable fees fill their checklist slot (state `extracted`); a human
         # `manual` entry is never overwritten (§9.5). Unmapped fees still
         # compose via the extraction row above — they just lack a slot.
@@ -550,22 +628,6 @@ async def _persist_ingest_results(
             )
     one_time = state.one_time_fees
     if one_time is not None and one_time.fees:
-        model = next((e.model for e in state.reconciled.values()), None) or model_for_stage(
-            "extract"
-        )
-        await conn.execute(
-            """
-            insert into extractions
-                (property_id, hunt_id, criterion_key, value, confidence,
-                 evidence_quote, source_id, model)
-            values ($1, null, 'one_time_fees', $2::jsonb, 'high'::confidence, $3, $4, $5)
-            """,
-            property_id,
-            json.dumps([f.model_dump(mode="json") for f in one_time.fees]),
-            one_time.evidence_quote,
-            source_id,
-            model,
-        )
         # One-time fees fill the move-in checklist slots (§9.5) — display
         # only, never composed. `manual` entries are never overwritten.
         for fee in one_time.fees:
@@ -589,26 +651,6 @@ async def _persist_ingest_results(
                 Decimal(str(fee.amount)),
                 one_time.evidence_quote,
             )
-    heating = state.heating
-    if heating is not None and heating.heating is not None:
-        model = next((e.model for e in state.reconciled.values()), None) or model_for_stage(
-            "extract"
-        )
-        await conn.execute(
-            """
-            insert into extractions
-                (property_id, hunt_id, criterion_key, value, confidence,
-                 evidence_quote, source_id, model)
-            values ($1, null, 'heating_type', $2::jsonb, 'high'::confidence, $3, $4, $5)
-            """,
-            property_id,
-            json.dumps(heating.heating),
-            heating.evidence_quote,
-            source_id,
-            model,
-        )
-
-    scorable = [p for p in state.floor_plans if p.beds is not None and p.baths is not None]
     if not scorable:
         # No available floor plans, even after extraction/cross-validation — a
         # legitimate "no availability" result (§8.2), not an error. The source and
@@ -632,41 +674,9 @@ async def _persist_ingest_results(
     )
     # strict=True: SCORE guarantees one PlanScore per scorable plan, so any length
     # mismatch is a real filter/order drift and must surface, not truncate.
-    for plan_in, plan_score in zip(scorable, state.scores, strict=True):
-        # Upsert on the natural plan key so a plan keeps a stable id across
-        # refreshes — scores and pins that reference floor_plan_id stay attached.
-        floor_plan_id = await conn.fetchval(
-            """
-            insert into floor_plans
-                (property_id, source_id, plan_name, beds, baths, sqft_min, sqft_max,
-                 rent_min, rent_max, deposit, availability_date, raw)
-            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)
-            on conflict (source_id, plan_name, beds, baths) do update set
-                sqft_min = excluded.sqft_min,
-                sqft_max = excluded.sqft_max,
-                rent_min = excluded.rent_min,
-                rent_max = excluded.rent_max,
-                deposit = excluded.deposit,
-                availability_date = excluded.availability_date,
-                raw = excluded.raw
-            returning id
-            """,
-            property_id,
-            source_id,
-            plan_in.plan_name or "unnamed",
-            plan_in.beds,
-            Decimal(str(plan_in.baths)),
-            plan_in.sqft_min,
-            plan_in.sqft_max,
-            None if plan_in.rent_min is None else Decimal(str(plan_in.rent_min)),
-            None if plan_in.rent_max is None else Decimal(str(plan_in.rent_max)),
-            None if plan_in.deposit is None else Decimal(str(plan_in.deposit)),
-            date.fromisoformat(plan_in.availability_date) if plan_in.availability_date else None,
-            # The per-plan raw extracted object (§8.2 floor_plans.raw): the full
-            # FloorPlanIn as EXTRACT emitted it, including fields with no column of
-            # their own (e.g. evidence_quote) — provenance for re-derivation.
-            json.dumps(plan_in.model_dump(mode="json")),
-        )
+    for _plan_in, floor_plan_id, plan_score in zip(
+        scorable, floor_plan_ids, state.scores, strict=True
+    ):
         await conn.execute(
             """
             insert into scores
@@ -827,7 +837,15 @@ def make_ingest_dispatcher(
             # everything onto it and drop the placeholder before the run's facts are
             # written — so the projection persists against the surviving property.
             placeholder_id: UUID = listing["property_id"]
-            canonical_id: UUID = done_state.property_id or placeholder_id
+            # An already-known exact Source URL is stronger identity evidence
+            # than a fresh placeholder, including when geocode-less DEDUPE had
+            # no inputs with which to find it. Converge the Listing onto the
+            # Source's existing Property; never re-parent the Source.
+            source_property_id = await conn.fetchval(
+                "select property_id from property_sources where url = $1",
+                done_state.sources[0].url,
+            )
+            canonical_id: UUID = source_property_id or done_state.property_id or placeholder_id
             if canonical_id != placeholder_id:
                 await _merge_into_canonical(
                     conn,
@@ -1122,19 +1140,22 @@ def make_enrich_refresh_dispatcher(
                         continue
                     minutes, place_name = found
                     ext = grocery_extraction(minutes, place_name, proximity_mode)
-                    await conn.execute(
-                        """
-                        insert into extractions
-                            (property_id, hunt_id, criterion_key, value, confidence,
-                             evidence_quote, source_id, model)
-                        values ($1, null, 'grocery_proximity', $2::jsonb,
-                                $3::confidence, $4, null, $5)
-                        """,
-                        property_id,
-                        json.dumps(ext.value),
-                        ext.confidence.value,
-                        ext.evidence_quote,
-                        ext.model,
+                    await append_candidate_resolution(
+                        conn,
+                        property_id=property_id,
+                        hunt_id=None,
+                        criterion_key=ext.criterion_key,
+                        value=ext.value,
+                        confidence=ext.confidence,
+                        evidence_quote=ext.evidence_quote,
+                        source_id=None,
+                        origin_key="google_maps:grocery",
+                        target_scope=TargetScope.PROPERTY,
+                        floor_plan_id=None,
+                        applicability=None,
+                        claim_group_id=ext.claim_group_id,
+                        model=ext.model,
+                        job_id=job_id,
                     )
                     enriched += 1
                 await rescore_hunt(
