@@ -23,6 +23,8 @@ Semantics recorded in DESIGN §3 (Gate), §9.3, and the v2.1 §20 entry:
   satisfied by missing data.
 - Object values (e.g. `management_reviews` `{rating, summary}`) compare on
   their `"rating"` field.
+- `contains_any` and `contains_all` compare array values as mathematical sets;
+  strings and other iterables are not silently treated as arrays.
 - `range` matches are inclusive on both ends. Ordered comparisons compare
   numbers, or strings pairwise (ISO dates order correctly as strings).
 """
@@ -102,6 +104,24 @@ def matches(match: OptionMatch, value: Any) -> bool:
         return _ordered(v, lo) and _ordered(v, hi) and lo <= v <= hi
     if op is MatchOp.IN:
         return isinstance(mv, Sequence) and not isinstance(mv, str) and v in mv
+    if op in (MatchOp.CONTAINS_ANY, MatchOp.CONTAINS_ALL):
+        if (
+            not isinstance(v, Sequence)
+            or isinstance(v, str | bytes)
+            or not isinstance(mv, Sequence)
+            or isinstance(mv, str | bytes)
+        ):
+            return False
+        try:
+            actual = set(v)
+            configured = set(mv)
+        except TypeError:
+            return False
+        if not configured:
+            return False
+        if op is MatchOp.CONTAINS_ANY:
+            return bool(actual & configured)
+        return configured <= actual
     return False
 
 
@@ -120,6 +140,8 @@ def plan_values(floor_plan: FloorPlan) -> dict[str, Any]:
     independently). `sqft` uses the conservative end of the range (min when
     present) — the tool never makes a unit look better than its worst case."""
     values: dict[str, Any] = {"beds": floor_plan.beds, "baths": floor_plan.baths}
+    if floor_plan.unit_types:
+        values["unit_types"] = list(floor_plan.unit_types)
     sqft = floor_plan.sqft_min if floor_plan.sqft_min is not None else floor_plan.sqft_max
     if sqft is not None:
         values["sqft"] = sqft
