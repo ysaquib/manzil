@@ -1252,7 +1252,7 @@ workstream visible while the dependency column supplies its actual order.
 | Task | Scope | Dependency/order |
 |---|---|---|
 | `P3-SC1` ✅ | Promoted this plan into DESIGN + §20; audited all Extraction queries; recorded exact schema/current-value/reset contracts in IMPLEMENTATION (completed 2026-07-21) | Complete; prerequisite cleared |
-| `P3-SC2` | Unified append-only scoped Extraction foundation: schema/domain models, sparse claims, Floor Plan identity resolution, effective values, Overrides, refresh/split/RLS | After `P3-SC1`; hard prerequisite for P3-6 |
+| **`P3-SC2` ✅** | Unified append-only scoped Extraction foundation: schema/domain models, sparse claims, Floor Plan identity resolution, effective values, Overrides, refresh/split/RLS | Landed 2026-07-21; prerequisite cleared |
 | `P3-SC3` | `property` category, array/set plumbing needed by approved Property/Unit types, first Property tranche including general internet readiness, and saved dev Rubric | After `P3-SC2`; before P3-6 so policy/catalog paths are exercised against the final substrate |
 | `P3-SC4` | Migrate existing unit Criteria to exact/all/select/unspecified semantics; extend the canonical bench contract and establish the current-pin baseline | After `P3-SC2`/`P3-SC3`; hard prerequisite for P3-6 |
 | **`P3-5` ✅** | Existing DISCOVER branch: native search, official/candidate Source links, tier/family slate, Source Policy enforcement | Landed 2026-07-21; its half of the P3-6 join is cleared |
@@ -1264,7 +1264,7 @@ workstream visible while the dependency column supplies its actual order.
 
 Run the relevant synthetic fixtures and local canonical bench after each
 output-affecting tranche; do not postpone all evaluation until `P3-SC8`.
-The next single-implementer task is `P3-SC2`.
+The next single-implementer task is `P3-SC3`.
 
 ### P3-SC1 — finish and promote the design
 
@@ -1291,6 +1291,13 @@ immediately add the lossy guard and its select/unqualified fixtures, ensure such
 claims cannot satisfy Gates, and rerun the Phase 0 bench.
 
 ### P3-SC2 — scoped Extraction substrate
+
+**Completed 2026-07-21.** The authoritative result is DESIGN v3.9,
+IMPLEMENTATION v2.0.71, and migration
+`supabase/migrations/20260801000000_scoped_extraction_foundation.sql`.
+P3-SC2 deliberately does not migrate the existing unit Criteria's claim
+schemas or prompts; existing unit-like page facts are preserved as
+`unit_scope_unspecified` until P3-SC4 performs that output-affecting tranche.
 
 Reshape the existing table and update all audited consumers as one contract
 change, reset the development database, and reseed it; do not build a
