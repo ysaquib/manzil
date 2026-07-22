@@ -24,7 +24,7 @@ from manzil_shared.models import (
     TargetScope,
     UnitApplicability,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 VerifyCheck = Literal["evidence", "conformance", "plausibility", "consistency"]
 
@@ -64,6 +64,17 @@ class FloorPlanIn(BaseModel):
     plan_name: str | None = None
     beds: int | None = None
     baths: float | None = None
+    unit_types: list[
+        Literal[
+            "apartment",
+            "condo",
+            "townhome",
+            "duplex",
+            "single_family",
+            "loft",
+            "other",
+        ]
+    ] = Field(default_factory=list, json_schema_extra={"uniqueItems": True})
     sqft_min: int | None = None
     sqft_max: int | None = None
     rent_min: float | None = None
@@ -71,6 +82,13 @@ class FloorPlanIn(BaseModel):
     deposit: float | None = None
     availability_date: str | None = None  # ISO date; available_now rewritten in EXTRACT
     evidence_quote: str | None = None
+
+    @field_validator("unit_types")
+    @classmethod
+    def unit_types_are_unique(cls, value: list[str]) -> list[str]:
+        if len(value) != len(set(value)):
+            raise ValueError("unit_types must contain unique values")
+        return value
 
 
 class PropertyIdentityIn(BaseModel):

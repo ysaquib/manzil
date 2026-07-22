@@ -57,6 +57,27 @@ def test_extract_lands_property_identity_when_present() -> None:
     assert state.property_identity.official_url is None
 
 
+def test_extract_preserves_property_facts_and_floor_plan_unit_types() -> None:
+    payload = maple_extraction()
+    payload["pool"] = field_payload("outdoor", "Outdoor swimming pool")
+    payload["property_types"] = field_payload(["apartment"], "Apartment homes")
+    payload["unit_types"] = field_payload(["apartment"], "Apartment homes")
+    payload["floor_plans"][0]["unit_types"] = ["loft"]
+    state = asyncio.run(
+        extract_stage(
+            make_state(cleaned_text=CLEANED),
+            StageCtx(call_structured=FakeLLM({"extract": payload})),
+        )
+    )
+
+    pool = get_claim(state, "pool")
+    assert pool.value == "outdoor"
+    assert pool.applicability is None
+    generalized_type = get_claim(state, "unit_types")
+    assert generalized_type.applicability == "unit_scope_unspecified"
+    assert state.floor_plans[0].unit_types == ["loft"]
+
+
 def test_extract_leaves_property_identity_none_when_block_absent() -> None:
     """The identity block is optional — a payload without it leaves state.property_identity
     None, so recorded fixtures predating the block keep working."""

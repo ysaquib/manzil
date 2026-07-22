@@ -316,12 +316,14 @@ async def _upsert_floor_plans(
             f"""
             insert into floor_plans
                 (property_id, source_id, source_native_id, detail_url, plan_name, beds, baths,
+                 unit_types,
                  sqft_min, sqft_max, rent_min, rent_max, deposit, availability_date,
                  last_seen_at, is_current, raw)
-            values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-                    now(), true, $14::jsonb)
+            values ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13, $14,
+                    now(), true, $15::jsonb)
             on conflict {conflict} do update set
                 detail_url = coalesce(excluded.detail_url, floor_plans.detail_url),
+                unit_types = excluded.unit_types,
                 sqft_min = excluded.sqft_min,
                 sqft_max = excluded.sqft_max,
                 rent_min = excluded.rent_min,
@@ -340,6 +342,7 @@ async def _upsert_floor_plans(
             plan.plan_name or "unnamed",
             plan.beds,
             Decimal(str(plan.baths)),
+            json.dumps(plan.unit_types),
             plan.sqft_min,
             plan.sqft_max,
             None if plan.rent_min is None else Decimal(str(plan.rent_min)),

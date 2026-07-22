@@ -1,0 +1,538 @@
+{
+  "template_version": 1,
+  "hunt_name": "Development Rubric",
+  "settings": {
+    "default_source_policy": "tiers_1_2_3",
+    "cost_estimate_mode": "conservative",
+    "min_confidence": "medium",
+    "proximity_mode": "driving",
+    "occupants": 1,
+    "cats": 0,
+    "dogs": 0
+  },
+  "criteria": [
+    {
+      "catalog_key": "pool",
+      "enabled": true,
+      "options": [
+        {
+          "match": {
+            "op": "eq",
+            "value": "indoor_and_outdoor"
+          },
+          "delta": 0.5,
+          "dealbreaker_set_score": null
+        },
+        {
+          "match": {
+            "op": "in",
+            "value": [
+              "indoor",
+              "outdoor"
+            ]
+          },
+          "delta": 0.25,
+          "dealbreaker_set_score": null
+        },
+        {
+          "match": {
+            "op": "eq",
+            "value": "unspecified"
+          },
+          "delta": 0.25,
+          "dealbreaker_set_score": null
+        },
+        {
+          "match": {
+            "op": "eq",
+            "value": "none"
+          },
+          "delta": 0.0,
+          "dealbreaker_set_score": null
+        }
+      ],
+      "unknown_delta": 0.0,
+      "position": 0
+    },
+    {
+      "catalog_key": "fitness_center",
+      "enabled": true,
+      "options": [
+        {
+          "match": {
+            "op": "bool",
+            "value": true
+          },
+          "delta": 0.5,
+          "dealbreaker_set_score": null
+        },
+        {
+          "match": {
+            "op": "bool",
+            "value": false
+          },
+          "delta": 0.0,
+          "dealbreaker_set_score": null
+        }
+      ],
+      "unknown_delta": 0.0,
+      "position": 1
+    },
+    {
+      "catalog_key": "clubhouse",
+      "enabled": true,
+      "options": [
+        {
+          "match": {
+            "op": "bool",
+            "value": true
+          },
+          "delta": 0.25,
+          "dealbreaker_set_score": null
+        },
+        {
+          "match": {
+            "op": "bool",
+            "value": false
+          },
+          "delta": 0.0,
+          "dealbreaker_set_score": null
+        }
+      ],
+      "unknown_delta": 0.0,
+      "position": 2
+    },
+    {
+      "catalog_key": "emergency_maintenance",
+      "enabled": true,
+      "options": [
+        {
+          "match": {
+            "op": "eq",
+            "value": "24_hour_emergency"
+          },
+          "delta": 0.5,
+          "dealbreaker_set_score": null
+        },
+        {
+          "match": {
+            "op": "eq",
+            "value": "emergency_service"
+          },
+          "delta": 0.25,
+          "dealbreaker_set_score": null
+        },
+        {
+          "match": {
+            "op": "eq",
+            "value": "none"
+          },
+          "delta": 0.0,
+          "dealbreaker_set_score": null
+        }
+      ],
+      "unknown_delta": 0.0,
+      "position": 3
+    },
+    {
+      "catalog_key": "maintenance_on_site",
+      "enabled": true,
+      "options": [
+        {
+          "match": {
+            "op": "bool",
+            "value": true
+          },
+          "delta": 0.25,
+          "dealbreaker_set_score": null
+        },
+        {
+          "match": {
+            "op": "bool",
+            "value": false
+          },
+          "delta": 0.0,
+          "dealbreaker_set_score": null
+        }
+      ],
+      "unknown_delta": 0.0,
+      "position": 4
+    },
+    {
+      "catalog_key": "management_on_site",
+      "enabled": true,
+      "options": [
+        {
+          "match": {
+            "op": "bool",
+            "value": true
+          },
+          "delta": 0.25,
+          "dealbreaker_set_score": null
+        },
+        {
+          "match": {
+            "op": "bool",
+            "value": false
+          },
+          "delta": 0.0,
+          "dealbreaker_set_score": null
+        }
+      ],
+      "unknown_delta": 0.0,
+      "position": 5
+    },
+    {
+      "catalog_key": "online_payments",
+      "enabled": true,
+      "options": [
+        {
+          "match": {
+            "op": "bool",
+            "value": true
+          },
+          "delta": 0.25,
+          "dealbreaker_set_score": null
+        },
+        {
+          "match": {
+            "op": "bool",
+            "value": false
+          },
+          "delta": 0.0,
+          "dealbreaker_set_score": null
+        }
+      ],
+      "unknown_delta": 0.0,
+      "position": 6
+    },
+    {
+      "catalog_key": "online_maintenance_requests",
+      "enabled": true,
+      "options": [
+        {
+          "match": {
+            "op": "bool",
+            "value": true
+          },
+          "delta": 0.25,
+          "dealbreaker_set_score": null
+        },
+        {
+          "match": {
+            "op": "bool",
+            "value": false
+          },
+          "delta": 0.0,
+          "dealbreaker_set_score": null
+        }
+      ],
+      "unknown_delta": 0.0,
+      "position": 7
+    },
+    {
+      "catalog_key": "package_handling",
+      "enabled": true,
+      "options": [
+        {
+          "match": {
+            "op": "eq",
+            "value": "locker"
+          },
+          "delta": 0.5,
+          "dealbreaker_set_score": null
+        },
+        {
+          "match": {
+            "op": "eq",
+            "value": "secured_room"
+          },
+          "delta": 0.25,
+          "dealbreaker_set_score": null
+        },
+        {
+          "match": {
+            "op": "eq",
+            "value": "office"
+          },
+          "delta": 0.1,
+          "dealbreaker_set_score": null
+        },
+        {
+          "match": {
+            "op": "eq",
+            "value": "unsecured_area"
+          },
+          "delta": 0.0,
+          "dealbreaker_set_score": null
+        },
+        {
+          "match": {
+            "op": "eq",
+            "value": "none"
+          },
+          "delta": 0.0,
+          "dealbreaker_set_score": null
+        }
+      ],
+      "unknown_delta": 0.0,
+      "position": 8
+    },
+    {
+      "catalog_key": "smoking_policy",
+      "enabled": true,
+      "options": [
+        {
+          "match": {
+            "op": "eq",
+            "value": "smoke_free_property"
+          },
+          "delta": 0.5,
+          "dealbreaker_set_score": null
+        },
+        {
+          "match": {
+            "op": "eq",
+            "value": "designated_areas_only"
+          },
+          "delta": 0.0,
+          "dealbreaker_set_score": null
+        },
+        {
+          "match": {
+            "op": "eq",
+            "value": "permitted"
+          },
+          "delta": -0.5,
+          "dealbreaker_set_score": null
+        }
+      ],
+      "unknown_delta": 0.0,
+      "position": 9
+    },
+    {
+      "catalog_key": "property_types",
+      "enabled": true,
+      "options": [
+        {
+          "match": {
+            "op": "contains_any",
+            "value": [
+              "apartment",
+              "condo",
+              "townhome",
+              "duplex",
+              "single_family",
+              "loft",
+              "other"
+            ]
+          },
+          "delta": 0.0,
+          "dealbreaker_set_score": null
+        }
+      ],
+      "unknown_delta": 0.0,
+      "position": 10
+    },
+    {
+      "catalog_key": "internet_readiness",
+      "enabled": true,
+      "options": [
+        {
+          "match": {
+            "op": "bool",
+            "value": true
+          },
+          "delta": 0.25,
+          "dealbreaker_set_score": null
+        },
+        {
+          "match": {
+            "op": "bool",
+            "value": false
+          },
+          "delta": 0.0,
+          "dealbreaker_set_score": null
+        }
+      ],
+      "unknown_delta": 0.0,
+      "position": 11
+    },
+    {
+      "catalog_key": "unit_types",
+      "enabled": true,
+      "options": [
+        {
+          "match": {
+            "op": "contains_any",
+            "value": [
+              "apartment",
+              "condo",
+              "townhome",
+              "duplex",
+              "single_family",
+              "loft",
+              "other"
+            ]
+          },
+          "delta": 0.0,
+          "dealbreaker_set_score": null
+        }
+      ],
+      "unknown_delta": 0.0,
+      "position": 12
+    },
+    {
+      "catalog_key": "beds",
+      "enabled": true,
+      "options": [
+        {
+          "match": {
+            "op": "eq",
+            "value": 2
+          },
+          "delta": 0.5,
+          "dealbreaker_set_score": null
+        },
+        {
+          "match": {
+            "op": "eq",
+            "value": 1
+          },
+          "delta": 0.0,
+          "dealbreaker_set_score": null
+        },
+        {
+          "match": {
+            "op": "eq",
+            "value": 0
+          },
+          "delta": -0.5,
+          "dealbreaker_set_score": null
+        }
+      ],
+      "unknown_delta": 0.0,
+      "position": 13
+    },
+    {
+      "catalog_key": "all_in_monthly",
+      "enabled": true,
+      "options": [
+        {
+          "match": {
+            "op": "lt",
+            "value": 1800
+          },
+          "delta": 1.0,
+          "dealbreaker_set_score": null
+        },
+        {
+          "match": {
+            "op": "range",
+            "value": [
+              1800,
+              2000
+            ]
+          },
+          "delta": 0.5,
+          "dealbreaker_set_score": null
+        },
+        {
+          "match": {
+            "op": "range",
+            "value": [
+              2000,
+              2200
+            ]
+          },
+          "delta": 0.0,
+          "dealbreaker_set_score": null
+        },
+        {
+          "match": {
+            "op": "gt",
+            "value": 2200
+          },
+          "delta": -1.0,
+          "dealbreaker_set_score": null
+        }
+      ],
+      "unknown_delta": 0.0,
+      "position": 14
+    },
+    {
+      "catalog_key": "availability_date",
+      "enabled": true,
+      "options": [
+        {
+          "match": {
+            "op": "lte",
+            "value": "2026-12-31"
+          },
+          "delta": 0.25,
+          "dealbreaker_set_score": null
+        }
+      ],
+      "unknown_delta": 0.0,
+      "position": 15
+    }
+  ],
+  "goldens": [
+    {
+      "name": "known first property tranche",
+      "effective_values": {
+        "pool": "outdoor",
+        "fitness_center": false,
+        "clubhouse": false,
+        "emergency_maintenance": "none",
+        "maintenance_on_site": false,
+        "management_on_site": false,
+        "online_payments": false,
+        "online_maintenance_requests": false,
+        "package_handling": "none",
+        "smoking_policy": "designated_areas_only",
+        "property_types": [
+          "apartment"
+        ],
+        "internet_readiness": false,
+        "unit_types": [
+          "apartment"
+        ],
+        "beds": 1,
+        "all_in_monthly": 1900.0
+      },
+      "floor_plan": {
+        "property_id": "00000000-0000-0000-0000-00000d3c0010",
+        "source_id": "00000000-0000-0000-0000-00000d3c0011",
+        "plan_name": "Loft A",
+        "beds": 2,
+        "baths": 1.0,
+        "unit_types": [
+          "loft"
+        ],
+        "sqft_min": 850,
+        "rent_min": 1900.0,
+        "availability_date": "2026-10-01"
+      },
+      "expected_total": 11.5,
+      "expected_deltas": {
+        "pool": 0.25,
+        "fitness_center": 0.0,
+        "clubhouse": 0.0,
+        "emergency_maintenance": 0.0,
+        "maintenance_on_site": 0.0,
+        "management_on_site": 0.0,
+        "online_payments": 0.0,
+        "online_maintenance_requests": 0.0,
+        "package_handling": 0.0,
+        "smoking_policy": 0.0,
+        "property_types": 0.0,
+        "internet_readiness": 0.0,
+        "unit_types": 0.0,
+        "beds": 0.5,
+        "all_in_monthly": 0.5,
+        "availability_date": 0.25
+      }
+    }
+  ]
+}

@@ -189,6 +189,43 @@ async def test_response_local_floor_plan_reference_resolves_before_persistence(
         await pg_pool.execute("delete from properties where id = $1", property_id)
 
 
+async def test_floor_plan_unit_types_round_trip_through_source_local_upsert(
+    pg_pool: asyncpg.Pool,
+) -> None:
+    property_id, source_id = await _seed_property_source(pg_pool)
+    state = RunState(job_id=uuid4(), job_type=JobType.INGEST, url="https://example.com/loft-a")
+    state.floor_plans = [
+        FloorPlanIn(
+            response_key="loft-a",
+            plan_name="Loft A",
+            beds=1,
+            baths=1,
+            unit_types=["loft", "apartment"],
+        )
+    ]
+    state.sources = [
+        SourceState(
+            url="https://example.com/loft-a",
+            tier_used=1,
+            authoritative_extraction=True,
+        )
+    ]
+    try:
+        async with pg_pool.acquire() as conn, conn.transaction():
+            _, floor_plan_ids, _ = await _upsert_floor_plans(
+                conn,
+                property_id=property_id,
+                source_id=source_id,
+                state=state,
+            )
+        stored = await pg_pool.fetchval(
+            "select unit_types from floor_plans where id = $1", floor_plan_ids[0]
+        )
+        assert stored == '["loft", "apartment"]'
+    finally:
+        await pg_pool.execute("delete from properties where id = $1", property_id)
+
+
 async def test_foreign_floor_plan_target_is_rejected(pg_pool: asyncpg.Pool) -> None:
     property_id, source_id = await _seed_property_source(pg_pool)
     other_property_id, other_source_id = await _seed_property_source(pg_pool)

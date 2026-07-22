@@ -21,7 +21,15 @@ from typing import Annotated, Any, Literal
 
 from manzil_shared.catalog import CATALOG
 from manzil_shared.models import CatalogEntry, Confidence
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, create_model, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    TypeAdapter,
+    create_model,
+    model_validator,
+)
 
 from manzil_worker.state import (
     FloorPlanIn,
@@ -107,8 +115,24 @@ def _value_type(value_schema: dict[str, Any]) -> Any:
             return str
         case "object":
             return dict[str, Any]
+        case "array":
+            item_type = _value_type(value_schema.get("items", {}))
+            array_type = list[item_type]
+            if value_schema.get("uniqueItems"):
+                return Annotated[array_type, AfterValidator(_require_unique_items)]
+            return array_type
         case unknown:
             raise ValueError(f"unsupported value_schema type: {unknown!r}")
+
+
+def _require_unique_items(value: list[Any]) -> list[Any]:
+    """Enforce JSON Schema `uniqueItems` at runtime, not only in tool JSON."""
+    try:
+        if len(value) != len(set(value)):
+            raise ValueError("array items must be unique")
+    except TypeError as error:
+        raise ValueError("array items must be hashable") from error
+    return value
 
 
 def _bounds(value_schema: dict[str, Any]) -> dict[str, Any]:
@@ -117,6 +141,12 @@ def _bounds(value_schema: dict[str, Any]) -> dict[str, Any]:
         kwargs["ge"] = value_schema["minimum"]
     if "maximum" in value_schema:
         kwargs["le"] = value_schema["maximum"]
+    if "minItems" in value_schema:
+        kwargs["min_length"] = value_schema["minItems"]
+    if "maxItems" in value_schema:
+        kwargs["max_length"] = value_schema["maxItems"]
+    if value_schema.get("uniqueItems"):
+        kwargs["json_schema_extra"] = {"uniqueItems": True}
     return kwargs
 
 
@@ -189,7 +219,8 @@ def build_extraction_schema(
         Field(
             default_factory=list,
             description="Every distinct floor plan / unit type advertised on the page, "
-            "with its rent range, sqft range, deposit, and earliest availability "
+            "with its controlled unit_types, rent range, sqft range, deposit, and "
+            "earliest availability "
             "as an ISO date (YYYY-MM-DD). Search prose and [EMBEDDED DATA] for "
             "that plan: if it has an explicit availability date, emit the "
             "earliest explicit ISO date even when the UI also says 'Available "

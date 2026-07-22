@@ -67,6 +67,7 @@ def _to_floor_plan(plan: FloorPlanIn, source_url: str, index: int) -> FloorPlan 
         plan_name=plan.plan_name or "unnamed",
         beds=plan.beds,
         baths=plan.baths,
+        unit_types=list(plan.unit_types),
         sqft_min=plan.sqft_min,
         sqft_max=plan.sqft_max,
         rent_min=Decimal(str(plan.rent_min)) if plan.rent_min is not None else None,

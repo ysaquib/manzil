@@ -183,6 +183,7 @@ async def rescore_hunt(
                 plan_name=fp["plan_name"],
                 beds=fp["beds"],
                 baths=fp["baths"],
+                unit_types=json.loads(fp["unit_types"] or "[]"),
                 sqft_min=fp["sqft_min"],
                 sqft_max=fp["sqft_max"],
                 rent_min=fp["rent_min"],
