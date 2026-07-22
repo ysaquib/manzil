@@ -27,6 +27,7 @@ export function useListings(huntId: string) {
         .from("hunt_listings")
         .select(LISTING_SELECT)
         .eq("hunt_id", huntId)
+        .eq("property.floor_plans.is_current", true)
         .eq("status", "active");
       if (error) throw error;
       return (data ?? []) as unknown as Listing[];
@@ -80,7 +81,7 @@ export function useOverrides(listingId: string) {
     queryKey: ["overrides", listingId],
     queryFn: async (): Promise<Override[]> => {
       const { data, error } = await supabase
-        .from("overrides")
+        .from("current_overrides")
         .select("*")
         .eq("hunt_listing_id", listingId)
         .order("created_at", { ascending: false });
@@ -106,25 +107,20 @@ export function useFees(listingId: string) {
   });
 }
 
-// Latest-row-wins per criterion (§8.2 extractions are append-only): fetch
-// newest-first, keep the first row seen per key. hunt_id is NULL for catalog
-// criteria and set for this hunt's custom criteria.
+// Scoped resolved truth only. The view owns current identity; callers preserve
+// concrete targets instead of flattening one row per Criterion.
 export function useExtractions(propertyId: string, huntId: string) {
   return useQuery({
     queryKey: ["extractions", propertyId, huntId],
-    queryFn: async (): Promise<Map<string, Extraction>> => {
+    queryFn: async (): Promise<Extraction[]> => {
       const { data, error } = await supabase
-        .from("extractions")
+        .from("current_extractions")
         .select("*")
         .eq("property_id", propertyId)
         .or(`hunt_id.is.null,hunt_id.eq.${huntId}`)
         .order("extracted_at", { ascending: false });
       if (error) throw error;
-      const latest = new Map<string, Extraction>();
-      for (const row of (data ?? []) as Extraction[]) {
-        if (!latest.has(row.criterion_key)) latest.set(row.criterion_key, row);
-      }
-      return latest;
+      return (data ?? []) as Extraction[];
     },
     enabled: Boolean(propertyId),
   });
@@ -152,6 +148,7 @@ export function useArchivedListings(huntId: string, enabled: boolean) {
         .from("hunt_listings")
         .select(LISTING_SELECT)
         .eq("hunt_id", huntId)
+        .eq("property.floor_plans.is_current", true)
         .eq("status", "archived");
       if (error) throw error;
       return (data ?? []) as unknown as Listing[];

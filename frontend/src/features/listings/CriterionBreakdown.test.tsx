@@ -14,6 +14,7 @@ const catalog: CatalogEntry[] = [
     label: "Number of bedrooms",
     category: "unit",
     domain: "rent",
+    fact_scope: "floor_plan",
     value_schema: { type: "integer", minimum: 0, maximum: 5 },
     default_options: [],
     extraction_hint: "",
@@ -25,6 +26,7 @@ const catalog: CatalogEntry[] = [
     label: "In-unit laundry",
     category: "unit",
     domain: "rent",
+    fact_scope: "mixed",
     value_schema: { type: "string", enum: ["in_unit", "hookups", "on_site", "none"] },
     default_options: [],
     extraction_hint: "",
@@ -60,12 +62,19 @@ const extraction: Extraction = {
   property_id: "prop-1",
   hunt_id: null,
   criterion_key: "beds",
+  record_kind: "resolved",
+  origin_key: "resolution:test",
+  target_scope: "property",
+  floor_plan_id: null,
+  applicability: "unit_scope_unspecified",
+  claim_group_id: "cg-1",
   value: 3,
   confidence: "high",
   evidence_quote: "Three spacious bedrooms",
   source_id: null,
   model: "test-model",
   resolution_rule: null,
+  disputed: false,
   extracted_at: "2026-07-01T00:00:00Z",
 };
 
@@ -73,6 +82,9 @@ const override: Override = {
   id: "ov-1",
   hunt_listing_id: "listing-1",
   criterion_key: "beds",
+  target_scope: "property",
+  floor_plan_id: null,
+  applicability: null,
   value: 2,
   user_id: "user-1",
   note: null,
@@ -103,7 +115,11 @@ const listingFixture: Listing = {
   scores: [],
 };
 
-function renderBreakdown(breakdown: ScoreBreakdown, overrides: Override[] = []) {
+function renderBreakdown(
+  breakdown: ScoreBreakdown,
+  overrides: Override[] = [],
+  extractions: Extraction[] = [extraction],
+) {
   return renderWithProviders(
     <ListingDetailDraftProvider huntId="hunt-1" listing={listingFixture} serverFees={[]}>
       <CriterionBreakdown
@@ -111,8 +127,9 @@ function renderBreakdown(breakdown: ScoreBreakdown, overrides: Override[] = []) 
         listingId="listing-1"
         breakdown={breakdown}
         catalog={catalog}
-        extractions={new Map([["beds", extraction]])}
+        extractions={extractions}
         overrides={overrides}
+        floorPlanId={null}
         isMobile={false}
       />
     </ListingDetailDraftProvider>,
@@ -144,6 +161,12 @@ describe("CriterionBreakdown", () => {
   it("shows no override badge without overrides", () => {
     renderBreakdown(normalBreakdown);
     expect(screen.queryByText("override")).not.toBeInTheDocument();
+  });
+
+  it("quietly labels generalized applicability and disagreement", () => {
+    renderBreakdown(normalBreakdown, [], [{ ...extraction, disputed: true }]);
+    expect(screen.getByText("units unspecified")).toBeInTheDocument();
+    expect(screen.getByText("sources disagree")).toBeInTheDocument();
   });
 
   // P3-8 (DESIGN §20 2026-07-18): location_safety is an override-first

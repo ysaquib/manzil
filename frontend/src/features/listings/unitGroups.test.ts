@@ -81,6 +81,20 @@ describe("deriveUnitGroups", () => {
     expect(rows[0].plans).toHaveLength(2);
   });
 
+  it("excludes retired Source-local Floor Plans", () => {
+    const rows = deriveUnitGroups(
+      listing(
+        [
+          plan({ id: "current", is_current: true }),
+          plan({ id: "retired", is_current: false }),
+        ],
+        [score("current", 9), score("retired", 12)],
+      ),
+    );
+    expect(rows[0].plans.map((candidate) => candidate.id)).toEqual(["current"]);
+    expect(rows[0].displayPlan.id).toBe("current");
+  });
+
   it("displays the best score of the group, never naked (§9.4)", () => {
     const rows = deriveUnitGroups(
       listing(

@@ -28,7 +28,7 @@ import { useCurrentMember, useMembers } from "../collaboration/api";
 import { useHunt } from "../hunts/api";
 import { useCatalog } from "../rubric/api";
 import { AllInBreakdown, AllInOverrideControl } from "./AllInCost";
-import { activeOverrides } from "./overrides";
+import { activeOverrides, extractionForFloorPlan } from "./overrides";
 import { CriterionBreakdown } from "./CriterionBreakdown";
 import { FeeChecklist } from "./FeeChecklist";
 import { FloorPlanPins } from "./FloorPlanPins";
@@ -234,6 +234,7 @@ function DrawerShell({
   if (!listing) return null;
 
   const score = group?.displayScore ?? null;
+  const displayFloorPlanId = group?.displayPlan.id ?? null;
   const unitLabel = group
     ? `${group.beds === 0 ? "Studio" : `${group.beds} bd`} / ${group.baths} ba`
     : null;
@@ -307,8 +308,9 @@ function DrawerShell({
                     listingId={listing.id}
                     breakdown={score.breakdown}
                     catalog={catalog ?? []}
-                    extractions={extractions ?? new Map()}
+                    extractions={extractions ?? []}
                     overrides={overrides ?? []}
+                    floorPlanId={displayFloorPlanId}
                     isMobile={isMobile}
                   />
                 )
@@ -343,7 +345,9 @@ function DrawerShell({
                   }
                 />
                 <AllInOverrideControl
-                  overridden={activeOverrides(overrides ?? []).has("all_in_monthly")}
+                  overridden={activeOverrides(overrides ?? [], displayFloorPlanId).has(
+                    "all_in_monthly",
+                  )}
                 />
               </Stack>
             </Section>
@@ -352,15 +356,23 @@ function DrawerShell({
               <Stack gap="sm">
                 <FeeChecklist
                   fees={fees ?? []}
-                  oneTimeFees={parseOneTimeFees(extractions?.get("one_time_fees")?.value)}
+                  oneTimeFees={parseOneTimeFees(
+                    extractionForFloorPlan(extractions ?? [], "one_time_fees", null)?.value,
+                  )}
                   household={household}
                   memberNames={memberNames}
                   feeOriginals={extractedFeeOriginals(
-                    extractions?.get("mandatory_fees")?.value,
-                    extractions?.get("one_time_fees")?.value,
+                    extractionForFloorPlan(extractions ?? [], "mandatory_fees", null)?.value,
+                    extractionForFloorPlan(extractions ?? [], "one_time_fees", null)?.value,
                   )}
                 />
-                <UtilitiesIncludedLine extraction={extractions?.get("utilities_included")} />
+                <UtilitiesIncludedLine
+                  extraction={extractionForFloorPlan(
+                    extractions ?? [],
+                    "utilities_included",
+                    null,
+                  )}
+                />
               </Stack>
             </Section>
 

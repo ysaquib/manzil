@@ -5,6 +5,9 @@ import type { FeeEntry } from "./types";
 export interface DraftOverride {
   value: unknown;
   note: string | null;
+  target_scope?: "property" | "floor_plan";
+  floor_plan_id?: string | null;
+  applicability?: "specific_floor_plans" | "all_units" | null;
 }
 
 export interface DraftFee {

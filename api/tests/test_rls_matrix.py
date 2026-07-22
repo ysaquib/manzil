@@ -99,6 +99,34 @@ def test_rls_rejects_nonexistent_unit_group_collaboration(collab_hunt, seeded_us
         ).execute()
 
 
+@pytest.mark.asyncio
+async def test_rls_rejects_cross_property_floor_plan_override(
+    collab_hunt, db_pool, seeded_users
+) -> None:
+    foreign_plan_id = await db_pool.fetchval(
+        """
+        select fp.id
+        from floor_plans fp
+        join hunt_listings hl on hl.property_id = fp.property_id
+        where hl.id = $1
+        limit 1
+        """,
+        collab_hunt["member_listing_id"],
+    )
+    with pytest.raises(APIError):
+        seeded_users["owner"].supabase.table("overrides").insert(
+            {
+                "hunt_listing_id": collab_hunt["owner_listing_id"],
+                "criterion_key": "dishwasher",
+                "target_scope": "floor_plan",
+                "floor_plan_id": str(foreign_plan_id),
+                "applicability": "specific_floor_plans",
+                "value": True,
+                "user_id": seeded_users["owner"].user_id,
+            }
+        ).execute()
+
+
 def test_rls_unit_group_curation_requires_curator(collab_hunt, seeded_users) -> None:
     row = {
         "hunt_listing_id": collab_hunt["member_listing_id"],
@@ -260,8 +288,11 @@ async def test_custom_extraction_is_hunt_scoped(db_pool, seeded_users, collab_hu
     )
     extraction_id = await db_pool.fetchval(
         """insert into extractions
-           (property_id, hunt_id, criterion_key, value, confidence, model)
-           values ($1, $2, 'private_custom', 'true'::jsonb, 'high', 'fixture') returning id""",
+           (property_id, hunt_id, criterion_key, record_kind, origin_key,
+            target_scope, value, confidence, model, resolution_rule)
+           values ($1, $2, 'private_custom', 'resolved', 'fixture:private_custom',
+                   'property', 'true'::jsonb, 'high', 'fixture', 'fixture')
+           returning id""",
         property_id,
         other_hunt,
     )

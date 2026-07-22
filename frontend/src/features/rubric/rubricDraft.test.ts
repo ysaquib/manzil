@@ -9,6 +9,7 @@ const bedsEntry: CatalogEntry = {
   label: "Number of bedrooms",
   category: "unit",
   domain: "rent",
+  fact_scope: "floor_plan",
   value_schema: { type: "integer", minimum: 0, maximum: 5 },
   default_options: [
     { match: { op: "eq", value: 2 }, delta: 0.5, dealbreaker_set_score: null },
@@ -24,6 +25,7 @@ const laundryEntry: CatalogEntry = {
   label: "In-unit laundry",
   category: "unit",
   domain: "rent",
+  fact_scope: "mixed",
   value_schema: { type: "string", enum: ["in_unit", "hookups", "on_site", "none"] },
   default_options: [{ match: { op: "eq", value: "in_unit" }, delta: 1, dealbreaker_set_score: null }],
   extraction_hint: "",

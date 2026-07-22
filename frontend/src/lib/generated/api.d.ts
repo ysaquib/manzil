@@ -969,6 +969,16 @@ export interface components {
             criterion_key: string;
             /** Value */
             value: unknown;
+            /**
+             * Target Scope
+             * @default property
+             * @enum {string}
+             */
+            target_scope: "property" | "floor_plan";
+            /** Floor Plan Id */
+            floor_plan_id?: string | null;
+            /** Applicability */
+            applicability?: ("specific_floor_plans" | "all_units") | null;
             /** Note */
             note?: string | null;
         };
@@ -986,6 +996,15 @@ export interface components {
             hunt_listing_id: string;
             /** Criterion Key */
             criterion_key: string;
+            /**
+             * Target Scope
+             * @enum {string}
+             */
+            target_scope: "property" | "floor_plan";
+            /** Floor Plan Id */
+            floor_plan_id: string | null;
+            /** Applicability */
+            applicability: ("specific_floor_plans" | "all_units") | null;
             /** Value */
             value: unknown;
             /**

@@ -2,19 +2,43 @@
 // Overrides are append-only; the LATEST row per criterion wins, and a null
 // value is the revert tombstone — "no longer overridden", falling back to the
 // extraction. Mirrors the worker's _resolve_effective_values semantics.
-import type { Override } from "./types";
+import type { Extraction, Override } from "./types";
 
 export const REVERT_NOTE = "Reverted to original";
 
 /** Latest non-tombstone override per criterion key. `overrides` must be
  * newest-first, which is how useOverrides orders them. */
-export function activeOverrides(overrides: Override[]): Map<string, Override> {
-  const latest = new Map<string, Override>();
-  for (const override of overrides) {
-    if (!latest.has(override.criterion_key)) latest.set(override.criterion_key, override);
+export function activeOverrides(
+  overrides: Override[],
+  floorPlanId: string | null = null,
+): Map<string, Override> {
+  const active = new Map<string, Override>();
+  const keys = new Set(overrides.map((override) => override.criterion_key));
+  for (const key of keys) {
+    const rows = overrides.filter((override) => override.criterion_key === key);
+    const selected = [
+      rows.find((row) => row.target_scope === "floor_plan" && row.floor_plan_id === floorPlanId),
+      rows.find((row) => row.target_scope === "property" && row.applicability === "all_units"),
+      rows.find((row) => row.target_scope === "property" && row.applicability === null),
+    ].find((row) => row !== undefined && row.value !== null);
+    if (selected) active.set(key, selected);
   }
-  for (const [key, override] of latest) {
-    if (override.value === null) latest.delete(key);
-  }
-  return latest;
+  return active;
+}
+
+export function extractionForFloorPlan(
+  extractions: Extraction[],
+  criterionKey: string,
+  floorPlanId: string | null,
+): Extraction | undefined {
+  const rows = extractions.filter((row) => row.criterion_key === criterionKey);
+  return (
+    rows.find((row) => row.target_scope === "floor_plan" && row.floor_plan_id === floorPlanId) ??
+    rows.find((row) => row.target_scope === "property" && row.applicability === null) ??
+    rows.find((row) => row.target_scope === "property" && row.applicability === "all_units") ??
+    rows.find((row) => row.target_scope === "property" && row.applicability === "select_units") ??
+    rows.find(
+      (row) => row.target_scope === "property" && row.applicability === "unit_scope_unspecified",
+    )
+  );
 }
