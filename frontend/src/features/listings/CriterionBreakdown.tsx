@@ -21,7 +21,7 @@ import type { ScoreBreakdown } from "../../lib/contracts";
 import { displayValue as formatCriterionValue } from "./displayValue";
 import { useListingDetailDraft } from "./ListingDetailDraft";
 import { OverrideControl } from "./OverrideControl";
-import { activeOverrides, REVERT_NOTE } from "./overrides";
+import { activeOverrides, extractionForFloorPlan, REVERT_NOTE } from "./overrides";
 import type { Extraction, Override } from "./types";
 import type { CatalogEntry } from "../rubric/api";
 
@@ -34,6 +34,14 @@ function deltaBadge(delta: number) {
       {delta}
     </Badge>
   );
+}
+
+function applicabilityLabel(extraction: Extraction): string | null {
+  if (extraction.target_scope === "floor_plan") return "this floor plan";
+  if (extraction.applicability === "all_units") return "all units";
+  if (extraction.applicability === "select_units") return "select units";
+  if (extraction.applicability === "unit_scope_unspecified") return "units unspecified";
+  return null;
 }
 
 function EvidenceContent({
@@ -119,9 +127,9 @@ export interface CriterionBreakdownProps {
   listingId: string;
   breakdown: ScoreBreakdown;
   catalog: CatalogEntry[];
-  /** latest extraction per criterion key */
-  extractions: Map<string, Extraction>;
+  extractions: Extraction[];
   overrides: Override[];
+  floorPlanId: string | null;
   isMobile: boolean;
 }
 
@@ -130,12 +138,14 @@ export function CriterionBreakdown({
   catalog,
   extractions,
   overrides,
+  floorPlanId,
   isMobile,
 }: CriterionBreakdownProps) {
   const catalogByKey = new Map(catalog.map((entry) => [entry.key, entry]));
   // Latest-per-key, null tombstones excluded (§9.6) — a reverted criterion no
   // longer reads as overridden.
-  const overriddenKeys = new Set(activeOverrides(overrides).keys());
+  const effectiveOverrides = activeOverrides(overrides, floorPlanId);
+  const overriddenKeys = new Set(effectiveOverrides.keys());
   const { draftOverrides, setDraftOverride } = useListingDetailDraft();
 
   if (breakdown.gates.length > 0) {
@@ -181,7 +191,8 @@ export function CriterionBreakdown({
       <Table.Tbody>
         {breakdown.criteria.map((criterion) => {
           const entry = catalogByKey.get(criterion.key);
-          const extraction = extractions.get(criterion.key);
+          const extraction = extractionForFloorPlan(extractions, criterion.key, floorPlanId);
+          const savedOverrideRow = effectiveOverrides.get(criterion.key);
           const savedOverride = overriddenKeys.has(criterion.key);
           const draftOverride = draftOverrides.get(criterion.key);
           const isPending = draftOverride !== undefined;
@@ -196,8 +207,15 @@ export function CriterionBreakdown({
               savedOverride={savedOverride}
               isPending={isPending}
               isMobile={isMobile}
+              floorPlanId={floorPlanId}
               onRevert={() =>
-                setDraftOverride(criterion.key, { value: null, note: REVERT_NOTE })
+                setDraftOverride(criterion.key, {
+                  value: null,
+                  note: REVERT_NOTE,
+                  target_scope: savedOverrideRow?.target_scope ?? "property",
+                  floor_plan_id: savedOverrideRow?.floor_plan_id ?? null,
+                  applicability: savedOverrideRow?.applicability ?? null,
+                })
               }
             />
           );
@@ -215,6 +233,7 @@ function CriterionRow({
   savedOverride,
   isPending,
   isMobile,
+  floorPlanId,
   onRevert,
 }: {
   criterion: ScoreBreakdown["criteria"][number];
@@ -224,6 +243,7 @@ function CriterionRow({
   savedOverride: boolean;
   isPending: boolean;
   isMobile: boolean;
+  floorPlanId: string | null;
   onRevert: () => void;
 }) {
   const showOverrideBadge = savedOverride && !isPending;
@@ -248,6 +268,18 @@ function CriterionRow({
             <Badge size="xs" color={"manual"} variant="light">
               override
             </Badge>
+          )}
+          {extraction && applicabilityLabel(extraction) && (
+            <Badge size="xs" color="gray" variant="light">
+              {applicabilityLabel(extraction)}
+            </Badge>
+          )}
+          {extraction?.disputed && (
+            <Tooltip label="Sources disagree; the current resolved value is shown.">
+              <Badge size="xs" color="gray" variant="outline">
+                sources disagree
+              </Badge>
+            </Tooltip>
           )}
           {/* location_safety is an override-first placeholder (DESIGN §20
               2026-07-18): no pipeline stage grades it, so an unknown here is
@@ -279,6 +311,8 @@ function CriterionRow({
             criterionKey={criterion.key}
             schema={entry?.value_schema}
             currentValue={value}
+            factScope={entry?.fact_scope}
+            floorPlanId={floorPlanId}
           />
           {showOverrideBadge && (
             <Tooltip label="Revert to original value">

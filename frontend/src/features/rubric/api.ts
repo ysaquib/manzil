@@ -14,6 +14,7 @@ export interface CatalogEntry {
   label: string;
   category: string;
   domain: "rent" | "buy" | "both";
+  fact_scope: "property" | "floor_plan" | "mixed" | "composed";
   value_schema: ValueSchema;
   default_options: RubricOption[];
   extraction_hint: string;

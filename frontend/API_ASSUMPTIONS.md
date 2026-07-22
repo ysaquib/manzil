@@ -30,7 +30,7 @@ comma-separated value (`state=queued,running,waiting_user`) — the form the Tas
 | `POST /v1/jobs/{id}/cancel` | `useCancelJob` (`features/jobs/api.ts`) | generated `JobResponse` | P1-7 | implemented |
 | `POST /v1/jobs/{id}/retry` | `useRetryJob` (`features/jobs/api.ts`) | generated `JobResponse` | P1-7 | implemented |
 | `POST /v1/jobs/{id}/checkpoint` | `useAnswerCheckpoint` (`features/jobs/api.ts`) | generated `CheckpointAnswer` | P1-7 | implemented |
-| `POST /v1/listings/{id}/overrides` | `useCreateOverride` (`features/listings/api.ts`) | generated `OverrideCreate`/`OverrideResponse` | P1-8 | implemented |
+| `POST /v1/listings/{id}/overrides` | `useCreateOverride` (`features/listings/api.ts`) | generated `OverrideCreate`/`OverrideResponse`; true-Property, all-units, or exact Floor Plan target; API and RLS reject cross-Property Floor Plans | P1-8 / P3-SC2 | implemented |
 | `PUT /v1/listings/{id}/fees/{slot}` | `useUpsertFee` (`features/listings/api.ts`) | generated `FeeEntryUpsert`/`FeeEntryResponse` | P1-8 | implemented |
 | `POST /v1/listings/{id}/comments` | `useCreateComment` (`features/collaboration/api.ts`) | generated `CommentCreate`/`CommentResponse`; optional `unit_group_key` | DESIGN v3.4 | implemented |
 | `PATCH /v1/comments/{id}` | `useUpdateComment` (`features/collaboration/api.ts`) | generated `CommentUpdate`/`CommentResponse`; author-only | DESIGN v3.4 | implemented |
@@ -51,11 +51,11 @@ origin that appears logged out.
 | Table(s) | Hook (file) | Shape | Status |
 |---|---|---|---|
 | `hunts` | `useHunts`, `useHunt` (`features/hunts/api.ts`) | hand-typed `Hunt` (incl. `created_at`) | exists (0002; `created_at` 0003) |
-| `hunt_listings` + embedded `properties`, `floor_plans`, `scores` | `useListings` (`features/listings/api.ts`) | hand-typed | exists (0001 + 0002) |
-| `hunt_listings` (`status = archived`, same embed) | `useArchivedListings` (`features/listings/api.ts`) — fetched only while the Archived view is open | hand-typed | exists (0001 + 0002) |
-| `overrides` for one listing | `useOverrides` (`features/listings/api.ts`) | hand-typed | exists (0002) |
+| `hunt_listings` + embedded `properties`, current `floor_plans`, `scores` | `useListings` (`features/listings/api.ts`) | hand-typed; embedded Floor Plans filter `is_current = true`, with a defensive client-side retirement filter | exists (0001 + 0002; Floor Plan lifecycle 20260801000000) |
+| `hunt_listings` (`status = archived`, same embed) | `useArchivedListings` (`features/listings/api.ts`) — fetched only while the Archived view is open | hand-typed; current Floor Plans only | exists (0001 + 0002; Floor Plan lifecycle 20260801000000) |
+| `current_overrides` for one listing | `useOverrides` (`features/listings/api.ts`) | hand-typed scoped target/applicability; newest row per concrete target, including null revert tombstones | exists (20260801000000) |
 | `fee_checklist` for one listing | `useFees` (`features/listings/api.ts`) | hand-typed | exists (0002) |
-| `extractions` latest-per-criterion for a property | `useExtractions` (`features/listings/api.ts`) | hand-typed | table exists (0001) |
+| `current_extractions` resolved rows for a Property | `useExtractions` (`features/listings/api.ts`) | hand-typed scoped target/applicability/provenance; exact and generalized rows may coexist | exists (20260801000000) |
 | `rubric_criteria` | `useRubric` (`features/rubric/api.ts`) | hand-typed `RubricCriterion` | exists (0002) |
 | `criteria_catalog` | `useCatalog` (`features/rubric/api.ts`) | hand-typed `CatalogEntry` | table exists (0001) + seed |
 | `hunt_members` (+ `user_profiles` for display-name/color defaults) | `useMembers` (`features/collaboration/api.ts`) | hand-typed `HuntMember`, including nullable Hunt-level overrides and effective coalesced identity | exists (0002+; profile coalesce P2 + 20260729000000) |

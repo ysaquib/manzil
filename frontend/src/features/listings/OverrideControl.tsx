@@ -1,6 +1,6 @@
 // Override control (P1-11, §9.6): per-criterion affordance — edits stage in the
 // drawer draft until Save.
-import { ActionIcon, Button, Popover, Stack, TextInput, Tooltip } from "@mantine/core";
+import { ActionIcon, Button, Popover, Select, Stack, TextInput, Tooltip } from "@mantine/core";
 import { IconPencil } from "@tabler/icons-react";
 import { useState } from "react";
 
@@ -13,15 +13,20 @@ export function OverrideControl({
   criterionKey,
   schema,
   currentValue,
+  factScope,
+  floorPlanId,
 }: {
   criterionKey: string;
   schema: ValueSchema | undefined;
   currentValue: unknown;
+  factScope: "property" | "floor_plan" | "mixed" | "composed" | undefined;
+  floorPlanId: string | null;
 }) {
   const { draftOverrides, setDraftOverride } = useListingDetailDraft();
   const [opened, setOpened] = useState(false);
   const [value, setValue] = useState<WidgetValue>(null);
   const [note, setNote] = useState("");
+  const [target, setTarget] = useState<"floor_plan" | "all_units">("floor_plan");
 
   const draftEntry = draftOverrides.get(criterionKey);
 
@@ -34,6 +39,7 @@ export function OverrideControl({
           : null,
       );
       setNote(draftEntry.note ?? "");
+      setTarget(draftEntry.applicability === "all_units" ? "all_units" : "floor_plan");
     } else {
       const seed = currentValue;
       setValue(
@@ -42,12 +48,20 @@ export function OverrideControl({
           : null,
       );
       setNote("");
+      setTarget("floor_plan");
     }
     setOpened(true);
   };
 
   const apply = () => {
-    setDraftOverride(criterionKey, { value, note: note.trim() || null });
+    const exact = target === "floor_plan" && floorPlanId !== null;
+    setDraftOverride(criterionKey, {
+      value,
+      note: note.trim() || null,
+      target_scope: exact ? "floor_plan" : "property",
+      floor_plan_id: exact ? floorPlanId : null,
+      applicability: exact ? "specific_floor_plans" : target === "all_units" ? "all_units" : null,
+    });
     setOpened(false);
   };
 
@@ -68,6 +82,18 @@ export function OverrideControl({
       </Popover.Target>
       <Popover.Dropdown>
         <Stack gap="xs">
+          {(factScope === "floor_plan" || factScope === "mixed") && floorPlanId && (
+            <Select
+              label="Applies to"
+              data={[
+                { value: "floor_plan", label: "This Floor Plan" },
+                { value: "all_units", label: "All units" },
+              ]}
+              value={target}
+              onChange={(next) => setTarget(next === "all_units" ? "all_units" : "floor_plan")}
+              allowDeselect={false}
+            />
+          )}
           {schema ? (
             <WidgetForSchema schema={schema} value={value} onChange={setValue} label="New value" />
           ) : (

@@ -51,6 +51,7 @@ export interface FloorPlan {
   deposit: number | null;
   availability_date: string | null;
   available_units: number | null;
+  is_current?: boolean;
 }
 
 // scores has a composite PK (hunt_listing_id, floor_plan_id) — no `id` column.
@@ -73,12 +74,24 @@ export interface Extraction {
   property_id: string;
   hunt_id: string | null;
   criterion_key: string;
+  record_kind: "resolved";
+  origin_key: string;
+  target_scope: "property" | "floor_plan";
+  floor_plan_id: string | null;
+  applicability:
+    | "specific_floor_plans"
+    | "all_units"
+    | "select_units"
+    | "unit_scope_unspecified"
+    | null;
+  claim_group_id: string;
   value: unknown;
   confidence: Confidence;
   evidence_quote: string | null;
   source_id: string | null;
   model: string;
   resolution_rule: string | null;
+  disputed: boolean;
   extracted_at: string;
 }
 
@@ -86,6 +99,9 @@ export interface Override {
   id: string;
   hunt_listing_id: string;
   criterion_key: string;
+  target_scope: "property" | "floor_plan";
+  floor_plan_id: string | null;
+  applicability: "specific_floor_plans" | "all_units" | null;
   value: unknown;
   user_id: string;
   note: string | null;

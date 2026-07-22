@@ -156,6 +156,9 @@ export function ListingDetailDraftProvider({
             criterion_key: task.key,
             value: task.entry.value,
             note: task.entry.note,
+            target_scope: task.entry.target_scope ?? "property",
+            floor_plan_id: task.entry.floor_plan_id ?? null,
+            applicability: task.entry.applicability ?? null,
           });
         }
         return upsertFee.mutateAsync({

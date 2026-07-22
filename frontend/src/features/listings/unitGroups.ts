@@ -42,6 +42,7 @@ export function deriveUnitGroups(listing: Listing): UnitGroupRow[] {
 
   const groups = new Map<string, FloorPlan[]>();
   for (const plan of listing.property.floor_plans) {
+    if (plan.is_current === false) continue;
     const key = unitGroupKey(plan.beds, plan.baths);
     const bucket = groups.get(key);
     if (bucket) bucket.push(plan);
