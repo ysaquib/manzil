@@ -1255,7 +1255,8 @@ workstream visible while the dependency column supplies its actual order.
 | `P3-SC2` | Unified append-only scoped Extraction foundation: schema/domain models, sparse claims, Floor Plan identity resolution, effective values, Overrides, refresh/split/RLS | After `P3-SC1`; hard prerequisite for P3-6 |
 | `P3-SC3` | `property` category, array/set plumbing needed by approved Property/Unit types, first Property tranche including general internet readiness, and saved dev Rubric | After `P3-SC2`; before P3-6 so policy/catalog paths are exercised against the final substrate |
 | `P3-SC4` | Migrate existing unit Criteria to exact/all/select/unspecified semantics; extend the canonical bench contract and establish the current-pin baseline | After `P3-SC2`/`P3-SC3`; hard prerequisite for P3-6 |
-| **`P3-6`** | Existing multi-Source fan-out and RECONCILE ladder, now operating on Property and scoped Floor Plan candidates | After both existing `P3-5` and `P3-SC4`; retain the established task ID |
+| **`P3-5` ✅** | Existing DISCOVER branch: native search, official/candidate Source links, tier/family slate, Source Policy enforcement | Landed 2026-07-21; its half of the P3-6 join is cleared |
+| **`P3-6`** | Existing multi-Source fan-out and RECONCILE ladder, now operating on Property and scoped Floor Plan candidates | After `P3-SC4`; `P3-5` is complete; retain the established task ID |
 | `P3-SC5` | Floor Plan detail UI and diagram discovery/association/storage/lifecycle | After `P3-SC2` and P3-7a; not a P3-6 prerequisite, so schedule after P3-6 on the critical path or in parallel once dependencies are met |
 | `P3-SC6` | First new objective unit-feature tranche | After P3-6 so new Criteria enter the reconciled path rather than a temporary single-Source path |
 | `P3-SC7` | Flooring materials and overlap warning; storage, basement, and granular internet remain deferred | After `P3-SC6` and the array plumbing established in `P3-SC3` |
@@ -1263,6 +1264,7 @@ workstream visible while the dependency column supplies its actual order.
 
 Run the relevant synthetic fixtures and local canonical bench after each
 output-affecting tranche; do not postpone all evaluation until `P3-SC8`.
+The next single-implementer task is `P3-SC2`.
 
 ### P3-SC1 — finish and promote the design
 
