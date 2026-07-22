@@ -9,6 +9,7 @@ export function displayValue(value: unknown, criterionKey?: string): string {
     const format = criterionUnit(criterionKey);
     return `${format?.prefix ?? ""}${value.toLocaleString()}${format?.suffix ?? ""}`;
   }
+  if (Array.isArray(value)) return value.map((item) => String(item).replaceAll("_", " ")).join(", ");
   if (typeof value === "object") {
     const rating = (value as { rating?: unknown }).rating;
     if (typeof rating === "number") return `${rating} ★`;

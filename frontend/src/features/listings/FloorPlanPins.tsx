@@ -61,6 +61,11 @@ export function FloorPlanPins({
                       {formatRange(plan.sqft_min, plan.sqft_max)} sqft
                       {plan.availability_date ? ` · avail ${plan.availability_date}` : ""}
                     </Text>
+                    {(plan.unit_types?.length ?? 0) > 0 && (
+                      <Text size="xs" c="dimmed">
+                        {plan.unit_types?.map((type) => type.replaceAll("_", " ")).join(", ")}
+                      </Text>
+                    )}
                   </Stack>
                 </Group>
               </Radio.Card>

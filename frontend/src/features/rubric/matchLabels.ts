@@ -22,6 +22,8 @@ export const OP_LABEL: Record<MatchOp, string> = {
   range: "between",
   in: "any of",
   bool: "is",
+  contains_any: "contains any",
+  contains_all: "contains all",
 };
 
 /** Compact labels for the operator Select in edit mode. */
@@ -34,6 +36,8 @@ export const OP_LABEL_SHORT: Record<MatchOp, string> = {
   range: "between",
   in: "any of",
   bool: "is",
+  contains_any: "contains any",
+  contains_all: "contains all",
 };
 
 /** Plain-word gloss shown next to the symbol in the editor's op dropdown. */
@@ -46,11 +50,14 @@ export const OP_LABEL_WORD: Record<MatchOp, string> = {
   range: "between",
   in: "any of",
   bool: "is",
+  contains_any: "contains any",
+  contains_all: "contains all",
 };
 
 // Numeric ops in number-line order (< ≤ = ≥ >), then the compound "between" —
 // reads as a scale instead of the arbitrary eq/lt/lte/gt/gte grouping.
 export function opsForSchema(schema: ValueSchema): MatchOp[] {
+  if (schema.type === "array") return ["contains_any", "contains_all"];
   if (schema.type === "boolean") return ["bool"];
   if (schema.enum) return ["eq", "in"];
   return ["lt", "lte", "eq", "gte", "gt", "range"];
@@ -91,6 +98,14 @@ export function formatMatchLabel(match: OptionMatch, criterionKey?: string | nul
       if (!Array.isArray(match.value) || match.value.length === 0) return "any of …";
       const members = (match.value as unknown[]).map((member) => formatScalar(member)).join(", ");
       return `any of ${members}`;
+    }
+    case "contains_any":
+    case "contains_all": {
+      if (!Array.isArray(match.value) || match.value.length === 0) {
+        return match.op === "contains_any" ? "contains any …" : "contains all …";
+      }
+      const members = (match.value as unknown[]).map((member) => formatScalar(member)).join(", ");
+      return `${match.op === "contains_any" ? "contains any" : "contains all"} ${members}`;
     }
   }
 }

@@ -1,8 +1,9 @@
 // Read-only rubric view (§13.2): enabled criteria as cards, ordered by position.
-import { SimpleGrid, Text } from "@mantine/core";
+import { SimpleGrid, Stack, Text } from "@mantine/core";
 
 import type { CatalogEntry, RubricCriterion } from "./api";
 import { CriterionViewCard } from "./CriterionViewCard";
+import { groupCatalog } from "./catalogGroups";
 
 export function RubricView({
   saved,
@@ -11,10 +12,13 @@ export function RubricView({
   saved: RubricCriterion[];
   catalog: CatalogEntry[];
 }) {
-  const entryByKey = new Map(catalog.map((e) => [e.key, e]));
   const enabled = saved
     .filter((c) => c.enabled)
     .sort((a, b) => a.position - b.position);
+  const enabledByKey = new Map(
+    enabled.filter((criterion) => criterion.catalog_key !== null).map((criterion) => [criterion.catalog_key, criterion]),
+  );
+  const enabledCatalog = catalog.filter((entry) => enabledByKey.has(entry.key));
 
   if (enabled.length === 0) {
     return (
@@ -25,13 +29,22 @@ export function RubricView({
   }
 
   return (
-    <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
-      {enabled.map((criterion) => {
-        const entry = entryByKey.get(criterion.catalog_key ?? "");
-        return entry ? (
-          <CriterionViewCard key={entry.key} criterion={criterion} entry={entry} />
-        ) : null;
-      })}
-    </SimpleGrid>
+    <Stack gap="lg">
+      {groupCatalog(enabledCatalog).map((group) => (
+        <Stack gap="sm" key={group.category}>
+          <Text fw={700} size="lg">
+            {group.label}
+          </Text>
+          <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
+            {group.entries.map((entry) => {
+              const criterion = enabledByKey.get(entry.key);
+              return criterion ? (
+                <CriterionViewCard key={entry.key} criterion={criterion} entry={entry} />
+              ) : null;
+            })}
+          </SimpleGrid>
+        </Stack>
+      ))}
+    </Stack>
   );
 }

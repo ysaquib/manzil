@@ -2,7 +2,7 @@
 // the API's jsonschema check of option matches against the criterion's
 // value_schema (§9.2 — one schema, two validators, zero drift), and is_bonus
 // is derived, never edited (§9.2: all deltas ≥ 0).
-import type { OptionMatch, RubricOption } from "../../lib/contracts";
+import type { MatchOp, OptionMatch, RubricOption } from "../../lib/contracts";
 import type { CatalogEntry, RubricCriterion } from "./api";
 import type { ValueSchema } from "./widgets/types";
 
@@ -43,6 +43,7 @@ export function initDraft(
 }
 
 function typeMatches(value: unknown, schema: ValueSchema): boolean {
+  if (schema.type === "array") return Array.isArray(value);
   if (schema.type === "boolean") return typeof value === "boolean";
   if (schema.type === "string") return typeof value === "string";
   if (schema.type === "integer") return typeof value === "number" && Number.isInteger(value);
@@ -63,9 +64,30 @@ function scalarError(value: unknown, schema: ValueSchema): string | null {
   return null;
 }
 
+function arrayError(value: unknown, schema: ValueSchema): string | null {
+  if (!Array.isArray(value) || value.length === 0) return "needs at least one value";
+  if (schema.minItems !== undefined && value.length < schema.minItems)
+    return `needs at least ${schema.minItems} value(s)`;
+  if (schema.maxItems !== undefined && value.length > schema.maxItems)
+    return `allows at most ${schema.maxItems} value(s)`;
+  if (schema.uniqueItems && new Set(value).size !== value.length) return "values must be unique";
+  const itemSchema = schema.items;
+  if (!itemSchema) return "array schema is missing items";
+  for (const member of value) {
+    const error = scalarError(member, itemSchema);
+    if (error) return error;
+  }
+  return null;
+}
+
 // Mirrors the §9.3 match semantics the engine applies and the value_schema
 // bounds the API enforces. Returns a human-readable error or null.
 export function validateMatch(match: OptionMatch, schema: ValueSchema): string | null {
+  if (schema.type === "array") {
+    if (match.op !== "contains_any" && match.op !== "contains_all")
+      return "array criteria use contains any or contains all";
+    return arrayError(match.value, schema);
+  }
   switch (match.op) {
     case "bool":
       if (schema.type !== "boolean") return "bool match on a non-boolean criterion";
@@ -98,7 +120,50 @@ export function validateMatch(match: OptionMatch, schema: ValueSchema): string |
       }
       return null;
     }
+    case "contains_any":
+    case "contains_all":
+      return `${match.op} match on a non-array criterion`;
   }
+}
+
+function arrayOptionsCanOverlap(left: OptionMatch, right: OptionMatch): boolean {
+  const setOps: MatchOp[] = ["contains_any", "contains_all"];
+  return (
+    setOps.includes(left.op) &&
+    setOps.includes(right.op) &&
+    Array.isArray(left.value) &&
+    left.value.length > 0 &&
+    Array.isArray(right.value) &&
+    right.value.length > 0
+  );
+}
+
+/** Non-blocking save-time warnings: ordered options remain valid, but the first
+ * match wins. Any two set-containment predicates can overlap when a fact
+ * contains the union of their configured members, even when those members are
+ * disjoint. */
+export function overlapWarnings(
+  draft: RubricCriterion[],
+  catalog: CatalogEntry[],
+): CriterionIssue[] {
+  const schemaByKey = new Map(catalog.map((entry) => [entry.key, entry.value_schema]));
+  const warnings: CriterionIssue[] = [];
+  for (const criterion of draft) {
+    if (!criterion.enabled || criterion.catalog_key === null) continue;
+    const schema = schemaByKey.get(criterion.catalog_key);
+    if (schema?.type !== "array") continue;
+    for (let left = 0; left < criterion.options.length; left += 1) {
+      for (let right = left + 1; right < criterion.options.length; right += 1) {
+        if (arrayOptionsCanOverlap(criterion.options[left].match, criterion.options[right].match)) {
+          warnings.push({
+            catalogKey: criterion.catalog_key,
+            message: `options ${left + 1} and ${right + 1} overlap; first match wins`,
+          });
+        }
+      }
+    }
+  }
+  return warnings;
 }
 
 export interface CriterionIssue {

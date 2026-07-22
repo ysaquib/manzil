@@ -60,6 +60,7 @@ const BY_KEY: Record<string, TablerIcon> = {
 
 // Fallback per category (CriterionCategory), for any future/unknown key.
 const BY_CATEGORY: Record<string, TablerIcon> = {
+  property: IconHome,
   unit: IconHome,
   policy: IconClipboardText,
   cost: IconCash,

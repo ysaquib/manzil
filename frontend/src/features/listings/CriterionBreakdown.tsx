@@ -15,7 +15,7 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { IconArrowBackUp, IconInfoCircle } from "@tabler/icons-react";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 
 import type { ScoreBreakdown } from "../../lib/contracts";
 import { displayValue as formatCriterionValue } from "./displayValue";
@@ -147,6 +147,14 @@ export function CriterionBreakdown({
   const effectiveOverrides = activeOverrides(overrides, floorPlanId);
   const overriddenKeys = new Set(effectiveOverrides.keys());
   const { draftOverrides, setDraftOverride } = useListingDetailDraft();
+  const displayedCriteria = [
+    ...breakdown.criteria.filter(
+      (criterion) => catalogByKey.get(criterion.key)?.fact_scope === "property",
+    ),
+    ...breakdown.criteria.filter(
+      (criterion) => catalogByKey.get(criterion.key)?.fact_scope !== "property",
+    ),
+  ];
 
   if (breakdown.gates.length > 0) {
     return (
@@ -189,8 +197,12 @@ export function CriterionBreakdown({
         </Table.Tr>
       </Table.Thead>
       <Table.Tbody>
-        {breakdown.criteria.map((criterion) => {
+        {displayedCriteria.map((criterion, index) => {
           const entry = catalogByKey.get(criterion.key);
+          const section = entry?.fact_scope === "property" ? "Property facts" : "Floor plan facts";
+          const previous = index > 0 ? catalogByKey.get(displayedCriteria[index - 1].key) : undefined;
+          const previousSection =
+            previous?.fact_scope === "property" ? "Property facts" : "Floor plan facts";
           const extraction = extractionForFloorPlan(extractions, criterion.key, floorPlanId);
           const savedOverrideRow = effectiveOverrides.get(criterion.key);
           const savedOverride = overriddenKeys.has(criterion.key);
@@ -198,26 +210,36 @@ export function CriterionBreakdown({
           const isPending = draftOverride !== undefined;
           const displayVal = isPending ? draftOverride.value : criterion.value;
           return (
-            <CriterionRow
-              key={criterion.key}
-              criterion={criterion}
-              entry={entry}
-              extraction={extraction}
-              displayValue={displayVal}
-              savedOverride={savedOverride}
-              isPending={isPending}
-              isMobile={isMobile}
-              floorPlanId={floorPlanId}
-              onRevert={() =>
-                setDraftOverride(criterion.key, {
-                  value: null,
-                  note: REVERT_NOTE,
-                  target_scope: savedOverrideRow?.target_scope ?? "property",
-                  floor_plan_id: savedOverrideRow?.floor_plan_id ?? null,
-                  applicability: savedOverrideRow?.applicability ?? null,
-                })
-              }
-            />
+            <Fragment key={criterion.key}>
+              {(index === 0 || section !== previousSection) && (
+                <Table.Tr>
+                  <Table.Td colSpan={4} pt={index === 0 ? "xs" : "md"}>
+                    <Text size="xs" fw={700} c="dimmed" tt="uppercase">
+                      {section}
+                    </Text>
+                  </Table.Td>
+                </Table.Tr>
+              )}
+              <CriterionRow
+                criterion={criterion}
+                entry={entry}
+                extraction={extraction}
+                displayValue={displayVal}
+                savedOverride={savedOverride}
+                isPending={isPending}
+                isMobile={isMobile}
+                floorPlanId={floorPlanId}
+                onRevert={() =>
+                  setDraftOverride(criterion.key, {
+                    value: null,
+                    note: REVERT_NOTE,
+                    target_scope: savedOverrideRow?.target_scope ?? "property",
+                    floor_plan_id: savedOverrideRow?.floor_plan_id ?? null,
+                    applicability: savedOverrideRow?.applicability ?? null,
+                  })
+                }
+              />
+            </Fragment>
           );
         })}
       </Table.Tbody>

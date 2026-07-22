@@ -3,13 +3,17 @@
 import type { UnitFormat } from "../../../lib/criterionUnits";
 
 export interface ValueSchema {
-  type: "integer" | "number" | "boolean" | "string";
+  type: "integer" | "number" | "boolean" | "string" | "array";
   minimum?: number;
   maximum?: number;
   enum?: (string | number)[];
+  items?: ValueSchema;
+  minItems?: number;
+  maxItems?: number;
+  uniqueItems?: boolean;
 }
 
-export type WidgetValue = number | boolean | string | null;
+export type WidgetValue = number | boolean | string | string[] | null;
 
 export interface WidgetProps {
   schema: ValueSchema;
