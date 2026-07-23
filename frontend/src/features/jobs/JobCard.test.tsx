@@ -54,7 +54,8 @@ describe("job state mapping", () => {
 
   it("shows stage progress and cancel for a running job", () => {
     renderCard(job());
-    expect(screen.getByText("stage: EXTRACT")).toBeInTheDocument();
+    expect(screen.getByText("Reading the listing…")).toBeInTheDocument();
+    expect(screen.getByText("EXTRACT")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
   });

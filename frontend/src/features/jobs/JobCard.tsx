@@ -1,12 +1,16 @@
-// One live job card (P1-13, §13.2): type, stage progress, state, cancel /
-// retry, inline checkpoint prompt when the job waits on the user. Running
-// jobs get a loader + counting-up timer so progress is visibly alive.
-import { Badge, Button, Card, Group, Loader, Paper, Stack, Text } from "@mantine/core";
+// One live job card (P1-13, §13.2): shared header, five-phase pipeline track,
+// cancel / retry, inline checkpoint prompt when the job waits on the user.
+// Running jobs get a loader + counting-up timer so progress is visibly alive.
+import { Button, Card, Group, Loader, Paper, Stack, Text } from "@mantine/core";
 
 import { CheckpointPromptCard } from "./CheckpointPromptCard";
 import { ElapsedTimer } from "./ElapsedTimer";
+import { JobCardHeader } from "./JobCardHeader";
+import { PipelineTrack } from "./PipelineTrack";
+import { phasesForJob } from "./pipelinePhases";
 import type { Job, JobState } from "./api";
 
+// Retained for the histogram/legend colors and existing tests.
 export const STATE_COLOR: Record<JobState, string> = {
   queued: "gray",
   running: "grape",
@@ -18,10 +22,6 @@ export const STATE_COLOR: Record<JobState, string> = {
 
 export function isCancellable(state: JobState): boolean {
   return state === "queued" || state === "running" || state === "waiting_user";
-}
-
-function stateBadgeVariant(state: JobState): "light" | "filled" {
-  return state === "failed" ? "filled" : "light";
 }
 
 export function JobCard({
@@ -41,41 +41,29 @@ export function JobCard({
 }) {
   return (
     <Card>
-      <Stack gap="xs">
-        <Group justify="space-between" wrap="nowrap">
-          <Group gap="xs" wrap="nowrap">
-            <Badge variant="light" color="gray">
-              {job.type}
-            </Badge>
-            <Text size="sm" fw={600} lineClamp={1}>
-              {listingName ?? "—"}
-            </Text>
-          </Group>
-          <Badge color={STATE_COLOR[job.state]} variant={stateBadgeVariant(job.state)}>
-            {job.state.replace("_", " ")}
-          </Badge>
-        </Group>
-        <Group gap="xs" justify="space-between" wrap="nowrap">
-          <Text size="xs" c="dimmed">
-            {job.current_stage ? `stage: ${job.current_stage}` : "not started"}
-            {job.attempts > 1 ? ` · attempt ${job.attempts}` : ""}
-          </Text>
-          {job.state === "running" && (
-            <Group gap={8} wrap="nowrap">
-              <Loader size="xs" />
-              {(job.started_at ?? job.created_at) && (
-                <ElapsedTimer since={(job.started_at ?? job.created_at)!} />
-              )}
-            </Group>
-          )}
-        </Group>
+      <Stack gap="md">
+        <JobCardHeader state={job.state} type={job.type} title={listingName ?? "—"} />
+        <PipelineTrack
+          model={phasesForJob(job)}
+          attempts={job.attempts}
+          trailing={
+            job.state === "running" && (
+              <Group gap={8} wrap="nowrap">
+                <Loader size="xs" />
+                {(job.started_at ?? job.created_at) && (
+                  <ElapsedTimer since={(job.started_at ?? job.created_at)!} />
+                )}
+              </Group>
+            )
+          }
+        />
         {job.error && (
           <Text size="xs" c={"red"}>
             {job.error}
           </Text>
         )}
         {job.state === "waiting_user" && job.checkpoint && (
-          <Paper withBorder p="sm" mt="sm">
+          <Paper withBorder p="sm" style={{ backgroundColor: "var(--mantine-color-yellow-light)" }}>
             <CheckpointPromptCard prompt={job.checkpoint} onAnswer={onAnswer} answering={busy} />
           </Paper>
         )}
