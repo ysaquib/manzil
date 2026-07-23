@@ -18,7 +18,8 @@ from __future__ import annotations
 import os
 
 # Baseline pins (§11.2) as OpenRouter slugs.
-WORKHORSE_MODEL = "anthropic/claude-haiku-4.5"
+# WORKHORSE_MODEL = "anthropic/claude-haiku-4.5"
+WORKHORSE_MODEL = "google/gemini-3-flash-preview"
 TASTE_MODEL = "anthropic/claude-sonnet-4.6"
 
 # P0-14 model-pin (DESIGN §20 2026-07-21). The 10-listing bench (P0-13) ranked
@@ -27,7 +28,15 @@ TASTE_MODEL = "anthropic/claude-sonnet-4.6"
 # and 63% cheaper. Scope is the benched pair ONLY — the other workhorse stages
 # stay on WORKHORSE_MODEL because the bench never measured them, and this model
 # trades a higher evidence-flag rate (0.20 vs 0.03) for that accuracy/cost win.
-EXTRACT_VERIFY_MODEL = "google/gemini-3-flash-preview"
+#
+# 2026-07-22: gemini-3-flash-preview is now the default for extract/verify as
+# well as WORKHORSE since it is cheaper and better performance.
+EXTRACT_VERIFY_MODEL = WORKHORSE_MODEL
+
+# 2026-07-22: claude-haiku-4.5 is now the default for discover since trying to
+# use gemini-3-flash-preview for discover was causing issues with the web search
+# tool.
+DISCOVER_MODEL = "anthropic/claude-haiku-4.5"
 
 # Stage -> model. Unknown stage is an error, not a fallback: a new stage must
 # be assigned a tier deliberately (and get a prompt file) before it can call.
@@ -44,7 +53,8 @@ STAGE_MODELS: dict[str, str] = {
     "plan_assist": WORKHORSE_MODEL,
     # taste tier
     "vision": TASTE_MODEL,
-    "discover": TASTE_MODEL,
+    # discover
+    "discover": DISCOVER_MODEL,
 }
 
 # Per-stage tool allow-lists (DESIGN §10.2, §16). The zero-tool property of
