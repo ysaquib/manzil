@@ -1,0 +1,75 @@
+/* Shared job-card header: leading status dot · title · quiet type label. */
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+}
+.id {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+.title {
+  min-width: 0;
+}
+.type {
+  font-size: 0.625rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mantine-color-dimmed);
+  font-weight: 700;
+  white-space: nowrap;
+  flex: none;
+}
+
+.dot {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 50%;
+  flex: none;
+  box-sizing: border-box;
+}
+.dot[data-state="running"] {
+  background: var(--mantine-color-grape-6);
+  animation: statusPulse 1.6s ease-out infinite;
+  --pulse-color: var(--mantine-color-grape-5);
+}
+.dot[data-state="waiting_user"] {
+  background: var(--mantine-color-yellow-6);
+  animation: statusPulse 1.8s ease-out infinite;
+  --pulse-color: var(--mantine-color-yellow-5);
+}
+.dot[data-state="queued"] {
+  background: transparent;
+  border: 2px solid var(--mantine-color-default-border);
+}
+.dot[data-state="done"] {
+  background: var(--mantine-color-green-6);
+}
+.dot[data-state="failed"] {
+  background: var(--mantine-color-red-6);
+}
+.dot[data-state="cancelled"] {
+  background: var(--mantine-color-orange-6);
+}
+
+@keyframes statusPulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--pulse-color) 55%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 0.3rem color-mix(in srgb, var(--pulse-color) 0%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--pulse-color) 0%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot {
+    animation: none;
+  }
+}

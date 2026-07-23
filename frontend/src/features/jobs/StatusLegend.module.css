@@ -1,0 +1,31 @@
+/* Status legend shown once above the Tasks tabs — decodes the status dots. */
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  align-items: center;
+  background: var(--mantine-color-body);
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-md);
+  padding: 0.7rem 1rem;
+}
+.label {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mantine-color-dimmed);
+}
+.item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+  color: var(--mantine-color-text);
+}
+.divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--mantine-color-default-border);
+}

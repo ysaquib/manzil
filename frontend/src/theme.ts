@@ -97,11 +97,11 @@ export const theme = createTheme({
   },
   white: "#FFFEFB",
   shadows: {
-    xs: "0 1px 2px rgba(43, 39, 33, 0.05)",
-    sm: "0 1px 2px rgba(43, 39, 33, 0.05), 0 2px 6px rgba(43, 39, 33, 0.05)",
-    md: "0 2px 4px rgba(43, 39, 33, 0.05), 0 6px 16px rgba(43, 39, 33, 0.07)",
-    lg: "0 4px 8px rgba(43, 39, 33, 0.06), 0 12px 24px rgba(43, 39, 33, 0.08)",
-    xl: "0 6px 12px rgba(43, 39, 33, 0.07), 0 20px 40px rgba(43, 39, 33, 0.09)",
+    xs: "0 1px 2px rgba(43, 39, 33, 0.15)",
+    sm: "0 1px 2px rgba(43, 39, 33, 0.15), 0 2px 6px rgba(43, 39, 33, 0.05)",
+    md: "0 2px 4px rgba(43, 39, 33, 0.15), 0 6px 16px rgba(43, 39, 33, 0.07)",
+    lg: "0 4px 8px rgba(43, 39, 33, 0.16), 0 12px 24px rgba(43, 39, 33, 0.08)",
+    xl: "0 6px 12px rgba(43, 39, 33, 0.17), 0 20px 40px rgba(43, 39, 33, 0.09)",
   },
   components: {
     Badge: {
@@ -164,7 +164,13 @@ export const cssVariablesResolver: CSSVariablesResolver = () => ({
   light: {
     "--mantine-color-body": "#F6F3EE",
   },
-  dark: {},
+  dark: {
+    // "--mantine-color-body": "var(--mantine-color-dark-8)",
+    // "--table-striped-color": "var(--mantine-color-dark-7)",
+    // "--table-highlight-on-hover-color": "var(--mantine-color-dark-2)",
+    // "#1B181A",
+    // "#131112",
+  },
 });
 
 // Semantic color roles (Mantine palette names). Components import these

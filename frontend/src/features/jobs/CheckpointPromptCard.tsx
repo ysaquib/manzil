@@ -30,17 +30,24 @@ export function CheckpointPromptCard({
         {prompt.question}
       </Text>
       <Group gap="xs" wrap="wrap">
-        {plainOptions.map((option) => (
-          <Button
-            key={option}
-            size="xs"
-            variant={option === prompt.default ? "filled" : "default"}
-            disabled={answering}
-            onClick={() => onAnswer(option)}
-          >
-            {option}
-          </Button>
-        ))}
+        {plainOptions.map((option) => {
+          const isDefault = option === prompt.default;
+          return (
+            <Button
+              key={option}
+              size="xs"
+              // The default option is the confirming action — tinted to the
+              // waiting/ochre family so it harmonizes with the checkpoint panel
+              // instead of clashing as the purple primary.
+              variant={isDefault ? "filled" : "default"}
+              color={isDefault ? "yellow" : undefined}
+              disabled={answering}
+              onClick={() => onAnswer(option)}
+            >
+              {option}
+            </Button>
+          );
+        })}
       </Group>
       {hasOther && (
         <Group gap="xs" wrap="nowrap">
