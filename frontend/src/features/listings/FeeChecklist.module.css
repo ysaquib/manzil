@@ -1,0 +1,76 @@
+/* §9.5 fees checklist: grid rows with a state dot at the front, the label +
+ * subtitle, and the amount flush-right, replacing the Table + per-row badge.
+ * Colors are Mantine tokens only (UI_DESIGN §3); fine optical geometry uses
+ * raw px. The dot color mirrors STATE_COLOR (extracted/estimated/manual/unknown). */
+.list {
+  display: flex;
+  flex-direction: column;
+}
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+}
+.name {
+  font-size: 13px;
+  color: var(--mantine-color-text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sub {
+  flex-basis: 100%;
+  padding-left: 15px;
+  font-size: 11.5px;
+  color: var(--mantine-color-dimmed);
+}
+.amt {
+  font-size: 13px;
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.dim {
+  color: var(--mantine-color-dimmed);
+  font-weight: 500;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.qd {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  display: inline-block;
+}
+.extracted {
+  background: var(--mantine-color-green-6);
+}
+.estimated {
+  background: var(--mantine-color-yellow-6);
+}
+.manual {
+  background: var(--mantine-color-grape-6);
+}
+.unknown {
+  background: transparent;
+  border: 1px solid var(--mantine-color-dimmed);
+  box-sizing: border-box;
+}
+.subhead {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mantine-color-dimmed);
+  font-weight: 700;
+  margin: 16px 0 8px;
+}
+.subhead:first-child {
+  margin-top: 2px;
+}
