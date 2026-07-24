@@ -1,22 +1,22 @@
 // Fees checklist (P1-11, §9.5): fee slots with extracted / manual / unknown
 // states, split into monthly (composes into all-in) and one-time / move-in
 // (display-only, §20 2026-07-18) sections. Manual fill-ins stage in the
-// drawer draft until Save.
+// drawer draft until Save. Presentation: grid rows with a state dot at the
+// front and a flush-right amount (the dot color mirrors STATE_COLOR).
 import {
   ActionIcon,
   Badge,
   Button,
-  Group,
   NumberInput,
   Popover,
   Stack,
-  Table,
   Text,
   Tooltip,
 } from "@mantine/core";
 import { IconArrowBackUp, IconPencil, IconUserEdit } from "@tabler/icons-react";
 import { useState } from "react";
 
+import classes from "./FeeChecklist.module.css";
 import { useListingDetailDraft } from "./ListingDetailDraft";
 import { basisLabel, feeForSlot, moveInEstimate, type Household } from "./oneTimeFees";
 import {
@@ -26,11 +26,14 @@ import {
   type OneTimeFee,
 } from "./types";
 
-const STATE_COLOR: Record<FeeEntry["value_state"], string> = {
-  extracted: "green",
-  manual: "primary",
-  estimated: "yellow",
-  unknown: "gray",
+// STATE_COLOR's meaning now drives the state dot's color (via the module CSS
+// class of the same name): extracted=green, manual=plum, estimated=yellow,
+// unknown=hollow ring.
+const STATE_CLASS: Record<FeeEntry["value_state"], string> = {
+  extracted: classes.extracted,
+  manual: classes.manual,
+  estimated: classes.estimated,
+  unknown: classes.unknown,
 };
 
 function FeeRow({
@@ -71,78 +74,69 @@ function FeeRow({
   };
 
   return (
-    <Table.Tr>
-      <Table.Td>
-        <Text size="sm">{label}</Text>
-        {subtitle && (
-          <Text size="xs" c="dimmed">
-            {subtitle}
-          </Text>
+    <div className={classes.row}>
+      <div className={classes.name}>
+        <span
+          data-testid={`fee-state-${slot}`}
+          data-state={state}
+          className={`${classes.qd} ${STATE_CLASS[state]}`}
+          title={state}
+        />
+        {label}
+        {subtitle && <div className={classes.sub}>{subtitle}</div>}
+      </div>
+      <div className={classes.amt}>
+        {displayAmount != null ? (
+          `$${displayAmount.toLocaleString()}`
+        ) : (
+          <span className={classes.dim}>unknown</span>
         )}
-      </Table.Td>
-      <Table.Td>
-        <Group gap="xs" wrap="nowrap">
-          <Text size="sm" fw={600} c={displayAmount == null ? "dimmed" : undefined}>
-            {displayAmount != null
-              ? `$${displayAmount.toLocaleString()}${monthly ? "/mo" : ""}`
-              : "unknown"}
-          </Text>
-          {isPending ? (
-            <Badge size="xs" color={"manual"} variant="light">
-              pending
-            </Badge>
-          ) : (
+      </div>
+      <div className={classes.actions}>
+        {isPending ? (
+          <Badge size="xs" color={"manual"} variant="light">
+            pending
+          </Badge>
+        ) : (
+          state === "manual" && (
             <>
-              {/* "unknown" already reads as the amount — a badge repeating it
-                  is noise, so badge only the states that add information. */}
-              {state !== "unknown" && (
-                <Badge size="xs" variant="light" color={STATE_COLOR[state]}>
-                  {state}
-                </Badge>
-              )}
-              {state === "manual" && (
-                <>
-                  <Tooltip label={`Entered manually${enteredByName ? ` by ${enteredByName}` : ""}`}>
-                    <IconUserEdit
-                      size={14}
-                      stroke={1.5}
-                      color="var(--mantine-color-dimmed)"
-                      aria-label="manual entry"
-                    />
-                  </Tooltip>
-                  <Tooltip
-                    label={
-                      original !== undefined
-                        ? "Revert to the extracted amount"
-                        : "Revert to unknown (nothing was extracted)"
-                    }
-                  >
-                    <ActionIcon
-                      color="gray"
-                      size="sm"
-                      variant="subtle"
-                      aria-label={`revert ${label}`}
-                      onClick={() =>
-                        setDraftFee(slot, {
-                          amount: original ?? null,
-                          state: original !== undefined ? "extracted" : "unknown",
-                        })
-                      }
-                    >
-                      <IconArrowBackUp
-                        size={14}
-                        stroke={1.5}
-                        color="var(--mantine-color-dimmed)"
-                      />
-                    </ActionIcon>
-                  </Tooltip>
-                </>
-              )}
+              <Tooltip label={`Entered manually${enteredByName ? ` by ${enteredByName}` : ""}`}>
+                <IconUserEdit
+                  size={14}
+                  stroke={1.5}
+                  color="var(--mantine-color-dimmed)"
+                  aria-label="manual entry"
+                />
+              </Tooltip>
+              <Tooltip
+                label={
+                  original !== undefined
+                    ? "Revert to the extracted amount"
+                    : "Revert to unknown (nothing was extracted)"
+                }
+              >
+                <ActionIcon
+                  color="gray"
+                  size="sm"
+                  variant="subtle"
+                  aria-label={`revert ${label}`}
+                  onClick={() =>
+                    setDraftFee(slot, {
+                      amount: original ?? null,
+                      state: original !== undefined ? "extracted" : "unknown",
+                    })
+                  }
+                >
+                  <IconArrowBackUp
+                    size={14}
+                    stroke={1.5}
+                    color="var(--mantine-color-dimmed)"
+                  />
+                </ActionIcon>
+              </Tooltip>
             </>
-          )}
-        </Group>
-      </Table.Td>
-      <Table.Td width={40}>
+          )
+        )}
         <Popover opened={opened} onChange={setOpened} width={220} position="bottom-end" withArrow>
           <Popover.Target>
             <Tooltip label="Fill in" openDelay={450}>
@@ -172,20 +166,8 @@ function FeeRow({
             </Stack>
           </Popover.Dropdown>
         </Popover>
-      </Table.Td>
-    </Table.Tr>
-  );
-}
-
-function SectionLabel({ children }: { children: string }) {
-  return (
-    <Table.Tr>
-      <Table.Td colSpan={3} pb={2} pt="xs">
-        <Text size="xs" fw={700} c="dimmed" tt="uppercase">
-          {children}
-        </Text>
-      </Table.Td>
-    </Table.Tr>
+      </div>
+    </div>
   );
 }
 
@@ -214,38 +196,36 @@ export function FeeChecklist({
   const estimate = household ? moveInEstimate(oneTimeFees, household) : null;
   return (
     <Stack gap={4}>
-      <Table verticalSpacing="xs" withRowBorders={false}>
-        <Table.Tbody>
-          <SectionLabel>Monthly</SectionLabel>
-          {MONTHLY_FEE_SLOTS.map(({ slot, label }) => (
+      <div className={classes.list}>
+        <div className={classes.subhead}>Monthly</div>
+        {MONTHLY_FEE_SLOTS.map(({ slot, label }) => (
+          <FeeRow
+            key={slot}
+            slot={slot}
+            label={label}
+            entry={bySlot.get(slot)}
+            monthly
+            enteredByName={nameFor(bySlot.get(slot))}
+            original={feeOriginals?.get(slot)}
+          />
+        ))}
+        <div className={classes.subhead}>Move-in &amp; one-time</div>
+        {ONE_TIME_FEE_SLOTS.map(({ slot, label }) => {
+          const extracted = feeForSlot(oneTimeFees, slot);
+          return (
             <FeeRow
               key={slot}
               slot={slot}
               label={label}
+              subtitle={extracted ? basisLabel(extracted) || undefined : undefined}
               entry={bySlot.get(slot)}
-              monthly
+              monthly={false}
               enteredByName={nameFor(bySlot.get(slot))}
               original={feeOriginals?.get(slot)}
             />
-          ))}
-          <SectionLabel>One-time / move-in</SectionLabel>
-          {ONE_TIME_FEE_SLOTS.map(({ slot, label }) => {
-            const extracted = feeForSlot(oneTimeFees, slot);
-            return (
-              <FeeRow
-                key={slot}
-                slot={slot}
-                label={label}
-                subtitle={extracted ? basisLabel(extracted) || undefined : undefined}
-                entry={bySlot.get(slot)}
-                monthly={false}
-                enteredByName={nameFor(bySlot.get(slot))}
-                original={feeOriginals?.get(slot)}
-              />
-            );
-          })}
-        </Table.Tbody>
-      </Table>
+          );
+        })}
+      </div>
       {estimate !== null && (
         <Text size="xs" c="dimmed">
           Est. move-in fees for your household: ${estimate.toLocaleString()} (excludes
