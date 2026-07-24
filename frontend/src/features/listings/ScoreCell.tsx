@@ -4,32 +4,9 @@
 // single-source badge slots are Phase 3 — inert components wired for layout.
 import { Group, Text, Box, Tooltip } from "@mantine/core";
 
-import { SCORE_BASE, SCORE_MAX } from "../../lib/contracts";
+import { scoreColor, scoreBand, formatScore } from "./scoreBands";
+export { scoreColor, formatScore } from "./scoreBands"; // keep existing import sites (FloorPlanPins) working
 import { IconPinnedFilled } from "@tabler/icons-react";
-
-// Pure, unit-tested: maps a total to a Mantine color name. Bands are anchored
-// on the §9.3 engine domain — clamp [0, 15], base 10 — so green means "at or
-// above base" (no net penalties), tuned here per P1-10.
-export function scoreColor(
-  total: number,
-  base = SCORE_BASE,
-  max = SCORE_MAX,
-): string {
-  const pct = max > 0 ? total / base : 0;
-  // console.log(pct);
-  if (pct >= 5 / 5) return "scoreHighest";
-  if (pct >= 4 / 5) return "scoreHigh";
-  if (pct >= 3 / 5) return "scoreGood";
-  if (pct >= 2 / 5) return "scoreMid";
-  if (pct >= 1 / 5) return "scoreLow";
-  if (pct >= 0 / 5) return "scorePoor";
-  return "scorePoorest";
-}
-
-// Half-point deltas are common (§8.2 defaults); 9.5 must not read as 10.
-export function formatScore(total: number): string {
-  return Number.isInteger(total) ? String(total) : total.toFixed(1);
-}
 
 export interface ScoreCellProps {
   total: number;
@@ -45,6 +22,9 @@ export function ScoreCell({ total, pinned = false, planCount = 1 }: ScoreCellPro
     <Group wrap="nowrap" gap={6}>
       <Text ff={"monospace"} fz="xs" fw={600} c={scoreColor(total)}>
         {formatScore(total)}
+        {scoreBand(total) === 0 && (
+          <Text span aria-hidden ml={2}>✦</Text>
+        )}
       </Text>
       {pinned && (
         <Tooltip label="Pinned">
