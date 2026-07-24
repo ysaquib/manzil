@@ -57,5 +57,6 @@ tasks land.
 
 ## Testing
 
-Vitest + Testing Library for anything with logic; no snapshot tests. Component tests live next to
-the component (`Foo.test.tsx`).
+Vitest + Testing Library for anything with logic; no snapshot tests. Tests live in the flat
+`frontend/tests/` directory (`tests/Foo.test.tsx`), importing the code under test from `../src/...`
+and shared helpers from `./testUtils` / `./setup`. `vite.config.ts` wires the shared setup file.
