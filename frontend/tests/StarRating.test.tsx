@@ -24,4 +24,14 @@ describe("StarRating", () => {
     const fill = container.querySelector("[data-fill]") as HTMLElement;
     expect(fill.style.width).toBe("100%");
   });
+
+  it("applies a custom fill color when given", () => {
+    const { container } = render(
+      <MantineProvider>
+        <StarRating value={3} color="var(--mantine-color-grape-6)" />
+      </MantineProvider>,
+    );
+    const fill = container.querySelector("[data-fill]") as HTMLElement;
+    expect(fill.style.color).toBe("var(--mantine-color-grape-6)");
+  });
 });

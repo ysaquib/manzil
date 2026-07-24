@@ -1,5 +1,5 @@
 import { useRatings, type HuntMember } from "./api";
-import { memberColor } from "./memberColors";
+import { memberColor, starColorCss } from "./memberColors";
 import { StarRating } from "./StarRating";
 import classes from "./TeamRatings.module.css";
 
@@ -46,7 +46,7 @@ export function TeamRatings({
             {r != null ? (
               <>
                 <span className={classes.rstars}>
-                  <StarRating value={r} />
+                  <StarRating value={r} color={starColorCss(m.color)} />
                 </span>
                 <span className={classes.val}>{r.toFixed(1)}</span>
               </>
