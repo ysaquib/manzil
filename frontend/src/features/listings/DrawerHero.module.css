@@ -1,0 +1,35 @@
+/* DrawerHero.module.css — geometry per preview .hero/.stats; flat tint via data-band */
+.hero { padding: 4px 2px; }
+.eyebrow { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; color: var(--mantine-color-dimmed); font-weight: 600; }
+.title { font-size: 26px; line-height: 1.15; margin: 3px 0 4px; }
+.addr { font-size: 13.5px; color: var(--mantine-color-text); opacity: .8; display: flex; align-items: center; gap: 7px; }
+.gallery { margin: 16px 0 4px; }
+.stats { display: grid; grid-template-columns: auto 1fr 1fr; gap: 10px; margin: 16px 0 6px; }
+.stat { border-radius: 12px; padding: 12px 14px; border: 1px solid var(--mantine-color-default-border); background: var(--mantine-color-default); display: flex; flex-direction: column; justify-content: center; gap: 2px; }
+.notScored { align-items: flex-start; color: var(--mantine-color-dimmed); font-size: 13px; }
+.scoreStat { border-radius: 12px; padding: 12px 16px; display: flex; flex-direction: column; gap: 2px; }
+.scoreStat[data-band="highest"] { background: color-mix(in srgb, var(--mantine-color-teal-6) 14%, var(--mantine-color-body)); border: 1px solid color-mix(in srgb, var(--mantine-color-teal-6) 24%, var(--mantine-color-default-border)); }
+.scoreStat[data-band="high"] { background: color-mix(in srgb, var(--mantine-color-green-6) 14%, var(--mantine-color-body)); border: 1px solid color-mix(in srgb, var(--mantine-color-green-6) 24%, var(--mantine-color-default-border)); }
+.scoreStat[data-band="good"] { background: color-mix(in srgb, var(--mantine-color-lime-6) 14%, var(--mantine-color-body)); border: 1px solid color-mix(in srgb, var(--mantine-color-lime-6) 24%, var(--mantine-color-default-border)); }
+.scoreStat[data-band="mid"] { background: color-mix(in srgb, var(--mantine-color-yellow-6) 14%, var(--mantine-color-body)); border: 1px solid color-mix(in srgb, var(--mantine-color-yellow-6) 24%, var(--mantine-color-default-border)); }
+.scoreStat[data-band="low"] { background: color-mix(in srgb, var(--mantine-color-orange-6) 14%, var(--mantine-color-body)); border: 1px solid color-mix(in srgb, var(--mantine-color-orange-6) 24%, var(--mantine-color-default-border)); }
+.scoreStat[data-band="poor"], .scoreStat[data-band="poorest"] { background: color-mix(in srgb, var(--mantine-color-red-6) 14%, var(--mantine-color-body)); border: 1px solid color-mix(in srgb, var(--mantine-color-red-6) 24%, var(--mantine-color-default-border)); }
+.scoreNum { font-family: var(--mantine-font-family-headings, serif); font-size: 34px; font-weight: 700; line-height: 1; display: flex; align-items: baseline; gap: 3px; }
+.scoreStat[data-band="highest"] .scoreNum { color: var(--mantine-color-teal-7); }
+.scoreStat[data-band="high"] .scoreNum { color: var(--mantine-color-green-7); }
+.scoreStat[data-band="good"] .scoreNum { color: var(--mantine-color-lime-7); }
+.scoreStat[data-band="mid"] .scoreNum { color: var(--mantine-color-yellow-7); }
+.scoreStat[data-band="low"] .scoreNum { color: var(--mantine-color-orange-7); }
+.scoreStat[data-band="poor"] .scoreNum, .scoreStat[data-band="poorest"] .scoreNum { color: var(--mantine-color-red-7); }
+.scoreNum small { font-size: 13px; font-weight: 600; color: var(--mantine-color-dimmed); }
+.exc { font-size: 16px; }
+.statLabel { font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--mantine-color-dimmed); font-weight: 600; }
+.statBig { font-size: 20px; font-weight: 700; font-family: var(--mantine-font-family-headings, serif); }
+.statSub { font-size: 12px; color: var(--mantine-color-dimmed); }
+.matchTag { font-size: 11.5px; font-weight: 600; }
+.scoreStat[data-band="highest"] .matchTag { color: var(--mantine-color-teal-7); }
+.scoreStat[data-band="high"] .matchTag { color: var(--mantine-color-green-7); }
+.scoreStat[data-band="good"] .matchTag { color: var(--mantine-color-lime-7); }
+.scoreStat[data-band="mid"] .matchTag { color: var(--mantine-color-yellow-7); }
+.scoreStat[data-band="low"] .matchTag { color: var(--mantine-color-orange-7); }
+.scoreStat[data-band="poor"] .matchTag, .scoreStat[data-band="poorest"] .matchTag { color: var(--mantine-color-red-7); }
