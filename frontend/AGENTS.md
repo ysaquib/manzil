@@ -20,9 +20,13 @@ intent.
 - **Mantine-first theming.** All colors, spacing, radii, and shadows flow through `src/theme.ts`
   (semantic palette, component default props). No inline hex values in components — use Mantine color
   tokens (`green`, `gray.5`, `var(--mantine-color-*)`). `scoreColor` returning Mantine color names is
-  the pattern for dynamic color. Co-located `*.module.css` files are allowed **where warranted** (see
-  `UI_DESIGN.md §3`): still token-driven (no raw hex), theme-aware, scoped to their component — never a
-  global stylesheet.
+  the pattern for dynamic color. Prefer Mantine **primitives over raw `<div>`s** (`Box`/`Stack`/
+  `Group`/`SimpleGrid`/`Paper`/`AspectRatio`/`Text`/`Title`) and the **packaged component over a
+  hand-rolled one** (`@mantine/carousel`, `@mantine/dates`, `@mantine/notifications`). Anchor
+  in-range spacing/font to `var(--mantine-spacing-*)`/`var(--mantine-font-size-*)`; explicit rem only
+  when intentionally off-scale or optical. Co-located `*.module.css` files are allowed **where
+  warranted** (see `UI_DESIGN.md §3`): still token-driven (no raw hex), theme-aware, scoped to their
+  component — never a global stylesheet.
 - **Intelligent affordance hierarchy.** Frequent/important actions are immediately visible
   (primary `Button`, always-visible controls: submit-URL, score filter, save). Seldom-used or
   destructive actions are tucked away but deliberately reachable: row-level rarities in a kebab
