@@ -1,32 +1,37 @@
-/* DrawerHero.module.css — geometry per preview .hero/.stats; flat tint via data-band */
-.hero { padding: 4px 2px; }
-.eyebrow { font-size: 11px; letter-spacing: .09em; text-transform: uppercase; color: var(--mantine-color-dimmed); font-weight: 600; }
-.title { font-size: 26px; line-height: 1.15; margin: 3px 0 4px; }
-.addr { font-size: 13.5px; color: var(--mantine-color-text); opacity: .8; display: flex; align-items: center; gap: 7px; }
-.gallery { margin: 16px 0 4px; }
-.stats { display: grid; grid-template-columns: auto 1fr 1fr; gap: 10px; margin: 16px 0 6px; }
-.stat { border-radius: 12px; padding: 12px 14px; border: 1px solid var(--mantine-color-default-border); background: var(--mantine-color-default); display: flex; flex-direction: column; justify-content: center; gap: 2px; }
-.notScored { align-items: flex-start; color: var(--mantine-color-dimmed); font-size: 13px; }
-.scoreStat { border-radius: 12px; padding: 12px 16px; display: flex; flex-direction: column; gap: 2px; }
+/* DrawerHero.module.css — bespoke hero geometry + score-tile band tints.
+   Structure/typography roles live on Mantine primitives in DrawerHero.tsx
+   (Box/Text/Group/Title, with color/weight/transform via props); this file
+   keeps the fine optical geometry and the data-band color tints that props
+   can't express. Spacing/font values anchor to Mantine tokens where they map
+   exactly; off-token optical sizes use rem. */
+.hero { padding: 0.25rem 0.125rem; }
+.eyebrow { font-size: 0.6875rem; letter-spacing: .09em; }
+.title { font-size: 1.625rem; line-height: 1.15; margin: 0.1875rem 0 0.25rem; }
+.addr { font-size: 0.84375rem; color: var(--mantine-color-text); opacity: .8; }
+.gallery { margin: var(--mantine-spacing-md) 0 0.25rem; }
+.stats { display: grid; grid-template-columns: auto 1fr 1fr; gap: var(--mantine-spacing-xs); margin: var(--mantine-spacing-md) 0 0.375rem; }
+.stat { border-radius: 0.75rem; padding: var(--mantine-spacing-sm) 0.875rem; border: 1px solid var(--mantine-color-default-border); background: var(--mantine-color-default); display: flex; flex-direction: column; justify-content: center; gap: 0.125rem; }
+.notScored { align-items: flex-start; font-size: 0.8125rem; }
+.scoreStat { border-radius: 0.75rem; padding: var(--mantine-spacing-sm) var(--mantine-spacing-md); display: flex; flex-direction: column; gap: 0.125rem; }
 .scoreStat[data-band="highest"] { background: color-mix(in srgb, var(--mantine-color-teal-6) 14%, var(--mantine-color-body)); border: 1px solid color-mix(in srgb, var(--mantine-color-teal-6) 24%, var(--mantine-color-default-border)); }
 .scoreStat[data-band="high"] { background: color-mix(in srgb, var(--mantine-color-green-6) 14%, var(--mantine-color-body)); border: 1px solid color-mix(in srgb, var(--mantine-color-green-6) 24%, var(--mantine-color-default-border)); }
 .scoreStat[data-band="good"] { background: color-mix(in srgb, var(--mantine-color-lime-6) 14%, var(--mantine-color-body)); border: 1px solid color-mix(in srgb, var(--mantine-color-lime-6) 24%, var(--mantine-color-default-border)); }
 .scoreStat[data-band="mid"] { background: color-mix(in srgb, var(--mantine-color-yellow-6) 14%, var(--mantine-color-body)); border: 1px solid color-mix(in srgb, var(--mantine-color-yellow-6) 24%, var(--mantine-color-default-border)); }
 .scoreStat[data-band="low"] { background: color-mix(in srgb, var(--mantine-color-orange-6) 14%, var(--mantine-color-body)); border: 1px solid color-mix(in srgb, var(--mantine-color-orange-6) 24%, var(--mantine-color-default-border)); }
 .scoreStat[data-band="poor"], .scoreStat[data-band="poorest"] { background: color-mix(in srgb, var(--mantine-color-red-6) 14%, var(--mantine-color-body)); border: 1px solid color-mix(in srgb, var(--mantine-color-red-6) 24%, var(--mantine-color-default-border)); }
-.scoreNum { font-family: var(--mantine-font-family-headings, serif); font-size: 34px; font-weight: 700; line-height: 1; display: flex; align-items: baseline; gap: 3px; }
+.scoreNum { font-family: var(--mantine-font-family-headings, serif); font-size: 2.125rem; font-weight: 700; line-height: 1; display: flex; align-items: baseline; gap: 0.1875rem; }
 .scoreStat[data-band="highest"] .scoreNum { color: var(--mantine-color-teal-7); }
 .scoreStat[data-band="high"] .scoreNum { color: var(--mantine-color-green-7); }
 .scoreStat[data-band="good"] .scoreNum { color: var(--mantine-color-lime-7); }
 .scoreStat[data-band="mid"] .scoreNum { color: var(--mantine-color-yellow-7); }
 .scoreStat[data-band="low"] .scoreNum { color: var(--mantine-color-orange-7); }
 .scoreStat[data-band="poor"] .scoreNum, .scoreStat[data-band="poorest"] .scoreNum { color: var(--mantine-color-red-7); }
-.scoreNum small { font-size: 13px; font-weight: 600; color: var(--mantine-color-dimmed); }
-.exc { font-size: 16px; }
-.statLabel { font-size: 10.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--mantine-color-dimmed); font-weight: 600; }
-.statBig { font-size: 20px; font-weight: 700; font-family: var(--mantine-font-family-headings, serif); }
-.statSub { font-size: 12px; color: var(--mantine-color-dimmed); }
-.matchTag { font-size: 11.5px; font-weight: 600; }
+.scoreNum small { font-size: 0.8125rem; font-weight: 600; color: var(--mantine-color-dimmed); }
+.exc { font-size: var(--mantine-font-size-md); }
+.statLabel { font-size: 0.65625rem; letter-spacing: .07em; }
+.statBig { font-size: var(--mantine-font-size-xl); font-weight: 700; font-family: var(--mantine-font-family-headings, serif); }
+.statSub { font-size: var(--mantine-font-size-xs); }
+.matchTag { font-size: 0.71875rem; font-weight: 600; }
 .scoreStat[data-band="highest"] .matchTag { color: var(--mantine-color-teal-7); }
 .scoreStat[data-band="high"] .matchTag { color: var(--mantine-color-green-7); }
 .scoreStat[data-band="good"] .matchTag { color: var(--mantine-color-lime-7); }

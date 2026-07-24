@@ -1,5 +1,6 @@
-import { Title } from "@mantine/core";
+import { Box, Group, Text, Title } from "@mantine/core";
 import { IconMapPin } from "@tabler/icons-react";
+
 import type { PropertyImage } from "./api";
 import { DrawerImageGallery } from "./DrawerImageGallery";
 import { formatScore, scoreBand, scoreColor, scoreLabel } from "./scoreBands";
@@ -11,32 +12,40 @@ export function DrawerHero({ name, address, images, imagesLoading, score, allIn,
 }) {
   const band = score === null ? null : scoreColor(score).replace("score", "").toLowerCase();
   return (
-    <div className={classes.hero}>
-      <div className={classes.eyebrow}>Listing</div>
+    <Box className={classes.hero}>
+      <Text className={classes.eyebrow} tt="uppercase" fw={600} c="dimmed">Listing</Text>
       <Title order={3} className={classes.title}>{name}</Title>
-      <div className={classes.addr}><IconMapPin size={13} stroke={2} /> {address}</div>
-      <div className={classes.gallery}><DrawerImageGallery images={images} loading={imagesLoading} /></div>
-      <div className={classes.stats}>
+      <Group gap={7} wrap="nowrap" className={classes.addr}>
+        <IconMapPin size={13} stroke={2} />
+        {address}
+      </Group>
+      <Box className={classes.gallery}>
+        <DrawerImageGallery images={images} loading={imagesLoading} />
+      </Box>
+      <Box className={classes.stats}>
         {score === null ? (
-          <div className={`${classes.stat} ${classes.notScored}`}>Not scored yet</div>
+          <Text className={`${classes.stat} ${classes.notScored}`} c="dimmed">Not scored yet</Text>
         ) : (
-          <div className={classes.scoreStat} data-band={band}>
-            <div className={classes.scoreNum}>
-              {formatScore(score)}<small>/15</small>{scoreBand(score) === 0 && <span className={classes.exc}>✦</span>}
-            </div>
-            <div className={classes.matchTag}>{scoreLabel(score)}</div>
-          </div>
+          <Box className={classes.scoreStat} data-band={band}>
+            <Box className={classes.scoreNum}>
+              {formatScore(score)}<small>/15</small>
+              {scoreBand(score) === 0 && <span className={classes.exc}>✦</span>}
+            </Box>
+            <Text className={classes.matchTag}>{scoreLabel(score)}</Text>
+          </Box>
         )}
-        <div className={classes.stat}>
-          <div className={classes.statLabel}>All-in / mo</div>
-          <div className={classes.statBig}>{allIn === null ? "—" : `$${allIn.toLocaleString()}`}</div>
-          {estimated ? <div className={classes.statSub}>~${estimated.toLocaleString()} estimated</div> : null}
-        </div>
-        <div className={classes.stat}>
-          <div className={classes.statLabel}>Home</div>
-          <div className={classes.statBig}>{bedsBaths ?? "—"}</div>
-        </div>
-      </div>
-    </div>
+        <Box className={classes.stat}>
+          <Text className={classes.statLabel} tt="uppercase" fw={600} c="dimmed">All-in / mo</Text>
+          <Text className={classes.statBig}>{allIn === null ? "—" : `$${allIn.toLocaleString()}`}</Text>
+          {estimated ? (
+            <Text className={classes.statSub} c="dimmed">~${estimated.toLocaleString()} estimated</Text>
+          ) : null}
+        </Box>
+        <Box className={classes.stat}>
+          <Text className={classes.statLabel} tt="uppercase" fw={600} c="dimmed">Home</Text>
+          <Text className={classes.statBig}>{bedsBaths ?? "—"}</Text>
+        </Box>
+      </Box>
+    </Box>
   );
 }
