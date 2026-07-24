@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { MantineProvider } from "@mantine/core";
 import { DrawerImageGallery } from "../src/features/listings/DrawerImageGallery";
 import type { PropertyImage } from "../src/features/listings/api";
@@ -9,11 +9,14 @@ const imgs = [
 ] satisfies PropertyImage[];
 const wrap = (ui: React.ReactNode) => render(<MantineProvider>{ui}</MantineProvider>);
 
-it("shows a counter and advances the primary image via next", () => {
+it("renders a carousel slide per photo, the counter, and the thumbnail strip", () => {
   wrap(<DrawerImageGallery images={imgs} loading={false} />);
   expect(screen.getByText("1 / 2")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: /next photo/i }));
-  expect(screen.getByText("2 / 2")).toBeInTheDocument();
+  // one primary "open photo" button per image, plus a thumbnail per image
+  expect(screen.getAllByRole("button", { name: /open photo/i })).toHaveLength(2);
+  expect(screen.getAllByRole("button", { name: /show photo/i })).toHaveLength(2);
+  // carousel controls are present for multi-image galleries
+  expect(screen.getByRole("button", { name: /next photo/i })).toBeInTheDocument();
 });
 
 it("renders the empty state when there are no photos", () => {
