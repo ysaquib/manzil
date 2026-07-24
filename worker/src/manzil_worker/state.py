@@ -249,6 +249,8 @@ class GeocodeIn(BaseModel):
     lng: float
     formatted_address: str | None = None
     city: str | None = None
+    state: str | None = None
+    county: str | None = None
 
 
 class DedupeCandidate(BaseModel):
