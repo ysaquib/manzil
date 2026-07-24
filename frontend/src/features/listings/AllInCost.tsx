@@ -36,7 +36,7 @@ const BADGE_HINT: Record<string, string> = {
   heat_unknown:
     "Heating fuel unknown — the costlier of the gas-heat and electric-heat estimates is used.",
   utilities_not_estimated:
-    "No utility baselines exist for this metro yet — the all-in excludes utility estimates.",
+    "No utility baselines exist for this location yet — the all-in excludes utility estimates.",
 };
 
 function CompositionBadges({ badges }: { badges: string[] }) {
