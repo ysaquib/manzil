@@ -1,0 +1,31 @@
+/* Promoted utilities-included block (§9.5): sage-tinted, matching the approved
+   drawer preview's .utilBlock. Sage rides the green slot (theme.ts). */
+.utilBlock {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 11px 13px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--mantine-color-green-6) 10%, var(--mantine-color-body));
+  border: 1px solid color-mix(in srgb, var(--mantine-color-green-6) 22%, var(--mantine-color-default-border));
+}
+
+.utilIcon {
+  color: var(--mantine-color-green-7);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.utilLabel {
+  font-size: 10.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--mantine-color-green-7);
+  font-weight: 600;
+}
+
+.utilValue {
+  font-size: 13.5px;
+  color: var(--mantine-color-text);
+  margin-top: 2px;
+}

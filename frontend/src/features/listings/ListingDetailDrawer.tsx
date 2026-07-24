@@ -6,7 +6,6 @@
 // first open with opened=true skips the enter slide. Close interception uses a
 // ref only — never child→parent setState (that caused a render loop).
 import {
-  Badge,
   Box,
   Button,
   Center,
@@ -16,12 +15,12 @@ import {
   Modal,
   Stack,
   Text,
-  Title,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
+import { IconDroplet } from "@tabler/icons-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Section } from "../../components/Section";
+import { SectionCard } from "../../components/SectionCard";
 import { CommentsSection } from "../collaboration/CommentsSection";
 import { RatingControl } from "../collaboration/RatingControl";
 import { useCurrentMember, useMembers } from "../collaboration/api";
@@ -30,17 +29,16 @@ import { useCatalog } from "../rubric/api";
 import { AllInBreakdown, AllInOverrideControl } from "./AllInCost";
 import { activeOverrides, extractionForFloorPlan } from "./overrides";
 import { CriterionBreakdown } from "./CriterionBreakdown";
+import { DrawerHero } from "./DrawerHero";
 import { FeeChecklist } from "./FeeChecklist";
 import { FloorPlanPins } from "./FloorPlanPins";
 import { ListingDetailDraftProvider, useListingDetailDraft } from "./ListingDetailDraft";
 import { extractedFeeOriginals, parseOneTimeFees } from "./oneTimeFees";
-import { ScoreCell } from "./ScoreCell";
 import { SourcesList } from "./SourcesList";
 import { useExtractions, useFees, useListings, useOverrides, usePropertyImages } from "./api";
-import { PropertyImageCarousel } from "./PropertyImageCarousel";
 import { resolveRow, resolveRowWithDraft } from "./unitGroups";
 import type { Extraction, Listing } from "./types";
-import { memberColor } from "../collaboration/memberColors";
+import drawerClasses from "./ListingDetailDrawer.module.css";
 
 export interface DrawerSelection {
   listingId: string;
@@ -67,13 +65,22 @@ const drawerStyles = {
 
 // §9.5 utilities-included: the latest `utilities_included` extraction (hunt_id
 // NULL) rides in on the same useExtractions map the breakdown already reads.
-function UtilitiesIncludedLine({ extraction }: { extraction: Extraction | undefined }) {
+// Promoted from a dimmed line into a sage-tinted block inside "Cost & fees".
+function UtilitiesBlock({ extraction }: { extraction: Extraction | undefined }) {
   if (!extraction) return null;
   const included = Array.isArray(extraction.value) ? (extraction.value as string[]) : [];
   return (
-    <Text size="sm" c="dimmed">
-      Utilities included: {included.length > 0 ? included.join(", ") : "none stated"}
-    </Text>
+    <div className={drawerClasses.utilBlock}>
+      <IconDroplet size={18} stroke={2} className={drawerClasses.utilIcon} />
+      <div>
+        <div className={drawerClasses.utilLabel}>Utilities included</div>
+        <div className={drawerClasses.utilValue}>
+          {included.length
+            ? included.map((s) => s.replace(/_/g, " ")).join(" · ")
+            : "None stated"}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -209,7 +216,6 @@ function DrawerShell({
   );
   const { data: members = [] } = useMembers(huntId);
   const { data: currentMember } = useCurrentMember(huntId);
-  const membercolor = memberColor(currentMember?.color ?? "");
   const { data: hunt } = useHunt(huntId);
   // Household settings drive the per-person / per-pet move-in estimate (§9.5).
   const household = {
@@ -239,6 +245,9 @@ function DrawerShell({
     ? `${group.beds === 0 ? "Studio" : `${group.beds} bd`} / ${group.baths} ba`
     : null;
   const isUnavailable = group === null && listing.unavailable_at !== null;
+  // Display metadata for the hero's all-in stat: the pinned/displayed plan's
+  // composition, falling back to the listing-level projection (§9.5 P3-9).
+  const composition = group?.displayScore?.all_in_components ?? listing.all_in_components;
 
   const handleDiscard = () => {
     resetDraft();
@@ -252,51 +261,30 @@ function DrawerShell({
     if (ok) onClose();
   };
 
-  const titleContent = isMobile ? (
-    <Stack gap={4}>
-      <Title order={4}>{listing.property.name}</Title>
-      <Group gap="sm">
-        {unitLabel && (
-          <Badge variant="outline" color={"surface"}>
-            {unitLabel}
-          </Badge>
-        )}
-        {score && group && (
-          <ScoreCell total={score.total} pinned={group.pinnedPlanId !== null} />
-        )}
-      </Group>
-    </Stack>
-  ) : (
-    <Group gap="sm" wrap="nowrap">
-      <Title order={4}>{listing.property.name}</Title>
-      {unitLabel && (
-        <Badge variant="outline" color={"surface"}>
-          {unitLabel}
-        </Badge>
-      )}
-      {score && group && (
-        <ScoreCell total={score.total} pinned={group.pinnedPlanId !== null} />
-      )}
-    </Group>
-  );
-
   return (
     <>
       <Drawer.Header>
-        <Drawer.Title>{titleContent}</Drawer.Title>
-        <Drawer.CloseButton />
+        <Drawer.CloseButton ml="auto" />
       </Drawer.Header>
 
       <Drawer.Body>
-        <Box component="div" style={{ flex: 1, overflow: "auto", minHeight: 0 }} px="md" pt="md">
-          <Stack gap="xl" pb="xl">
-            <Text size="sm" c="dimmed">
-              {listing.property.canonical_address}
-            </Text>
+        <Box component="div" style={{ flex: 1, overflow: "auto", minHeight: 0 }} px="md" pt="xs">
+          <DrawerHero
+            name={listing.property.name}
+            address={listing.property.canonical_address}
+            images={images ?? []}
+            imagesLoading={imagesLoading}
+            score={group?.displayScore?.total ?? null}
+            allIn={composition?.total ?? null}
+            estimated={composition?.estimated_total ?? null}
+            bedsBaths={unitLabel}
+          />
 
-            <PropertyImageCarousel images={images ?? []} loading={imagesLoading} />
-
-            <Section title="Score breakdown">
+          <Stack gap="md" pt="md" pb="xl">
+            <SectionCard
+              title="Why this score"
+              hint={score ? `${score.breakdown.criteria.length} criteria` : undefined}
+            >
               {score ? (
                 extractionsLoading ? (
                   <Center py="md">
@@ -323,37 +311,16 @@ function DrawerShell({
                   Not scored yet — ingestion may still be running (see Tasks).
                 </Text>
               )}
-            </Section>
+            </SectionCard>
 
-            <Section title={`Floor plans (${group?.plans.length ?? 0})`}>
-              {group ? (
-                <FloorPlanPins group={group} scores={listing.scores} />
-              ) : (
-                <Text size="sm" c="dimmed">
-                  {isUnavailable
-                    ? "No available floor plans found."
-                    : "No floor plans yet — ingestion may still be running."}
-                </Text>
-              )}
-            </Section>
-
-            <Section title="All-in cost">
-              <Stack gap="xs">
-                <AllInBreakdown
-                  composition={
-                    group?.displayScore?.all_in_components ?? listing.all_in_components
-                  }
-                />
+            <SectionCard title="Cost & fees">
+              <Stack gap="sm">
+                <AllInBreakdown composition={composition} />
                 <AllInOverrideControl
                   overridden={activeOverrides(overrides ?? [], displayFloorPlanId).has(
                     "all_in_monthly",
                   )}
                 />
-              </Stack>
-            </Section>
-
-            <Section title="Fees checklist">
-              <Stack gap="sm">
                 <FeeChecklist
                   fees={fees ?? []}
                   oneTimeFees={parseOneTimeFees(
@@ -366,7 +333,7 @@ function DrawerShell({
                     extractionForFloorPlan(extractions ?? [], "one_time_fees", null)?.value,
                   )}
                 />
-                <UtilitiesIncludedLine
+                <UtilitiesBlock
                   extraction={extractionForFloorPlan(
                     extractions ?? [],
                     "utilities_included",
@@ -374,29 +341,44 @@ function DrawerShell({
                   )}
                 />
               </Stack>
-            </Section>
+            </SectionCard>
 
-            <Section title="Ratings">
+            <SectionCard title="Floor plans" hint={`${group?.plans.length ?? 0} plans`}>
               {group ? (
-                <RatingControl
-                  listingId={listing.id}
-                  unitGroupKey={group.key}
-                  color={membercolor}
-                />
+                <FloorPlanPins group={group} scores={listing.scores} />
               ) : (
-                <Text size="sm" c="dimmed">Ratings become available with a Unit Group.</Text>
+                <Text size="sm" c="dimmed">
+                  {isUnavailable
+                    ? "No available floor plans found."
+                    : "No floor plans yet — ingestion may still be running."}
+                </Text>
               )}
-            </Section>
+            </SectionCard>
 
-            <Section title="Comments">
-              <CommentsSection
-                listingId={listing.id}
-                members={members}
-                currentUnitGroup={group ? { key: group.key, label: unitLabel ?? group.key } : null}
-              />
-            </Section>
+            <SectionCard title="Notes & ratings">
+              <Stack gap="md">
+                {group ? (
+                  <RatingControl
+                    listingId={listing.id}
+                    unitGroupKey={group.key}
+                    huntId={huntId}
+                  />
+                ) : (
+                  <Text size="sm" c="dimmed">
+                    Ratings become available with a Unit Group.
+                  </Text>
+                )}
+                <CommentsSection
+                  listingId={listing.id}
+                  members={members}
+                  currentUnitGroup={
+                    group ? { key: group.key, label: unitLabel ?? group.key } : null
+                  }
+                />
+              </Stack>
+            </SectionCard>
 
-            <Section title="Sources">
+            <SectionCard title="Sources">
               <SourcesList
                 sources={listing.property.sources}
                 sourcePolicy={listing.source_policy}
@@ -407,7 +389,7 @@ function DrawerShell({
                   currentMember?.role === "owner" || currentMember?.user_id === listing.added_by
                 }
               />
-            </Section>
+            </SectionCard>
           </Stack>
         </Box>
 
