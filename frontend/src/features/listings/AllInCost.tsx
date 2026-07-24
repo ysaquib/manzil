@@ -12,7 +12,6 @@ import {
   NumberInput,
   Popover,
   Stack,
-  Table,
   Text,
   TextInput,
   Tooltip,
@@ -20,6 +19,7 @@ import {
 import { IconAlertTriangle, IconArrowBackUp, IconPencil, IconUserEdit } from "@tabler/icons-react";
 import { useState } from "react";
 
+import classes from "./AllInCost.module.css";
 import { useListingDetailDraft } from "./ListingDetailDraft";
 import { REVERT_NOTE } from "./overrides";
 import type { AllInComponents } from "./types";
@@ -37,12 +37,6 @@ const BADGE_HINT: Record<string, string> = {
     "Heating fuel unknown — the costlier of the gas-heat and electric-heat estimates is used.",
   utilities_not_estimated:
     "No utility baselines exist for this metro yet — the all-in excludes utility estimates.",
-};
-
-const TAG_COLOR: Record<string, string> = {
-  actual: "green",
-  estimated: "yellow",
-  unknown: "gray",
 };
 
 function CompositionBadges({ badges }: { badges: string[] }) {
@@ -137,54 +131,53 @@ export function AllInBreakdown({ composition }: { composition: AllInComponents |
           <CompositionBadges badges={composition.badges} />
         </Group>
       )}
-      <Table verticalSpacing={4} withRowBorders={false}>
-        <Table.Tbody>
-          {composition.components.map((component, index) => (
-            <Table.Tr key={`${component.name}:${index}`}>
-              <Table.Td>
-                <Text size="sm">{component.name.replaceAll("_", " ")}</Text>
-                {component.note && (
-                  <Text size="xs" c="dimmed">
-                    {component.note}
-                  </Text>
-                )}
-              </Table.Td>
-              <Table.Td width={100}>
-                <Text size="sm" ta="right">
-                  {component.amount === null ? "unknown" : `$${component.amount.toLocaleString()}`}
-                </Text>
-              </Table.Td>
-              <Table.Td width={90}>
-                <Badge size="xs" color={TAG_COLOR[component.tag] ?? "gray"} variant="light">
-                  {component.tag}
-                </Badge>
-              </Table.Td>
-            </Table.Tr>
-          ))}
-          <Table.Tr>
-            <Table.Td>
-              <Group gap="xs" wrap="nowrap">
-                <Text size="sm" fw={600}>
-                  All-in / mo ({composition.mode})
-                </Text>
-                {composition.overridden && (
-                  <Badge size="xs" color="manual" variant="light">
-                    override
-                  </Badge>
-                )}
-              </Group>
-            </Table.Td>
-            <Table.Td width={100}>
-              <Text size="sm" fw={600} ta="right">
-                {composition.total === null
-                  ? "unknown"
-                  : `$${composition.total.toLocaleString()}`}
-              </Text>
-            </Table.Td>
-            <Table.Td width={90} />
-          </Table.Tr>
-        </Table.Tbody>
-      </Table>
+      <div className={classes.subhead}>Monthly cost</div>
+      {composition.components.map((component, index) => (
+        <div className={classes.row} key={`${component.name}:${index}`}>
+          <div className={classes.name}>
+            <span
+              className={`${classes.qd} ${classes[component.tag] ?? classes.unknown}`}
+              title={component.tag}
+            />
+            {component.name.replaceAll("_", " ")}
+            {component.note && <div className={classes.note}>{component.note}</div>}
+          </div>
+          <div className={classes.amt}>
+            {component.amount === null ? (
+              <span className={classes.dim}>unknown</span>
+            ) : (
+              `$${component.amount.toLocaleString()}`
+            )}
+          </div>
+        </div>
+      ))}
+      <div className={classes.legend}>
+        <span>
+          <span className={`${classes.qd} ${classes.actual}`} />
+          actual
+        </span>
+        <span>
+          <span className={`${classes.qd} ${classes.estimated}`} />
+          estimated
+        </span>
+        <span>
+          <span className={`${classes.qd} ${classes.unknown}`} />
+          unknown
+        </span>
+      </div>
+      <div className={classes.resultBox}>
+        <div className={classes.rl}>
+          All-in / mo
+          {composition.overridden && (
+            <Badge size="xs" color="manual" variant="light">
+              override
+            </Badge>
+          )}
+        </div>
+        <div className={classes.rv}>
+          {composition.total === null ? "unknown" : `$${composition.total.toLocaleString()}`}
+        </div>
+      </div>
     </Stack>
   );
 }

@@ -1,0 +1,96 @@
+/* §9.5 all-in breakdown: grid rows with a state dot, flush amounts, and a
+ * contained result box instead of a table footer. Colors are Mantine tokens
+ * only (UI_DESIGN §3); fine optical geometry uses raw px. */
+.subhead {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mantine-color-dimmed);
+  font-weight: 700;
+  margin: 2px 0 8px;
+}
+.row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+}
+.name {
+  font-size: 13.5px;
+  color: var(--mantine-color-text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.note {
+  flex-basis: 100%;
+  padding-left: 15px;
+  font-size: 11.5px;
+  color: var(--mantine-color-dimmed);
+}
+.amt {
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.dim {
+  color: var(--mantine-color-dimmed);
+  font-weight: 500;
+  font-style: italic;
+}
+.qd {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  display: inline-block;
+}
+.actual {
+  background: var(--mantine-color-green-6);
+}
+.estimated {
+  background: var(--mantine-color-yellow-6);
+}
+.unknown {
+  background: transparent;
+  border: 1px solid var(--mantine-color-dimmed);
+  box-sizing: border-box;
+}
+.legend {
+  display: flex;
+  gap: 14px;
+  font-size: 11px;
+  color: var(--mantine-color-dimmed);
+  margin: 10px 0 2px;
+}
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.resultBox {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--mantine-color-grape-6) 8%, var(--mantine-color-default));
+  border: 1px solid color-mix(in srgb, var(--mantine-color-grape-6) 22%, var(--mantine-color-default-border));
+}
+.rl {
+  font-size: 13.5px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rv {
+  font-family: var(--mantine-font-family-headings, serif);
+  font-size: 22px;
+  font-weight: 700;
+}

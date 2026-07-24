@@ -53,13 +53,37 @@ describe("AllInCell", () => {
   });
 });
 
+function renderBreakdown(comp: AllInComponents) {
+  return renderWithProviders(<AllInBreakdown composition={comp} />);
+}
+
 describe("AllInBreakdown", () => {
-  it("lists components with tags and the mode-labeled total", () => {
+  it("renders component rows with flush amounts and an all-in result box", () => {
+    renderBreakdown({
+      mode: "conservative",
+      total: 1845,
+      estimated_total: 210,
+      overridden: false,
+      badges: [],
+      components: [
+        { name: "base_rent", amount: 1635, tag: "actual", note: undefined },
+        { name: "utilities", amount: 210, tag: "estimated", note: "gas heat" },
+      ],
+    });
+    expect(screen.getByText("base rent")).toBeInTheDocument();
+    expect(screen.getByText("$1,635")).toBeInTheDocument();
+    expect(screen.getByText("All-in / mo")).toBeInTheDocument();
+    expect(screen.getByText("$1,845")).toBeInTheDocument();
+  });
+
+  it("lists components with notes and the all-in result total", () => {
     renderWithProviders(<AllInBreakdown composition={composition} />);
     expect(screen.getByText("rent")).toBeInTheDocument();
     expect(screen.getByText("winter-weighted")).toBeInTheDocument();
-    expect(screen.getAllByText("estimated")).toHaveLength(3);
-    expect(screen.getByText("All-in / mo (conservative)")).toBeInTheDocument();
+    // The tag now drives a state dot (title attr) rather than a per-row badge;
+    // "estimated" survives once as a legend label.
+    expect(screen.getAllByText("estimated")).toHaveLength(1);
+    expect(screen.getByText("All-in / mo")).toBeInTheDocument();
     expect(screen.getByText("$2,055")).toBeInTheDocument();
   });
 
