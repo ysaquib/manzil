@@ -42,7 +42,7 @@ AMOUNTS = {
 }
 
 
-async def _seed(pool: asyncpg.Pool, *, metro: str) -> tuple:  # type: ignore[no-untyped-def]
+async def _seed(pool: asyncpg.Pool, *, city: str, state: str = "MI") -> tuple:  # type: ignore[no-untyped-def]
     hunt_id, property_id, listing_id = uuid4(), uuid4(), uuid4()
     await pool.execute(
         "insert into hunts (id, name, owner_id, rubric_version) values ($1, 'test', $2, 1)",
@@ -50,9 +50,13 @@ async def _seed(pool: asyncpg.Pool, *, metro: str) -> tuple:  # type: ignore[no-
         uuid4(),
     )
     await pool.execute(
-        "insert into properties (id, name, canonical_address, city) values ($1, 'P', '1 Main', $2)",
+        """
+        insert into properties (id, name, canonical_address, city, state)
+        values ($1, 'P', '1 Main', $2, $3)
+        """,
         property_id,
-        metro,
+        city,
+        state,
     )
     await pool.execute(
         "insert into hunt_listings (id, hunt_id, property_id, added_by) values ($1, $2, $3, $4)",
@@ -61,14 +65,16 @@ async def _seed(pool: asyncpg.Pool, *, metro: str) -> tuple:  # type: ignore[no-
         property_id,
         uuid4(),
     )
+    region = ("city", state, city)
     for utility, (high, median) in AMOUNTS.items():
         await pool.execute(
             """
             insert into utility_baselines
-                (metro, beds_bucket, utility, monthly_high, monthly_median)
-            values ($1, 2, $2, $3, $4)
+                (geo_level, state, region_name, beds_bucket, utility,
+                 monthly_high, monthly_median)
+            values ($1, $2, $3, 2, $4, $5, $6)
             """,
-            metro,
+            *region,
             utility,
             high,
             median,
@@ -76,10 +82,17 @@ async def _seed(pool: asyncpg.Pool, *, metro: str) -> tuple:  # type: ignore[no-
     return hunt_id, property_id, listing_id
 
 
-async def _cleanup(pool: asyncpg.Pool, hunt_id, property_id, metro) -> None:  # type: ignore[no-untyped-def]
+async def _cleanup(pool: asyncpg.Pool, hunt_id, property_id, city, state="MI") -> None:  # type: ignore[no-untyped-def]
     await pool.execute("delete from hunts where id = $1", hunt_id)
     await pool.execute("delete from properties where id = $1", property_id)
-    await pool.execute("delete from utility_baselines where metro = $1", metro)
+    await pool.execute(
+        """
+        delete from utility_baselines
+        where geo_level = 'city' and state = $1 and region_name = $2
+        """,
+        state,
+        city,
+    )
 
 
 def _state() -> RunState:
@@ -133,7 +146,7 @@ def _state() -> RunState:
 
 async def test_projection_persists_p39_blocks_and_composition(pg_pool: asyncpg.Pool) -> None:
     metro = f"ProjVille-{uuid4().hex[:6]}"
-    hunt_id, property_id, listing_id = await _seed(pg_pool, metro=metro)
+    hunt_id, property_id, listing_id = await _seed(pg_pool, city=metro)
     try:
         state = _state()
         async with pg_pool.acquire() as conn, conn.transaction():
@@ -206,7 +219,7 @@ async def test_projection_persists_p39_blocks_and_composition(pg_pool: asyncpg.P
 
 async def test_rescore_recomposes_and_mode_flip_changes_total(pg_pool: asyncpg.Pool) -> None:
     metro = f"RescoreVille-{uuid4().hex[:6]}"
-    hunt_id, property_id, listing_id = await _seed(pg_pool, metro=metro)
+    hunt_id, property_id, listing_id = await _seed(pg_pool, city=metro)
     rubric = [
         RubricCriterion(
             hunt_id=hunt_id,

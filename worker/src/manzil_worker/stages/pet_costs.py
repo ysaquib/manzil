@@ -159,6 +159,7 @@ def _utility_components(
     mode: str,
     occupants: int,
     beds: int,
+    baseline_scope_note: str | None = None,
 ) -> list[Component]:
     """The estimated/unknown utility components for one heating variant
     ('gas' | 'electric'). A needed utility missing from `baselines` yields an
@@ -183,6 +184,8 @@ def _utility_components(
             continue
         amount = row[0] if mode == CONSERVATIVE else row[1]
         note = "winter-weighted" if baseline_key in ("electric_heat", "gas_heat") else None
+        if baseline_scope_note:
+            note = (note + "; " if note else "") + baseline_scope_note
         if kind in _PER_PERSON_UTILITIES:
             amount *= _occupancy_factor(occupants, beds)
         out.append(Component(name=kind, amount=round(amount, 2), tag="estimated", note=note))
@@ -200,10 +203,11 @@ def compose_all_in(
     mode: str = CONSERVATIVE,
     occupants: int = 1,
     beds: int = 1,
+    baseline_scope_note: str | None = None,
 ) -> AllInComposition:
     """The full §9.5 composition for one floor plan. `baselines` maps utility →
     (monthly_high, monthly_median) for this plan's beds bucket; None means the
-    metro has no baseline data at all (graceful v1 fallback)."""
+    selected region has no baseline data at all (graceful v1 fallback)."""
     components: list[Component] = [Component(name="rent", amount=rent, tag="actual")]
     badges: list[str] = []
 
@@ -231,14 +235,26 @@ def compose_all_in(
         utility_components: list[Component] = []
     elif heating in ("gas", "electric"):
         utility_components = _utility_components(
-            heating, included_set, baselines, mode=mode, occupants=occupants, beds=beds
+            heating,
+            included_set,
+            baselines,
+            mode=mode,
+            occupants=occupants,
+            beds=beds,
+            baseline_scope_note=baseline_scope_note,
         )
     else:
         # Unknown heating: the worse of the two variants (§9.5). A variant with
         # an unknown component can't be compared — strictness wins.
         variants = [
             _utility_components(
-                v, included_set, baselines, mode=mode, occupants=occupants, beds=beds
+                v,
+                included_set,
+                baselines,
+                mode=mode,
+                occupants=occupants,
+                beds=beds,
+                baseline_scope_note=baseline_scope_note,
             )
             for v in ("gas", "electric")
         ]

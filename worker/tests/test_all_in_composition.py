@@ -37,6 +37,15 @@ def _compose(**overrides):  # type: ignore[no-untyped-def]
     return compose_all_in(**kwargs)
 
 
+def test_county_scope_note_is_appended_to_estimated_utilities() -> None:
+    comp = _compose(
+        baseline_scope_note="Wayne County, MI regional estimate",
+    )
+    estimated = [c for c in comp.components if c.tag == "estimated"]
+    assert estimated
+    assert all("Wayne County, MI regional estimate" in (c.note or "") for c in estimated)
+
+
 def test_gas_heat_conservative_golden() -> None:
     comp = _compose()
     # electric 120 + gas_heat 150 + water 55 + sewer 45 + trash 30 = 400

@@ -8,6 +8,7 @@ import asyncio
 from uuid import uuid4
 
 from manzil_shared.models import MatchOp, OptionMatch, RubricCriterion, RubricOption
+from manzil_worker.enrich.utility_baselines import BaselineRegion, BaselineSet
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.score import score_stage
 from manzil_worker.state import (
@@ -47,7 +48,7 @@ ALL_IN_RUBRIC = [
 
 def _state():  # type: ignore[no-untyped-def]
     state = make_state()
-    state.geocode = GeocodeIn(place_id="x", lat=42.3, lng=-83.0, city="Detroit")
+    state.geocode = GeocodeIn(place_id="x", lat=42.3, lng=-83.0, city="Detroit", state="MI")
     state.floor_plans = [FloorPlanIn(plan_name="2x2", beds=2, baths=2.0, rent_max=1500.0)]
     state.utilities = UtilitiesIn(included=[])
     state.heating = HeatingIn(heating="gas")
@@ -57,10 +58,17 @@ def _state():  # type: ignore[no-untyped-def]
     return state
 
 
+def _baseline_set(values):  # type: ignore[no-untyped-def]
+    return BaselineSet(
+        region=BaselineRegion(geo_level="city", state="MI", region_name="Detroit"),
+        values=values,
+    )
+
+
 def _ctx(baselines):  # type: ignore[no-untyped-def]
-    async def lookup(metro: str, bucket: int):  # type: ignore[no-untyped-def]
-        assert metro == "Detroit" and bucket == 2
-        return baselines
+    async def lookup(city: str | None, state: str | None, county: str | None, bucket: int):  # type: ignore[no-untyped-def]
+        assert city == "Detroit" and state == "MI" and bucket == 2
+        return _baseline_set(baselines)
 
     return StageCtx(rubric=ALL_IN_RUBRIC, utility_baselines_lookup=lookup)
 
@@ -91,8 +99,8 @@ def test_each_plan_carries_its_own_composition() -> None:
         FloorPlanIn(plan_name="2x1", beds=2, baths=1.0, rent_max=1179.0),
     ]
 
-    async def lookup(metro: str, bucket: int):  # type: ignore[no-untyped-def]
-        return BASELINES
+    async def lookup(city: str | None, state: str | None, county: str | None, bucket: int):  # type: ignore[no-untyped-def]
+        return _baseline_set(BASELINES)
 
     ctx = StageCtx(rubric=ALL_IN_RUBRIC, utility_baselines_lookup=lookup)
     state = asyncio.run(score_stage(state, ctx))
@@ -117,8 +125,8 @@ def test_missing_baseline_row_scores_unknown_delta() -> None:
     assert "fees_unverified" in state.all_in_components["badges"]
 
 
-def test_no_metro_baselines_keeps_the_v1_slice() -> None:
-    async def none_lookup(metro: str, bucket: int):  # type: ignore[no-untyped-def]
+def test_no_state_baselines_keeps_the_v1_slice() -> None:
+    async def none_lookup(city: str | None, state: str | None, county: str | None, bucket: int):  # type: ignore[no-untyped-def]
         return None
 
     state = _state()
@@ -129,12 +137,12 @@ def test_no_metro_baselines_keeps_the_v1_slice() -> None:
     assert "utilities_not_estimated" in (state.all_in_components or {})["badges"]
 
 
-def test_no_geocode_means_no_metro_and_v1_fallback() -> None:
+def test_no_geocode_means_no_state_and_v1_fallback() -> None:
     state = _state()
     state.geocode = None
 
-    async def boom(metro: str, bucket: int):  # type: ignore[no-untyped-def]
-        raise AssertionError("no metro → the seam must not be called")
+    async def boom(city: str | None, state: str | None, county: str | None, bucket: int):  # type: ignore[no-untyped-def]
+        raise AssertionError("no state → the seam must not be called")
 
     ctx = StageCtx(rubric=ALL_IN_RUBRIC, utility_baselines_lookup=boom)
     state = asyncio.run(score_stage(state, ctx))
