@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - **Flat colors only** — no gradients anywhere (score tile uses a flat band-color tint). (`frontend/AGENTS.md`, `UI_DESIGN.md §1`.)
-- **No inline hex in `.tsx`; no raw hex in `.module.css`** — use Mantine tokens (`var(--mantine-color-*)`, `--mantine-spacing-*`, `--mantine-radius-*`) and `color-mix(...)` of them. (`UI_DESIGN.md §2–3`.)
+- **Colors are always tokens** — no inline hex in `.tsx`, no raw hex in `.module.css`; use `var(--mantine-color-*)` (+ `color-mix(...)` of them). For **spacing and radius, use `--mantine-spacing-*` / `--mantine-radius-*` where a standard value maps cleanly** (e.g. `16px → var(--mantine-spacing-md)`), and **never override a themed `Card`'s radius with a bespoke value**. **Fine optical geometry** — bespoke asymmetric paddings, dot/track/pip pixel sizes, sub-token font-sizes and letter-spacing — **may be raw px/rem**, matching the already-shipped job-card module CSS (`PipelineTrack.module.css`, `HistoryCard.module.css`). (`UI_DESIGN.md §3`.)
 - **Theme-aware**: every module audited in light + dark; dark overrides via `:global([data-mantine-color-scheme="dark"]) .x { … }`. (`UI_DESIGN.md §3`.)
 - **Dynamic color returns Mantine color names**, never hex (`scoreColor` pattern). Score reads **`X / 15`**, base 10, clamp [0,15].
 - **Presentation-only**: no changes to endpoints, `scores.breakdown`, RLS, persistence, or the draft-save/override/pin contracts. Scores never recomputed client-side.
@@ -107,6 +107,10 @@ describe("scoreBand / scoreColor / scoreLabel", () => {
     expect(scoreColor(2)).toBe("scoreLow");
     expect(scoreColor(0)).toBe("scorePoor");
   });
+  it("preserves the original base=0 edge (0/0 = NaN falls through to poorest)", () => {
+    expect(scoreBand(0, 0)).toBe(6);
+    expect(scoreColor(0, 0)).toBe("scorePoorest");
+  });
   it("formats half-points, keeps integers clean", () => {
     expect(formatScore(9.5)).toBe("9.5");
     expect(formatScore(10)).toBe("10");
@@ -134,8 +138,13 @@ const LABELS = [
 
 // Band index 0..6 from total/base, inclusive-lower thresholds (5/5,4/5,…).
 // Anchored on the §9.3 engine domain (base 10) so color and label agree.
-export function scoreBand(total: number, base = SCORE_BASE): number {
-  const pct = base > 0 ? total / base : 0;
+// IMPORTANT: the `max > 0 ? … : 0` guard is copied VERBATIM from the original
+// scoreColor so behavior is byte-for-byte preserved — including the base=0
+// edge, where total/0 = NaN falls through every check to band 6 (poorest).
+// Do NOT "simplify" it to `base > 0`; that regresses ScoreCell's existing
+// "does not divide by zero" test (NaN→poorest becomes 0→poor).
+export function scoreBand(total: number, base = SCORE_BASE, max = SCORE_MAX): number {
+  const pct = max > 0 ? total / base : 0;
   if (pct >= 5 / 5) return 0;
   if (pct >= 4 / 5) return 1;
   if (pct >= 3 / 5) return 2;
@@ -145,8 +154,8 @@ export function scoreBand(total: number, base = SCORE_BASE): number {
   return 6;
 }
 
-export function scoreColor(total: number, base = SCORE_BASE, _max = SCORE_MAX): string {
-  return COLORS[scoreBand(total, base)];
+export function scoreColor(total: number, base = SCORE_BASE, max = SCORE_MAX): string {
+  return COLORS[scoreBand(total, base, max)];
 }
 
 export function scoreLabel(total: number): string {
@@ -187,7 +196,7 @@ Then in the `ScoreCell` component, mark the exceptional band. Replace the score 
 - [ ] **Step 6: Verify existing ScoreCell tests still pass**
 
 Run: `pnpm -C frontend test --run src/features/listings/ScoreCell.test.tsx`
-Expected: PASS. If a test asserted exact text equal to the number, update it to allow the trailing `✦` on `scoreHighest` rows only.
+Expected: PASS — **all** existing assertions, unmodified. In particular the "does not divide by zero" test must stay green (the verbatim `max > 0` guard preserves `scoreColor`'s output exactly). The ONLY reason to touch a ScoreCell test is if one asserted an exact full-text equality to the number and the trailing `✦` on a `scoreHighest` row breaks it; if so, relax just that assertion. Do not change behavior to make a test pass.
 
 - [ ] **Step 7: Commit**
 

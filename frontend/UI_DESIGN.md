@@ -54,9 +54,14 @@ API doesn't express cleanly:
 - fine control the theme can't reach (precise track/dot geometry).
 
 Rules for module CSS (so it stays consistent and themable):
-- **Use Mantine tokens inside the module**, not raw hex: `var(--mantine-color-sage-6)`,
-  `var(--mantine-spacing-md)`, `var(--mantine-radius-sm)`, `var(--mantine-font-family-monospace)`.
-  `color-mix(in srgb, var(--mantine-color-...) N%, …)` is fine for tints.
+- **Colors are always tokens**, never raw hex: `var(--mantine-color-sage-6)`,
+  `var(--mantine-font-family-monospace)`; `color-mix(in srgb, var(--mantine-color-...) N%, …)`
+  is fine for tints. **Standard spacing/radius use tokens where they map cleanly**
+  (`var(--mantine-spacing-md)`, `var(--mantine-radius-sm)`), and never override a themed
+  `Card`'s radius with a bespoke value. **Fine optical geometry — bespoke asymmetric
+  paddings, dot/track/pip pixel sizes, sub-token font-sizes and letter-spacing — may be raw
+  px/rem** (see `PipelineTrack.module.css`/`HistoryCard.module.css`). The hard rule is colors;
+  fine geometry is a judgment call, tokens preferred where they fit.
 - **Theme-aware** via `:global([data-mantine-color-scheme="dark"]) .foo { … }` (no
   `postcss-preset-mantine`, so no `light-dark()` mixin). Audit both schemes.
 - Keep modules **co-located** with their component and scoped to it. No global stylesheets, no app-wide
