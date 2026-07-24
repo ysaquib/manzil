@@ -232,6 +232,9 @@ class Property(BaseModel):
     id: UUID
     name: str
     canonical_address: str
+    city: str | None = None
+    state: str | None = None
+    county: str | None = None
     place_id: str | None = None
     lat: float | None = None
     lng: float | None = None
