@@ -1,16 +1,16 @@
-// Listing photo strip (P3-7a gallery): scroll-snap carousel of the collected
-// property images, above the score breakdown in the drawer. Dependency-free —
-// a snap strip with chevron paging, no embla. Images are signed-URL WebPs
-// from the private bucket; the strip scrolls in its own container (no page
-// horizontal scroll). Clicking a photo opens the full-screen lightbox.
-import { ActionIcon, Box, Group, Skeleton, Text, UnstyledButton } from "@mantine/core";
-import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
-import { useRef, useState } from "react";
+// Compare-view photo strip: a @mantine/carousel multi-slide strip of the
+// collected property images. Clicking a photo opens the full-screen lightbox
+// (ImageLightbox — a zoom viewer, kept custom). The strip scrolls in its own
+// container (no page horizontal scroll).
+import { Box, Skeleton, Text, UnstyledButton } from "@mantine/core";
+import { Carousel } from "@mantine/carousel";
+import type { EmblaCarouselType } from "embla-carousel";
+import { useCallback, useEffect, useState } from "react";
 
 import type { PropertyImage } from "./api";
 import { ImageLightbox } from "./ImageLightbox";
 
-const STRIP_HEIGHT = 240;
+const STRIP_HEIGHT = 220;
 
 export function PropertyImageCarousel({
   images,
@@ -19,17 +19,22 @@ export function PropertyImageCarousel({
   images: PropertyImage[];
   loading: boolean;
 }) {
-  const strip = useRef<HTMLDivElement | null>(null);
+  const [embla, setEmbla] = useState<EmblaCarouselType | null>(null);
   const [index, setIndex] = useState(0);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
+  const onSelect = useCallback((api: EmblaCarouselType) => setIndex(api.selectedScrollSnap()), []);
+  useEffect(() => {
+    if (!embla) return;
+    onSelect(embla);
+    embla.on("select", onSelect);
+    return () => {
+      embla.off("select", onSelect);
+    };
+  }, [embla, onSelect]);
+
   if (loading) {
-    return (
-      <Group gap="xs" wrap="nowrap">
-        <Skeleton height={STRIP_HEIGHT} width={280} radius="md" />
-        <Skeleton height={STRIP_HEIGHT} width={280} radius="md" />
-      </Group>
-    );
+    return <Skeleton height={STRIP_HEIGHT} radius="md" />;
   }
   if (images.length === 0) {
     return (
@@ -39,101 +44,60 @@ export function PropertyImageCarousel({
     );
   }
 
-  const page = (dir: 1 | -1) => {
-    const el = strip.current;
-    if (!el) return;
-    el.scrollBy({ left: dir * el.clientWidth * 0.85, behavior: "smooth" });
-  };
-
-  const onScroll = () => {
-    const el = strip.current;
-    if (!el || el.scrollWidth <= el.clientWidth) return;
-    const progress = el.scrollLeft / (el.scrollWidth - el.clientWidth);
-    setIndex(Math.min(images.length - 1, Math.round(progress * (images.length - 1))));
-  };
-
+  const many = images.length > 1;
   return (
     <Box pos="relative">
-      <Box
-        ref={strip}
-        onScroll={onScroll}
-        style={{
-          display: "flex",
-          gap: 8,
-          overflowX: "auto",
-          scrollSnapType: "x mandatory",
-          scrollbarWidth: "none",
-          borderRadius: "var(--mantine-radius-md)",
-        }}
+      <Carousel
+        getEmblaApi={setEmbla}
+        withControls={many}
+        withIndicators={false}
+        height={STRIP_HEIGHT}
+        slideSize="78%"
+        slideGap="xs"
+        emblaOptions={{ align: "start" }}
+        previousControlProps={{ "aria-label": "previous photos" }}
+        nextControlProps={{ "aria-label": "next photos" }}
       >
         {images.map((image, i) => (
-          <UnstyledButton
-            key={image.id}
-            onClick={() => setLightboxIndex(i)}
-            aria-label={`open photo ${i + 1} of ${images.length}`}
-            style={{
-              flexShrink: 0,
-              scrollSnapAlign: "start",
-              maxWidth: "85%",
-              cursor: "zoom-in",
-              borderRadius: "var(--mantine-radius-md)",
-              overflow: "hidden",
-              display: "block",
-            }}
-          >
-            <img
-              src={image.url}
-              alt={`listing photo ${i + 1} of ${images.length}`}
-              loading="lazy"
+          <Carousel.Slide key={image.id}>
+            <UnstyledButton
+              onClick={() => setLightboxIndex(i)}
+              aria-label={`open photo ${i + 1} of ${images.length}`}
               style={{
-                height: STRIP_HEIGHT,
-                width: "auto",
-                maxWidth: "100%",
-                objectFit: "cover",
                 display: "block",
+                width: "100%",
+                height: "100%",
+                cursor: "zoom-in",
+                borderRadius: "var(--mantine-radius-md)",
+                overflow: "hidden",
               }}
-            />
-          </UnstyledButton>
+            >
+              <img
+                src={image.url}
+                alt={`listing photo ${i + 1} of ${images.length}`}
+                loading="lazy"
+                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+              />
+            </UnstyledButton>
+          </Carousel.Slide>
         ))}
-      </Box>
-      {images.length > 1 && (
-        <>
-          <ActionIcon
-            variant="default"
-            radius="xl"
-            size="md"
-            aria-label="previous photos"
-            onClick={() => page(-1)}
-            style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)" }}
-          >
-            <IconChevronLeft size={16} stroke={1.5} />
-          </ActionIcon>
-          <ActionIcon
-            variant="default"
-            radius="xl"
-            size="md"
-            aria-label="next photos"
-            onClick={() => page(1)}
-            style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)" }}
-          >
-            <IconChevronRight size={16} stroke={1.5} />
-          </ActionIcon>
-          <Text
-            size="xs"
-            c="white"
-            style={{
-              position: "absolute",
-              right: 10,
-              bottom: 8,
-              background: "rgba(0,0,0,0.55)",
-              borderRadius: 999,
-              padding: "1px 8px",
-              pointerEvents: "none",
-            }}
-          >
-            {index + 1} / {images.length}
-          </Text>
-        </>
+      </Carousel>
+      {many && (
+        <Text
+          size="xs"
+          c="white"
+          style={{
+            position: "absolute",
+            right: 10,
+            bottom: 8,
+            background: "rgba(0, 0, 0, 0.55)",
+            borderRadius: 999,
+            padding: "1px 8px",
+            pointerEvents: "none",
+          }}
+        >
+          {index + 1} / {images.length}
+        </Text>
       )}
 
       <ImageLightbox
