@@ -1,50 +1,90 @@
-import { ActionIcon, Skeleton, Text, UnstyledButton } from "@mantine/core";
-import { IconChevronLeft, IconChevronRight } from "@tabler/icons-react";
-import { useState } from "react";
+import { AspectRatio, Skeleton, Text } from "@mantine/core";
+import { Carousel } from "@mantine/carousel";
+import type { EmblaCarouselType } from "embla-carousel";
+import { useCallback, useEffect, useState } from "react";
+
 import type { PropertyImage } from "./api";
 import { ImageLightbox } from "./ImageLightbox";
 import classes from "./DrawerImageGallery.module.css";
 
+// Drawer photo gallery: a @mantine/carousel primary (16:10, cover-cropped) with
+// a thumbnail filmstrip that scrolls it. Clicking the primary opens the
+// full-screen zoom viewer (ImageLightbox — kept custom, it is a zoom viewer,
+// not a carousel).
 export function DrawerImageGallery({ images, loading }: { images: PropertyImage[]; loading: boolean }) {
+  const [embla, setEmbla] = useState<EmblaCarouselType | null>(null);
   const [index, setIndex] = useState(0);
   const [lightbox, setLightbox] = useState<number | null>(null);
-  if (loading) return <Skeleton className={classes.primary} />;
-  if (images.length === 0) {
-    return <Text size="sm" c="dimmed">No photos collected yet — the image pass runs during ingestion.</Text>;
+
+  const onSelect = useCallback((api: EmblaCarouselType) => setIndex(api.selectedScrollSnap()), []);
+  useEffect(() => {
+    if (!embla) return;
+    onSelect(embla);
+    embla.on("select", onSelect);
+    return () => {
+      embla.off("select", onSelect);
+    };
+  }, [embla, onSelect]);
+
+  if (loading) {
+    return (
+      <AspectRatio ratio={16 / 10}>
+        <Skeleton radius="md" />
+      </AspectRatio>
+    );
   }
-  const clamp = (i: number) => (i + images.length) % images.length;
-  const current = images[Math.min(index, images.length - 1)];
+  if (images.length === 0) {
+    return (
+      <Text size="sm" c="dimmed">
+        No photos collected yet — the image pass runs during ingestion.
+      </Text>
+    );
+  }
+
+  const many = images.length > 1;
   return (
     <div className={classes.gallery}>
       <div className={classes.primaryWrap}>
-        <UnstyledButton
-          className={classes.primaryBtn}
-          onClick={() => setLightbox(index)}
-          aria-label={`open photo ${index + 1} of ${images.length}`}
+        <Carousel
+          getEmblaApi={setEmbla}
+          withControls={many}
+          withIndicators={false}
+          emblaOptions={{ loop: true }}
+          previousControlProps={{ "aria-label": "previous photo" }}
+          nextControlProps={{ "aria-label": "next photo" }}
+          classNames={{ viewport: classes.viewport, control: classes.control }}
         >
-          <img className={classes.primary} src={current.url} alt={`listing photo ${index + 1} of ${images.length}`} loading="lazy" />
-        </UnstyledButton>
-        {images.length > 1 && (
-          <>
-            <ActionIcon className={`${classes.nav} ${classes.prev}`} radius="xl"
-              aria-label="previous photo" onClick={() => setIndex(clamp(index - 1))}>
-              <IconChevronLeft size={16} stroke={2} />
-            </ActionIcon>
-            <ActionIcon className={`${classes.nav} ${classes.next}`} radius="xl"
-              aria-label="next photo" onClick={() => setIndex(clamp(index + 1))}>
-              <IconChevronRight size={16} stroke={2} />
-            </ActionIcon>
-            <span className={classes.counter}>{index + 1} / {images.length}</span>
-          </>
-        )}
+          {images.map((img, i) => (
+            <Carousel.Slide key={img.id}>
+              <button
+                type="button"
+                className={classes.primaryBtn}
+                aria-label={`open photo ${i + 1} of ${images.length}`}
+                onClick={() => setLightbox(i)}
+              >
+                <img
+                  className={classes.primary}
+                  src={img.url}
+                  alt={`listing photo ${i + 1} of ${images.length}`}
+                  loading="lazy"
+                />
+              </button>
+            </Carousel.Slide>
+          ))}
+        </Carousel>
+        {many && <span className={classes.counter}>{index + 1} / {images.length}</span>}
       </div>
-      {images.length > 1 && (
+      {many && (
         <div className={classes.film}>
           {images.map((img, i) => (
-            <button key={img.id} type="button"
+            <button
+              key={img.id}
+              type="button"
               className={`${classes.thumb} ${i === index ? classes.active : ""}`}
-              aria-label={`show photo ${i + 1}`} aria-pressed={i === index}
-              onClick={() => setIndex(i)}>
+              aria-label={`show photo ${i + 1}`}
+              aria-pressed={i === index}
+              onClick={() => embla?.scrollTo(i)}
+            >
               <img src={img.url} alt="" />
             </button>
           ))}

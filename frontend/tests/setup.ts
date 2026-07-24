@@ -24,6 +24,21 @@ if (typeof window !== "undefined") {
       disconnect() {}
     };
 
+  // embla-carousel (@mantine/carousel) constructs an IntersectionObserver on mount.
+  window.IntersectionObserver =
+    window.IntersectionObserver ||
+    (class {
+      readonly root = null;
+      readonly rootMargin = "";
+      readonly thresholds = [];
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+      takeRecords() {
+        return [];
+      }
+    } as unknown as typeof IntersectionObserver);
+
   window.HTMLElement.prototype.scrollIntoView =
     window.HTMLElement.prototype.scrollIntoView || (() => {});
 
