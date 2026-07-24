@@ -206,6 +206,45 @@ def split_property_cmd(
     asyncio.run(run())
 
 
+@app.command("backfill-locality")
+def backfill_locality_cmd(
+    property_id: list[str] = typer.Option(
+        [],
+        "--property-id",
+        help="Limit to specific Property UUIDs (repeatable). Omit for all incomplete rows.",
+    ),
+) -> None:
+    """Backfill `properties.city/state/county` for rows missing any locality field."""
+    import uuid
+
+    import asyncpg
+
+    from manzil_worker.ops.backfill_locality import backfill_locality
+
+    dsn = os.environ.get("DATABASE_URL")
+    if not dsn:
+        typer.echo(
+            "DATABASE_URL is not set — backfill-locality needs the service-role DB URL",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    ids = [uuid.UUID(value) for value in property_id] if property_id else None
+
+    async def run() -> None:
+        pool = await asyncpg.create_pool(dsn)
+        try:
+            async with pool.acquire() as conn:
+                result = await backfill_locality(conn, property_ids=ids)
+        finally:
+            await pool.close()
+        typer.echo(
+            f"attempted={result.attempted} updated={result.updated} failed={result.failed}"
+        )
+
+    asyncio.run(run())
+
+
 @app.command("seed-dev-rubric")
 def seed_dev_rubric_cmd(
     force: bool = typer.Option(
