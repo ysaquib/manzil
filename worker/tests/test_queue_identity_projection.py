@@ -10,7 +10,7 @@ from uuid import uuid4
 import asyncpg
 from manzil_shared.models import FetchOutcome, JobType
 from manzil_worker.queue import _persist_ingest_results
-from manzil_worker.state import PropertyIdentityIn, RunState, SourceState
+from manzil_worker.state import GeocodeIn, PropertyIdentityIn, RunState, SourceState
 
 
 async def _seed(pool: asyncpg.Pool, *, name: str, address: str) -> tuple:
@@ -133,6 +133,50 @@ async def test_cleaned_text_persists_and_updates_on_reingest(pg_pool: asyncpg.Po
         )
         assert text == "second fetch body"
         assert digest == "hash-2"
+    finally:
+        await _cleanup(pg_pool, hunt_id, property_id)
+
+
+async def test_geocode_locality_coalesces_without_overwriting(pg_pool: asyncpg.Pool) -> None:
+    hunt_id, property_id, listing_id = await _seed(
+        pg_pool, name="listing-4", address="listing-4"
+    )
+    try:
+        state = _state("https://x.test/geocode-locality", None)
+        state.geocode = GeocodeIn(
+            place_id="PLACE_1",
+            lat=42.3,
+            lng=-83.4,
+            city="Canton",
+            state="MI",
+            county="Wayne County",
+        )
+        await _run_persist(pg_pool, listing_id, property_id, state)
+        row = await pg_pool.fetchrow(
+            "select city, state, county, place_id from properties where id = $1",
+            property_id,
+        )
+        assert row["city"] == "Canton"
+        assert row["state"] == "MI"
+        assert row["county"] == "Wayne County"
+        assert row["place_id"] == "PLACE_1"
+
+        state.geocode = GeocodeIn(
+            place_id="PLACE_2",
+            lat=43.0,
+            lng=-84.0,
+            city="Detroit",
+            state="MI",
+            county="Wayne County",
+        )
+        await _run_persist(pg_pool, listing_id, property_id, state)
+        row = await pg_pool.fetchrow(
+            "select city, state, county, place_id from properties where id = $1",
+            property_id,
+        )
+        assert row["city"] == "Canton"
+        assert row["state"] == "MI"
+        assert row["place_id"] == "PLACE_1"
     finally:
         await _cleanup(pg_pool, hunt_id, property_id)
 

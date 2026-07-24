@@ -35,6 +35,7 @@ from manzil_shared.scoped_facts import (
 )
 from manzil_shared.scoring.engine import criterion_key, score, select_display_score
 
+from manzil_worker.enrich.utility_baselines import region_estimate_note
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.pet_costs import beds_bucket, compose_all_in, pet_monthly
 from manzil_worker.state import FloorPlanIn, PlanScore, RunState
@@ -132,7 +133,10 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
 
     # §9.5 P3-9 composition inputs, identical for every plan on the page; the
     # per-plan pieces (rent, beds bucket) vary inside the loop.
-    metro = state.geocode.city if state.geocode else None
+    geocode = state.geocode
+    city = geocode.city if geocode else None
+    state_code = geocode.state if geocode else None
+    county = geocode.county if geocode else None
     fees = (
         [(f.name, f.amount_monthly) for f in state.mandatory_fees.fees]
         if (state.mandatory_fees)
@@ -163,9 +167,11 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
             rent = conservative_rent(plan_in)
             composition = None
             if rent is not None:
-                baselines = (
-                    await ctx.utility_baselines_lookup(metro, beds_bucket(floor_plan.beds))
-                    if metro is not None
+                baseline_set = (
+                    await ctx.utility_baselines_lookup(
+                        city, state_code, county, beds_bucket(floor_plan.beds)
+                    )
+                    if state_code is not None
                     else None
                 )
                 composition = compose_all_in(
@@ -174,7 +180,10 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
                     mandatory_fees=fees,
                     included=included,
                     heating=heating,
-                    baselines=baselines,
+                    baselines=baseline_set.values if baseline_set else None,
+                    baseline_scope_note=(
+                        region_estimate_note(baseline_set.region) if baseline_set else None
+                    ),
                     mode=ctx.cost_estimate_mode,
                     occupants=ctx.occupants,
                     beds=floor_plan.beds,

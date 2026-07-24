@@ -17,7 +17,11 @@ from manzil_shared.models import Confidence, FloorPlan, RubricCriterion
 from manzil_shared.scoped_facts import resolve_effective_value, resolve_effective_values
 from manzil_shared.scoring.engine import criterion_key, score, select_display_score
 
-from manzil_worker.enrich.utility_baselines import baselines_for_metro
+from manzil_worker.enrich.utility_baselines import (
+    BaselineSet,
+    baselines_for_property_locality,
+    region_estimate_note,
+)
 from manzil_worker.scoped_facts import (
     load_current_extractions,
     load_current_overrides,
@@ -134,7 +138,7 @@ async def rescore_hunt(
     """Rescore every active listing on the hunt. Returns the number of score rows upserted."""
     listings = await conn.fetch(
         """
-        select hl.id, hl.property_id, p.city from hunt_listings hl
+        select hl.id, hl.property_id, p.city, p.state, p.county from hunt_listings hl
         join properties p on p.id = hl.property_id
         where hl.hunt_id = $1 and hl.status = 'active'
         """,
@@ -144,7 +148,9 @@ async def rescore_hunt(
     for listing in listings:
         listing_id: UUID = listing["id"]
         property_id: UUID = listing["property_id"]
-        metro: str | None = listing["city"]
+        city: str | None = listing["city"]
+        state_code: str | None = listing["state"]
+        county: str | None = listing["county"]
         current_extractions = await load_current_extractions(
             conn, property_id=property_id, hunt_id=hunt_id
         )
@@ -166,7 +172,7 @@ async def rescore_hunt(
         included = included_ext[0] if included_ext is not None else None
         heating_ext = catalog_ext.get("heating_type")
         heating = heating_ext[0] if heating_ext is not None else None
-        baselines_by_bucket: dict[int, dict[str, tuple[float, float]] | None] = {}
+        baselines_by_bucket: dict[int, BaselineSet | None] = {}
 
         floor_plans = await conn.fetch(
             "select * from floor_plans where property_id = $1 and is_current",
@@ -214,17 +220,27 @@ async def rescore_hunt(
                 bucket = beds_bucket(fp["beds"])
                 if bucket not in baselines_by_bucket:
                     baselines_by_bucket[bucket] = (
-                        await baselines_for_metro(conn, metro, bucket)
-                        if metro is not None
+                        await baselines_for_property_locality(
+                            conn,
+                            city=city,
+                            state=state_code,
+                            county=county,
+                            bucket=bucket,
+                        )
+                        if state_code is not None
                         else None
                     )
+                baseline_set = baselines_by_bucket[bucket]
                 composition = compose_all_in(
                     rent=rent,
                     pet_add=pet_add,
                     mandatory_fees=fees,
                     included=included,
                     heating=heating,
-                    baselines=baselines_by_bucket[bucket],
+                    baselines=baseline_set.values if baseline_set else None,
+                    baseline_scope_note=(
+                        region_estimate_note(baseline_set.region) if baseline_set else None
+                    ),
                     mode=cost_estimate_mode,
                     occupants=occupants,
                     beds=fp["beds"],

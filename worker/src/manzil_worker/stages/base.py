@@ -16,6 +16,7 @@ from uuid import UUID
 
 from manzil_shared.models import Confidence, RubricCriterion
 
+from manzil_worker.enrich.utility_baselines import BaselineSet
 from manzil_worker.llm import client as llm_client
 
 if TYPE_CHECKING:
@@ -53,11 +54,11 @@ NearbyPlaces = Callable[[float, float, str], Awaitable[list[dict[str, Any]]]]
 CommuteMinutes = Callable[[str, str, str], Awaitable[float | None]]
 PlaceDetails = Callable[[str], Awaitable[dict[str, Any] | None]]
 
-# SCORE's baselines seam (P3-9): `(metro, beds_bucket)` → utility →
-# (monthly_high, monthly_median), or None when the metro has no baseline rows —
-# the composer's graceful v1 fallback. The queue wires the DB read; the default
-# returns None so CLI and unit runs compose exactly like shipped v1.
-UtilityBaselines = Callable[[str, int], Awaitable[dict[str, tuple[float, float]] | None]]
+# SCORE's baselines seam (P3-9): locality + beds bucket → BaselineSet or None.
+UtilityBaselines = Callable[
+    [str | None, str | None, str | None, int],
+    Awaitable[BaselineSet | None],
+]
 
 
 async def _no_fresh_source(property_id: UUID | None, url: str) -> SourceFreshness | None:
@@ -76,7 +77,9 @@ async def _no_existing_image_hashes(property_id: UUID) -> set[str]:
     return set()
 
 
-async def _no_utility_baselines(metro: str, bucket: int) -> dict[str, tuple[float, float]] | None:
+async def _no_utility_baselines(
+    city: str | None, state: str | None, county: str | None, bucket: int
+) -> BaselineSet | None:
     return None
 
 

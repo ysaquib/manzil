@@ -26,7 +26,7 @@ import socket
 from collections.abc import Awaitable, Callable
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 import structlog
@@ -538,7 +538,9 @@ async def _persist_ingest_results(
                 place_id = coalesce(place_id, $2),
                 lat = coalesce(lat, $3),
                 lng = coalesce(lng, $4),
-                city = coalesce(city, $5)
+                city = coalesce(city, $5),
+                state = coalesce(state, $6),
+                county = coalesce(county, $7)
             where id = $1
             """,
             property_id,
@@ -546,6 +548,8 @@ async def _persist_ingest_results(
             geocode.lat,
             geocode.lng,
             geocode.city,
+            geocode.state,
+            geocode.county,
         )
 
     # P3-SC2's load-bearing persistence order: Floor Plans first so response-local
@@ -948,14 +952,17 @@ def _make_fresh_source_lookup(pool: asyncpg.Pool) -> FreshSourceLookup:
 
 
 def _make_utility_baselines_lookup(pool: asyncpg.Pool):  # type: ignore[no-untyped-def]
-    """SCORE's §9.5 baselines seam: the utility_baselines rows for one
-    (metro, beds bucket), or None when the metro has none (composer fallback)."""
+    """SCORE's §9.5 baselines seam: BaselineSet for one locality + beds bucket."""
 
-    async def lookup(metro: str, bucket: int) -> dict[str, tuple[float, float]] | None:
-        from manzil_worker.enrich.utility_baselines import baselines_for_metro
+    async def lookup(
+        city: str | None, state: str | None, county: str | None, bucket: int
+    ):
+        from manzil_worker.enrich.utility_baselines import baselines_for_property_locality
 
         async with pool.acquire() as conn:
-            return await baselines_for_metro(conn, metro, bucket)
+            return await baselines_for_property_locality(
+                conn, city=city, state=state, county=county, bucket=bucket
+            )
 
     return lookup
 
@@ -1351,71 +1358,103 @@ def build_dispatch(
 # ── the loop ─────────────────────────────────────────────────────────────────
 
 
-# In-flight metro passes (and their task handles, so they aren't GC'd): the
+# In-flight regional passes (and their task handles, so they aren't GC'd): the
 # in-process guard; the Postgres advisory lock below is the cross-process one.
 _BASELINE_TASKS: dict[str, asyncio.Task[None]] = {}
-# Attempt cooldown: a metro stays due until its pass WRITES (all-or-nothing), so
+# Attempt cooldown: a region stays due until its pass WRITES (all-or-nothing), so
 # without this a persistently failing pass would fire one live LLM call per
 # tick. Monotonic-clock timestamps of the last attempt, success or not.
 _BASELINE_LAST_ATTEMPT: dict[str, float] = {}
 
 
-async def _run_metro_baselines(pool: asyncpg.Pool, metro: str) -> None:
-    from manzil_worker.enrich.utility_baselines import refresh_metro_baselines
+async def _enqueue_rescores_for_region(conn: Any, region) -> None:
+    if region.geo_level == "city":
+        await conn.execute(
+            """
+            insert into jobs (hunt_id, type, state, payload)
+            select distinct hl.hunt_id, 'rescore'::job_type, 'queued'::job_state,
+                   jsonb_build_object('hunt_id', hl.hunt_id)
+            from hunt_listings hl
+            join properties p on p.id = hl.property_id
+            where hl.status = 'active' and p.city = $1 and p.state = $2
+            """,
+            region.region_name,
+            region.state,
+        )
+    elif region.geo_level == "county":
+        await conn.execute(
+            """
+            insert into jobs (hunt_id, type, state, payload)
+            select distinct hl.hunt_id, 'rescore'::job_type, 'queued'::job_state,
+                   jsonb_build_object('hunt_id', hl.hunt_id)
+            from hunt_listings hl
+            join properties p on p.id = hl.property_id
+            where hl.status = 'active'
+              and p.city is null and p.county = $1 and p.state = $2
+            """,
+            region.region_name,
+            region.state,
+        )
+    else:
+        await conn.execute(
+            """
+            insert into jobs (hunt_id, type, state, payload)
+            select distinct hl.hunt_id, 'rescore'::job_type, 'queued'::job_state,
+                   jsonb_build_object('hunt_id', hl.hunt_id)
+            from hunt_listings hl
+            join properties p on p.id = hl.property_id
+            where hl.status = 'active'
+              and p.city is null and p.county is null and p.state = $1
+            """,
+            region.state,
+        )
+
+
+async def _run_region_baselines(pool: asyncpg.Pool, region) -> None:
+    from manzil_worker.enrich.utility_baselines import refresh_region_baselines
 
     try:
         async with pool.acquire() as conn:
             locked = await conn.fetchval(
-                "select pg_try_advisory_lock(hashtext($1))", f"utility_baselines:{metro}"
+                "select pg_try_advisory_lock(hashtext($1))", region.lock_key()
             )
             if not locked:
-                return  # another worker owns this metro; its write satisfies the TTL
+                return
             try:
-                await refresh_metro_baselines(conn, metro)
-                # A metro's first listing always scores BEFORE its baselines
-                # exist — the pass was triggered by that listing — so a
-                # successful write re-composes the metro: one hunt-level
-                # rescore (zero LLM spend) per hunt with an active listing
-                # there (DESIGN §9.5, §20 2026-07-18).
-                await conn.execute(
-                    """
-                    insert into jobs (hunt_id, type, state, payload)
-                    select distinct hl.hunt_id, 'rescore'::job_type, 'queued'::job_state,
-                           jsonb_build_object('hunt_id', hl.hunt_id)
-                    from hunt_listings hl
-                    join properties p on p.id = hl.property_id
-                    where hl.status = 'active' and p.city = $1
-                    """,
-                    metro,
-                )
+                await refresh_region_baselines(conn, region)
+                await _enqueue_rescores_for_region(conn, region)
             finally:
                 await conn.fetchval(
-                    "select pg_advisory_unlock(hashtext($1))", f"utility_baselines:{metro}"
+                    "select pg_advisory_unlock(hashtext($1))", region.lock_key()
                 )
     except Exception as error:
-        # Next tick retries — a 120-day cadence needs no queue durability (§9.5).
-        log.warning("utility_baselines_failed", metro=metro, error=str(error))
+        log.warning(
+            "utility_baselines_failed",
+            geo_level=region.geo_level,
+            state=region.state,
+            region_name=region.region_name,
+            error=str(error),
+        )
 
 
 async def utility_baselines_tick(pool: asyncpg.Pool) -> None:
-    """The first scheduler duty (P3-9): one guarded asyncio task per due metro.
-    NOT a jobs row — jobs.hunt_id is NOT NULL and this is global, hunt-less
-    maintenance (DESIGN §20 2026-07-18)."""
-    from manzil_worker.enrich.utility_baselines import due_metros
+    """The first scheduler duty (P3-9): one guarded asyncio task per due region."""
+    from manzil_worker.enrich.utility_baselines import due_baseline_regions
 
     async with pool.acquire() as conn:
-        metros = await due_metros(conn)
+        regions = await due_baseline_regions(conn)
     now = asyncio.get_running_loop().time()
-    for metro in metros:
-        if metro in _BASELINE_TASKS:
+    for region in regions:
+        key = region.lock_key()
+        if key in _BASELINE_TASKS:
             continue
-        last = _BASELINE_LAST_ATTEMPT.get(metro)
+        last = _BASELINE_LAST_ATTEMPT.get(key)
         if last is not None and now - last < UTILITY_BASELINE_RETRY_SECONDS:
             continue
-        _BASELINE_LAST_ATTEMPT[metro] = now
-        task = asyncio.create_task(_run_metro_baselines(pool, metro))
-        _BASELINE_TASKS[metro] = task
-        task.add_done_callback(lambda _t, m=metro: _BASELINE_TASKS.pop(m, None))
+        _BASELINE_LAST_ATTEMPT[key] = now
+        task = asyncio.create_task(_run_region_baselines(pool, region))
+        _BASELINE_TASKS[key] = task
+        task.add_done_callback(lambda _t, k=key: _BASELINE_TASKS.pop(k, None))
 
 
 async def run_worker_loop(
