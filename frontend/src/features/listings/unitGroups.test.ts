@@ -57,6 +57,8 @@ function listing(plans: FloorPlan[], scores: Score[], pins: Record<string, strin
       name: "The Test Flats",
       canonical_address: "1 Main St",
       city: null,
+      state: null,
+      county: null,
       official_url: null,
       floor_plans: plans,
       sources: [],

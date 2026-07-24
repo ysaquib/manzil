@@ -5,6 +5,7 @@
 // page scroll (frontend/AGENTS.md).
 import { ActionIcon, Checkbox, Group, Menu, Select, Table, Text, Tooltip, UnstyledButton } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { propertyLocationLabel } from "./locality";
 import {
   IconArchive,
   IconArrowsLeftRight,
@@ -511,7 +512,7 @@ export function OverviewTable({
               )}
               {show("city") && (
                 <Table.Td>
-                  <Text size="sm">{row.listing.property.city ?? "—"}</Text>
+                  <Text size="sm">{propertyLocationLabel(row.listing.property) === "Unknown" ? "—" : propertyLocationLabel(row.listing.property)}</Text>
                 </Table.Td>
               )}
               {show("available") && (

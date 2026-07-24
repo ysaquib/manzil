@@ -8,6 +8,8 @@ export interface Property {
   name: string;
   canonical_address: string;
   city: string | null;
+  state: string | null;
+  county: string | null;
   official_url: string | null;
 }
 

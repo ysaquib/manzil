@@ -1,5 +1,6 @@
 // Overview row building, filtering, sorting (P1-10). Pure and unit-tested;
 // the table component stays declarative.
+import { cityFilterMatches, propertyLocationLabel } from "./locality";
 import type { AllInComponents, InterestStatus, Listing, UnitGroupState } from "./types";
 import { deriveUnitGroups, type UnitGroupRow } from "./unitGroups";
 
@@ -230,7 +231,9 @@ function bathsPredicate(row: OverviewRow, filters: OverviewFilterState): boolean
 }
 
 function cityPredicate(row: OverviewRow, filters: OverviewFilterState): boolean {
-  return filters.cities.length === 0 || filters.cities.includes(row.listing.property.city ?? "Unknown");
+  if (filters.cities.length === 0) return true;
+  const label = propertyLocationLabel(row.listing.property);
+  return filters.cities.some((token) => cityFilterMatches(row.listing.property, token, label));
 }
 
 function statusPredicate(row: OverviewRow, filters: OverviewFilterState): boolean {

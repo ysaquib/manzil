@@ -23,6 +23,8 @@ const listingFixture: Listing = {
     name: "Test",
     canonical_address: "1 Main",
     city: null,
+    state: null,
+    county: null,
     official_url: null,
     floor_plans: [],
     sources: [],

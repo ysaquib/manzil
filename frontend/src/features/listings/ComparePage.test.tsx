@@ -40,6 +40,8 @@ function makeListing(id: string, name: string, laundry: unknown): Listing {
       name,
       canonical_address: "1 Main St",
       city: null,
+      state: null,
+      county: null,
       official_url: null,
       floor_plans: [
         {

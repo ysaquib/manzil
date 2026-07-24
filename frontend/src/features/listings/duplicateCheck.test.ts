@@ -32,6 +32,8 @@ function makeListing(id: string, official: string | null, sourceUrls: string[] =
       name: `Property ${id}`,
       canonical_address: "1 Main St",
       city: null,
+      state: null,
+      county: null,
       official_url: official,
       floor_plans: [],
       sources,

@@ -7,6 +7,7 @@ import { notifications } from "@mantine/notifications";
 import { IconArchive, IconRestore } from "@tabler/icons-react";
 
 import { ApiError } from "../../lib/apiClient";
+import { propertyLocationLabel } from "./locality";
 import { useArchivedListings, usePatchListingStatus } from "./api";
 
 export function ArchivedListings({ huntId }: { huntId: string }) {
@@ -76,7 +77,11 @@ export function ArchivedListings({ huntId }: { huntId: string }) {
               </Text>
             </Table.Td>
             <Table.Td>
-              <Text size="sm">{listing.property.city ?? "—"}</Text>
+              <Text size="sm">
+                {propertyLocationLabel(listing.property) === "Unknown"
+                  ? "—"
+                  : propertyLocationLabel(listing.property)}
+              </Text>
             </Table.Td>
             <Table.Td width={120}>
               <Button

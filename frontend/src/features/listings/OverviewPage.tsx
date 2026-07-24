@@ -52,6 +52,7 @@ import {
   type SortKey,
   type SortState,
 } from "./overviewRows";
+import { propertyLocationLabel } from "./locality";
 import { INTEREST_STATUSES, type InterestStatus } from "./types";
 import { SubmitUrlControl } from "./SubmitUrlControl";
 
@@ -129,7 +130,7 @@ export function OverviewPage() {
 
   const allRows = buildRows(listings ?? [], unitGroupStates);
   const rows = sortRows(applyOverviewFilters(allRows, filters), sort);
-  const cities = [...new Set((listings ?? []).map((listing) => listing.property.city ?? "Unknown"))]
+  const cities = [...new Set((listings ?? []).map((listing) => propertyLocationLabel(listing.property)))]
     .sort((a, b) => a.localeCompare(b));
 
   // Bulk selection (m6) — only selections still visible under the current
