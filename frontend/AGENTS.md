@@ -6,17 +6,23 @@ intent.
 
 ## Design & UX rules
 
-- **No gradients.** Flat colors only, everywhere — backgrounds, buttons, badges, charts.
+> Craft-level guidance (visual language, component approach, consistency patterns) and the UI
+> decision log live in **`frontend/UI_DESIGN.md`**. Read it before building or reshaping a surface.
+> Where a bullet here and that doc drift, the doc is the current word.
+
+- **No gradients.** Flat colors only, everywhere — backgrounds, buttons, badges, charts, score tiles.
 - **Refactoring UI principles govern visual design:**
   - Constrained palette with semantic roles; pick colors from the Mantine theme, never ad hoc.
   - Hierarchy via font weight, size, and gray shades (`dimmed`, `gray.6`) — not via decoration,
     borders, or shouting colors.
   - Whitespace is the primary grouping tool; prefer spacing over divider lines.
   - De-emphasize secondary content instead of emphasizing everything; labels are lighter than data.
-- **Mantine-native theming only.** All colors, spacing, radii, and shadows flow through
-  `src/theme.ts` (semantic palette, component default props). No bespoke CSS files, no inline hex
-  values in components — use Mantine color tokens (`green`, `gray.5`, `var(--mantine-color-*)`).
-  `scoreColor` returning Mantine color names is the pattern to follow for dynamic color.
+- **Mantine-first theming.** All colors, spacing, radii, and shadows flow through `src/theme.ts`
+  (semantic palette, component default props). No inline hex values in components — use Mantine color
+  tokens (`green`, `gray.5`, `var(--mantine-color-*)`). `scoreColor` returning Mantine color names is
+  the pattern for dynamic color. Co-located `*.module.css` files are allowed **where warranted** (see
+  `UI_DESIGN.md §3`): still token-driven (no raw hex), theme-aware, scoped to their component — never a
+  global stylesheet.
 - **Intelligent affordance hierarchy.** Frequent/important actions are immediately visible
   (primary `Button`, always-visible controls: submit-URL, score filter, save). Seldom-used or
   destructive actions are tucked away but deliberately reachable: row-level rarities in a kebab
