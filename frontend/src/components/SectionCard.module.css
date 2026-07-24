@@ -1,0 +1,4 @@
+.head { padding: 13px var(--mantine-spacing-md) 11px; gap: var(--mantine-spacing-xs); }
+.title { font-size: 15.5px; letter-spacing: -0.005em; }
+.hint { font-size: 12px; color: var(--mantine-color-dimmed); white-space: nowrap; }
+.body { padding: 2px var(--mantine-spacing-md) 15px; }
