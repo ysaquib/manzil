@@ -28,9 +28,10 @@ What moves, and what does not:
   than being guessed at; the next IMAGE_FETCH re-derives them.
 
 Geocode is deliberately dropped: the new Property gets NULL `place_id/lat/lng`
-even though the original has them, because the split exists precisely because
-that geocode may belong to the *other* building. The next ingest/refresh of the
-moved Listing re-geocodes from freshly extracted identity.
+and NULL locality (`city/state/county`) even though the original has them,
+because the split exists precisely because that geocode may belong to the
+*other* building. The next ingest/refresh of the moved Listing re-geocodes
+from freshly extracted identity.
 
 Everything runs in one transaction: all validation happens before the first
 write, and any failure rolls the whole split back — a half-split Property is
