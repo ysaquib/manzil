@@ -22,6 +22,28 @@ GEOCODE_BODY = {
             "place_id": "PLACE_ABC",
             "formatted_address": "120 Maple Ct, Detroit, MI 48187, USA",
             "geometry": {"location": {"lat": 42.331, "lng": -83.045}},
+            "address_components": [
+                {
+                    "long_name": "Detroit",
+                    "short_name": "Detroit",
+                    "types": ["locality", "political"],
+                },
+                {
+                    "long_name": "Michigan",
+                    "short_name": "MI",
+                    "types": ["administrative_area_level_1", "political"],
+                },
+                {
+                    "long_name": "Wayne County",
+                    "short_name": "Wayne",
+                    "types": ["administrative_area_level_2", "political"],
+                },
+                {
+                    "long_name": "United States",
+                    "short_name": "US",
+                    "types": ["country", "political"],
+                },
+            ],
         }
     ],
 }
@@ -139,6 +161,9 @@ async def test_quota_backoff_retries_then_succeeds(monkeypatch: pytest.MonkeyPat
 
     result = await maps._geocode_call("120 Maple", transport=_transport(handler))
     assert result["place_id"] == "PLACE_ABC"
+    assert result["city"] == "Detroit"
+    assert result["state"] == "MI"
+    assert result["county"] == "Wayne County"
     assert state["n"] == 2  # retried once
 
 

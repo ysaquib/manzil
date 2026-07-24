@@ -29,6 +29,7 @@ from manzil_shared.config import (
     MAPS_TIMEOUT_SECONDS,
 )
 
+from manzil_worker.enrich.locality import parse_us_locality
 from manzil_worker.llm.tools import current_tool_context, tool
 
 log = structlog.get_logger()
@@ -108,20 +109,15 @@ async def _geocode_call(address: str, *, transport: Any = None) -> dict[str, Any
     top = results[0]
     loc = top["geometry"]["location"]
     components = top.get("address_components") or []
-    city = next(
-        (
-            component.get("long_name")
-            for component in components
-            if "locality" in (component.get("types") or [])
-        ),
-        None,
-    )
+    locality = parse_us_locality(components, address)
     return {
         "place_id": top["place_id"],
         "lat": float(loc["lat"]),
         "lng": float(loc["lng"]),
         "formatted_address": top.get("formatted_address", address),
-        "city": city,
+        "city": locality.city,
+        "state": locality.state,
+        "county": locality.county,
     }
 
 
