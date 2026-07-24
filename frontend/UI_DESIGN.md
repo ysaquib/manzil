@@ -47,6 +47,21 @@ Guiding principles (Refactoring UI, adapted):
 `Badge`, `Rating`, `Drawer`, `Popover`, `HoverCard`, …) and set look via **props + theme default
 props**. Most surfaces need no custom CSS at all.
 
+**Primitives over raw `<div>`s.** A bare `<div>` (or `<span>`/`<p>`) in a `.tsx` is a smell — reach
+for the primitive that names the intent instead: `Box` (styled div), `Stack`/`Group` (flex column/
+row), `SimpleGrid` (equal-column grid), `Paper`/`Card` (bordered surface), `AspectRatio` (ratio box),
+`Text`/`Title` (typography). Fewer, semantic nodes read better, and typographic roles ride props
+(`c="dimmed"`, `fw={600}`, `tt="uppercase"`, `ff="heading"`) that resolve through the theme rather
+than restating colors/weights in CSS. Drop to a co-located `*.module.css` only for what props can't
+express (see below), not for ordinary layout or text. (RefactoringUI: hierarchy and grouping come
+from semantic structure + spacing, not from nesting anonymous boxes.)
+
+**Don't hand-roll what Mantine ships.** Use the packaged component and restyle it to spec rather than
+rebuilding it: `@mantine/carousel` for image/content carousels (never a bespoke scroll-snap strip),
+`@mantine/dates` for date inputs, `@mantine/notifications` for toasts, `@mantine/modals` if a confirm
+helper is wanted (raw `<Modal>` is already fine). One genuinely-custom exception in the drawer:
+`ImageLightbox` stays hand-built because it is a full-screen **zoom viewer**, not a carousel.
+
 **Reach for a co-located `*.module.css` file when** the design genuinely needs something the props
 API doesn't express cleanly:
 - bespoke layout (CSS grid tracks, `min-width:0` overflow control, sticky/pinned footers),
@@ -56,12 +71,20 @@ API doesn't express cleanly:
 Rules for module CSS (so it stays consistent and themable):
 - **Colors are always tokens**, never raw hex: `var(--mantine-color-sage-6)`,
   `var(--mantine-font-family-monospace)`; `color-mix(in srgb, var(--mantine-color-...) N%, …)`
-  is fine for tints. **Standard spacing/radius use tokens where they map cleanly**
-  (`var(--mantine-spacing-md)`, `var(--mantine-radius-sm)`), and never override a themed
-  `Card`'s radius with a bespoke value. **Fine optical geometry — bespoke asymmetric
-  paddings, dot/track/pip pixel sizes, sub-token font-sizes and letter-spacing — may be raw
-  px/rem** (see `PipelineTrack.module.css`/`HistoryCard.module.css`). The hard rule is colors;
-  fine geometry is a judgment call, tokens preferred where they fit.
+  is fine for tints.
+- **Anchor spacing and font-size to the scale.** `margin`/`padding`/`gap` and `font-size` values
+  that fall within the Mantine scale use the token var (`var(--mantine-spacing-*)`,
+  `var(--mantine-font-size-*)`) so they track `theme.ts` — snap to the nearest step. Use an explicit
+  value **only** when the size is *intentionally* outside the scale (below `xs` or above `xl`) or is
+  a calculated/optical one-off (a hanging indent that must equal dot+gap, a display numeral) — and
+  then prefer **rem** over px. Scale, for reference: spacing `xs`=10 · `sm`=12 · `md`=16 · `lg`=20 ·
+  `xl`=32; font `xs`=12 · `sm`=14 · `md`=16 · `lg`=18 · `xl`=20 (px). Never override a themed `Card`'s
+  radius with a bespoke value.
+- **Optical geometry stays explicit.** Dot/track/pip/avatar pixel sizes, `border-width`,
+  `letter-spacing`, `line-height`, and fixed grid-column widths are not spacing/font tokens — leave
+  them as tuned px/rem (see `PipelineTrack.module.css`/`HistoryCard.module.css`). The hard rules are
+  colors (always tokens) and in-range spacing/font (always tokens); optical geometry is the
+  deliberate exception.
 - **Theme-aware** via `:global([data-mantine-color-scheme="dark"]) .foo { … }` (no
   `postcss-preset-mantine`, so no `light-dark()` mixin). Audit both schemes.
 - Keep modules **co-located** with their component and scoped to it. No global stylesheets, no app-wide
@@ -118,6 +141,7 @@ Newest first. Each entry: what changed, and why.
 
 | Date | Change | Why |
 |---|---|---|
+| 2026-07-24 | **Drawer polish + Mantine-hardening pass** (`dev-phase3`). (1) Star ratings now take the member's color, yellow fallback (`starColorCss`). (2) `DrawerHero` recomposed from raw `<div>`s onto `Box`/`Text`/`Group`/`Title` primitives (typographic roles → props), output unchanged. (3) Token-anchoring tightened and swept across the drawer's module CSS — in-range spacing/font now use `var(--mantine-spacing-*)`/`var(--mantine-font-size-*)`; §3 rules updated. (4) The hand-rolled carousels (`DrawerImageGallery`, `PropertyImageCarousel`) rebuilt on **`@mantine/carousel`**; `ImageLightbox` kept custom (zoom viewer). (5) Tests relocated to the flat `frontend/tests/` dir. New §3 rules: *primitives over raw divs*, *anchor spacing/font to the scale*, *don't hand-roll what Mantine ships*. | Follow-up review of the shipped drawer: raw-div soup and off-scale pixel values were hard to maintain and couldn't be driven from `theme.ts`; a hand-rolled carousel duplicated a packaged component; star color carried no member identity. |
 | 2026-07-23 | **CSS Modules formally permitted** (Mantine-first, `*.module.css` where warranted; §3). Updates the older `frontend/AGENTS.md` "no bespoke CSS files" absolute, which the job-card work had already outgrown. Gradients remain **flat-only**. | Some layout/state visuals (pipeline track, meters, overflow control) can't be expressed cleanly through Mantine props; a scoped, token-driven module is clearer than prop gymnastics, without giving up theme consistency. |
 | 2026-07-24 | **Listing Detail Drawer redesign** (shipped; commits `300b48e..cc1d299` on `dev-phase3`, interleaved with an unrelated locality feature). Seven equal-weight `Section`s → a **summary hero** (name/address, large primary image + thumbnail filmstrip, score/all-in/beds tiles, score tile flat-tinted by band with a `✦` on ≥10) + **five topic cards** (Why this score · Cost & fees · Floor plans · Notes & ratings · Sources) built on the new `SectionCard`. Additive score tally (baseline 10 → signed deltas → `X / 15`); shared `scoreBand`/`scoreColor`/`scoreLabel` so color+label never disagree; badge declutter (state dots + one `ⓘ`/row + plum override dot); all-in result box; promoted sage utilities block; per-plan score chips; 5-star half-step ratings showing the whole team + average; compact multi-source rows. Presentation-only — no contract/scoring/data changes. Built via subagent-driven TDD (11 tasks, each spec+quality reviewed); 226 frontend tests + build + lint green. Spec: `docs/superpowers/specs/2026-07-23-listing-detail-drawer-redesign-design.md`; plan: `docs/superpowers/plans/2026-07-23-listing-detail-drawer-redesign.md`. | The drawer holds the most information and read as clutter (equal weight, stacked tables, badge pile-ups). It deserved a clear hierarchy: scan the headline, drill into calm grouped detail. |
 | 2026-07-22 | **Job cards redesign** (Tasks page). Unified active/history cards on a shared five-phase `PipelineTrack`; status → colored dot + legend (fewer badges); history retry; expandable run-detail timeline; compact stop control on active cards. First substantial use of co-located CSS Modules. | The old cards showed raw stage text and lacked a retry path; the pipeline needed a legible, alive visual and a consistent language across active/history. |
