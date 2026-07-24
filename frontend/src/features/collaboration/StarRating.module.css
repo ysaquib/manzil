@@ -18,11 +18,11 @@
 }
 
 .lg {
-  font-size: 26px;
+  font-size: 1.625rem;
   letter-spacing: 3px;
 }
 
 .sm {
-  font-size: 14px;
+  font-size: var(--mantine-font-size-sm);
   letter-spacing: 1.5px;
 }
