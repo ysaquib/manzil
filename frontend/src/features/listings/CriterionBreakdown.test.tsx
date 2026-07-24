@@ -161,7 +161,7 @@ describe("CriterionBreakdown", () => {
     renderBreakdown(normalBreakdown);
     expect(screen.getByText("Number of bedrooms")).toBeInTheDocument();
     expect(screen.getByText("+0.5")).toBeInTheDocument();
-    expect(screen.getByText("-1")).toBeInTheDocument();
+    expect(screen.getByText("-1.0")).toBeInTheDocument();
     expect(screen.getByText("unknown")).toBeInTheDocument();
   });
 
@@ -180,20 +180,24 @@ describe("CriterionBreakdown", () => {
     expect(screen.queryByText("Number of bedrooms")).not.toBeInTheDocument();
   });
 
-  it("marks overridden criteria with the override badge (§9.6 precedence)", () => {
+  it("marks overridden criteria with the override affordance (§9.6 precedence)", () => {
+    // The word badge became a quiet plum dot + a revert affordance.
     renderBreakdown(normalBreakdown, [override]);
-    expect(screen.getByText("override")).toBeInTheDocument();
+    expect(screen.getByLabelText("overridden")).toBeInTheDocument();
+    expect(screen.getByLabelText("revert beds override")).toBeInTheDocument();
   });
 
-  it("shows no override badge without overrides", () => {
+  it("shows no override affordance without overrides", () => {
     renderBreakdown(normalBreakdown);
-    expect(screen.queryByText("override")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("overridden")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/revert/)).not.toBeInTheDocument();
   });
 
   it("quietly labels generalized applicability and disagreement", () => {
+    // Applicability + disagreement collapse into one quiet text flag.
     renderBreakdown(normalBreakdown, [], [{ ...extraction, disputed: true }]);
-    expect(screen.getByText("units unspecified")).toBeInTheDocument();
-    expect(screen.getByText("sources disagree")).toBeInTheDocument();
+    expect(screen.getByText(/units unspecified/)).toBeInTheDocument();
+    expect(screen.getByText(/sources disagree/)).toBeInTheDocument();
   });
 
   // P3-8 (DESIGN §20 2026-07-18): location_safety is an override-first
@@ -221,5 +225,35 @@ describe("CriterionBreakdown", () => {
     renderBreakdown(graded);
     expect(screen.queryByText("awaiting grade")).not.toBeInTheDocument();
     expect(screen.getByText("B+")).toBeInTheDocument();
+  });
+
+  it("shows the baseline, a signed delta per criterion, and the total out of 15", () => {
+    const breakdown: ScoreBreakdown = {
+      base: 10,
+      total: 12.5,
+      rubric_version: 1,
+      clamped: false,
+      gates: [],
+      criteria: [{ key: "pets", value: "cats_dogs", matched: null, delta: 1.5 }],
+    };
+    renderBreakdown(breakdown);
+    expect(screen.getByText("Baseline")).toBeInTheDocument();
+    expect(screen.getByText("10.0")).toBeInTheDocument();
+    expect(screen.getByText("+1.5")).toBeInTheDocument();
+    expect(screen.getByText(/12\.5/)).toBeInTheDocument();
+    expect(screen.getByText("/ 15")).toBeInTheDocument();
+  });
+
+  it("renders one evidence affordance per criterion that has an extraction", () => {
+    const breakdown: ScoreBreakdown = {
+      base: 10,
+      total: 11,
+      rubric_version: 1,
+      clamped: false,
+      gates: [],
+      criteria: [{ key: "pets", value: "cats_dogs", matched: null, delta: 1 }],
+    };
+    renderBreakdown(breakdown, [], [{ ...extraction, criterion_key: "pets" }]);
+    expect(screen.getAllByLabelText("evidence")).toHaveLength(1);
   });
 });

@@ -5,12 +5,10 @@
 import {
   ActionIcon,
   Alert,
-  Badge,
   Group,
   HoverCard,
   Popover,
   Stack,
-  Table,
   Text,
   Tooltip,
 } from "@mantine/core";
@@ -22,19 +20,10 @@ import { displayValue as formatCriterionValue } from "./displayValue";
 import { useListingDetailDraft } from "./ListingDetailDraft";
 import { OverrideControl } from "./OverrideControl";
 import { activeOverrides, extractionForFloorPlan, REVERT_NOTE } from "./overrides";
+import { scoreBand, scoreColor, formatScore } from "./scoreBands";
+import classes from "./CriterionBreakdown.module.css";
 import type { Extraction, Override } from "./types";
 import type { CatalogEntry } from "../rubric/api";
-
-function deltaBadge(delta: number) {
-  const color = delta > 0 ? "green" : delta < 0 ? "red" : "gray";
-  const sign = delta > 0 ? "+" : "";
-  return (
-    <Badge color={color} variant="light" size="sm">
-      {sign}
-      {delta}
-    </Badge>
-  );
-}
 
 function applicabilityLabel(extraction: Extraction): string | null {
   if (extraction.target_scope === "floor_plan") return "this floor plan";
@@ -175,76 +164,86 @@ export function CriterionBreakdown({
   }
 
   return (
-    <Table verticalSpacing="xs" withRowBorders={false}>
-      <Table.Thead>
-        <Table.Tr>
-          <Table.Th>
-            <Text size="xs" c="dimmed" fw={500}>
-              Criterion
-            </Text>
-          </Table.Th>
-          <Table.Th>
-            <Text size="xs" c="dimmed" fw={500}>
-              Value
-            </Text>
-          </Table.Th>
-          <Table.Th>
-            <Text size="xs" c="dimmed" fw={500}>
-              Points
-            </Text>
-          </Table.Th>
-          <Table.Th aria-label="override actions" />
-        </Table.Tr>
-      </Table.Thead>
-      <Table.Tbody>
-        {displayedCriteria.map((criterion, index) => {
-          const entry = catalogByKey.get(criterion.key);
-          const section = entry?.fact_scope === "property" ? "Property facts" : "Floor plan facts";
-          const previous = index > 0 ? catalogByKey.get(displayedCriteria[index - 1].key) : undefined;
-          const previousSection =
-            previous?.fact_scope === "property" ? "Property facts" : "Floor plan facts";
-          const extraction = extractionForFloorPlan(extractions, criterion.key, floorPlanId);
-          const savedOverrideRow = effectiveOverrides.get(criterion.key);
-          const savedOverride = overriddenKeys.has(criterion.key);
-          const draftOverride = draftOverrides.get(criterion.key);
-          const isPending = draftOverride !== undefined;
-          const displayVal = isPending ? draftOverride.value : criterion.value;
-          return (
-            <Fragment key={criterion.key}>
-              {(index === 0 || section !== previousSection) && (
-                <Table.Tr>
-                  <Table.Td colSpan={4} pt={index === 0 ? "xs" : "md"}>
-                    <Text size="xs" fw={700} c="dimmed" tt="uppercase">
-                      {section}
-                    </Text>
-                  </Table.Td>
-                </Table.Tr>
-              )}
-              <CriterionRow
-                criterion={criterion}
-                entry={entry}
-                extraction={extraction}
-                displayValue={displayVal}
-                savedOverride={savedOverride}
-                isPending={isPending}
-                isMobile={isMobile}
-                floorPlanId={floorPlanId}
-                onRevert={() =>
-                  setDraftOverride(criterion.key, {
-                    value: null,
-                    note: REVERT_NOTE,
-                    target_scope: savedOverrideRow?.target_scope ?? "property",
-                    floor_plan_id: savedOverrideRow?.floor_plan_id ?? null,
-                    applicability: savedOverrideRow?.applicability ?? null,
-                  })
-                }
-              />
-            </Fragment>
-          );
-        })}
-      </Table.Tbody>
-    </Table>
+    <div className={classes.wrap}>
+      <div className={classes.baseRow}>
+        <span className={classes.baseLbl}>
+          Baseline <span className={classes.baseNote}>— all your needs met</span>
+        </span>
+        <span className={classes.baseVal}>{breakdown.base.toFixed(1)}</span>
+      </div>
+      {displayedCriteria.map((criterion, index) => {
+        const entry = catalogByKey.get(criterion.key);
+        const section = entry?.fact_scope === "property" ? "Property facts" : "Floor plan facts";
+        const previous = index > 0 ? catalogByKey.get(displayedCriteria[index - 1].key) : undefined;
+        const previousSection =
+          previous?.fact_scope === "property" ? "Property facts" : "Floor plan facts";
+        const extraction = extractionForFloorPlan(extractions, criterion.key, floorPlanId);
+        const savedOverrideRow = effectiveOverrides.get(criterion.key);
+        const savedOverride = overriddenKeys.has(criterion.key);
+        const draftOverride = draftOverrides.get(criterion.key);
+        const isPending = draftOverride !== undefined;
+        const displayVal = isPending ? draftOverride.value : criterion.value;
+        return (
+          <Fragment key={criterion.key}>
+            {(index === 0 || section !== previousSection) && (
+              <div className={classes.groupLabel}>{section}</div>
+            )}
+            <CriterionRow
+              criterion={criterion}
+              entry={entry}
+              extraction={extraction}
+              displayValue={displayVal}
+              savedOverride={savedOverride}
+              isPending={isPending}
+              isMobile={isMobile}
+              floorPlanId={floorPlanId}
+              onRevert={() =>
+                setDraftOverride(criterion.key, {
+                  value: null,
+                  note: REVERT_NOTE,
+                  target_scope: savedOverrideRow?.target_scope ?? "property",
+                  floor_plan_id: savedOverrideRow?.floor_plan_id ?? null,
+                  applicability: savedOverrideRow?.applicability ?? null,
+                })
+              }
+            />
+          </Fragment>
+        );
+      })}
+      <div className={classes.legend}>
+        Each criterion nudges the baseline · above 10 also meets your wants · capped 0–15.
+      </div>
+      <div className={classes.totalRow}>
+        <span className={classes.totalLbl}>Total score</span>
+        <span
+          className={classes.totalVal}
+          data-band={scoreColor(breakdown.total).replace("score", "").toLowerCase()}
+        >
+          {formatScore(breakdown.total)}
+          {scoreBand(breakdown.total) === 0 && <span className={classes.exc}>✦</span>}
+          <span className={classes.denom}> / 15</span>
+        </span>
+      </div>
+    </div>
   );
+}
+
+// applicability / disputed / awaiting-grade collapse into one quiet text flag
+// (no pill pile-up). Location safety has no automated grader, so an unknown is
+// expected — say "awaiting grade" instead of surfacing scope/disagreement noise.
+function rowFlag(
+  criterion: ScoreBreakdown["criteria"][number],
+  extraction: Extraction | undefined,
+  isPending: boolean,
+): string | null {
+  if (criterion.key === "location_safety" && criterion.unknown && !isPending) {
+    return "awaiting grade";
+  }
+  const parts: string[] = [];
+  const applicability = extraction ? applicabilityLabel(extraction) : null;
+  if (applicability) parts.push(applicability);
+  if (extraction?.disputed) parts.push("sources disagree");
+  return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 function CriterionRow({
@@ -268,89 +267,67 @@ function CriterionRow({
   floorPlanId: string | null;
   onRevert: () => void;
 }) {
-  const showOverrideBadge = savedOverride && !isPending;
+  const showOverrideDot = savedOverride && !isPending;
+  const valueOverridden = savedOverride || isPending;
   const evidenceOverridden = savedOverride || isPending;
+  const flag = rowFlag(criterion, extraction, isPending);
 
   return (
-    <Table.Tr>
-      <Table.Td>
+    <div className={classes.crit}>
+      <Group gap={6} wrap="nowrap" className={classes.nameCell}>
+        {showOverrideDot && (
+          <Tooltip label="Value overridden">
+            <span className={classes.dot} aria-label="overridden" />
+          </Tooltip>
+        )}
         <Text size="sm">{entry?.label ?? criterion.key}</Text>
-      </Table.Td>
-      <Table.Td>
-        <Group gap="xs" wrap="nowrap">
-          <Text size="sm" fw={600} c={criterion.unknown && !isPending ? "dimmed" : undefined}>
-            {formatCriterionValue(value, criterion.key)}
-          </Text>
-          {isPending && (
-            <Badge size="xs" color={"manual"} variant="light">
-              pending
-            </Badge>
-          )}
-          {showOverrideBadge && (
-            <Badge size="xs" color={"manual"} variant="light">
-              override
-            </Badge>
-          )}
-          {extraction && applicabilityLabel(extraction) && (
-            <Badge size="xs" color="gray" variant="light">
-              {applicabilityLabel(extraction)}
-            </Badge>
-          )}
-          {extraction?.disputed && (
-            <Tooltip label="Sources disagree; the current resolved value is shown.">
-              <Badge size="xs" color="gray" variant="outline">
-                sources disagree
-              </Badge>
-            </Tooltip>
-          )}
-          {/* location_safety is an override-first placeholder (DESIGN §20
-              2026-07-18): no pipeline stage grades it, so an unknown here is
-              expected, not missing data — say so instead of a bare dash. */}
-          {criterion.key === "location_safety" && criterion.unknown && !isPending && (
-            <Tooltip
-              label="No automated safety source yet — grade it yourself (A+ to F) via override."
-              multiline
-              w={240}
-            >
-              <Badge size="xs" color="gray" variant="light">
-                awaiting grade
-              </Badge>
-            </Tooltip>
-          )}
-        </Group>
-      </Table.Td>
-      <Table.Td width={70}>{deltaBadge(criterion.delta)}</Table.Td>
-      <Table.Td width={72}>
-        <Group gap={4} wrap="nowrap" justify="flex-end">
-          {extraction && (
-            <EvidenceButton
-              extraction={extraction}
-              overridden={evidenceOverridden}
-              isMobile={isMobile}
-            />
-          )}
-          <OverrideControl
-            criterionKey={criterion.key}
-            schema={entry?.value_schema}
-            currentValue={value}
-            factScope={entry?.fact_scope}
-            floorPlanId={floorPlanId}
+        {flag && <span className={classes.flag}>{flag}</span>}
+        {extraction && (
+          <EvidenceButton
+            extraction={extraction}
+            overridden={evidenceOverridden}
+            isMobile={isMobile}
           />
-          {showOverrideBadge && (
-            <Tooltip label="Revert to original value">
-              <ActionIcon
-                color="gray"
-                size="sm"
-                variant="subtle"
-                aria-label={`revert ${criterion.key} override`}
-                onClick={onRevert}
-              >
-                <IconArrowBackUp size={14} stroke={1.5} color="var(--mantine-color-dimmed)" />
-              </ActionIcon>
-            </Tooltip>
-          )}
-        </Group>
-      </Table.Td>
-    </Table.Tr>
+        )}
+      </Group>
+      <Text
+        size="sm"
+        fw={600}
+        className={valueOverridden ? classes.overridden : undefined}
+        c={criterion.unknown && !isPending && !valueOverridden ? "dimmed" : undefined}
+      >
+        {formatCriterionValue(value, criterion.key)}
+      </Text>
+      <span
+        className={`${classes.delta} ${
+          criterion.delta > 0 ? classes.pos : criterion.delta < 0 ? classes.neg : classes.zero
+        }`}
+      >
+        {criterion.delta > 0 ? "+" : ""}
+        {criterion.delta.toFixed(1)}
+      </span>
+      <Group gap={4} wrap="nowrap" justify="flex-end">
+        <OverrideControl
+          criterionKey={criterion.key}
+          schema={entry?.value_schema}
+          currentValue={value}
+          factScope={entry?.fact_scope}
+          floorPlanId={floorPlanId}
+        />
+        {showOverrideDot && (
+          <Tooltip label="Revert to original value">
+            <ActionIcon
+              color="gray"
+              size="sm"
+              variant="subtle"
+              aria-label={`revert ${criterion.key} override`}
+              onClick={onRevert}
+            >
+              <IconArrowBackUp size={14} stroke={1.5} color="var(--mantine-color-dimmed)" />
+            </ActionIcon>
+          </Tooltip>
+        )}
+      </Group>
+    </div>
   );
 }
