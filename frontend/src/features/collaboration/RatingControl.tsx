@@ -2,18 +2,17 @@ import { Group, Rating, Text } from "@mantine/core";
 
 import { useAuth } from "../../auth/useAuth";
 import { useMembers, useRatings, useSetRating } from "./api";
+import { starColorCss } from "./memberColors";
 import { TeamRatings } from "./TeamRatings";
 
 export function RatingControl({
   listingId,
   unitGroupKey,
   huntId,
-  color = "yellow",
 }: {
   listingId: string;
   unitGroupKey: string;
   huntId: string;
-  color?: string;
 }) {
   const { session } = useAuth();
   const { data: ratings = [] } = useRatings(listingId);
@@ -23,6 +22,8 @@ export function RatingControl({
     ratings.find(
       (rating) => rating.unit_group_key === unitGroupKey && rating.user_id === session?.user.id,
     )?.rating ?? null;
+  const currentMember = members.find((member) => member.user_id === session?.user.id);
+  const yourStarColor = starColorCss(currentMember?.color ?? null);
 
   return (
     <div>
@@ -34,7 +35,7 @@ export function RatingControl({
           value={current ?? 0}
           onChange={(value) => setRating.mutate(value)}
           fractions={2}
-          color={color}
+          color={yourStarColor}
           size="lg"
         />
         {current != null && (
