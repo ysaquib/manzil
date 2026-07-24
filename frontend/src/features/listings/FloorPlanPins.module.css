@@ -1,0 +1,101 @@
+/* Per-plan pin row (Task 8): score chip on the name line, rent + availability
+ * pulled to the right so the left column reads as name → meta. Flat only;
+ * colors are Mantine tokens (UI_DESIGN §3). */
+
+.plan {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--mantine-spacing-sm);
+  width: 100%;
+  min-width: 0;
+}
+
+.planBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Name line: plan name + score chip, together. */
+.pn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.planName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planScore {
+  flex: none;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  padding: 0 6px;
+  border-radius: 5px;
+  line-height: 1.5;
+}
+
+.highest,
+.high {
+  color: var(--mantine-color-teal-7);
+  background: color-mix(in srgb, var(--mantine-color-teal-6) 14%, transparent);
+}
+
+.good {
+  color: var(--mantine-color-lime-7);
+  background: color-mix(in srgb, var(--mantine-color-lime-6) 16%, transparent);
+}
+
+.mid {
+  color: var(--mantine-color-yellow-7);
+  background: color-mix(in srgb, var(--mantine-color-yellow-6) 18%, transparent);
+}
+
+.low {
+  color: var(--mantine-color-orange-7);
+  background: color-mix(in srgb, var(--mantine-color-orange-6) 16%, transparent);
+}
+
+.poor,
+.poorest {
+  color: var(--mantine-color-red-7);
+  background: color-mix(in srgb, var(--mantine-color-red-6) 14%, transparent);
+}
+
+.meta {
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-xs);
+}
+
+.types {
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-xs);
+}
+
+/* Right column: rent range emphasized, availability under it. */
+.planRight {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  text-align: right;
+}
+
+.rent {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.avail {
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-xs);
+}

@@ -1,14 +1,21 @@
 // Floor plans + per-group pin control (P1-11, §9.4): draft-only until drawer Save.
-import { Badge, Group, Radio, Stack, Text } from "@mantine/core";
+import { Group, Radio, Stack, Text } from "@mantine/core";
 
+import classes from "./FloorPlanPins.module.css";
 import { useListingDetailDraft } from "./ListingDetailDraft";
-import { formatScore, scoreColor } from "./ScoreCell";
+import { formatScore, scoreColor } from "./scoreBands";
 import { formatRange } from "./overviewRows";
 import type { Score } from "./types";
 import type { UnitGroupRow } from "./unitGroups";
 
 function formatBedsBaths(beds: number, baths: number): string {
   return `${beds === 0 ? "Studio" : `${beds} bd`} / ${baths} ba`;
+}
+
+// scoreColor → chip band class: "scoreHighest" → "highest", etc. (§9.3 bands).
+function bandClass(total: number): string {
+  const band = scoreColor(total).replace("score", "").toLowerCase();
+  return classes[band] ?? "";
 }
 
 export function FloorPlanPins({
@@ -40,34 +47,46 @@ export function FloorPlanPins({
           </Radio.Card>
           {group.plans.map((plan) => {
             const planScore = scoreByPlan.get(plan.id);
+            const availability = plan.availability_date;
+            const unitTypes = plan.unit_types ?? [];
             return (
               <Radio.Card key={plan.id} value={plan.id} disabled={saving} p="sm" withBorder>
-                <Group wrap="nowrap" align="flex-start" gap="sm">
+                <div className={classes.plan}>
                   <Radio.Indicator />
-                  <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
-                    <Group gap="xs" wrap="wrap">
-                      <Text size="sm" fw={600}>
+                  <div className={classes.planBody}>
+                    <div className={classes.pn}>
+                      <Text size="sm" fw={600} className={classes.planName}>
                         {plan.plan_name}
                       </Text>
                       {planScore && (
-                        <Badge size="xs" color={scoreColor(planScore.total)} variant="light">
+                        <span
+                          className={`${classes.planScore} ${bandClass(planScore.total)}`}
+                          data-testid={`plan-score-${plan.id}`}
+                          data-band={scoreColor(planScore.total).replace("score", "").toLowerCase()}
+                        >
                           {formatScore(planScore.total)}
-                        </Badge>
+                        </span>
                       )}
-                    </Group>
-                    <Text size="xs" c="dimmed">
+                    </div>
+                    <Text className={classes.meta}>
                       {formatBedsBaths(plan.beds, plan.baths)} ·{" "}
-                      {formatRange(plan.rent_min, plan.rent_max, "$")} ·{" "}
                       {formatRange(plan.sqft_min, plan.sqft_max)} sqft
-                      {plan.availability_date ? ` · avail ${plan.availability_date}` : ""}
                     </Text>
-                    {(plan.unit_types?.length ?? 0) > 0 && (
-                      <Text size="xs" c="dimmed">
-                        {plan.unit_types?.map((type) => type.replaceAll("_", " ")).join(", ")}
+                    {unitTypes.length > 0 && (
+                      <Text className={classes.types}>
+                        {unitTypes.map((type) => type.replaceAll("_", " ")).join(", ")}
                       </Text>
                     )}
-                  </Stack>
-                </Group>
+                  </div>
+                  <div className={classes.planRight}>
+                    <Text size="sm" className={classes.rent}>
+                      {formatRange(plan.rent_min, plan.rent_max, "$")}
+                    </Text>
+                    {availability && (
+                      <Text className={classes.avail}>avail {availability}</Text>
+                    )}
+                  </div>
+                </div>
               </Radio.Card>
             );
           })}
