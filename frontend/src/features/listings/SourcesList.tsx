@@ -1,12 +1,31 @@
 // Sources (P3-5, §13.2): retained links, fetch state, assurance badge, and the
 // Listing's editable Source Policy. Relaxing the policy queues DISCOVER.
-import { Anchor, Badge, Group, Select, Stack, Text } from "@mantine/core";
+import { Anchor, Select, Stack, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { IconExternalLink } from "@tabler/icons-react";
 
 import { SingleSourceBadge } from "../../components/badges/ListingBadges";
 import { SOURCE_POLICIES, type SourcePolicy } from "../../lib/contracts";
 import { usePatchSourcePolicy } from "./api";
+import classes from "./SourcesList.module.css";
 import type { PropertySource, SingleSourceReason } from "./types";
+
+// The dimmed secondary text is the URL's path (the distinguishing part beyond
+// the site_domain shown as the name) so a source never repeats its own domain.
+function pathOf(url: string): string {
+  try {
+    const { pathname, search } = new URL(url);
+    const rest = `${pathname}${search}`;
+    return rest === "/" ? "" : rest;
+  } catch {
+    return url;
+  }
+}
+
+function fetchTitle(source: PropertySource): string {
+  if (!source.last_fetched_at) return "Not fetched yet";
+  return `Last fetched ${new Date(source.last_fetched_at).toLocaleString()}`;
+}
 
 export function SourcesList({
   sources,
@@ -39,23 +58,29 @@ export function SourcesList({
   };
   return (
     <Stack gap="xs">
-      {singleSourceReason && <SingleSourceBadge reason={singleSourceReason} />}
+      {singleSourceReason && (
+        <div data-testid="single-source">
+          <SingleSourceBadge reason={singleSourceReason} />
+        </div>
+      )}
       {sources.map((source) => (
-        <Group key={source.id} gap="xs" wrap="nowrap">
-          <Anchor href={source.url} target="_blank" rel="noreferrer" size="sm" lineClamp={1}>
-            {source.site_domain}
+        <div key={source.id} className={classes.source} title={fetchTitle(source)}>
+          <span
+            className={`${classes.favdot} ${source.is_official ? classes.official : classes.neutral}`}
+          />
+          <span className={classes.name}>{source.site_domain}</span>
+          <span className={classes.host}>{pathOf(source.url)}</span>
+          {source.is_official && <span className={classes.tier}>official</span>}
+          <Anchor
+            href={source.url}
+            target="_blank"
+            rel="noreferrer"
+            className={classes.extLink}
+            aria-label={`Open ${source.site_domain} in a new tab`}
+          >
+            <IconExternalLink size={15} stroke={1.5} />
           </Anchor>
-          {source.is_official && (
-            <Badge size="xs" variant="light">
-              official
-            </Badge>
-          )}
-          <Text size="xs" c="dimmed">
-            {source.last_fetched_at
-              ? `fetched ${new Date(source.last_fetched_at).toLocaleDateString()}`
-              : "not fetched yet"}
-          </Text>
-        </Group>
+        </div>
       ))}
       {sources.length === 0 && (
         <Text size="sm" c="dimmed">

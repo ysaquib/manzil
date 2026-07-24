@@ -1,0 +1,58 @@
+/* SourcesList.module.css — compact one-line source rows (Task 10). Colors are
+   Mantine tokens only; official = teal, non-official = neutral dimmed dot. */
+.source {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--mantine-color-default-border);
+}
+.source:first-of-type {
+  border-top: 0;
+}
+.favdot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+}
+.official {
+  background: var(--mantine-color-teal-6);
+}
+.neutral {
+  background: var(--mantine-color-dimmed);
+}
+.name {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.host {
+  font-size: 12px;
+  color: var(--mantine-color-dimmed);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+.tier {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 5px;
+  color: var(--mantine-color-teal-7);
+  background: color-mix(in srgb, var(--mantine-color-teal-6) 15%, transparent);
+  flex: none;
+}
+.extLink {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  color: var(--mantine-color-dimmed);
+}
+.extLink:hover {
+  color: var(--mantine-color-teal-7);
+}
