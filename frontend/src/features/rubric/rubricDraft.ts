@@ -6,13 +6,26 @@ import type { MatchOp, OptionMatch, RubricOption } from "../../lib/contracts";
 import type { CatalogEntry, RubricCriterion } from "./api";
 import type { ValueSchema } from "./widgets/types";
 
+/** Catalog seed rows omit null dealbreaker_set_score; treat absent as off. */
+export function normalizeRubricOption(option: RubricOption): RubricOption {
+  return {
+    ...option,
+    match: { ...option.match },
+    dealbreaker_set_score: option.dealbreaker_set_score ?? null,
+  };
+}
+
+export function isOptionDealbreaker(option: RubricOption): boolean {
+  return option.dealbreaker_set_score != null;
+}
+
 // A criterion is a pure bonus when nothing about it can dock points: every
 // option delta ≥ 0 and the unknown delta ≥ 0.
 export function deriveIsBonus(options: RubricOption[], unknownDelta: number): boolean {
   return (
     options.length > 0 &&
     unknownDelta >= 0 &&
-    options.every((o) => o.delta >= 0 && o.dealbreaker_set_score === null)
+    options.every((o) => o.delta >= 0 && !isOptionDealbreaker(o))
   );
 }
 
@@ -28,15 +41,22 @@ export function initDraft(
   );
   return catalog.map((entry, index) => {
     const saved = existingByKey.get(entry.key);
-    if (saved) return { ...saved, position: index };
+    if (saved) {
+      return {
+        ...saved,
+        position: index,
+        options: saved.options.map(normalizeRubricOption),
+      };
+    }
+    const options = entry.default_options.map(normalizeRubricOption);
     return {
       catalog_key: entry.key,
       custom_def: null,
       enabled: false,
-      options: entry.default_options.map((o) => ({ ...o, match: { ...o.match } })),
+      options,
       unknown_delta: 0,
       non_negotiable: null,
-      is_bonus: deriveIsBonus(entry.default_options, 0),
+      is_bonus: deriveIsBonus(options, 0),
       position: index,
     };
   });
