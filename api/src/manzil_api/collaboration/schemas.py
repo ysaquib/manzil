@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
 
 from manzil_api.invites.service import MEMBER_COLOR_TOKENS
 
@@ -42,15 +43,32 @@ class CommentResponse(BaseModel):
     deleted_at: datetime | None
 
 
+def _validate_half_star_rating(value: Decimal) -> Decimal:
+    if value < Decimal("1") or value > Decimal("5"):
+        raise ValueError("rating must be between 1 and 5")
+    if (value * 2) != (value * 2).to_integral_value():
+        raise ValueError("rating must be in 0.5 steps")
+    return value.quantize(Decimal("0.1"))
+
+
 class RatingUpsert(BaseModel):
-    rating: int = Field(ge=1, le=5)
+    rating: Decimal = Field(ge=Decimal("1"), le=Decimal("5"))
+
+    @field_validator("rating")
+    @classmethod
+    def validate_half_step(cls, value: Decimal) -> Decimal:
+        return _validate_half_star_rating(value)
 
 
 class RatingResponse(BaseModel):
     hunt_listing_id: UUID
     unit_group_key: str
     user_id: UUID
-    rating: int
+    rating: Decimal
+
+    @field_serializer("rating")
+    def serialize_rating(self, value: Decimal) -> float:
+        return float(value)
 
 
 class MemberPatch(BaseModel):
