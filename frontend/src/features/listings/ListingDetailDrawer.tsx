@@ -15,9 +15,10 @@ import {
   Modal,
   Stack,
   Text,
+  Title,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
-import { IconDroplet } from "@tabler/icons-react";
+import { IconDroplet, IconMapPin } from "@tabler/icons-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { SectionCard } from "../../components/SectionCard";
@@ -39,6 +40,7 @@ import { useExtractions, useFees, useListings, useOverrides, usePropertyImages }
 import { resolveRow, resolveRowWithDraft } from "./unitGroups";
 import type { Extraction, Listing } from "./types";
 import drawerClasses from "./ListingDetailDrawer.module.css";
+import classes from "./DrawerHero.module.css";
 
 export interface DrawerSelection {
   listingId: string;
@@ -263,15 +265,21 @@ function DrawerShell({
 
   return (
     <>
-      <Drawer.Header>
+      <Drawer.Header style={{ alignItems: "flex-start" }}>
+        <Stack gap={0}>
+          <Text className={classes.eyebrow} tt="uppercase" fw={600} c="dimmed">Listing</Text>
+          <Title order={3} className={classes.title}>{listing.property.name}</Title>
+          <Group gap={7} wrap="nowrap" className={classes.addr}>
+            <IconMapPin size={13} stroke={2} />
+            {listing.property.canonical_address}
+          </Group>
+        </Stack>
         <Drawer.CloseButton ml="auto" />
       </Drawer.Header>
 
       <Drawer.Body>
         <Box component="div" style={{ flex: 1, overflow: "auto", minHeight: 0 }} px="md" pt="xs">
           <DrawerHero
-            name={listing.property.name}
-            address={listing.property.canonical_address}
             images={images ?? []}
             imagesLoading={imagesLoading}
             score={group?.displayScore?.total ?? null}

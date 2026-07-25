@@ -125,31 +125,31 @@ export function AllInBreakdown({ composition }: { composition: AllInComponents |
     );
   }
   return (
-    <Stack gap="xs">
+    <Stack gap={0}>
       {composition.badges.length > 0 && (
         <Group gap={6}>
           <CompositionBadges badges={composition.badges} />
         </Group>
       )}
-      <div className={classes.subhead}>Monthly cost</div>
+      <Text className={classes.subhead}>Monthly cost</Text>
       {composition.components.map((component, index) => (
-        <div className={classes.row} key={`${component.name}:${index}`}>
-          <div className={classes.name}>
+        <Group className={classes.row} key={`${component.name}:${index}`}>
+          <Text className={classes.name}>
             <span
               className={`${classes.qd} ${classes[component.tag] ?? classes.unknown}`}
               title={component.tag}
             />
             {component.name.replaceAll("_", " ")}
-            {component.note && <div className={classes.note}>{component.note}</div>}
-          </div>
-          <div className={classes.amt}>
+            {component.note && <Text className={classes.note}>{component.note}</Text>}
+          </Text>
+          <Text className={classes.amt}>
             {component.amount === null ? (
               <span className={classes.dim}>unknown</span>
             ) : (
               `$${component.amount.toLocaleString()}`
             )}
-          </div>
-        </div>
+          </Text>
+        </Group>
       ))}
       <div className={classes.legend}>
         <span>
