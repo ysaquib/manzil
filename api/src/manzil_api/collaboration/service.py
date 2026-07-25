@@ -121,7 +121,7 @@ async def upsert_rating(
                 "hunt_listing_id": listing["id"],
                 "unit_group_key": unit_group_key,
                 "user_id": user_id,
-                "rating": body.rating,
+                "rating": float(body.rating),
             },
             on_conflict="hunt_listing_id,unit_group_key,user_id",
         )

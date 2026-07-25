@@ -44,8 +44,22 @@ async def test_rating_upsert_and_clear(collab_hunt, as_member: AsyncClient, db_p
     rated = await as_member.put(two_bed_path, json={"rating": 4})
     assert rated.status_code == 200
     assert rated.json()["unit_group_key"] == "2-1"
+    half = await as_member.put(two_bed_path, json={"rating": 4.5})
+    assert half.status_code == 200
+    assert half.json()["rating"] == 4.5
+    stored = await db_pool.fetchval(
+        """
+        select rating
+        from ratings
+        where hunt_listing_id = $1 and unit_group_key = '2-1'
+        """,
+        UUID(listing_id),
+    )
+    assert float(stored) == 4.5
     second = await as_member.put(one_bed_path, json={"rating": 2})
     assert second.status_code == 200
+    off_step = await as_member.put(two_bed_path, json={"rating": 4.2})
+    assert off_step.status_code == 422
     invalid = await as_member.put(two_bed_path, json={"rating": 6})
     assert invalid.status_code == 422
     missing_group = await as_member.put(
