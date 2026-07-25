@@ -9,7 +9,7 @@ import type { RubricOption } from "../../lib/contracts";
 import type { CatalogEntry, RubricCriterion } from "./api";
 import { CriterionIcon } from "./criterionIcon";
 import { formatMatchLabel } from "./matchLabels";
-import { deriveIsBonus } from "./rubricDraft";
+import { deriveIsBonus, isOptionDealbreaker } from "./rubricDraft";
 
 function deltaColor(delta: number): string {
   if (delta > 0) return "green";
@@ -28,7 +28,7 @@ function DeltaText({ delta }: { delta: number }) {
 }
 
 function OptionValue({ option }: { option: RubricOption }) {
-  if (option.dealbreaker_set_score !== null) {
+  if (isOptionDealbreaker(option)) {
     return (
       <Text size="sm" c={"red"} fw={500}>
         sets score to {option.dealbreaker_set_score}

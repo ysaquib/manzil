@@ -39,7 +39,7 @@ import { CriterionIcon } from "./criterionIcon";
 import { GateControls } from "./GateControls";
 import { OptionMatchEditor } from "./OptionMatchEditor";
 import { OptionGridRow } from "./OptionGridRow";
-import { deriveIsBonus } from "./rubricDraft";
+import { deriveIsBonus, isOptionDealbreaker } from "./rubricDraft";
 
 function PointsInput({
   value,
@@ -54,7 +54,7 @@ function PointsInput({
     <NumberInput
       aria-label={ariaLabel}
       size="xs"
-      step={0.5}
+      step={0.25}
       suffix=" pts"
       value={value}
       onChange={(next) => onChange(typeof next === "number" ? next : 0)}
@@ -126,7 +126,7 @@ function OptionRow({
   onChange: (option: RubricOption) => void;
   onRemove: () => void;
 }) {
-  const isDealbreaker = option.dealbreaker_set_score !== null;
+  const isDealbreaker = isOptionDealbreaker(option);
   return (
     <OptionGridRow>
       <OptionMatchEditor
@@ -194,7 +194,7 @@ function BoolRows({
   return (
     <>
       {rows.map(({ boolValue, index, option }) => {
-        const isDealbreaker = option.dealbreaker_set_score !== null;
+        const isDealbreaker = isOptionDealbreaker(option);
         return (
           <OptionGridRow key={String(boolValue)}>
             <Text size="sm" fw={500} pl={2}>
