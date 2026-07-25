@@ -4,34 +4,16 @@
 }
 
 .baseRow {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
   padding: 0.125rem 0 0.5rem;
-}
-
-.baseLbl {
-  font-size: var(--mantine-font-size-xs);
-  color: var(--mantine-color-dimmed);
 }
 
 .baseNote {
   opacity: 0.8;
 }
 
-.baseVal {
-  font-size: var(--mantine-font-size-sm);
-  font-weight: 700;
-  color: var(--mantine-color-text);
-  font-variant-numeric: tabular-nums;
-}
-
 .groupLabel {
-  font-size: 0.656rem;
+  font-size: 0.625rem;
   letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--mantine-color-dimmed);
-  font-weight: 700;
   margin: var(--mantine-spacing-sm) 0 0.375rem;
 }
 
@@ -41,19 +23,12 @@
   align-items: center;
   gap: var(--mantine-spacing-xs);
   padding: 0.375rem 0;
-  /* border-top: 1px solid var(--mantine-color-default-border); */
 }
 
 .nameCell {
   min-width: 0;
 }
 
-.delta {
-  font-size: var(--mantine-font-size-sm);
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
 
 .pos {
   color: var(--mantine-color-green-7);
@@ -82,30 +57,18 @@
 }
 
 .flag {
-  font-size: 0.688rem;
-  color: var(--mantine-color-dimmed);
-  font-weight: 500;
+  font-size: var(--mantine-font-size-xs);
 }
 
 .legend {
-  font-size: 0.688rem;
-  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-xs);
   margin-top: var(--mantine-spacing-xs);
 }
 
 .totalRow {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
   margin-top: var(--mantine-spacing-xs);
   padding-top: var(--mantine-spacing-sm);
   border-top: 1.5px solid var(--mantine-color-default-border);
-}
-
-.totalLbl {
-  font-size: var(--mantine-font-size-sm);
-  font-weight: 600;
-  color: var(--mantine-color-text);
 }
 
 .totalVal {
@@ -114,40 +77,8 @@
   font-weight: 700;
 }
 
-.totalVal[data-band="highest"] {
-  color: var(--mantine-color-teal-7);
-}
-
-.totalVal[data-band="high"] {
-  color: var(--mantine-color-green-7);
-}
-
-.totalVal[data-band="good"] {
-  color: var(--mantine-color-lime-7);
-}
-
-.totalVal[data-band="mid"] {
-  color: var(--mantine-color-yellow-7);
-}
-
-.totalVal[data-band="low"] {
-  color: var(--mantine-color-orange-7);
-}
-
-.totalVal[data-band="poor"],
-.totalVal[data-band="poorest"] {
-  color: var(--mantine-color-red-7);
-}
-
 .denom {
-  font-size: var(--mantine-font-size-sm);
-  color: var(--mantine-color-dimmed);
   font-family: var(--mantine-font-family);
-  font-weight: 400;
-}
-
-.exc {
-  font-size: var(--mantine-font-size-md);
 }
 
 :global([data-mantine-color-scheme="dark"]) .crit {

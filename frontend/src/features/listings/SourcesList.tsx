@@ -1,6 +1,6 @@
 // Sources (P3-5, §13.2): retained links, fetch state, assurance badge, and the
 // Listing's editable Source Policy. Relaxing the policy queues DISCOVER.
-import { Anchor, Select, Stack, Text } from "@mantine/core";
+import { Anchor, Box, Group, Select, Stack, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconExternalLink } from "@tabler/icons-react";
 
@@ -59,18 +59,34 @@ export function SourcesList({
   return (
     <Stack gap="xs">
       {singleSourceReason && (
-        <div data-testid="single-source">
+        <Box data-testid="single-source">
           <SingleSourceBadge reason={singleSourceReason} />
-        </div>
+        </Box>
       )}
       {sources.map((source) => (
-        <div key={source.id} className={classes.source} title={fetchTitle(source)}>
-          <span
+        <Group
+          key={source.id}
+          className={classes.source}
+          title={fetchTitle(source)}
+          wrap="nowrap"
+          gap="xs"
+          justify="center"
+        >
+          <Box
+            component="span"
             className={`${classes.favdot} ${source.is_official ? classes.official : classes.neutral}`}
           />
-          <span className={classes.name}>{source.site_domain}</span>
-          <span className={classes.host}>{pathOf(source.url)}</span>
-          {source.is_official && <span className={classes.tier}>official</span>}
+          <Text size="sm" fw={600} className={classes.name}>
+            {source.site_domain}
+          </Text>
+          <Text size="xs" c="dimmed" className={classes.host}>
+            {pathOf(source.url)}
+          </Text>
+          {source.is_official && (
+            <Text component="span" className={classes.tier}>
+              official
+            </Text>
+          )}
           <Anchor
             href={source.url}
             target="_blank"
@@ -80,7 +96,7 @@ export function SourcesList({
           >
             <IconExternalLink size={15} stroke={1.5} />
           </Anchor>
-        </div>
+        </Group>
       ))}
       {sources.length === 0 && (
         <Text size="sm" c="dimmed">

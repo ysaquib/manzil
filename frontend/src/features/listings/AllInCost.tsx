@@ -20,9 +20,18 @@ import { IconAlertTriangle, IconArrowBackUp, IconPencil, IconUserEdit } from "@t
 import { useState } from "react";
 
 import classes from "./AllInCost.module.css";
+import drawer from "./ListingDetailDrawer.module.css";
 import { useListingDetailDraft } from "./ListingDetailDraft";
 import { REVERT_NOTE } from "./overrides";
 import type { AllInComponents } from "./types";
+
+type AllInComponentTag = AllInComponents["components"][number]["tag"];
+
+const ALL_IN_DOT_CLASS: Record<AllInComponentTag, string> = {
+  actual: drawer.stateDotActual,
+  estimated: drawer.stateDotEstimated,
+  unknown: drawer.stateDotUnknown,
+};
 
 const BADGE_COPY: Record<string, string> = {
   fees_unverified: "Fees unverified",
@@ -127,57 +136,79 @@ export function AllInBreakdown({ composition }: { composition: AllInComponents |
   return (
     <Stack gap={0}>
       {composition.badges.length > 0 && (
-        <Group gap={6}>
+        <Group mb="xs">
           <CompositionBadges badges={composition.badges} />
         </Group>
       )}
-      <Text className={classes.subhead}>Monthly cost</Text>
+      <Text
+        className={`${drawer.ledgerSectionLabel} ${drawer.ledgerSectionLabelFirst}`}
+      >
+        Monthly cost
+      </Text>
       {composition.components.map((component, index) => (
-        <Group className={classes.row} key={`${component.name}:${index}`}>
-          <Text className={classes.name}>
-            <span
-              className={`${classes.qd} ${classes[component.tag] ?? classes.unknown}`}
+        <Box className={`${drawer.ledgerRow} ${classes.row}`} key={`${component.name}:${index}`}>
+          <Box className={classes.name}>
+            <Box
+              component="span"
+              className={`${drawer.stateDot} ${ALL_IN_DOT_CLASS[component.tag]}`}
+              data-state={component.tag}
               title={component.tag}
             />
-            {component.name.replaceAll("_", " ")}
-            {component.note && <Text className={classes.note}>{component.note}</Text>}
-          </Text>
-          <Text className={classes.amt}>
+            <Text size="sm" component="span">
+              {component.name.replaceAll("_", " ")}
+            </Text>
+            {component.note ? (
+              <Text component="span" size="xs" c="dimmed" className={drawer.ledgerSubline}>
+                {component.note}
+              </Text>
+            ) : null}
+          </Box>
+          <Text size="sm" fw={600} ta="right" className={drawer.tabularNums}>
             {component.amount === null ? (
-              <span className={classes.dim}>unknown</span>
+              <Text component="span" c="dimmed" fs="italic" fw={500} className={classes.dim}>
+                unknown
+              </Text>
             ) : (
               `$${component.amount.toLocaleString()}`
             )}
           </Text>
-        </Group>
+        </Box>
       ))}
-      <div className={classes.legend}>
-        <span>
-          <span className={`${classes.qd} ${classes.actual}`} />
-          actual
-        </span>
-        <span>
-          <span className={`${classes.qd} ${classes.estimated}`} />
-          estimated
-        </span>
-        <span>
-          <span className={`${classes.qd} ${classes.unknown}`} />
-          unknown
-        </span>
-      </div>
-      <div className={classes.resultBox}>
-        <div className={classes.rl}>
-          All-in / mo
+      <Group gap="md" mt="xs" mb={2}>
+        <Group gap={5} wrap="nowrap" className={classes.legendItem}>
+          <Box component="span" className={`${drawer.stateDot} ${drawer.stateDotActual}`} />
+          <Text size="xs" c="dimmed">
+            actual
+          </Text>
+        </Group>
+        <Group gap={5} wrap="nowrap" className={classes.legendItem}>
+          <Box component="span" className={`${drawer.stateDot} ${drawer.stateDotEstimated}`} />
+          <Text size="xs" c="dimmed">
+            estimated
+          </Text>
+        </Group>
+        <Group gap={5} wrap="nowrap" className={classes.legendItem}>
+          <Box component="span" className={`${drawer.stateDot} ${drawer.stateDotUnknown}`} />
+          <Text size="xs" c="dimmed">
+            unknown
+          </Text>
+        </Group>
+      </Group>
+      <Box className={classes.resultBox}>
+        <Group gap="sm" className={classes.rl}>
+          <Text size="sm" fw={700}>
+            All-in / mo
+          </Text>
           {composition.overridden && (
             <Badge size="xs" color="manual" variant="light">
               override
             </Badge>
           )}
-        </div>
-        <div className={classes.rv}>
+        </Group>
+        <Text className={classes.rv}>
           {composition.total === null ? "unknown" : `$${composition.total.toLocaleString()}`}
-        </div>
-      </div>
+        </Text>
+      </Box>
     </Stack>
   );
 }

@@ -8,23 +8,6 @@
    padding: 0.25rem 0.125rem;
 }
 
-.eyebrow {
-   font-size: 0.6875rem;
-   letter-spacing: .09em;
-}
-
-.title {
-   font-size: 1.625rem;
-   line-height: 1.15;
-   margin: 0.1875rem 0 0.25rem;
-}
-
-.addr {
-   font-size: 0.84375rem;
-   color: var(--mantine-color-text);
-   opacity: .8;
-}
-
 .gallery {
    margin: var(--mantine-spacing-md) 0 0.25rem;
 }
@@ -44,8 +27,7 @@
 }
 
 .notScored {
-   align-items: flex-start;
-   font-size: 0.8125rem;
+   font-size: var(--mantine-font-size-sm);
 }
 
 .scoreStat {
@@ -91,46 +73,17 @@
    line-height: 1;
    display: flex;
    align-items: baseline;
-   gap: 0.1875rem;
+   gap: 0.25rem;
 }
 
-.scoreStat[data-band="highest"] .scoreNum {
-   color: var(--mantine-color-teal-7);
-}
-
-.scoreStat[data-band="high"] .scoreNum {
-   color: var(--mantine-color-green-7);
-}
-
-.scoreStat[data-band="good"] .scoreNum {
-   color: var(--mantine-color-lime-7);
-}
-
-.scoreStat[data-band="mid"] .scoreNum {
-   color: var(--mantine-color-yellow-7);
-}
-
-.scoreStat[data-band="low"] .scoreNum {
-   color: var(--mantine-color-orange-7);
-}
-
-.scoreStat[data-band="poor"] .scoreNum,
-.scoreStat[data-band="poorest"] .scoreNum {
-   color: var(--mantine-color-red-7);
-}
-
-.scoreNum small {
-   font-size: 0.8125rem;
+.scoreDenom {
+   font-size: var(--mantine-font-size-xs);
    font-weight: 600;
    color: var(--mantine-color-dimmed);
 }
 
-.exc {
-   font-size: var(--mantine-font-size-md);
-}
-
 .statLabel {
-   font-size: 0.65625rem;
+   font-size: 0.625rem;
    letter-spacing: .07em;
 }
 
@@ -145,31 +98,6 @@
 }
 
 .matchTag {
-   font-size: 0.71875rem;
+   font-size: var(--mantine-font-size-xs);
    font-weight: 600;
-}
-
-.scoreStat[data-band="highest"] .matchTag {
-   color: var(--mantine-color-teal-7);
-}
-
-.scoreStat[data-band="high"] .matchTag {
-   color: var(--mantine-color-green-7);
-}
-
-.scoreStat[data-band="good"] .matchTag {
-   color: var(--mantine-color-lime-7);
-}
-
-.scoreStat[data-band="mid"] .matchTag {
-   color: var(--mantine-color-yellow-7);
-}
-
-.scoreStat[data-band="low"] .matchTag {
-   color: var(--mantine-color-orange-7);
-}
-
-.scoreStat[data-band="poor"] .matchTag,
-.scoreStat[data-band="poorest"] .matchTag {
-   color: var(--mantine-color-red-7);
 }

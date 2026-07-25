@@ -155,36 +155,57 @@ export function CommentsSection({
         onChange={(event) => setBody(event.currentTarget.value)}
         minRows={2}
       />
-      {currentUnitGroup && (
-        <Checkbox
-          label={`Only for Current Unit Group: ${currentUnitGroup.label}`}
-          checked={scopeToCurrentGroup}
-          onChange={(event) => setScopeToCurrentGroup(event.currentTarget.checked)}
-        />
-      )}
-      <Group justify="flex-end">
-        <Button
-          size="xs"
-          disabled={!body.trim()}
-          loading={create.isPending}
-          onClick={() =>
-            create.mutate(
-              {
-                body: body.trim(),
-                unit_group_key: scopeToCurrentGroup ? currentUnitGroup?.key ?? null : null,
-              },
-              {
-                onSuccess: () => {
-                  setBody("");
-                  setScopeToCurrentGroup(false);
+      {currentUnitGroup ? (
+        <Group justify="space-between" align="center" wrap="nowrap" gap="sm">
+          <Checkbox
+            label={`Only for Current Unit Group: ${currentUnitGroup.label}`}
+            checked={scopeToCurrentGroup}
+            onChange={(event) => setScopeToCurrentGroup(event.currentTarget.checked)}
+          />
+          <Button
+            size="xs"
+            disabled={!body.trim()}
+            loading={create.isPending}
+            onClick={() =>
+              create.mutate(
+                {
+                  body: body.trim(),
+                  unit_group_key: scopeToCurrentGroup ? currentUnitGroup.key : null,
                 },
-              },
-            )
-          }
-        >
-          Comment
-        </Button>
-      </Group>
+                {
+                  onSuccess: () => {
+                    setBody("");
+                    setScopeToCurrentGroup(false);
+                  },
+                },
+              )
+            }
+          >
+            Comment
+          </Button>
+        </Group>
+      ) : (
+        <Group justify="flex-end">
+          <Button
+            size="xs"
+            disabled={!body.trim()}
+            loading={create.isPending}
+            onClick={() =>
+              create.mutate(
+                { body: body.trim(), unit_group_key: null },
+                {
+                  onSuccess: () => {
+                    setBody("");
+                    setScopeToCurrentGroup(false);
+                  },
+                },
+              )
+            }
+          >
+            Comment
+          </Button>
+        </Group>
+      )}
     </Stack>
   );
 }

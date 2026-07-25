@@ -4,6 +4,7 @@ import type { PropertyImage } from "./api";
 import { DrawerImageGallery } from "./DrawerImageGallery";
 import { formatScore, scoreBand, scoreColor, scoreLabel } from "./scoreBands";
 import classes from "./DrawerHero.module.css";
+import drawer from "./ListingDetailDrawer.module.css";
 
 export function DrawerHero({images, imagesLoading, score, allIn, estimated, bedsBaths }: {
   images: PropertyImage[]; imagesLoading: boolean;
@@ -12,12 +13,6 @@ export function DrawerHero({images, imagesLoading, score, allIn, estimated, beds
   const band = score === null ? null : scoreColor(score).replace("score", "").toLowerCase();
   return (
     <Box className={classes.hero}>
-      {/* <Text className={classes.eyebrow} tt="uppercase" fw={600} c="dimmed">Listing</Text>
-      <Title order={3} className={classes.title}>{name}</Title>
-      <Group gap={7} wrap="nowrap" className={classes.addr}>
-        <IconMapPin size={13} stroke={2} />
-        {address}
-      </Group> */}
       <Box className={classes.gallery}>
         <DrawerImageGallery images={images} loading={imagesLoading} />
       </Box>
@@ -26,11 +21,24 @@ export function DrawerHero({images, imagesLoading, score, allIn, estimated, beds
           <Text className={`${classes.stat} ${classes.notScored}`} c="dimmed">Not scored yet</Text>
         ) : (
           <Flex direction="column" justify="center" className={classes.scoreStat} data-band={band}>
-            <Box className={classes.scoreNum}>
-              {formatScore(score)}<small>/15</small>
-              {scoreBand(score) === 0 && <span className={classes.exc}>✦</span>}
+            <Box className={`${classes.scoreNum} ${drawer.bandText}`} data-band={band}>
+              {formatScore(score)}
+              <Text
+                component="span"
+                className={`${classes.scoreDenom} ${drawer.bandText}`}
+                data-band={band}
+              >
+                /15
+              </Text>
+              {scoreBand(score) === 0 && (
+                <Text component="span" className={drawer.drawerExcMark}>
+                  ✦
+                </Text>
+              )}
             </Box>
-            <Text className={classes.matchTag}>{scoreLabel(score)}</Text>
+            <Text className={`${classes.matchTag} ${drawer.bandText}`} data-band={band}>
+              {scoreLabel(score)}
+            </Text>
           </Flex>
         )}
         <Flex direction="column" justify="center" className={classes.stat}>

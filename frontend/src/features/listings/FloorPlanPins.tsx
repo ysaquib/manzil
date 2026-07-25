@@ -51,42 +51,45 @@ export function FloorPlanPins({
             const unitTypes = plan.unit_types ?? [];
             return (
               <Radio.Card key={plan.id} value={plan.id} disabled={saving} p="sm" withBorder>
-                <div className={classes.plan}>
+                <Group wrap="nowrap" align="flex-start" gap="sm" className={classes.plan}>
                   <Radio.Indicator />
-                  <div className={classes.planBody}>
-                    <div className={classes.pn}>
+                  <Stack gap={2} className={classes.planBody}>
+                    <Group gap="sm" wrap="nowrap" className={classes.pn}>
                       <Text size="sm" fw={600} className={classes.planName}>
                         {plan.plan_name}
                       </Text>
                       {planScore && (
-                        <span
+                        <Text
+                          component="span"
                           className={`${classes.planScore} ${bandClass(planScore.total)}`}
                           data-testid={`plan-score-${plan.id}`}
                           data-band={scoreColor(planScore.total).replace("score", "").toLowerCase()}
                         >
                           {formatScore(planScore.total)}
-                        </span>
+                        </Text>
                       )}
-                    </div>
-                    <Text className={classes.meta}>
+                    </Group>
+                    <Text size="xs" c="dimmed">
                       {formatBedsBaths(plan.beds, plan.baths)} ·{" "}
                       {formatRange(plan.sqft_min, plan.sqft_max)} sqft
                     </Text>
                     {unitTypes.length > 0 && (
-                      <Text className={classes.types}>
+                      <Text size="xs" c="dimmed">
                         {unitTypes.map((type) => type.replaceAll("_", " ")).join(", ")}
                       </Text>
                     )}
-                  </div>
-                  <div className={classes.planRight}>
-                    <Text size="sm" className={classes.rent}>
+                  </Stack>
+                  <Stack gap={1} className={classes.planRight}>
+                    <Text size="sm" fw={600} className={classes.rent}>
                       {formatRange(plan.rent_min, plan.rent_max, "$")}
                     </Text>
                     {availability && (
-                      <Text className={classes.avail}>avail {availability}</Text>
+                      <Text size="xs" c="dimmed">
+                        avail {availability}
+                      </Text>
                     )}
-                  </div>
-                </div>
+                  </Stack>
+                </Group>
               </Radio.Card>
             );
           })}
