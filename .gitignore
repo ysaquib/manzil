@@ -74,3 +74,5 @@ worker/tests/fixtures/recorded/*
 worker/evals/reports/
 .pnpm-store/**
 worker/tests/fixtures/bench/labels.md
+
+docs/screenshots/**

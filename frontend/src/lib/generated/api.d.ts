@@ -1076,7 +1076,7 @@ export interface components {
         /** RatingUpsert */
         RatingUpsert: {
             /** Rating */
-            rating: number;
+            rating: number | string;
         };
         /** RubricCriterionIn */
         RubricCriterionIn: {
