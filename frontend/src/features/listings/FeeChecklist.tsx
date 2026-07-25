@@ -6,7 +6,9 @@
 import {
   ActionIcon,
   Badge,
+  Box,
   Button,
+  Group,
   NumberInput,
   Popover,
   Stack,
@@ -17,6 +19,7 @@ import { IconArrowBackUp, IconPencil, IconUserEdit } from "@tabler/icons-react";
 import { useState } from "react";
 
 import classes from "./FeeChecklist.module.css";
+import drawer from "./ListingDetailDrawer.module.css";
 import { useListingDetailDraft } from "./ListingDetailDraft";
 import { basisLabel, feeForSlot, moveInEstimate, type Household } from "./oneTimeFees";
 import {
@@ -26,14 +29,11 @@ import {
   type OneTimeFee,
 } from "./types";
 
-// STATE_COLOR's meaning now drives the state dot's color (via the module CSS
-// class of the same name): extracted=green, manual=plum, estimated=yellow,
-// unknown=hollow ring.
 const STATE_CLASS: Record<FeeEntry["value_state"], string> = {
-  extracted: classes.extracted,
-  manual: classes.manual,
-  estimated: classes.estimated,
-  unknown: classes.unknown,
+  extracted: drawer.stateDotExtracted,
+  manual: drawer.stateDotManual,
+  estimated: drawer.stateDotEstimated,
+  unknown: drawer.stateDotUnknown,
 };
 
 function FeeRow({
@@ -74,25 +74,34 @@ function FeeRow({
   };
 
   return (
-    <div className={classes.row}>
-      <div className={classes.name}>
-        <span
+    <Box className={`${drawer.ledgerRow} ${classes.row}`}>
+      <Box className={classes.name}>
+        <Box
+          component="span"
           data-testid={`fee-state-${slot}`}
           data-state={state}
-          className={`${classes.qd} ${STATE_CLASS[state]}`}
+          className={`${drawer.stateDot} ${STATE_CLASS[state]}`}
           title={state}
         />
-        {label}
-        {subtitle && <div className={classes.sub}>{subtitle}</div>}
-      </div>
-      <div className={classes.amt}>
+        <Text size="sm" component="span">
+          {label}
+        </Text>
+        {subtitle ? (
+          <Text component="span" size="xs" c="dimmed" className={drawer.ledgerSubline}>
+            {subtitle}
+          </Text>
+        ) : null}
+      </Box>
+      <Text size="sm" fw={600} ta="right" className={drawer.tabularNums}>
         {displayAmount != null ? (
           `$${displayAmount.toLocaleString()}`
         ) : (
-          <span className={classes.dim}>unknown</span>
+          <Text component="span" c="dimmed" fw={500}>
+            unknown
+          </Text>
         )}
-      </div>
-      <div className={classes.actions}>
+      </Text>
+      <Group gap={4} wrap="nowrap" className={classes.actions}>
         {isPending ? (
           <Badge size="xs" color={"manual"} variant="light">
             pending
@@ -166,8 +175,8 @@ function FeeRow({
             </Stack>
           </Popover.Dropdown>
         </Popover>
-      </div>
-    </div>
+      </Group>
+    </Box>
   );
 }
 
@@ -195,9 +204,10 @@ export function FeeChecklist({
       : undefined;
   const estimate = household ? moveInEstimate(oneTimeFees, household) : null;
   return (
-    <Stack gap={4}>
-      <div className={classes.list}>
-        <div className={classes.subhead}>Monthly</div>
+    <Stack gap={0}>
+        <Text className={`${drawer.ledgerSectionLabel} ${drawer.ledgerSectionLabelFirst}`}>
+          Monthly
+        </Text>
         {MONTHLY_FEE_SLOTS.map(({ slot, label }) => (
           <FeeRow
             key={slot}
@@ -209,7 +219,9 @@ export function FeeChecklist({
             original={feeOriginals?.get(slot)}
           />
         ))}
-        <div className={classes.subhead}>Move-in &amp; one-time</div>
+        <Text className={`${drawer.ledgerSectionLabel} ${drawer.ledgerSectionLabelFollow}`}>
+          Move-in &amp; one-time
+        </Text>
         {ONE_TIME_FEE_SLOTS.map(({ slot, label }) => {
           const extracted = feeForSlot(oneTimeFees, slot);
           return (
@@ -225,7 +237,6 @@ export function FeeChecklist({
             />
           );
         })}
-      </div>
       {estimate !== null && (
         <Text size="xs" c="dimmed">
           Est. move-in fees for your household: ${estimate.toLocaleString()} (excludes

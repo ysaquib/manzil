@@ -134,6 +134,7 @@ describe("ListingDetailDrawer", () => {
   it("renders the hero and the five section cards for a scored listing", () => {
     renderDrawer();
     expect(screen.getByRole("heading", { name: "Maple Court" })).toBeInTheDocument();
+    expect(screen.getByText("1420 Alder St")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /Why this score/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /Cost & fees/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /Floor plans/ })).toBeInTheDocument();

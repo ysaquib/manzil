@@ -36,7 +36,7 @@
 
 .planScore {
   flex: none;
-  font-size: 0.688rem;
+  font-size: var(--mantine-font-size-xs);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   padding: 0 0.375rem;

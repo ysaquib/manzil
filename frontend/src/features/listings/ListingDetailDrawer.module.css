@@ -1,6 +1,26 @@
-/* Promoted utilities-included block (§9.5): sage-tinted, matching the approved
-   drawer preview's .utilBlock. Sage rides the green slot (theme.ts). Spacing/font
-   anchor to Mantine tokens where in range. */
+/* Listing Detail Drawer — surface-owned shared primitives imported by dedicated
+   child sections (header, All-in, Fees, hero band text, Criterion total). Unique
+   layout/tints stay in each child’s co-located module (UI_DESIGN §3). */
+
+/* --- Drawer header (property identity) --- */
+.eyebrow {
+  font-size: 0.625rem;
+  letter-spacing: 0.09em;
+}
+
+.title {
+  font-size: 1.625rem;
+  line-height: 1.15;
+  margin: 0.125rem 0 0.25rem;
+}
+
+.addr {
+  font-size: var(--mantine-font-size-sm);
+  color: var(--mantine-color-text);
+  opacity: 0.8;
+}
+
+/* --- Utilities block (sage) --- */
 .utilBlock {
   display: flex;
   gap: var(--mantine-spacing-xs);
@@ -18,7 +38,7 @@
 }
 
 .utilLabel {
-  font-size: 0.656rem;
+  font-size: 0.625rem;
   letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--mantine-color-green-7);
@@ -29,4 +49,95 @@
   font-size: var(--mantine-font-size-sm);
   color: var(--mantine-color-text);
   margin-top: 0.125rem;
+}
+
+/* --- Cost & fees ledger (All-in breakdown + Fees checklist) --- */
+.ledgerSectionLabel {
+  font-size: var(--mantine-font-size-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mantine-color-dimmed);
+  font-weight: 700;
+}
+
+.ledgerSectionLabelFirst {
+  margin: 0.125rem 0 0.5rem;
+}
+
+.ledgerSectionLabelFollow {
+  margin: var(--mantine-spacing-md) 0 0.5rem;
+}
+
+.ledgerRow {
+  padding: 0.25rem 0;
+}
+
+.ledgerSubline {
+  flex-basis: 100%;
+  padding-left: 1rem;
+  line-height: 1.25;
+}
+
+/* --- Ledger state dots (All-in + Fees) --- */
+.stateDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  display: inline-block;
+  box-sizing: border-box;
+}
+
+.stateDotActual,
+.stateDotExtracted {
+  background: var(--mantine-color-green-6);
+}
+
+.stateDotEstimated {
+  background: var(--mantine-color-yellow-6);
+}
+
+.stateDotManual {
+  background: var(--mantine-color-grape-6);
+}
+
+.stateDotUnknown {
+  background: transparent;
+  border: 1px solid var(--mantine-color-dimmed);
+}
+
+/* --- Tabular amounts (no Mantine prop) --- */
+.tabularNums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Score band text (hero numeral, match tag, criterion total) --- */
+.bandText[data-band="highest"] {
+  color: var(--mantine-color-teal-7);
+}
+
+.bandText[data-band="high"] {
+  color: var(--mantine-color-green-7);
+}
+
+.bandText[data-band="good"] {
+  color: var(--mantine-color-lime-7);
+}
+
+.bandText[data-band="mid"] {
+  color: var(--mantine-color-yellow-7);
+}
+
+.bandText[data-band="low"] {
+  color: var(--mantine-color-orange-7);
+}
+
+.bandText[data-band="poor"],
+.bandText[data-band="poorest"] {
+  color: var(--mantine-color-red-7);
+}
+
+/* --- Exceptional band marker (≥10) --- */
+.drawerExcMark {
+  font-size: var(--mantine-font-size-md);
 }

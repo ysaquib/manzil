@@ -5,6 +5,7 @@
 import {
   ActionIcon,
   Alert,
+  Box,
   Group,
   HoverCard,
   Popover,
@@ -22,6 +23,7 @@ import { OverrideControl } from "./OverrideControl";
 import { activeOverrides, extractionForFloorPlan, REVERT_NOTE } from "./overrides";
 import { scoreBand, scoreColor, formatScore } from "./scoreBands";
 import classes from "./CriterionBreakdown.module.css";
+import drawer from "./ListingDetailDrawer.module.css";
 import type { Extraction, Override } from "./types";
 import type { CatalogEntry } from "../rubric/api";
 
@@ -82,17 +84,20 @@ function EvidenceButton({
   isMobile: boolean;
 }) {
   const [opened, setOpened] = useState(false);
-  const icon = (
-    <ActionIcon color="gray" size="sm" variant="subtle" aria-label="evidence">
-      <IconInfoCircle size={14} stroke={1.5} color="var(--mantine-color-dimmed)" />
-    </ActionIcon>
-  );
 
   if (isMobile) {
     return (
       <Popover opened={opened} onChange={setOpened} width={300} position="top" withArrow shadow="md">
         <Popover.Target>
-          <span onClick={() => setOpened((o) => !o)}>{icon}</span>
+          <ActionIcon
+            color="gray"
+            size="sm"
+            variant="subtle"
+            aria-label="evidence"
+            onClick={() => setOpened((o) => !o)}
+          >
+            <IconInfoCircle size={14} stroke={1.5} color="var(--mantine-color-dimmed)" />
+          </ActionIcon>
         </Popover.Target>
         <Popover.Dropdown>
           <EvidenceContent extraction={extraction} overridden={overridden} />
@@ -103,7 +108,11 @@ function EvidenceButton({
 
   return (
     <HoverCard width={300} shadow="md" position="top">
-      <HoverCard.Target>{icon}</HoverCard.Target>
+      <HoverCard.Target>
+        <ActionIcon color="gray" size="sm" variant="subtle" aria-label="evidence">
+          <IconInfoCircle size={14} stroke={1.5} color="var(--mantine-color-dimmed)" />
+        </ActionIcon>
+      </HoverCard.Target>
       <HoverCard.Dropdown>
         <EvidenceContent extraction={extraction} overridden={overridden} />
       </HoverCard.Dropdown>
@@ -164,13 +173,18 @@ export function CriterionBreakdown({
   }
 
   return (
-    <div className={classes.wrap}>
-      <div className={classes.baseRow}>
-        <span className={classes.baseLbl}>
-          Baseline <span className={classes.baseNote}>— all your needs met</span>
-        </span>
-        <span className={classes.baseVal}>{breakdown.base.toFixed(1)}</span>
-      </div>
+    <Box className={classes.wrap}>
+      <Group justify="space-between" align="baseline" className={classes.baseRow} wrap="nowrap">
+        <Text size="xs" c="dimmed">
+          Baseline{" "}
+          <Text component="span" className={classes.baseNote}>
+            — all your needs met
+          </Text>
+        </Text>
+        <Text size="sm" fw={700} className={drawer.tabularNums}>
+          {breakdown.base.toFixed(1)}
+        </Text>
+      </Group>
       {displayedCriteria.map((criterion, index) => {
         const entry = catalogByKey.get(criterion.key);
         const section = entry?.fact_scope === "property" ? "Property facts" : "Floor plan facts";
@@ -186,7 +200,9 @@ export function CriterionBreakdown({
         return (
           <Fragment key={criterion.key}>
             {(index === 0 || section !== previousSection) && (
-              <div className={classes.groupLabel}>{section}</div>
+              <Text className={classes.groupLabel} tt="uppercase" fw={700} c="dimmed">
+                {section}
+              </Text>
             )}
             <CriterionRow
               criterion={criterion}
@@ -210,21 +226,31 @@ export function CriterionBreakdown({
           </Fragment>
         );
       })}
-      <div className={classes.legend}>
+      <Text size="xs" c="dimmed" className={classes.legend}>
         Each criterion nudges the baseline · above 10 also meets your wants · capped 0–15.
-      </div>
-      <div className={classes.totalRow}>
-        <span className={classes.totalLbl}>Total score</span>
-        <span
-          className={classes.totalVal}
+      </Text>
+      <Group justify="space-between" align="baseline" className={classes.totalRow} wrap="nowrap">
+        <Text size="sm" fw={600}>
+          Total score
+        </Text>
+        <Text
+          component="span"
+          className={`${classes.totalVal} ${drawer.bandText}`}
           data-band={scoreColor(breakdown.total).replace("score", "").toLowerCase()}
         >
           {formatScore(breakdown.total)}
-          {scoreBand(breakdown.total) === 0 && <span className={classes.exc}>✦</span>}
-          <span className={classes.denom}> / 15</span>
-        </span>
-      </div>
-    </div>
+          {scoreBand(breakdown.total) === 0 && (
+            <Text component="span" className={drawer.drawerExcMark}>
+              ✦
+            </Text>
+          )}
+          <Text component="span" size="sm" c="dimmed" fw={400} className={classes.denom}>
+            {" "}
+            / 15
+          </Text>
+        </Text>
+      </Group>
+    </Box>
   );
 }
 
@@ -273,15 +299,19 @@ function CriterionRow({
   const flag = rowFlag(criterion, extraction, isPending);
 
   return (
-    <div className={classes.crit}>
+    <Box className={classes.crit}>
       <Group gap={6} wrap="nowrap" className={classes.nameCell}>
         {showOverrideDot && (
           <Tooltip label="Value overridden">
-            <span className={classes.dot} aria-label="overridden" />
+            <Box component="span" className={classes.dot} aria-label="overridden" />
           </Tooltip>
         )}
         <Text size="sm">{entry?.label ?? criterion.key}</Text>
-        {flag && <span className={classes.flag}>{flag}</span>}
+        {flag && (
+          <Text component="span" size="xs" c="dimmed" fw={500} className={classes.flag}>
+            {flag}
+          </Text>
+        )}
         {extraction && (
           <EvidenceButton
             extraction={extraction}
@@ -298,14 +328,17 @@ function CriterionRow({
       >
         {formatCriterionValue(value, criterion.key)}
       </Text>
-      <span
-        className={`${classes.delta} ${
+      <Text
+        size="sm"
+        fw={700}
+        ta="right"
+        className={`${classes.delta} ${drawer.tabularNums} ${
           criterion.delta > 0 ? classes.pos : criterion.delta < 0 ? classes.neg : classes.zero
         }`}
       >
         {criterion.delta > 0 ? "+" : ""}
         {criterion.delta.toFixed(1)}
-      </span>
+      </Text>
       <Group gap={4} wrap="nowrap" justify="flex-end">
         <OverrideControl
           criterionKey={criterion.key}
@@ -328,6 +361,6 @@ function CriterionRow({
           </Tooltip>
         )}
       </Group>
-    </div>
+    </Box>
   );
 }

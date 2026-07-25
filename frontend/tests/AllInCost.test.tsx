@@ -80,11 +80,11 @@ describe("AllInBreakdown", () => {
     renderWithProviders(<AllInBreakdown composition={composition} />);
     expect(screen.getByText("rent")).toBeInTheDocument();
     expect(screen.getByText("winter-weighted")).toBeInTheDocument();
-    // The tag now drives a state dot (title attr) rather than a per-row badge;
-    // "estimated" survives once as a legend label.
     expect(screen.getAllByText("estimated")).toHaveLength(1);
     expect(screen.getByText("All-in / mo")).toBeInTheDocument();
     expect(screen.getByText("$2,055")).toBeInTheDocument();
+    expect(screen.getByTitle("actual")).toHaveAttribute("data-state", "actual");
+    expect(screen.getAllByTitle("estimated").some((el) => el.getAttribute("data-state") === "estimated")).toBe(true);
   });
 
   it("renders unknown components as unknown, never a number", () => {

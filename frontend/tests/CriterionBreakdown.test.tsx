@@ -1,4 +1,5 @@
 import { screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
 import { renderWithProviders } from "./testUtils";
@@ -257,5 +258,33 @@ describe("CriterionBreakdown", () => {
     };
     renderBreakdown(breakdown, [], [{ ...extraction, criterion_key: "pets" }]);
     expect(screen.getAllByLabelText("evidence")).toHaveLength(1);
+  });
+
+  it("opens evidence in a popover on mobile", async () => {
+    const user = userEvent.setup();
+    const breakdown: ScoreBreakdown = {
+      base: 10,
+      total: 11,
+      rubric_version: 1,
+      clamped: false,
+      gates: [],
+      criteria: [{ key: "pets", value: "cats_dogs", matched: null, delta: 1 }],
+    };
+    renderWithProviders(
+      <ListingDetailDraftProvider huntId="hunt-1" listing={listingFixture} serverFees={[]}>
+        <CriterionBreakdown
+          huntId="hunt-1"
+          listingId="listing-1"
+          breakdown={breakdown}
+          catalog={catalog}
+          extractions={[{ ...extraction, criterion_key: "pets" }]}
+          overrides={[]}
+          floorPlanId={null}
+          isMobile
+        />
+      </ListingDetailDraftProvider>,
+    );
+    await user.click(screen.getByLabelText("evidence"));
+    expect(await screen.findByText(/confidence/)).toBeInTheDocument();
   });
 });

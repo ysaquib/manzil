@@ -40,7 +40,6 @@ import { useExtractions, useFees, useListings, useOverrides, usePropertyImages }
 import { resolveRow, resolveRowWithDraft } from "./unitGroups";
 import type { Extraction, Listing } from "./types";
 import drawerClasses from "./ListingDetailDrawer.module.css";
-import classes from "./DrawerHero.module.css";
 
 export interface DrawerSelection {
   listingId: string;
@@ -72,17 +71,19 @@ function UtilitiesBlock({ extraction }: { extraction: Extraction | undefined }) 
   if (!extraction) return null;
   const included = Array.isArray(extraction.value) ? (extraction.value as string[]) : [];
   return (
-    <div className={drawerClasses.utilBlock}>
+    <Box className={drawerClasses.utilBlock}>
       <IconDroplet size={18} stroke={2} className={drawerClasses.utilIcon} />
-      <div>
-        <div className={drawerClasses.utilLabel}>Utilities included</div>
-        <div className={drawerClasses.utilValue}>
+      <Stack gap={2}>
+        <Text className={drawerClasses.utilLabel} tt="uppercase" fw={600}>
+          Utilities included
+        </Text>
+        <Text size="sm" className={drawerClasses.utilValue}>
           {included.length
             ? included.map((s) => s.replace(/_/g, " ")).join(" · ")
             : "None stated"}
-        </div>
-      </div>
-    </div>
+        </Text>
+      </Stack>
+    </Box>
   );
 }
 
@@ -267,11 +268,17 @@ function DrawerShell({
     <>
       <Drawer.Header style={{ alignItems: "flex-start" }}>
         <Stack gap={0}>
-          <Text className={classes.eyebrow} tt="uppercase" fw={600} c="dimmed">Listing</Text>
-          <Title order={3} className={classes.title}>{listing.property.name}</Title>
-          <Group gap={7} wrap="nowrap" className={classes.addr}>
+          <Text className={drawerClasses.eyebrow} tt="uppercase" fw={600} c="dimmed">
+            Listing
+          </Text>
+          <Title order={3} className={drawerClasses.title}>
+            {listing.property.name}
+          </Title>
+          <Group gap={7} wrap="nowrap" className={drawerClasses.addr}>
             <IconMapPin size={13} stroke={2} />
-            {listing.property.canonical_address}
+            <Text size="sm" component="span" c="dimmed">
+              {listing.property.canonical_address}
+            </Text>
           </Group>
         </Stack>
         <Drawer.CloseButton ml="auto" />
@@ -322,7 +329,7 @@ function DrawerShell({
             </SectionCard>
 
             <SectionCard title="Cost & fees">
-              <Stack gap="sm">
+              <Stack gap="xs">
                 <AllInBreakdown composition={composition} />
                 <AllInOverrideControl
                   overridden={activeOverrides(overrides ?? [], displayFloorPlanId).has(
