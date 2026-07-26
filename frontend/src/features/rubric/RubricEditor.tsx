@@ -18,6 +18,8 @@ import { ApiError } from "../../lib/apiClient";
 import type { CatalogEntry, RubricCriterion } from "./api";
 import { usePutRubric } from "./api";
 import { CriterionCard } from "./CriterionCard";
+import { CriterionGroupHeader } from "./CriterionGroupHeader";
+import { CriterionPicker } from "./CriterionPicker";
 import { groupCatalog } from "./catalogGroups";
 import { draftToPayload, initDraft, overlapWarnings, validateDraft } from "./rubricDraft";
 
@@ -129,28 +131,44 @@ export function RubricEditor({
         </Alert>
       )}
 
-      {groupCatalog(catalog).map((group) => (
-        <Stack gap="sm" key={group.category}>
-          <Text fw={700} size="lg">
-            {group.label}
-          </Text>
-          {/* Two columns max: edit rows (op + value + points + actions) need the
-              width; the read-only view keeps its denser three-column grid. */}
-          <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
-            {group.entries.map((entry) => {
-              const criterion = criterionByKey.get(entry.key);
-              return criterion ? (
-                <CriterionCard
-                  key={entry.key}
-                  criterion={criterion}
-                  entry={entry}
-                  onChange={setCriterion}
-                />
-              ) : null;
-            })}
-          </SimpleGrid>
-        </Stack>
-      ))}
+      {groupCatalog(catalog).map((group) => {
+        // Scored criteria get cards; the rest collapse into one add-pill strip,
+        // so a category you aren't using costs a heading and a line rather than
+        // a dozen empty boxes (UI Decision Log 2026-07-25).
+        const scored = group.entries.filter((entry) => criterionByKey.get(entry.key)?.enabled);
+        const unscored = group.entries.filter((entry) => !criterionByKey.get(entry.key)?.enabled);
+        return (
+          <Stack gap="sm" key={group.category}>
+            <CriterionGroupHeader
+              label={group.label}
+              category={group.category}
+              count={`${scored.length} of ${group.entries.length}`}
+            />
+            {/* Two columns max: edit rows (op + value + points + actions) need
+                the width; the read-only view keeps its denser grid. */}
+            <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" style={{ alignItems: "start" }}>
+              {scored.map((entry) => {
+                const criterion = criterionByKey.get(entry.key);
+                return criterion ? (
+                  <CriterionCard
+                    key={entry.key}
+                    criterion={criterion}
+                    entry={entry}
+                    onChange={setCriterion}
+                  />
+                ) : null;
+              })}
+            </SimpleGrid>
+            <CriterionPicker
+              entries={unscored}
+              onEnable={(entry) => {
+                const criterion = criterionByKey.get(entry.key);
+                if (criterion) setCriterion({ ...criterion, enabled: true });
+              }}
+            />
+          </Stack>
+        );
+      })}
 
       <Modal opened={discardOpen} onClose={() => setDiscardOpen(false)} title="Discard changes?">
         <Stack>

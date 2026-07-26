@@ -1,25 +1,29 @@
+// Groups the criteria catalog into the rubric page's sections.
+//
+// Order is decision weight, not the catalog's own order: what you filter on
+// first (the unit, the money, the terms, where it is) comes before what you
+// merely prefer (fittings, amenities, management). Labels are the renter's
+// words rather than the schema's. (DESIGN §20 2026-07-25.)
 import type { CatalogEntry } from "./api";
 
 const CATEGORY_ORDER = [
-  "property",
   "unit",
-  "policy",
   "cost",
-  "availability",
-  "condition",
+  "tenancy",
   "location",
-  "reputation",
+  "fittings",
+  "amenities",
+  "management",
 ] as const;
 
 const CATEGORY_LABELS: Record<string, string> = {
-  property: "Property",
-  unit: "Floor plan and unit",
-  policy: "Policies",
+  unit: "The unit",
   cost: "Costs",
-  availability: "Availability",
-  condition: "Condition",
+  tenancy: "Lease terms & rules",
   location: "Location",
-  reputation: "Reputation",
+  fittings: "Fittings & condition",
+  amenities: "Building & amenities",
+  management: "Management & service",
 };
 
 export interface CatalogGroup {

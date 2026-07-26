@@ -1,7 +1,13 @@
-// Read-only rubric view (§13.2): enabled criteria as cards, ordered by position.
+// Read-only rubric view (§13.2): enabled criteria as cards, grouped by category
+// and ordered by position.
+//
+// Cards size to their own content (`alignItems: start`) instead of stretching to
+// the tallest card in the row — the stretch was most of the page's whitespace
+// (UI Decision Log 2026-07-25).
 import { SimpleGrid, Stack, Text } from "@mantine/core";
 
 import type { CatalogEntry, RubricCriterion } from "./api";
+import { CriterionGroupHeader } from "./CriterionGroupHeader";
 import { CriterionViewCard } from "./CriterionViewCard";
 import { groupCatalog } from "./catalogGroups";
 
@@ -32,10 +38,16 @@ export function RubricView({
     <Stack gap="lg">
       {groupCatalog(enabledCatalog).map((group) => (
         <Stack gap="sm" key={group.category}>
-          <Text fw={700} size="lg">
-            {group.label}
-          </Text>
-          <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
+          <CriterionGroupHeader
+            label={group.label}
+            category={group.category}
+            count={`${group.entries.length} scored`}
+          />
+          <SimpleGrid
+            cols={{ base: 1, sm: 2, lg: 3, xl: 4 }}
+            spacing="md"
+            style={{ alignItems: "start" }}
+          >
             {group.entries.map((entry) => {
               const criterion = enabledByKey.get(entry.key);
               return criterion ? (

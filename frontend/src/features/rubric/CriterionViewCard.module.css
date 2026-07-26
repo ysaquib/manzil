@@ -1,0 +1,69 @@
+/* Read-only criterion ledger: option label, magnitude bar, signed points.
+   Only the bits Mantine props can't express live here — the bar's track/fill
+   geometry, the tbody separator, and the mono/tabular figure column. Colours are
+   tokens throughout, and the bar uses the same `-text` variables as the `c=`
+   props on the figures so bar and number can never disagree. */
+
+/* Flush the ledger with the card's own padding. */
+.ledger td:first-of-type {
+  padding-inline-start: 0;
+}
+.ledger td:last-of-type {
+  padding-inline-end: 0;
+}
+
+/* Derived rows (if unknown / if not met) sit under a hairline. */
+.footer tr:first-of-type td {
+  border-top: 1px solid var(--mantine-color-default-border);
+  padding-top: var(--mantine-spacing-xs);
+}
+
+.points {
+  font-family: var(--mantine-font-family-monospace);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.barCell {
+  width: 68px;
+}
+
+/* Diverging magnitude bar: a centre tick with the fill growing right for a
+   positive delta and left for a negative one, so sign reads before the digits.
+   Track/fill sizes are optical geometry, deliberately explicit (UI_DESIGN §3). */
+.track {
+  position: relative;
+  width: 68px;
+  height: 6px;
+  border-radius: 3px;
+  /* Lighter than a border: the track is a scale, not an edge, and at full
+     border strength it out-weighed the fill it exists to measure. */
+  background: color-mix(in srgb, var(--mantine-color-default-border) 55%, transparent);
+}
+.track::after {
+  content: "";
+  position: absolute;
+  left: calc(50% - 0.5px);
+  top: -1px;
+  bottom: -1px;
+  width: 1px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--mantine-color-dimmed) 45%, transparent);
+}
+
+.fill {
+  position: absolute;
+  top: 0;
+  height: 6px;
+  border-radius: 3px;
+  width: calc(var(--fill) * 34px);
+}
+.fill[data-sign="pos"] {
+  left: 50%;
+  background: var(--mantine-color-green-text);
+}
+.fill[data-sign="neg"] {
+  right: 50%;
+  background: var(--mantine-color-red-text);
+}
