@@ -117,7 +117,7 @@ def test_catalog_contains_the_approved_p3_sc3_tranche() -> None:
     ]
 
     by_key = {entry.key: entry for entry in CATALOG}
-    assert by_key["pool"].category.value == "property"
+    assert by_key["pool"].category.value == "amenities"
     assert by_key["pool"].fact_scope.value == "property"
     assert by_key["pool"].escalation_policy.value == "available_sources_only"
     assert by_key["pool"].conflict_policy.value == "verified_positive_preferred"
@@ -125,6 +125,11 @@ def test_catalog_contains_the_approved_p3_sc3_tranche() -> None:
     assert by_key["unit_types"].fact_scope.value == "floor_plan"
     assert by_key["property_types"].value_schema["uniqueItems"] is True
     assert by_key["property_types"].default_options[0].match.op.value == "contains_any"
+
+
+RECATEGORIZE_HEADER = """-- Re-categorization only (DESIGN §20 2026-07-25): category is a presentation
+-- vocabulary with no functional readers, so this rewrites every row's category
+-- and changes nothing else. Idempotent on hosted and local databases."""
 
 
 def test_seed_sql_round_trips() -> None:
@@ -140,12 +145,24 @@ def test_committed_seed_sql_is_current() -> None:
     )
 
 
-def test_p3_sc3_catalog_sync_is_generated_from_catalog() -> None:
-    keys = [entry.key for entry in CATALOG[-13:]]
+def test_catalog_sync_migration_is_generated_from_catalog() -> None:
+    """The newest full sync must be generator output, never hand-edited.
+
+    Earlier per-tranche sync migrations (20260726 location_safety, 20260802
+    P3-SC3) are frozen history: they record what shipped then, and re-pinning
+    them to the live generator would break on every later Catalog edit that
+    touches their keys. The newest sync covers every key, so guarding it guards
+    the whole Catalog.
+    """
+    keys = [entry.key for entry in CATALOG]
     migration = (
-        REPO_ROOT / "supabase" / "migrations" / "20260802000000_catalog_sync_p3_sc3.sql"
+        REPO_ROOT / "supabase" / "migrations" / "20260805000000_catalog_recategorize.sql"
     ).read_text()
-    assert migration == generate_catalog_sync_sql(*keys)
+    assert migration == generate_catalog_sync_sql(*keys).replace(
+        "-- P3-SC3 first Property/Unit type tranche; "
+        "idempotent on hosted and local databases.",
+        RECATEGORIZE_HEADER,
+    )
 
 
 def test_beds_entry_matches_pinned_contract() -> None:

@@ -71,7 +71,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
         default_options=[
             _opt(MatchOp.EQ, 2, 0.5),
             _opt(MatchOp.EQ, 1, 0.0),
-            _opt(MatchOp.EQ, 0, -0.5),
+            _opt(MatchOp.EQ, 0, -1.0),
         ],
         extraction_hint="Count distinct bedrooms; a studio is 0.",
         requires_tool=None,
@@ -99,8 +99,8 @@ CATALOG: tuple[CatalogEntry, ...] = (
         domain=CriterionDomain.RENT,
         value_schema={"type": "integer", "minimum": 0},
         default_options=[
-            _opt(MatchOp.GT, 900, 0.5),
-            _opt(MatchOp.RANGE, [700, 900], 0.0),
+            _opt(MatchOp.GT, 1000, 0.5),
+            _opt(MatchOp.RANGE, [700, 1000], 0.0),
             _opt(MatchOp.LT, 700, -0.5),
         ],
         extraction_hint="Interior area of the unit in square feet.",
@@ -140,14 +140,14 @@ CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry(
         key="in_unit_laundry",
         label="Laundry",
-        category=CriterionCategory.UNIT,
+        category=CriterionCategory.FITTINGS,
         domain=CriterionDomain.RENT,
         value_schema={"type": "string", "enum": ["in_unit", "hookups", "on_site", "none"]},
         default_options=[
-            _opt(MatchOp.EQ, "in_unit", 1.0),
-            _opt(MatchOp.EQ, "hookups", 0.25),
-            _opt(MatchOp.EQ, "on_site", -0.5),
-            _opt(MatchOp.EQ, "none", -1.0),
+            _opt(MatchOp.EQ, "in_unit", 0.0),
+            _opt(MatchOp.EQ, "hookups", -0.25),
+            _opt(MatchOp.EQ, "on_site", -1.0),
+            _opt(MatchOp.EQ, "none", -2.0),
         ],
         extraction_hint=(
             "in_unit = washer/dryer inside the unit; hookups = connections only; "
@@ -159,17 +159,17 @@ CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry(
         key="pets_policy",
         label="Pets policy",
-        category=CriterionCategory.POLICY,
+        category=CriterionCategory.TENANCY,
         domain=CriterionDomain.RENT,
         value_schema={
             "type": "string",
             "enum": ["cats_and_dogs", "cats_only", "dogs_only", "none"],
         },
         default_options=[
-            _opt(MatchOp.EQ, "cats_and_dogs", 0.5),
-            _opt(MatchOp.EQ, "cats_only", 0.25),
-            _opt(MatchOp.EQ, "dogs_only", 0.0),
-            _opt(MatchOp.EQ, "none", -0.5),
+            _opt(MatchOp.EQ, "cats_and_dogs", 0.0),
+            _opt(MatchOp.EQ, "cats_only", 0.0),
+            _opt(MatchOp.EQ, "dogs_only", -1.0),
+            _opt(MatchOp.EQ, "none", -1.0),
         ],
         extraction_hint=(
             "Which pets the policy allows, ignoring breed and weight limits."
@@ -185,10 +185,13 @@ CATALOG: tuple[CatalogEntry, ...] = (
         domain=CriterionDomain.RENT,
         value_schema={"type": "number", "minimum": 0},
         default_options=[
-            _opt(MatchOp.LT, 1800, 1.0),
-            _opt(MatchOp.RANGE, [1800, 2000], 0.5),
-            _opt(MatchOp.RANGE, [2000, 2200], 0.0),
-            _opt(MatchOp.GT, 2200, -1.0),
+            _opt(MatchOp.LT, 1500, 1.0),
+            _opt(MatchOp.RANGE, [1500, 1800], 0.5),
+            _opt(MatchOp.RANGE, [1800, 2000], 0.25),
+            _opt(MatchOp.RANGE, [2000, 2100], 0.0),
+            _opt(MatchOp.RANGE, [2100, 2200], -0.5),
+            _opt(MatchOp.RANGE, [2200, 2400], -1.0),
+            _opt(MatchOp.GT, 2400, -2.0),
         ],
         extraction_hint=(
             "Composed by the pipeline from rent, mandatory fees, pet costs, and "
@@ -218,7 +221,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry(
         key="availability_date",
         label="Availability date",
-        category=CriterionCategory.AVAILABILITY,
+        category=CriterionCategory.TENANCY,
         domain=CriterionDomain.RENT,
         value_schema={"type": "string", "format": "date"},
         default_options=[],  # date thresholds are hunt-specific; owners set options in the rubric
@@ -242,7 +245,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry(
         key="kitchen_quality",
         label="Kitchen quality",
-        category=CriterionCategory.CONDITION,
+        category=CriterionCategory.FITTINGS,
         domain=CriterionDomain.RENT,
         value_schema={"type": "integer", "minimum": 1, "maximum": 5},
         default_options=[
@@ -260,7 +263,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry(
         key="flooring_quality",
         label="Flooring quality",
-        category=CriterionCategory.CONDITION,
+        category=CriterionCategory.FITTINGS,
         domain=CriterionDomain.RENT,
         value_schema={"type": "integer", "minimum": 1, "maximum": 5},
         default_options=[
@@ -302,7 +305,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry(
         key="cooling",
         label="Cooling",
-        category=CriterionCategory.UNIT,
+        category=CriterionCategory.FITTINGS,
         domain=CriterionDomain.RENT,
         value_schema={"type": "string", "enum": ["central", "window_units", "none"]},
         default_options=[
@@ -320,7 +323,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry(
         key="dishwasher",
         label="Dishwasher",
-        category=CriterionCategory.UNIT,
+        category=CriterionCategory.FITTINGS,
         domain=CriterionDomain.RENT,
         value_schema={"type": "boolean"},
         default_options=[
@@ -334,7 +337,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry(
         key="min_lease_months",
         label="Minimum lease term",
-        category=CriterionCategory.POLICY,
+        category=CriterionCategory.TENANCY,
         domain=CriterionDomain.RENT,
         value_schema={"type": "integer", "minimum": 1},
         default_options=[
@@ -367,7 +370,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry(
         key="management_reviews",
         label="Management reviews",
-        category=CriterionCategory.REPUTATION,
+        category=CriterionCategory.MANAGEMENT,
         domain=CriterionDomain.RENT,
         value_schema={
             "type": "object",
@@ -439,7 +442,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry(
         key="pool",
         label="Pool",
-        category=CriterionCategory.PROPERTY,
+        category=CriterionCategory.AMENITIES,
         domain=CriterionDomain.RENT,
         fact_scope=FactScope.PROPERTY,
         value_schema={
@@ -463,12 +466,12 @@ CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry(
         key="fitness_center",
         label="Fitness center or gym",
-        category=CriterionCategory.PROPERTY,
+        category=CriterionCategory.AMENITIES,
         domain=CriterionDomain.RENT,
         fact_scope=FactScope.PROPERTY,
         value_schema={"type": "boolean"},
         default_options=[
-            _opt(MatchOp.BOOL, True, 0.5),
+            _opt(MatchOp.BOOL, True, 0.25),
             _opt(MatchOp.BOOL, False, 0.0),
         ],
         extraction_hint="True only for an on-site resident fitness center or gym.",
@@ -479,7 +482,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry(
         key="clubhouse",
         label="Clubhouse",
-        category=CriterionCategory.PROPERTY,
+        category=CriterionCategory.AMENITIES,
         domain=CriterionDomain.RENT,
         fact_scope=FactScope.PROPERTY,
         value_schema={"type": "boolean"},
@@ -495,7 +498,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry(
         key="emergency_maintenance",
         label="Emergency maintenance",
-        category=CriterionCategory.PROPERTY,
+        category=CriterionCategory.MANAGEMENT,
         domain=CriterionDomain.RENT,
         fact_scope=FactScope.PROPERTY,
         value_schema={
@@ -519,7 +522,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry(
         key="maintenance_on_site",
         label="Maintenance on site",
-        category=CriterionCategory.PROPERTY,
+        category=CriterionCategory.MANAGEMENT,
         domain=CriterionDomain.RENT,
         fact_scope=FactScope.PROPERTY,
         value_schema={"type": "boolean"},
@@ -535,7 +538,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry(
         key="management_on_site",
         label="Management on site",
-        category=CriterionCategory.PROPERTY,
+        category=CriterionCategory.MANAGEMENT,
         domain=CriterionDomain.RENT,
         fact_scope=FactScope.PROPERTY,
         value_schema={"type": "boolean"},
@@ -551,7 +554,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry(
         key="online_payments",
         label="Online payments",
-        category=CriterionCategory.PROPERTY,
+        category=CriterionCategory.MANAGEMENT,
         domain=CriterionDomain.RENT,
         fact_scope=FactScope.PROPERTY,
         value_schema={"type": "boolean"},
@@ -570,7 +573,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry(
         key="online_maintenance_requests",
         label="Online maintenance requests",
-        category=CriterionCategory.PROPERTY,
+        category=CriterionCategory.MANAGEMENT,
         domain=CriterionDomain.RENT,
         fact_scope=FactScope.PROPERTY,
         value_schema={"type": "boolean"},
@@ -589,7 +592,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry(
         key="package_handling",
         label="Package handling",
-        category=CriterionCategory.PROPERTY,
+        category=CriterionCategory.AMENITIES,
         domain=CriterionDomain.RENT,
         fact_scope=FactScope.PROPERTY,
         value_schema={
@@ -614,7 +617,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry(
         key="smoking_policy",
         label="Smoking policy",
-        category=CriterionCategory.PROPERTY,
+        category=CriterionCategory.TENANCY,
         domain=CriterionDomain.RENT,
         fact_scope=FactScope.PROPERTY,
         value_schema={
@@ -622,9 +625,9 @@ CATALOG: tuple[CatalogEntry, ...] = (
             "enum": ["smoke_free_property", "designated_areas_only", "permitted"],
         },
         default_options=[
-            _opt(MatchOp.EQ, "smoke_free_property", 0.5),
-            _opt(MatchOp.EQ, "designated_areas_only", 0.0),
-            _opt(MatchOp.EQ, "permitted", -0.5),
+            _opt(MatchOp.EQ, "smoke_free_property", 0.0),
+            _opt(MatchOp.EQ, "designated_areas_only", -0.25),
+            _opt(MatchOp.EQ, "permitted", -1.5),
         ],
         extraction_hint=(
             "Property-wide smoking policy: fully smoke-free, permitted only in designated areas, "
@@ -637,7 +640,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry(
         key="property_types",
         label="Property types",
-        category=CriterionCategory.PROPERTY,
+        category=CriterionCategory.AMENITIES,
         domain=CriterionDomain.RENT,
         fact_scope=FactScope.PROPERTY,
         value_schema=_controlled_set_schema(PROPERTY_TYPE_VALUES),
@@ -669,7 +672,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
     CatalogEntry(
         key="internet_readiness",
         label="Internet readiness advertised",
-        category=CriterionCategory.PROPERTY,
+        category=CriterionCategory.AMENITIES,
         domain=CriterionDomain.RENT,
         fact_scope=FactScope.PROPERTY,
         value_schema={"type": "boolean"},
