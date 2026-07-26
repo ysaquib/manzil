@@ -1,5 +1,7 @@
--- Generated from shared/src/manzil_shared/catalog.py — never edit by hand.
--- Regenerate: uv run --package manzil-shared python -m manzil_shared.catalog
+-- Generated Catalog sync from shared/src/manzil_shared/catalog.py.
+-- Re-categorization only (DESIGN §20 2026-07-25): category is a presentation
+-- vocabulary with no functional readers, so this rewrites every row's category
+-- and changes nothing else. Idempotent on hosted and local databases.
 
 insert into criteria_catalog
   (key, label, category, domain, fact_scope, value_schema, claim_value_schema, default_options, extraction_hint, requires_tool, refresh_class, escalation_policy, conflict_policy)

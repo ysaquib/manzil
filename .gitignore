@@ -76,3 +76,4 @@ worker/evals/reports/
 worker/tests/fixtures/bench/labels.md
 
 docs/screenshots/**
+.playwright-mcp/**
