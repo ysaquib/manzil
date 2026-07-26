@@ -10,9 +10,13 @@
 //   meaningless, so the swap loses nothing and saves a column).
 // - Boolean criteria render fixed True/False rows as plain text — never a
 //   switch; each row just gets its own points.
+//
+// Header (UI Decision Log 2026-07-25): enable switch, category-hued identity
+// tile, label, the catalog's extraction hint, then quiet bonus/gate glyphs. The
+// editor only renders criteria that are switched on — everything else lives in
+// the group's CriterionPicker strip — so this card is always a scored one.
 import {
   ActionIcon,
-  Badge,
   Button,
   Card,
   Divider,
@@ -23,19 +27,12 @@ import {
   Text,
   Tooltip,
 } from "@mantine/core";
-import {
-  IconBan,
-  IconHelpCircle,
-  IconInfoCircle,
-  IconPlus,
-  IconShieldCheck,
-  IconSparkles,
-  IconX,
-} from "@tabler/icons-react";
+import { IconBan, IconHelpCircle, IconInfoCircle, IconPlus, IconX } from "@tabler/icons-react";
 
 import type { RubricOption } from "../../lib/contracts";
 import type { CatalogEntry, RubricCriterion } from "./api";
-import { CriterionIcon } from "./criterionIcon";
+import { CriterionTile } from "./criterionIcon";
+import { BonusMark, GateMark } from "./CriterionMarkers";
 import { GateControls } from "./GateControls";
 import { OptionMatchEditor } from "./OptionMatchEditor";
 import { OptionGridRow } from "./OptionGridRow";
@@ -55,6 +52,7 @@ function PointsInput({
       aria-label={ariaLabel}
       size="xs"
       step={0.25}
+      prefix={value > 0 ? "+" : undefined}
       suffix=" pts"
       value={value}
       onChange={(next) => onChange(typeof next === "number" ? next : 0)}
@@ -249,56 +247,32 @@ export function CriterionCard({
   };
 
   return (
-    <Card h="100%">
+    <Card>
       <Stack gap="sm">
-        <Group justify="space-between" wrap="nowrap">
-          <Group gap="sm" wrap="nowrap">
-            <Switch
-              checked={criterion.enabled}
-              onChange={(e) => onChange({ ...criterion, enabled: e.currentTarget.checked })}
-              aria-label={`enable ${entry.label}`}
-            />
-            <Group gap="xs" wrap="wrap">
-              <CriterionIcon entry={entry} />
-              <Text fw={600} size="sm">
-                {entry.label}
-              </Text>
-              <Tooltip label={entry.extraction_hint} maw={320} multiline>
-                <ActionIcon
-                  color="gray"
-                  size="xs"
-                  variant="subtle"
-                  aria-label={`info about ${entry.label}`}
-                >
-                  <IconInfoCircle size={14} stroke={1.5} color="var(--mantine-color-dimmed)" />
-                </ActionIcon>
-              </Tooltip>
-              {isBonus && criterion.enabled && (
-                <Tooltip label="Bonus criterion — all deltas are non-negative">
-                  <Badge
-                    size="xs"
-                    variant="light"
-                    color="green"
-                    leftSection={<IconSparkles size={12} stroke={1.5} />}
-                  >
-                    bonus
-                  </Badge>
-                </Tooltip>
-              )}
-              {criterion.non_negotiable !== null && criterion.enabled && (
-                <Tooltip label="Non-negotiable gate">
-                  <Badge
-                    size="xs"
-                    variant="light"
-                    color={"red"}
-                    leftSection={<IconShieldCheck size={12} stroke={1.5} />}
-                  >
-                    non-negotiable
-                  </Badge>
-                </Tooltip>
-              )}
-            </Group>
-          </Group>
+        <Group gap="xs" wrap="nowrap">
+          <Switch
+            checked={criterion.enabled}
+            onChange={(e) => onChange({ ...criterion, enabled: e.currentTarget.checked })}
+            aria-label={`enable ${entry.label}`}
+          />
+          <CriterionTile entry={entry} />
+          <Text fw={600} size="sm" truncate style={{ minWidth: 0 }}>
+            {entry.label}
+          </Text>
+          <Tooltip label={entry.extraction_hint} maw={320} multiline>
+            <ActionIcon
+              color="gray"
+              size="xs"
+              variant="subtle"
+              aria-label={`info about ${entry.label}`}
+            >
+              <IconInfoCircle size={14} stroke={1.5} color="var(--mantine-color-dimmed)" />
+            </ActionIcon>
+          </Tooltip>
+          {isBonus && criterion.enabled && <BonusMark />}
+          {criterion.non_negotiable !== null && criterion.enabled && (
+            <GateMark setScore={criterion.non_negotiable.set_score} />
+          )}
         </Group>
 
         {criterion.enabled && (

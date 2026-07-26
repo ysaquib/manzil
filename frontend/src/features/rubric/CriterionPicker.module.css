@@ -1,0 +1,14 @@
+/* Add-pill for a criterion that isn't scored yet. Dashed until you commit to it:
+   the border style is the whole affordance, which no Mantine Button prop
+   exposes. Everything else — sizing, radius, hover background, focus ring —
+   stays the themed `default` variant. */
+
+.pill {
+  border-style: dashed;
+  color: var(--mantine-color-dimmed);
+}
+
+.pill:hover {
+  border-style: solid;
+  color: var(--mantine-color-text);
+}
