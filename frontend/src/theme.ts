@@ -25,7 +25,7 @@ const hoverEase = {
 
 export const theme = createTheme({
   primaryColor: "dusky",
-  primaryShade: { light: 8, dark: 6 },
+  primaryShade: { light: 7, dark: 5 },
   autoContrast: true,
   respectReducedMotion: true,
   fontFamily: fontStackSans,
