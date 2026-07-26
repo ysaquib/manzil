@@ -6,6 +6,7 @@ import {
   deriveIsBonus,
   draftToPayload,
   initDraft,
+  isOptionDealbreaker,
   overlapWarnings,
   validateDraft,
   validateMatch,
@@ -67,6 +68,16 @@ describe("initDraft", () => {
     expect(draft).toHaveLength(2);
     expect(draft[0].enabled).toBe(false);
     expect(draft[0].options).toEqual(bedsEntry.default_options);
+  });
+
+  it("normalizes seed-shaped default_options that omit dealbreaker_set_score", () => {
+    const seedShaped: CatalogEntry = {
+      ...bedsEntry,
+      default_options: [{ match: { op: "eq", value: 2 }, delta: 0.5 } as RubricOption],
+    };
+    const draft = initDraft([seedShaped], []);
+    expect(draft[0].options[0].dealbreaker_set_score).toBe(null);
+    expect(isOptionDealbreaker(draft[0].options[0])).toBe(false);
   });
 
   it("keeps saved criteria over defaults", () => {
