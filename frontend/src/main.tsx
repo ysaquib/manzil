@@ -2,6 +2,10 @@
 // AuthProvider + RouterProvider.
 import "@fontsource-variable/literata";
 import "@fontsource-variable/source-sans-3";
+// Figures and code (UI_DESIGN §1). Weights 400/500 only — the mono is used for
+// numerals, never for running text.
+import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/500.css";
 
 import { localStorageColorSchemeManager, MantineProvider } from "@mantine/core";
 import "@mantine/core/styles.css";
