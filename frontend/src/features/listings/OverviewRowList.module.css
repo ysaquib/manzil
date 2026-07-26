@@ -1,0 +1,83 @@
+/* Mobile Overview: a list of expanding rows instead of a table.
+   The <table> element is what forced 701px of page width at a 390px viewport
+   (UI_DESIGN §5, "no horizontal page scroll, ever"); a row list has no minimum
+   width to fight. */
+
+.row {
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-md);
+  background: var(--mantine-color-body);
+  overflow: hidden;
+}
+
+.main {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--mantine-spacing-xs);
+  padding: var(--mantine-spacing-sm);
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+
+.name {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  min-width: 0;
+}
+
+/* The expanded panel is one deliberate block: every fact is a tile with a
+   micro-label over a mono value, so nothing reads as thrown in. */
+.more {
+  border-top: 1px solid var(--mantine-color-default-border);
+  padding: var(--mantine-spacing-sm);
+  background: color-mix(in srgb, var(--mantine-color-default-hover) 45%, transparent);
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  column-gap: var(--mantine-spacing-sm);
+  row-gap: var(--mantine-spacing-xs);
+}
+.statsTwo {
+  /* Status carries an interactive chip + a visited toggle; People carries an
+     average, dots, and a comment count. Both need real width, so this row
+     stacks full-width rather than squeezing into a 1fr/1fr half each — a
+     truncated "Not Inte…" chip is worse than one extra line. */
+  grid-template-columns: 1fr;
+  row-gap: var(--mantine-spacing-sm);
+  margin-top: var(--mantine-spacing-xs);
+  padding-top: var(--mantine-spacing-xs);
+  border-top: 1px solid var(--mantine-color-default-border);
+}
+
+.statKey {
+  font-size: 0.625rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mantine-color-dimmed);
+  font-weight: 600;
+}
+.statValue {
+  font-family: var(--mantine-font-family-monospace);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--mantine-font-size-xs);
+  display: flex;
+  align-items: center;
+  min-height: 1.5rem;
+}
+.statValuePlain {
+  font-family: var(--mantine-font-family-sans);
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--mantine-spacing-xs);
+  margin-top: var(--mantine-spacing-sm);
+  padding-top: var(--mantine-spacing-xs);
+  border-top: 1px solid var(--mantine-color-default-border);
+}

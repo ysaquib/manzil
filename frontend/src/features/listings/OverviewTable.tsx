@@ -1,11 +1,30 @@
-// Overview table (P1-10, §13.2): plain Mantine Table over the tested pure row
-// logic (mantine-react-table is incompatible with Mantine v9, and the column
-// set is small). One row per Unit Group; score cell shows the group's best or
-// pinned plan (§9.4). Sqft/all-in columns hide below md/sm — no horizontal
-// page scroll (frontend/AGENTS.md).
-import { ActionIcon, Checkbox, Group, Menu, Select, Table, Text, Tooltip, UnstyledButton } from "@mantine/core";
+// Overview table (P1-10, §13.2; redesigned UI Decision Log 2026-07-26): plain
+// Mantine Table over the tested pure row logic in overviewRows.ts. One row per
+// Unit Group; the score cell shows the group's best or pinned plan (§9.4).
+//
+// Layout decisions:
+// - One fact per column, so every value stays independently sortable, grouped
+//   under a band (FIT · IDENTITY · UNIT · MONEY · TIMING · PLACE · CURATION ·
+//   PEOPLE) with a hairline opening each group.
+// - Selection, score and property are pinned; everything else scrolls inside
+//   the table's own container, so the page never scrolls sideways (UI_DESIGN §5).
+// - The row menu lives inside the pinned property cell rather than a right-hand
+//   rail: it costs no column and is reachable at any scroll position.
+// - A row still being fetched, or whose last run failed, shows that in the
+//   marker slot and hands off to Tasks instead of opening an empty drawer.
+import {
+  ActionIcon,
+  Anchor,
+  Box,
+  Checkbox,
+  Group,
+  Menu,
+  Table,
+  Text,
+  Tooltip,
+  UnstyledButton,
+} from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { propertyLocationLabel } from "./locality";
 import {
   IconArchive,
   IconArrowsLeftRight,
@@ -21,17 +40,22 @@ import {
   IconDotsVertical,
   IconExternalLink,
   IconEye,
-  IconMessageCircle,
 } from "@tabler/icons-react";
+import { useEffect, useRef, type ReactNode } from "react";
+import { Link } from "react-router-dom";
 
 import { AllInCell } from "./AllInCost";
 import { SingleSourceBadge } from "../../components/badges/ListingBadges";
 import { COMPARE_LIMIT, rowEntry, useCompareSet } from "./compareSet";
+import { CurationCell } from "./StatusChip";
+import { propertyLocationLabel } from "./locality";
+import { RatingSummary } from "../collaboration/RatingSummary";
+import { RowMarker } from "./RowMarker";
 import { ScoreCell } from "./ScoreCell";
-import { RatingDots } from "../collaboration/RatingDots";
 import { useComments, useCurrentMember, useMembers, useRatings } from "../collaboration/api";
 import { usePatchUnitGroupState } from "./api";
-import { INTEREST_STATUSES, type InterestStatus } from "./types";
+import type { RowPipeline } from "./rowState";
+import type { InterestStatus } from "./types";
 import {
   allInValue,
   earliestAvailability,
@@ -62,10 +86,10 @@ function SortHeader({
   return (
     <UnstyledButton onClick={() => onSort(sortKey)} aria-label={`sort by ${label}`}>
       <Group gap={4} wrap="nowrap" className={active ? classes.activeheader : undefined}>
-        <Text size="sm" span fw={700}>
+        <Text size="xs" span fw={700}>
           {label}
         </Text>
-        <SortIcon size={14} stroke={1.5} />
+        <SortIcon size={13} stroke={1.5} />
       </Group>
     </UnstyledButton>
   );
@@ -119,16 +143,16 @@ export function TableDensityMenu({
   );
 }
 
-// Column visibility (m11): the optional columns and their defaults — the
-// default set is exactly the pre-picker table. Score/Property/Unit/Rent and
-// the actions column are always on.
+// Column visibility (m11): the optional columns and their defaults. Score,
+// Property and the row menu are always on.
 export type OverviewColumnKey =
   | "sqft" | "allIn" | "curation" | "people"
-  | "city" | "available" | "deposit" | "added";
+  | "city" | "available" | "deposit" | "added" | "rent";
 
 export const COLUMN_OPTIONS: { key: OverviewColumnKey; label: string; defaultVisible: boolean }[] = [
   { key: "sqft", label: "Sqft", defaultVisible: true },
-  { key: "allIn", label: "All-in / mo", defaultVisible: true },
+  { key: "allIn", label: "All-In Monthly", defaultVisible: true },
+  { key: "rent", label: "Rent", defaultVisible: true },
   { key: "curation", label: "Status", defaultVisible: true },
   { key: "people", label: "People", defaultVisible: true },
   { key: "city", label: "City", defaultVisible: false },
@@ -180,6 +204,16 @@ export function TableColumnsMenu({
 /** Stable identity for a table row — also the bulk-selection key (m6). */
 export const rowKey = (row: OverviewRow) => `${row.listing.id}:${row.group?.key ?? "listing"}`;
 
+// Column groups drive the header band. Only groups with a visible column are
+// rendered, and the first visible column of each opens with a hairline.
+const GROUPS: { label: string; columns: OverviewColumnKey[] }[] = [
+  { label: "Money", columns: ["allIn", "rent", "deposit"] },
+  { label: "Timing", columns: ["available", "added"] },
+  { label: "Place", columns: ["city"] },
+  { label: "Curation", columns: ["curation"] },
+  { label: "People", columns: ["people"] },
+];
+
 export interface OverviewTableProps {
   huntId: string;
   rows: OverviewRow[];
@@ -189,13 +223,23 @@ export interface OverviewTableProps {
   onArchive: (row: OverviewRow) => void;
   density?: TableDensity;
   columns?: OverviewColumnKey[];
+  /** Pipeline state per row key, from rowState.ts; absent when the row is idle. */
+  pipeline?: Map<string, RowPipeline>;
   /** Bulk selection (m6): selected row keys; omit to hide the checkbox column. */
   selectedKeys?: Set<string>;
   onToggleRow?: (key: string) => void;
   onToggleAll?: () => void;
 }
 
-function CollaborationCell({ listingId, huntId, unitGroupKey }: { listingId: string; huntId: string; unitGroupKey: string | null }) {
+function PeopleCell({
+  listingId,
+  huntId,
+  unitGroupKey,
+}: {
+  listingId: string;
+  huntId: string;
+  unitGroupKey: string | null;
+}) {
   const { data: members = [] } = useMembers(huntId);
   const { data: ratings = [] } = useRatings(listingId);
   const { data: comments = [] } = useComments(listingId);
@@ -204,16 +248,7 @@ function CollaborationCell({ listingId, huntId, unitGroupKey }: { listingId: str
     (comment) => comment.unit_group_key === null || comment.unit_group_key === unitGroupKey,
   );
   return (
-    <Group gap="sm" wrap="nowrap">
-      <RatingDots ratings={rowRatings} members={members} />
-      {rowComments.length > 0 && (
-        <Group gap={4} wrap="nowrap">
-          <Text size="sm" c="default">{rowComments.length}</Text>
-          <IconMessageCircle size={16} stroke={1.5}/>
-        </Group>
-      )}
-      {/* {comments.length > 0 && <Text size="xs" c="dimmed">{comments.length} comments</Text>} */}
-    </Group>
+    <RatingSummary ratings={rowRatings} members={members} commentCount={rowComments.length} />
   );
 }
 
@@ -222,49 +257,25 @@ function CurationCells({ row, huntId }: { row: OverviewRow; huntId: string }) {
   const patchState = usePatchUnitGroupState(huntId);
   const canCurate = currentMember?.role === "owner" || currentMember?.role === "curator";
   const group = row.group;
-  const save = (interest_status: InterestStatus | null, visited: boolean) => {
+  const visited = row.state?.visited ?? false;
+  const save = (interest_status: InterestStatus | null, nextVisited: boolean) => {
     if (!group) return;
     patchState.mutate({
       listingId: row.listing.id,
       unitGroupKey: group.key,
       interest_status,
-      visited,
+      visited: nextVisited,
     });
   };
-  const visited = row.state?.visited ?? false;
-  // One curation cell (§13.2 declutter): status select + visited toggle share
-  // a column instead of owning one each.
+  if (!group) return <Text size="sm" c="dimmed">—</Text>;
   return (
-    <Table.Td onClick={(event) => event.stopPropagation()}>
-      {group ? (
-        <Group gap="xs" wrap="nowrap">
-          <Select
-            aria-label="interest status"
-            placeholder="Undecided"
-            data={INTEREST_STATUSES.map((status) => ({
-              value: status,
-              label: sentenceCase(status),
-            }))}
-            value={row.state?.interest_status ?? null}
-            onChange={(value) => save(value as InterestStatus | null, visited)}
-            disabled={!canCurate || patchState.isPending}
-            clearable
-            size="xs"
-            w={140}
-          />
-          <Tooltip label={visited ? "Visited" : "Mark visited"} openDelay={300}>
-            <Checkbox
-              aria-label="visited"
-              checked={visited}
-              disabled={!canCurate || patchState.isPending}
-              onChange={(event) =>
-                save(row.state?.interest_status ?? null, event.currentTarget.checked)
-              }
-            />
-          </Tooltip>
-        </Group>
-      ) : <Text size="sm" c="dimmed">—</Text>}
-    </Table.Td>
+    <CurationCell
+      status={row.state?.interest_status ?? null}
+      visited={visited}
+      disabled={!canCurate || patchState.isPending}
+      onStatus={(next) => save(next, visited)}
+      onVisited={(next) => save(row.state?.interest_status ?? null, next)}
+    />
   );
 }
 
@@ -297,15 +308,18 @@ function RowActionsMenu({
   return (
     <Menu position="bottom-end" withinPortal>
       <Menu.Target>
-        <ActionIcon color="gray" c="dimmed" aria-label="listing actions">
-          <IconDotsVertical size={16} stroke={1.5} />
+        <ActionIcon
+          color="gray"
+          c="dimmed"
+          size="sm"
+          className={classes.rowMenu}
+          aria-label="listing actions"
+        >
+          <IconDotsVertical size={15} stroke={1.5} />
         </ActionIcon>
       </Menu.Target>
       <Menu.Dropdown>
-        <Menu.Item
-          leftSection={<IconEye size={14} stroke={1.5} />}
-          onClick={() => onOpen(row)}
-        >
+        <Menu.Item leftSection={<IconEye size={14} stroke={1.5} />} onClick={() => onOpen(row)}>
           Open details
         </Menu.Item>
         <Tooltip
@@ -363,6 +377,32 @@ function RowActionsMenu({
 const dateLabel = (iso: string | null) =>
   iso === null ? "—" : new Date(iso.includes("T") ? iso : `${iso}T00:00:00`).toLocaleDateString();
 
+/** What a working/failed row says in place of its address, plus where it goes. */
+function PipelineSubline({ huntId, pipeline }: { huntId: string; pipeline: RowPipeline }) {
+  const working = pipeline.state === "working";
+  return (
+    <Group gap={6} wrap="nowrap">
+      <Text size="xs" c={working ? "dusky" : "red"} truncate>
+        {working
+          ? `Working${pipeline.detail ? ` · ${sentenceCase(pipeline.detail.toLowerCase())}` : ""}`
+          : `Couldn't fetch${pipeline.detail ? ` · ${pipeline.detail}` : ""}`}
+      </Text>
+      <Anchor
+        component={Link}
+        to={`/h/${huntId}/tasks${working ? "" : "?tab=history"}`}
+        size="xs"
+        fw={600}
+        onClick={(event) => event.stopPropagation()}
+        style={{ whiteSpace: "nowrap" }}
+      >
+        {working ? "View task" : "See history"} ›
+      </Anchor>
+    </Group>
+  );
+}
+
+const EM_DASH = <Text size="sm" c="dimmed">—</Text>;
+
 export function OverviewTable({
   huntId,
   rows,
@@ -372,6 +412,7 @@ export function OverviewTable({
   onArchive,
   density = "normal",
   columns = DEFAULT_OVERVIEW_COLUMNS,
+  pipeline,
   selectedKeys,
   onToggleRow,
   onToggleAll,
@@ -381,176 +422,276 @@ export function OverviewTable({
   const selectable = selectedKeys !== undefined && onToggleRow !== undefined;
   const allSelected = selectable && rows.length > 0 && rows.every((row) => selectedKeys.has(rowKey(row)));
   const someSelected = selectable && rows.some((row) => selectedKeys.has(rowKey(row)));
+
+  // The pinned columns only cast a shadow while a column is genuinely scrolled
+  // underneath them: none at rest, none when every column already fits.
+  const wrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const sync = () => wrap.toggleAttribute("data-scrolled", wrap.scrollLeft > 0);
+    sync();
+    wrap.addEventListener("scroll", sync, { passive: true });
+    window.addEventListener("resize", sync);
+    return () => {
+      wrap.removeEventListener("scroll", sync);
+      window.removeEventListener("resize", sync);
+    };
+  }, [columns, rows.length]);
+
+  // Header band: a group appears only when it still has a visible column, and
+  // its first visible column opens with the hairline.
+  // Unit is a fixed column like score and property, so its group always exists
+  // and always opens the band; sqft joins it when enabled.
+  const unitGroup = { label: "Unit", columns: ["unit", ...(show("sqft") ? ["sqft"] : [])] };
+  const visibleGroups = [
+    unitGroup,
+    ...GROUPS.map((group) => ({
+      label: group.label,
+      columns: group.columns.filter(show) as string[],
+    })).filter((group) => group.columns.length > 0),
+  ];
+  const groupStarts = new Set(visibleGroups.map((group) => group.columns[0]));
+  const cellClass = (key: string) => (groupStarts.has(key) ? classes.groupStart : undefined);
+
+  const cell = (key: OverviewColumnKey, content: ReactNode) =>
+    show(key) ? <Table.Td className={cellClass(key)}>{content}</Table.Td> : null;
+
   return (
-    <Table
-      striped
-      highlightOnHover
-      verticalSpacing={spacing.vertical}
-      horizontalSpacing={spacing.horizontal}
-    >
-      <Table.Thead>
-        <Table.Tr>
-          {selectable && (
-            <Table.Th w={36}>
-              <Checkbox
-                aria-label="select all rows"
-                checked={allSelected}
-                indeterminate={someSelected && !allSelected}
-                onChange={() => onToggleAll?.()}
-              />
+    <Box className={classes.wrap} ref={wrapRef}>
+      <Table
+        className={classes.table}
+        data-selectable={selectable ? "true" : undefined}
+        verticalSpacing={spacing.vertical}
+        horizontalSpacing={spacing.horizontal}
+        withRowBorders={false}
+      >
+        <Table.Thead>
+          <Table.Tr className={classes.bandRow}>
+            {selectable && <Table.Th className={`${classes.sticky} ${classes.stickySelect}`} />}
+            <Table.Th className={`${classes.sticky} ${classes.stickyScore}`}>Fit</Table.Th>
+            <Table.Th className={`${classes.sticky} ${classes.stickyProp}`}>Identity</Table.Th>
+            {visibleGroups.map((group) => (
+              <Table.Th key={group.label} colSpan={group.columns.length} className={classes.groupStart}>
+                {group.label}
+              </Table.Th>
+            ))}
+          </Table.Tr>
+          <Table.Tr className={classes.labelRow}>
+            {selectable && (
+              <Table.Th className={`${classes.sticky} ${classes.stickySelect}`}>
+                <Checkbox
+                  aria-label="select all rows"
+                  checked={allSelected}
+                  indeterminate={someSelected && !allSelected}
+                  onChange={() => onToggleAll?.()}
+                />
+              </Table.Th>
+            )}
+            <Table.Th className={`${classes.sticky} ${classes.stickyScore}`}>
+              <SortHeader label="Score" sortKey="score" sort={sort} onSort={onSort} />
             </Table.Th>
-          )}
-          <Table.Th>
-            <SortHeader label="Score" sortKey="score" sort={sort} onSort={onSort} />
-          </Table.Th>
-          <Table.Th>
-            <SortHeader label="Property" sortKey="name" sort={sort} onSort={onSort} />
-          </Table.Th>
-          <Table.Th>Unit</Table.Th>
-          <Table.Th>
-            <SortHeader label="Rent" sortKey="rent" sort={sort} onSort={onSort} />
-          </Table.Th>
-          {show("sqft") && <Table.Th visibleFrom="md">Sqft</Table.Th>}
-          {show("allIn") && (
-            <Table.Th visibleFrom="sm">
-              <SortHeader label="All-in / mo" sortKey="allIn" sort={sort} onSort={onSort} />
+            <Table.Th className={`${classes.sticky} ${classes.stickyProp}`}>
+              <SortHeader label="Property" sortKey="name" sort={sort} onSort={onSort} />
             </Table.Th>
-          )}
-          {show("city") && <Table.Th>City</Table.Th>}
-          {show("available") && (
-            <Table.Th>
-              <SortHeader label="Available" sortKey="available" sort={sort} onSort={onSort} />
-            </Table.Th>
-          )}
-          {show("deposit") && <Table.Th>Deposit</Table.Th>}
-          {show("added") && (
-            <Table.Th>
-              <SortHeader label="Added" sortKey="added" sort={sort} onSort={onSort} />
-            </Table.Th>
-          )}
-          {show("curation") && <Table.Th>Status</Table.Th>}
-          {show("people") && <Table.Th>People</Table.Th>}
-          <Table.Th aria-label="row actions" />
-        </Table.Tr>
-      </Table.Thead>
-      <Table.Tbody>
-        {rows.map((row) => {
-          const allIn = allInValue(row);
-          const group = row.group;
-          const availability = rowAvailability(row);
-          const key = rowKey(row);
-          return (
-            <Table.Tr
-              key={key}
-              onClick={() => onOpen(row)}
-              // A no-availability listing is dimmed — present but nothing to rank on.
-              style={{ cursor: "pointer", opacity: availability === "unavailable" ? 0.55 : 1 }}
-            >
-              {selectable && (
-                <Table.Td onClick={(e) => e.stopPropagation()}>
-                  <Checkbox
-                    aria-label="select row"
-                    checked={selectedKeys.has(key)}
-                    onChange={() => onToggleRow?.(key)}
-                  />
-                </Table.Td>
-              )}
-              <Table.Td>
-                {group?.displayScore ? (
-                  <ScoreCell
-                    total={group.displayScore.total}
-                    pinned={group.pinnedPlanId !== null}
-                    planCount={group.scoredPlanCount}
-                  />
-                ) : (
-                  <Text size="sm" c="dimmed">
-                    {availability === "unavailable" ? "No availability" : "Pending"}
-                  </Text>
+            <Table.Th className={cellClass("unit")}>Unit</Table.Th>
+            {show("sqft") && <Table.Th className={cellClass("sqft")}>Sqft</Table.Th>}
+            {show("allIn") && (
+              <Table.Th className={cellClass("allIn")}>
+                <SortHeader label="All-In Monthly" sortKey="allIn" sort={sort} onSort={onSort} />
+              </Table.Th>
+            )}
+            {show("rent") && (
+              <Table.Th className={cellClass("rent")}>
+                <SortHeader label="Rent" sortKey="rent" sort={sort} onSort={onSort} />
+              </Table.Th>
+            )}
+            {show("deposit") && <Table.Th className={cellClass("deposit")}>Deposit</Table.Th>}
+            {show("available") && (
+              <Table.Th className={cellClass("available")}>
+                <SortHeader label="Available" sortKey="available" sort={sort} onSort={onSort} />
+              </Table.Th>
+            )}
+            {show("added") && (
+              <Table.Th className={cellClass("added")}>
+                <SortHeader label="Added" sortKey="added" sort={sort} onSort={onSort} />
+              </Table.Th>
+            )}
+            {show("city") && <Table.Th className={cellClass("city")}>City</Table.Th>}
+            {show("curation") && <Table.Th className={cellClass("curation")}>Status</Table.Th>}
+            {show("people") && <Table.Th className={cellClass("people")}>People</Table.Th>}
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {rows.map((row) => {
+            const allIn = allInValue(row);
+            const group = row.group;
+            const availability = rowAvailability(row);
+            const key = rowKey(row);
+            const state = pipeline?.get(key) ?? null;
+            // A row with nothing of its own yet stands in as a hand-off to
+            // Tasks; a scored row that is merely refreshing keeps its values.
+            const blank = state?.placeholder ?? false;
+            const dimmed = availability === "unavailable" || blank;
+            return (
+              <Table.Tr
+                key={key}
+                onClick={() => onOpen(row)}
+                style={{ cursor: "pointer", opacity: dimmed && !blank ? 0.55 : 1 }}
+              >
+                {selectable && (
+                  <Table.Td
+                    className={`${classes.sticky} ${classes.stickySelect}`}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Checkbox
+                      aria-label="select row"
+                      checked={selectedKeys.has(key)}
+                      onChange={() => onToggleRow?.(key)}
+                    />
+                  </Table.Td>
                 )}
-              </Table.Td>
-              <Table.Td>
-                <Group gap="xs" wrap="wrap">
-                  <Text size="sm" fw={600}>
-                    {row.listing.property.name}
-                  </Text>
-                  {row.listing.single_source_reason && (
-                    <SingleSourceBadge reason={row.listing.single_source_reason} />
+                <Table.Td className={`${classes.sticky} ${classes.stickyScore}`}>
+                  {blank ? (
+                    EM_DASH
+                  ) : group?.displayScore ? (
+                    <ScoreCell
+                      total={group.displayScore.total}
+                      pinned={group.pinnedPlanId !== null}
+                      planCount={group.scoredPlanCount}
+                    />
+                  ) : (
+                    <Text size="sm" c="dimmed">
+                      {availability === "unavailable" ? "No availability" : "Pending"}
+                    </Text>
                   )}
-                </Group>
-                <Text size="xs" c="dimmed">
-                  {row.listing.property.canonical_address}
-                </Text>
-              </Table.Td>
-              <Table.Td>
-                <Text size="sm" lh={1}>
-                  {group === null
-                    ? "—"
-                    : `${group.beds === 0 ? "Studio" : `${group.beds} bd`} / ${group.baths} ba`}
-                </Text>
-                {group && group.unitTypes.length > 0 && (
-                  <Text size="xs" c="dimmed" mt={4}>
-                    {group.unitTypes.map((type) => sentenceCase(type)).join(", ")}
-                  </Text>
+                </Table.Td>
+                <Table.Td className={`${classes.sticky} ${classes.stickyProp}`}>
+                  <Box className={classes.identity}>
+                    <RowMarker
+                      pipeline={state?.state ?? null}
+                      status={row.state?.interest_status ?? null}
+                    />
+                    <Box className={classes.identityText}>
+                      <Group gap="xs" wrap="nowrap">
+                        <Text size="sm" fw={600} truncate>
+                          {row.listing.property.name}
+                        </Text>
+                        {row.listing.single_source_reason && !state && (
+                          <SingleSourceBadge reason={row.listing.single_source_reason} />
+                        )}
+                      </Group>
+                      {state ? (
+                        <PipelineSubline huntId={huntId} pipeline={state} />
+                      ) : (
+                        <Text size="xs" c="dimmed" truncate>
+                          {row.listing.property.canonical_address}
+                        </Text>
+                      )}
+                    </Box>
+                    <Box onClick={(e) => e.stopPropagation()}>
+                      <RowActionsMenu
+                        row={row}
+                        huntId={huntId}
+                        onOpen={onOpen}
+                        onArchive={onArchive}
+                      />
+                    </Box>
+                  </Box>
+                </Table.Td>
+
+                <Table.Td className={cellClass("unit")}>
+                  {blank ? (
+                    EM_DASH
+                  ) : (
+                    <Box>
+                      <Text size="sm" lh={1.2}>
+                        {group === null
+                          ? "—"
+                          : `${group.beds === 0 ? "Studio" : `${group.beds} bd`} / ${group.baths} ba`}
+                      </Text>
+                      {group && group.unitTypes.length > 0 && (
+                        <Text size="xs" c="dimmed">
+                          {group.unitTypes.map((type) => sentenceCase(type)).join(", ")}
+                        </Text>
+                      )}
+                    </Box>
+                  )}
+                </Table.Td>
+                {cell(
+                  "sqft",
+                  blank ? EM_DASH : (
+                    <Text size="sm" className={classes.figure}>
+                      {group === null ? "—" : formatRange(group.sqftMin, group.sqftMax)}
+                    </Text>
+                  ),
                 )}
-              </Table.Td>
-              <Table.Td>
-                <Text size="sm">
-                  {group === null ? "—" : formatRange(group.rentMin, group.rentMax, "$")}
-                </Text>
-              </Table.Td>
-              {show("sqft") && (
-                <Table.Td visibleFrom="md">
-                  <Text size="sm">
-                    {group === null ? "—" : formatRange(group.sqftMin, group.sqftMax)}
-                  </Text>
-                </Table.Td>
-              )}
-              {show("allIn") && (
-                <Table.Td visibleFrom="sm">
-                  <AllInCell allIn={allIn} composition={rowComposition(row)} />
-                </Table.Td>
-              )}
-              {show("city") && (
-                <Table.Td>
-                  <Text size="sm">{propertyLocationLabel(row.listing.property) === "Unknown" ? "—" : propertyLocationLabel(row.listing.property)}</Text>
-                </Table.Td>
-              )}
-              {show("available") && (
-                <Table.Td>
-                  <Text size="sm">{dateLabel(earliestAvailability(row))}</Text>
-                </Table.Td>
-              )}
-              {show("deposit") && (
-                <Table.Td>
-                  <Text size="sm">
-                    {group?.displayPlan.deposit != null
-                      ? `$${group.displayPlan.deposit.toLocaleString()}`
-                      : "—"}
-                  </Text>
-                </Table.Td>
-              )}
-              {show("added") && (
-                <Table.Td>
-                  <Text size="sm">{dateLabel(row.listing.created_at)}</Text>
-                </Table.Td>
-              )}
-              {show("curation") && <CurationCells row={row} huntId={huntId} />}
-              {show("people") && (
-                <Table.Td>
-                  <CollaborationCell
-                    listingId={row.listing.id}
-                    huntId={huntId}
-                    unitGroupKey={group?.key ?? null}
-                  />
-                </Table.Td>
-              )}
-              <Table.Td onClick={(e) => e.stopPropagation()} width={40}>
-                <RowActionsMenu row={row} huntId={huntId} onOpen={onOpen} onArchive={onArchive} />
-              </Table.Td>
-            </Table.Tr>
-          );
-        })}
-      </Table.Tbody>
-    </Table>
+                {cell(
+                  "allIn",
+                  blank ? EM_DASH : <AllInCell allIn={allIn} composition={rowComposition(row)} />,
+                )}
+                {cell(
+                  "rent",
+                  blank ? EM_DASH : (
+                    <Text size="sm" className={classes.figure}>
+                      {group === null ? "—" : formatRange(group.rentMin, group.rentMax, "$")}
+                    </Text>
+                  ),
+                )}
+                {cell(
+                  "deposit",
+                  blank ? EM_DASH : (
+                    <Text size="sm" className={classes.figure}>
+                      {group?.displayPlan.deposit != null
+                        ? `$${group.displayPlan.deposit.toLocaleString()}`
+                        : "—"}
+                    </Text>
+                  ),
+                )}
+                {cell(
+                  "available",
+                  blank ? EM_DASH : (
+                    <Text size="sm" className={classes.figure}>
+                      {dateLabel(earliestAvailability(row))}
+                    </Text>
+                  ),
+                )}
+                {cell(
+                  "added",
+                  <Text size="sm" className={classes.figure}>
+                    {dateLabel(row.listing.created_at)}
+                  </Text>,
+                )}
+                {cell(
+                  "city",
+                  blank ? EM_DASH : (
+                    <Text size="sm">
+                      {propertyLocationLabel(row.listing.property) === "Unknown"
+                        ? "—"
+                        : propertyLocationLabel(row.listing.property)}
+                    </Text>
+                  ),
+                )}
+                {show("curation") && (
+                  <Table.Td className={cellClass("curation")} onClick={(e) => e.stopPropagation()}>
+                    {blank ? EM_DASH : <CurationCells row={row} huntId={huntId} />}
+                  </Table.Td>
+                )}
+                {cell(
+                  "people",
+                  blank ? EM_DASH : (
+                    <PeopleCell
+                      listingId={row.listing.id}
+                      huntId={huntId}
+                      unitGroupKey={group?.key ?? null}
+                    />
+                  ),
+                )}
+              </Table.Tr>
+            );
+          })}
+        </Table.Tbody>
+      </Table>
+    </Box>
   );
 }
