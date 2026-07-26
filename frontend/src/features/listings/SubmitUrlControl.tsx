@@ -66,7 +66,7 @@ export function SubmitUrlControl({
         placeholder="Paste a listing URL"
         value={url}
         onChange={(e) => setUrl(e.currentTarget.value)}
-        style={{ flex: 1, minWidth: 320 }}
+        style={{ flex: 1, minWidth: 240 }}
       />
       <Select
         label="Cross-checking"
@@ -76,7 +76,7 @@ export function SubmitUrlControl({
         allowDeselect={false}
         // w={170}
       />
-      <Button onClick={submit} disabled={!url.trim() || createListing.isPending} flex={1}>
+      <Button onClick={submit} disabled={!url.trim() || createListing.isPending}>
         Add listing
       </Button>
 

@@ -3,9 +3,11 @@
 // the Archived view (m7), and the column picker (m11) live here too.
 import {
   Alert,
+  Box,
   Button,
   Card,
   Center,
+  Divider,
   Group,
   Loader,
   Menu,
@@ -15,13 +17,16 @@ import {
   Stack,
   Text,
 } from "@mantine/core";
-import { useLocalStorage } from "@mantine/hooks";
+import { useLocalStorage, useMediaQuery } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { IconArchive, IconArrowsLeftRight, IconChevronDown, IconHome } from "@tabler/icons-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { PageHeader } from "../../components/PageHeader";
+import { useJobs } from "../jobs/api";
+import { jobsByListing, rowPipelineState, type RowPipeline } from "./rowState";
+import { OverviewRowList } from "./OverviewRowList";
 import { resolveSettings } from "../../lib/contracts";
 import { sentenceCase } from "../../lib/text";
 import { useCurrentMember } from "../collaboration/api";
@@ -49,6 +54,7 @@ import {
   sanitizeFilterState,
   sortRows,
   type OverviewFilterState,
+  type OverviewRow,
   type SortKey,
   type SortState,
 } from "./overviewRows";
@@ -113,12 +119,25 @@ export function OverviewPage() {
     defaultValue: "normal",
   });
   const [columns, setColumns] = useLocalStorage<OverviewColumnKey[]>({
-    key: "manzil:overview-columns",
+    // v2: the column set gained `rent` in the 2026-07-26 redesign; a stored v1
+    // array has no entry for it and would render the table without Rent.
+    key: "manzil:overview-columns-v2",
     defaultValue: DEFAULT_OVERVIEW_COLUMNS,
   });
   const [selectedRow, setSelectedRow] = useState<DrawerSelection | null>(null);
   const [drawerOpened, setDrawerOpened] = useState(false);
   const [archiveTarget, setArchiveTarget] = useState<ArchiveTarget | null>(null);
+
+  // Below `sm` the table becomes a row list: a <table> has a minimum width the
+  // page cannot escape, and UI_DESIGN §5 forbids horizontal page scroll.
+  const isCompact = useMediaQuery("(max-width: 48em)") ?? false;
+
+  const openDrawer = (row: OverviewRow) => {
+    setSelectedRow({ listingId: row.listing.id, groupKey: row.group?.key ?? null });
+    setDrawerOpened(true);
+  };
+  const archiveRow = (row: OverviewRow) =>
+    setArchiveTarget({ listingIds: [row.listing.id], label: row.listing.property.name });
 
   const onSort = (key: SortKey) => {
     setSort((prev) =>
@@ -130,6 +149,19 @@ export function OverviewPage() {
 
   const allRows = buildRows(listings ?? [], unitGroupStates);
   const rows = sortRows(applyOverviewFilters(allRows, filters), sort);
+
+  // Pipeline state per row (UI Decision Log 2026-07-26): a row still being
+  // fetched, or whose last run failed, says so and hands off to Tasks.
+  const { data: jobs = [] } = useJobs(huntId);
+  const pipeline = useMemo(() => {
+    const byListing = jobsByListing(jobs);
+    const map = new Map<string, RowPipeline>();
+    for (const row of allRows) {
+      const state = rowPipelineState(row, byListing);
+      if (state) map.set(rowKey(row), state);
+    }
+    return map;
+  }, [jobs, allRows]);
   const cities = [...new Set((listings ?? []).map((listing) => propertyLocationLabel(listing.property)))]
     .sort((a, b) => a.localeCompare(b));
 
@@ -210,18 +242,18 @@ export function OverviewPage() {
     <Stack gap="lg">
       <PageHeader title="Overview" description="All unit groups in this hunt" />
 
-      <Group justify="space-between" align="flex-end" wrap="wrap" gap="md">
-        {hunt && (
-          <SubmitUrlControl
-            huntId={huntId}
-            defaultPolicy={resolveSettings(hunt.settings).default_source_policy}
-            listings={listings ?? []}
-          />
-        )}
-      </Group>
+      {hunt && (
+        <SubmitUrlControl
+          huntId={huntId}
+          defaultPolicy={resolveSettings(hunt.settings).default_source_policy}
+          listings={listings ?? []}
+        />
+      )}
 
-      <Group justify="space-between" align="flex-start" wrap="nowrap" gap="sm">
-        <div style={{ flex: 1, minWidth: 0 }}>
+      {/* Search + Filters read as one control; the view options group into a
+          single bordered cluster instead of floating loose (§20 2026-07-26). */}
+      <Group justify="space-between" align="flex-start" wrap="wrap" gap="sm">
+        <Box style={{ flex: 1, minWidth: 260 }}>
           {view === "active" && (
             <OverviewFilterBar
               filters={filters}
@@ -235,20 +267,28 @@ export function OverviewPage() {
               publishPending={publishFilters.isPending}
             />
           )}
-        </div>
-        <Group gap="xs" wrap="nowrap">
-          <SegmentedControl
-            size="xs"
-            value={view}
-            onChange={(next) => setView(next as "active" | "archived")}
-            data={[
-              { value: "active", label: "Active" },
-              { value: "archived", label: "Archived" },
-            ]}
-          />
-          <TableColumnsMenu columns={columns} onChange={setColumns} />
-          <TableDensityMenu density={density} onChange={setDensity} />
-        </Group>
+        </Box>
+        <Paper withBorder p={3} radius="md">
+          <Group gap={2} wrap="nowrap">
+            <SegmentedControl
+              size="xs"
+              variant="subtle"
+              value={view}
+              onChange={(next) => setView(next as "active" | "archived")}
+              data={[
+                { value: "active", label: "Active" },
+                { value: "archived", label: "Archived" },
+              ]}
+            />
+            {!isCompact && (
+              <>
+                <Divider orientation="vertical" my={4} />
+                <TableColumnsMenu columns={columns} onChange={setColumns} />
+                <TableDensityMenu density={density} onChange={setDensity} />
+              </>
+            )}
+          </Group>
+        </Paper>
       </Group>
 
       {view === "archived" && <ArchivedListings huntId={huntId} />}
@@ -331,26 +371,31 @@ export function OverviewPage() {
           </Group>
         </Paper>
       )}
-      {view === "active" && rows.length > 0 && (
-        <OverviewTable
-          huntId={huntId}
-          rows={rows}
-          sort={sort}
-          density={density}
-          columns={columns}
-          selectedKeys={selected}
-          onToggleRow={toggleRow}
-          onToggleAll={toggleAll}
-          onSort={onSort}
-          onOpen={(row) => {
-            setSelectedRow({ listingId: row.listing.id, groupKey: row.group?.key ?? null });
-            setDrawerOpened(true);
-          }}
-          onArchive={(row) =>
-            setArchiveTarget({ listingIds: [row.listing.id], label: row.listing.property.name })
-          }
-        />
-      )}
+      {view === "active" && rows.length > 0 &&
+        (isCompact ? (
+          <OverviewRowList
+            huntId={huntId}
+            rows={rows}
+            pipeline={pipeline}
+            onOpen={openDrawer}
+            onArchive={archiveRow}
+          />
+        ) : (
+          <OverviewTable
+            huntId={huntId}
+            rows={rows}
+            sort={sort}
+            density={density}
+            columns={columns}
+            pipeline={pipeline}
+            selectedKeys={selected}
+            onToggleRow={toggleRow}
+            onToggleAll={toggleAll}
+            onSort={onSort}
+            onOpen={openDrawer}
+            onArchive={archiveRow}
+          />
+        ))}
 
       <ListingDetailDrawer
         huntId={huntId}
