@@ -15,6 +15,7 @@
   "dependencies": {
     "@fontsource-variable/literata": "^5.2.8",
     "@fontsource-variable/source-sans-3": "^5.2.9",
+    "@fontsource/jetbrains-mono": "^5.3.0",
     "@mantine/carousel": "^9.4.2",
     "@mantine/core": "^9.4.1",
     "@mantine/dates": "^9.4.1",
