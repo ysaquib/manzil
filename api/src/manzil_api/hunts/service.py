@@ -20,7 +20,7 @@ from supabase import Client
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "default_source_policy": "tiers_1_2_3",
-    "cost_estimate_mode": "conservative",
+    "cost_estimate_mode": "median",
     "min_confidence": "medium",
     "proximity_mode": "driving",
     "occupants": 1,

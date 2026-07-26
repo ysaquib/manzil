@@ -77,14 +77,21 @@ class CriterionDomain(StrEnum):
 
 
 class CriterionCategory(StrEnum):
-    PROPERTY = "property"
+    """How Criteria are grouped for the person reading them (§8.2, §20 2026-07-25).
+
+    Presentation vocabulary only: nothing in scoring, extraction, or persistence
+    branches on it (fact scope, not category, decides Property vs Floor Plan
+    handling). Categories are therefore grouped by the question a renter asks,
+    and re-grouped freely as the Catalog grows.
+    """
+
     UNIT = "unit"
-    POLICY = "policy"
+    FITTINGS = "fittings"
+    AMENITIES = "amenities"
+    MANAGEMENT = "management"
+    TENANCY = "tenancy"
     COST = "cost"
-    AVAILABILITY = "availability"
-    CONDITION = "condition"
     LOCATION = "location"
-    REPUTATION = "reputation"
 
 
 class FactScope(StrEnum):
