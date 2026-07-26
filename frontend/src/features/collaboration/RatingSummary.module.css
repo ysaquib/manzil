@@ -1,0 +1,22 @@
+/* Rating summary: mono figures so averages and comment counts line up down a
+   column, and a member dot whose colour is set inline from `memberColor`
+   (runtime-computed identity, not a design choice — UI_DESIGN §3). */
+
+.average {
+  font-family: var(--mantine-font-family-monospace);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--mantine-font-size-xs);
+  line-height: 1;
+}
+
+.star {
+  color: var(--mantine-color-yellow-6);
+  flex: none;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}

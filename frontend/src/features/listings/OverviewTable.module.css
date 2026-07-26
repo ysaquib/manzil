@@ -1,3 +1,190 @@
+/* Overview table chrome: the horizontal scroll container, the pinned identity
+   columns, the grouped header band, and the row-state marker.
+
+   Stripe and hover are painted here on `td` rather than through Mantine's
+   `striped` / `highlightOnHover` props. Mantine sets those on the `<tr>` with
+   zero-specificity `:where()` selectors, which a `position: sticky` cell cannot
+   inherit — a pinned cell must paint its own opaque background or the columns
+   scrolling underneath show straight through it. One rule for both cell kinds
+   is the only way they can't drift apart. */
+
+.wrap {
+  overflow-x: auto;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-md);
+  background: var(--surface);
+}
+
+.table {
+  --surface: var(--mantine-color-body);
+  --stripe: var(--mantine-color-gray-0);
+  --hover: var(--mantine-color-gray-1);
+  /* Pinned column widths — optical, and the sticky offsets derive from them so
+     the two can never disagree. */
+  --sel-w: 0px;
+  --score-w: 5.5rem;
+
+  border-collapse: separate; /* required: collapsed borders drop sticky backgrounds */
+  border-spacing: 0;
+  width: 100%;
+  min-width: max-content;
+  white-space: nowrap;
+  color: inherit;
+}
+.table[data-selectable="true"] {
+  --sel-w: 2.75rem;
+}
+
+:global([data-mantine-color-scheme="dark"]) .table {
+  --stripe: var(--mantine-color-dark-6);
+  --hover: var(--mantine-color-dark-5);
+}
+
+.table td,
+.table th {
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+  text-align: left;
+  vertical-align: middle;
+  background: var(--surface);
+}
+.table tbody tr:nth-of-type(even) td {
+  background: var(--stripe);
+}
+.table tbody tr:hover td {
+  background: var(--hover);
+}
+.table tbody td {
+  border-bottom: 1px solid color-mix(in srgb, var(--mantine-color-default-border) 55%, transparent);
+}
+.table tbody tr:last-of-type td {
+  border-bottom: 0;
+}
+
+/* Grouped header: a band of section names over the sortable labels. */
+.bandRow th {
+  padding-block: 0.375rem 0.25rem;
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--mantine-color-dimmed);
+  font-weight: 600;
+  border-bottom: 1px solid var(--mantine-color-default-border);
+}
+.labelRow th {
+  border-bottom: 1px solid var(--mantine-color-default-border);
+  font-size: var(--mantine-font-size-xs);
+}
+/* Hairline opening each column group, carried down every row. */
+.groupStart {
+  border-left: 1px solid var(--mantine-color-default-border);
+}
+
+/* ---- pinned identity columns ---- */
+.sticky {
+  position: sticky;
+  z-index: 2;
+}
+.table thead .sticky {
+  z-index: 3;
+}
+.stickySelect {
+  left: 0;
+  width: 2.75rem;
+}
+.stickyScore {
+  left: var(--sel-w);
+  width: var(--score-w);
+}
+.stickyProp {
+  left: calc(var(--sel-w) + var(--score-w));
+}
+
+/* The seam only casts a shadow while a column is genuinely underneath it —
+   nothing at rest, nothing when every column already fits. */
+.stickyProp::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  right: 0;
+  width: 0.875rem;
+  transform: translateX(100%);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  background: linear-gradient(to right, rgba(0, 0, 0, 0.1), transparent);
+}
+:global([data-mantine-color-scheme="dark"]) .stickyProp::after {
+  background: linear-gradient(to right, rgba(0, 0, 0, 0.35), transparent);
+}
+.wrap[data-scrolled] .stickyProp::after {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .stickyProp::after {
+    transition: none;
+  }
+}
+
+/* ---- identity cell: marker · name/address · row menu ---- */
+.identity {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+}
+.identityText {
+  flex: 1;
+  min-width: 0;
+}
+.rowMenu {
+  flex: none;
+  opacity: 0.55;
+}
+.table tbody tr:hover .rowMenu {
+  opacity: 1;
+}
+
+/* ---- row state marker: one slot, priority-ordered ---- */
+.marker {
+  flex: none;
+  width: 0.875rem;
+  height: 0.875rem;
+  display: grid;
+  place-items: center;
+}
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+.dotEmpty {
+  border: 1.5px dashed color-mix(in srgb, var(--mantine-color-text) 28%, transparent);
+}
+.spinner {
+  width: 13px;
+  height: 13px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--mantine-color-text) 15%, transparent);
+  border-top-color: var(--mantine-primary-color-filled);
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+}
+
+/* ---- numeric columns ---- */
+.figure {
+  font-family: var(--mantine-font-family-monospace);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--mantine-font-size-xs);
+}
 .activeheader {
-    color: var(--mantine-color-primary-text);
+  color: var(--mantine-color-primary-text);
 }
