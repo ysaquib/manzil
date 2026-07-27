@@ -9,7 +9,7 @@
 // of electric. Headings are Literata (serif), body is Source Sans 3 (sans);
 // both self-hosted via @fontsource-variable imports in main.tsx.
 import { createTheme, rem, virtualColor, type CSSVariablesResolver } from "@mantine/core";
-import { colors } from "./colors";
+import { clayColors } from "./colors";
 
 const fontStackSans =
   "'Source Sans 3 Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif";
@@ -50,23 +50,23 @@ export const theme = createTheme({
     // yellow: yellow,
     // red: red,
 
-    dusky: colors.dusky,
-    gray: colors.warm_stone,
-    dark: colors.dark_dusky,
-    red: colors.dusty_brick,
-    orange: colors.burnt_clay,
-    yellow: colors.muted_ochre,
-    lime: colors.olive,
-    green: colors.sage,
-    teal: colors.weathered_teal,
-    cyan: colors.fog_blue,
-    blue: colors.slate_blue,
-    indigo: colors.storm,
-    violet: colors.dusty_lavender,
-    grape: colors.muted_plum,
-    pink: colors.dusty_rose,
+    dusky: clayColors.dusky,
+    gray: clayColors.warm_stone,
+    dark: clayColors.dark_dusky,
+    red: clayColors.dusty_brick,
+    orange: clayColors.burnt_clay,
+    yellow: clayColors.muted_ochre,
+    lime: clayColors.olive,
+    green: clayColors.sage,
+    teal: clayColors.weathered_teal,
+    cyan: clayColors.fog_blue,
+    blue: clayColors.slate_blue,
+    indigo: clayColors.storm,
+    violet: clayColors.dusty_lavender,
+    grape: clayColors.muted_plum,
+    pink: clayColors.dusty_rose,
     
-    manual: colors.grape,
+    manual: clayColors.muted_plum,
 
     primary: virtualColor({
       name: "primary",
@@ -87,13 +87,13 @@ export const theme = createTheme({
     }),
 
 
-    scoreHighest: colors.teal,
-    scoreHigh: colors.sage,
-    scoreGood: colors.olive,
-    scoreMid: colors.muted_ochre,
-    scoreLow: colors.burnt_clay,
-    scorePoor: colors.dusty_brick,
-    scorePoorest: colors.dark_dusky,
+    scoreHighest: clayColors.fog_blue,
+    scoreHigh: clayColors.sage,
+    scoreGood: clayColors.olive,
+    scoreMid: clayColors.muted_ochre,
+    scoreLow: clayColors.burnt_clay,
+    scorePoor: clayColors.dusty_brick,
+    scorePoorest: clayColors.dark_dusky,
   },
   white: "#FFFEFB",
   shadows: {

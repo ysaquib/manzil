@@ -427,7 +427,7 @@ const dusty_rose: MantineColorsTuple = [
 ];
 
 
-export const colors = {
+export const clayColors = {
   // Mantine-compatible palette names
   gray: warm_stone,
   dark: dark_dusky,
