@@ -29,8 +29,12 @@ scoped Overrides, authoritative refresh, split/merge/RLS/UI consumers;
 IMPLEMENTATION 2.0.71 / DESIGN v3.9). **P3-SC3 landed 2026-07-22** (Property
 Catalog tranche, strict set-valued Rubric plumbing, persisted Floor Plan types,
 separate Property/plan presentation, guarded versioned development Rubric;
-IMPLEMENTATION 2.0.72 / DESIGN v3.10). Next scoped task: P3-SC4 before the
-P3-5/P3-SC join at P3-6.
+IMPLEMENTATION 2.0.72 / DESIGN v3.10). **P3-SC4 engineering landed
+2026-07-27** (sparse exact/all/select/unspecified unit claims, effective
+presence/Gate semantics, scoped bench label/harness/audit tooling;
+IMPLEMENTATION 2.0.78 / DESIGN v3.15). Its human canonical-ten labels and
+current-pin zero-wrong-exact baseline remain; P3-6 is blocked on that acceptance
+tail even though both implementation branches have otherwise joined.
 
 **Security note for execution:** Phase 3 feeds untrusted page content into more
 machinery (tool loops, web search, image pipelines) and adds external API

@@ -1,14 +1,16 @@
 # Criterion Scope, Property Amenities, and Floor Plan Details — Finalized Design Plan
 
-Status: **supplementary finalized decision workbook; implementation current through P3-SC3, 2026-07-22**. Product and
+Status: **supplementary finalized decision workbook; P3-SC4 engineering landed
+2026-07-27 with its human bench acceptance tail pending**. Product and
 architecture choices are approved or explicitly deferred. P3-SC1 promoted them
 into `DESIGN.md` v3.7 and its §20 Decision Log, recorded selected mechanics and
 the Extraction-consumer audit in `IMPLEMENTATION.md` v2.0.68, and sequenced the
 P3-SC task series. P3-SC2 and P3-SC3 subsequently landed the scoped substrate
-and first Property/set-valued Catalog tranche. `DESIGN.md` v3.10 and
-`IMPLEMENTATION.md` v2.0.72 are authoritative; this file keeps the fuller
-rationale. The canonical ten-case bench selection/coverage pass remains an
-execution gate for P3-SC4, not an unresolved design decision.
+and first Property/set-valued Catalog tranche. P3-SC4 then landed its sparse
+claim/presence implementation and bench tooling. `DESIGN.md` v3.15 and
+`IMPLEMENTATION.md` v2.0.78 are authoritative; this file keeps the fuller
+rationale. Human finalization of the canonical ten and its current-pin baseline
+remain the P3-SC4 acceptance gate, not an unresolved design decision.
 
 Written 2026-07-20 against `DESIGN.md` v3.6 and promoted 2026-07-21 into v3.7,
 `docs/catalog-and-rubric-review.md`, and the current implementation. This work
@@ -1256,7 +1258,7 @@ workstream visible while the dependency column supplies its actual order.
 | `P3-SC1` ✅ | Promoted this plan into DESIGN + §20; audited all Extraction queries; recorded exact schema/current-value/reset contracts in IMPLEMENTATION (completed 2026-07-21) | Complete; prerequisite cleared |
 | **`P3-SC2` ✅** | Unified append-only scoped Extraction foundation: schema/domain models, sparse claims, Floor Plan identity resolution, effective values, Overrides, refresh/split/RLS | Landed 2026-07-21; prerequisite cleared |
 | **`P3-SC3` ✅** | Landed 2026-07-22: `property` category, array/set plumbing, Property/Unit types, first Property tranche including general internet readiness, and guarded saved dev Rubric | Complete; prerequisite cleared |
-| `P3-SC4` | Migrate existing unit Criteria to exact/all/select/unspecified semantics; extend the canonical bench contract and establish the current-pin baseline | After `P3-SC2`/`P3-SC3`; hard prerequisite for P3-6 |
+| **`P3-SC4` ◐** | Engineering landed 2026-07-27: existing unit Criteria use exact/all/select/unspecified semantics and the canonical bench contract/tooling is extended. Human label finalization and current-pin baseline remain | Acceptance tail is the hard prerequisite for P3-6 |
 | **`P3-5` ✅** | Existing DISCOVER branch: native search, official/candidate Source links, tier/family slate, Source Policy enforcement | Landed 2026-07-21; its half of the P3-6 join is cleared |
 | **`P3-6`** | Existing multi-Source fan-out and RECONCILE ladder, now operating on Property and scoped Floor Plan candidates | After `P3-SC4`; `P3-5` is complete; retain the established task ID |
 | `P3-SC5` | Floor Plan detail UI and diagram discovery/association/storage/lifecycle | After `P3-SC2` and P3-7a; not a P3-6 prerequisite, so schedule after P3-6 on the critical path or in parallel once dependencies are met |
@@ -1266,7 +1268,8 @@ workstream visible while the dependency column supplies its actual order.
 
 Run the relevant synthetic fixtures and local canonical bench after each
 output-affecting tranche; do not postpone all evaluation until `P3-SC8`.
-The next single-implementer task is `P3-SC4`.
+The next work is P3-SC4's human canonical-ten labeling/baseline tail. P3-6
+remains blocked until it records zero wrong exact associations.
 
 ### P3-SC1 — finish and promote the design
 
@@ -1341,6 +1344,13 @@ Rubric drift.
    existing unit Criteria acquire their final output semantics.
 
 ### P3-SC4 — migrate existing unit Criteria
+
+**Engineering implementation landed 2026-07-27; human acceptance remains.**
+The authoritative mechanics and status are in DESIGN v3.15 and IMPLEMENTATION
+v2.0.78. The local audit currently finds ten gradeable legacy labels and eleven
+unfinished skeletons, but none of the required scoped or diagram coverage
+cases. Use `manzil bench-audit-scoped` while reviewing them; do not infer human
+truth from old model output.
 
 Move `patio_balcony`, `private_entry`, laundry, parking, cooling, dishwasher,
 and heating through the scoped path before adding the long tail.

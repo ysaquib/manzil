@@ -7,7 +7,94 @@ repo itself.
 
 ## Unreleased — Phase 3
 
-### 2026-07-21 — Model bench + first non-Anthropic pin (P0-12/13/14 ✅)
+### 2026-07-27 — Scoped unit claims (P3-SC4 ◐)
+
+- Six existing unit-feature Criteria plus heating now extract sparse
+  Source-local claims with exact/all/select/unspecified Unit Applicability.
+  Generic amenity lists become `advertised_unconfirmed`, never all-unit truth,
+  and cannot satisfy a confirmed-feature Gate.
+- Raw Source schemas are separated from effective per-Floor-Plan Catalog
+  schemas; shared-plan claims retain one provenance group through persistence.
+  SCORE/rescore, filters, Overrides, VERIFY, and clean-reset migration tests use
+  the same deterministic contract.
+- Canonical-ten labels/harness now grade applicability and exact targets and
+  carry the diagram-association label contract. Human labels and the current-pin
+  zero-wrong-exact baseline remain, so P3-6 is still blocked.
+
+### 2026-07-26 — Overview table redesign + map surfaces (P3-19 ✅)
+
+- **P3-19 map surfaces** (DESIGN v3.14): drawer **Location** card and hunt **Map**
+  view at `/h/:huntId/map` on the Google Maps JavaScript API behind a separate
+  referrer-restricted `VITE_GOOGLE_MAPS_API_KEY` (never the worker server key).
+  One pin per Listing; multi–score-band pins slice by band (best at 12 o'clock);
+  multi-group pins prompt for Unit Group before opening the detail Drawer.
+  Filter/search state lifted to a hunt-scoped provider so Overview and Map stay
+  in sync. Unset key → explanatory placeholder; geocode-less properties counted,
+  not dropped. Loader resolves on `importLibrary`, not script `load` (`loading=async`).
+- **Overview table + mobile row list** (DESIGN §20): grouped desktop columns
+  (Fit · Identity · Unit · Money · Timing · Place · Curation · People) with
+  sticky selection/score/property; pipeline hand-off when ingest is running or
+  failed (`StatusChip`, Tasks links); compact `RatingSummary`; filter bar regroup
+  + Title Case chips; below `48em`, card rows replace the table (`OverviewRowList`).
+  Column-picker localStorage bumped to `-v2`.
+- **Rubric UI**: criterion cards redesign continued — category tiles, delta bars,
+  picker strips, JetBrains Mono wired; Catalog category regroup (v3.13) reflected
+  in editor/view. Overview column-item tweaks, theme/fonts/packages refresh.
+
+### 2026-07-25 — Rubric cards + Catalog categories (DESIGN v3.13)
+
+- **Catalog re-categorization**: eight presentation categories → seven
+  (`unit, cost, tenancy, location, fittings, amenities, management`); all 32
+  Criteria re-assigned; sync migration + regenerated seed. Presentation-only —
+  scoring keys unchanged (`catalog_key`).
+- **Rubric editor/view**: category-hued identity tiles, per-criterion diverging
+  delta bars, bonus/gate glyphs with hover text, unscored criteria collapsed into
+  dashed add-pill strips per category (`CriterionPicker`), serif group headings,
+  content-height cards, distinct icons per catalog key.
+- Rubric stepper and dealbreaker-toggle polish; frontend CSS consolidation pass.
+
+### 2026-07-24 — Locality + baselines (v3.11) + detail drawer redesign
+
+- **State-qualified locality** (DESIGN v3.11 / P3-9 follow-on): `properties.state`
+  and `county`; DEDUPE/geocode projection; `utility_baselines` keyed by
+  `(geo_level, state, region_name)` with single-scope SCORE selection (no fall-through
+  when city pass missing); county/state composition notes; `manzil backfill-locality`.
+  Overview city filter/display as `City, ST`.
+- **Half-star member ratings** (DESIGN §20): `ratings.rating` → `numeric(2,1)`
+  (1–5 in 0.5 steps); API accepts half steps; drawer `RatingControl` + team list.
+- **Listing detail drawer redesign shipped**: hero score/all-in/beds tiles;
+  large primary + thumbnail gallery; additive baseline+delta criterion breakdown;
+  `SectionCard` topic layout (Why this score · Cost & fees · Floor plans · Notes ·
+  Sources); fees/all-in state dots; floor-plan pin chips; compact source rows;
+  `@mantine/carousel` for drawer + compare carousels; shared drawer CSS module +
+  Mantine token anchoring (`UI_DESIGN.md` decision log). Member star color from
+  palette; `DrawerHero` on Mantine primitives.
+
+### 2026-07-23 — Detail drawer UX spec + jobs pipeline polish
+
+- **Drawer redesign implementation** (frontend): `SectionCard` shell, `DrawerHero`
+  summary band, Mantine carousel gallery scaffold, restyled fees checklist and
+  all-in breakdown, additive score breakdown with fewer badges, unified job cards
+  (`PipelineTrack`, history retry, compact stop control on active runs).
+- **`UI_DESIGN.md`** added with listing-detail drawer redesign spec/plan; CSS
+  token convention clarified (colors via theme; optical px allowed).
+- Shared `scoreBand` / exceptional-marker helper extracted for drawer + table.
+
+### 2026-07-22 — Scoped facts foundation + Property Catalog tranche (P3-SC2 ✅, P3-SC3 ✅)
+
+- **P3-SC2**: destructive pre-live migration — append-only candidate/resolved
+  Extractions, Source-local Floor Plan identity, centralized current views,
+  scoped Overrides, authoritative refresh semantics, effective-value resolver
+  shared by SCORE/rescore; split/merge and RLS updated; frontend scoped evidence
+  and override targets.
+- **P3-SC3**: `property` Catalog category + 13 Property Criteria; strict
+  `contains_any` / `contains_all` set scoring; persisted Floor Plan `unit_types`;
+  Property vs Floor Plan presentation split; dynamic EXTRACT schema; guarded
+  `dev_rubric.v1.json` installer (`manzil seed-dev-rubric [--force]`).
+- Catalog generator + sync SQL; worker persistence for scoped claims and floor-plan
+  types.
+
+### 2026-07-21 — Phase 0 gate closed + DISCOVER + scoped design (P0-12/13/14 ✅, P3-5 ✅, P3-SC1 ✅)
 
 - **P0-12 harness fix**: `_run_listing` now suppresses `CheckpointRaised` and
   grades the flagged state as-is (accept-at-low-confidence). A gate
@@ -23,12 +110,16 @@ repo itself.
 - **P0-14 pin**: `EXTRACT_VERIFY_MODEL = google/gemini-3-flash-preview` in
   `llm/config.py`; EXTRACT + VERIFY point at it, the other workhorse stages
   stay `WORKHORSE_MODEL` (Haiku) and TASTE stays Sonnet — the benched pair
-  only (gemini's evidence-flag rate 0.20 vs 0.03 keeps it off un-benched
-  stages). Six unroutable / no-tool-call slugs pruned from `MODEL_PRICES`.
-- Seed/e2e VERIFY replay recordings re-keyed to the pin (EXTRACT frozen via
-  `_SEED_EXTRACT_RECORDINGS`); `.gitignore` exceptions swapped. Resolves the
-  four "pre-existing" pin-flip failures from 2026-07-20. Worker 451 + api 64
-  green in replay, ruff clean.
+  only. Six unroutable / no-tool-call slugs pruned from `MODEL_PRICES`. Seed/e2e
+  VERIFY replay recordings re-keyed; Phase 0 decision gate fully closed.
+- **P3-5 DISCOVER**: bounded OpenRouter native search + SSRF `fetch_page`;
+  exact same-Property filter; official link stored link-only; tier/family slate;
+  editable Source Policy with atomic refresh on widen; quiet single-source badges.
+  Live ten-listing search seam: official + siblings 10/10, zero official fetches.
+- **P3-SC1**: scoped Criteria + amenities package promoted to DESIGN v3.7;
+  Extraction-consumer audit; P3-SC task series — docs/contracts only.
+- Frontend: Source Policy / discovery assurance UI; rubric criterion icons; theme
+  color tweaks.
 
 ### 2026-07-18 — Utility baselines + full all-in composition (P3-9 ◐)
 
