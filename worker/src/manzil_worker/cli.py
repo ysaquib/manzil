@@ -467,6 +467,33 @@ def bench_run(
         raise typer.Exit(code=1)
 
 
+@app.command("bench-audit-scoped")
+def bench_audit_scoped(
+    slugs: list[str] = typer.Option([], "--label", help="Canonical label slugs to audit"),
+) -> None:
+    """Audit P3-SC4 human-label count and required scoped/diagram cases."""
+    from manzil_worker.evals.labels import (
+        LABELS_DIR,
+        LabelError,
+        load_labels_split,
+        scoped_coverage_audit,
+    )
+
+    try:
+        labels, skipped = load_labels_split(slugs, LABELS_DIR)
+    except LabelError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=1) from None
+    coverage = scoped_coverage_audit(labels)
+    typer.echo(f"gradeable labels: {len(labels)} (canonical target: 10)")
+    typer.echo(f"unfinished labels: {len(skipped)}")
+    for case, contributors in coverage.items():
+        status = "covered" if contributors else "MISSING"
+        typer.echo(f"{case}: {status}" + (f" — {', '.join(contributors)}" if contributors else ""))
+    if len(labels) != 10 or skipped or any(not contributors for contributors in coverage.values()):
+        raise typer.Exit(code=1)
+
+
 @app.command("bench-compare")
 def bench_compare(
     reports: list[Path] = typer.Argument(..., help="Two or more bench-run report JSONs"),

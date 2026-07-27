@@ -72,11 +72,32 @@ def truth_label(**overrides: Any) -> BenchLabel:
     criteria = {
         key: field["value"]
         for key, field in payload.items()
-        if key not in non_catalog and field["value"] is not None
+        if key not in non_catalog
+        and isinstance(field, dict)
+        and "value" in field
+        and field["value"] is not None
     }
     unknown = [
-        key for key, field in payload.items() if key not in non_catalog and field["value"] is None
+        key
+        for key, field in payload.items()
+        if key not in non_catalog
+        and isinstance(field, dict)
+        and "value" in field
+        and field["value"] is None
     ]
+    scoped_claims = {
+        key: [
+            {
+                "value": claim["value"],
+                "applicability": claim["applicability"],
+                "floor_plan_refs": claim["floor_plan_refs"],
+            }
+            for claim in claims
+        ]
+        for key, claims in payload.items()
+        if isinstance(claims, list)
+        and key != "floor_plans"
+    }
     data: dict[str, Any] = {
         "slug": SLUG,
         "url": URL,
@@ -84,6 +105,7 @@ def truth_label(**overrides: Any) -> BenchLabel:
         "criteria": criteria,
         "unknown": unknown,
         "floor_plans": payload["floor_plans"],
+        "scoped_claims": scoped_claims,
     }
     data.update(overrides)
     return BenchLabel.model_validate(data)

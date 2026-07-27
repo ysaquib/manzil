@@ -16,6 +16,7 @@ from manzil_worker.evals.labels import (
     load_label,
     load_labels,
     load_labels_split,
+    scoped_coverage_audit,
     skeleton_payload,
     write_skeleton,
 )
@@ -150,8 +151,21 @@ def test_skeleton_prefills_every_extractable_key_as_null(tmp_path: Path) -> None
 
     payload = json.loads(path.read_text())
     assert payload["url"] == "https://rent.com/x"
-    assert set(payload["criteria"]) == {e.key for e in extractable_entries()}
+    scoped = {
+        "patio_balcony",
+        "private_entry",
+        "in_unit_laundry",
+        "parking",
+        "cooling",
+        "dishwasher",
+        "heating_type",
+    }
+    assert set(payload["criteria"]) == {
+        e.key for e in extractable_entries()
+    } - (scoped - {"heating_type"})
     assert all(v is None for v in payload["criteria"].values())
+    assert set(payload["scoped_claims"]) == scoped
+    assert all(claims == [] for claims in payload["scoped_claims"].values())
     # An unfilled skeleton must never pass as a finished label.
     with pytest.raises(LabelError, match="null"):
         load_label(path)
@@ -208,3 +222,110 @@ def test_skeleton_payload_is_a_valid_benchlabel_shape() -> None:
     # Shape-valid (parses as BenchLabel) even though content-invalid (nulls).
     label = BenchLabel.model_validate(skeleton_payload("s", "https://x.test"))
     assert label.labeled_at is None
+
+
+def test_scoped_label_validates_targets_and_claim_schema(tmp_path: Path) -> None:
+    payload = valid_payload()
+    payload["unknown"] = []
+    payload["floor_plans"] = [
+        {
+            "response_key": "a1",
+            "plan_name": "A1",
+            "beds": 2,
+            "baths": 1.0,
+            "rent_min": 1500.0,
+        }
+    ]
+    payload["scoped_claims"] = {
+        "dishwasher": [
+            {
+                "value": True,
+                "applicability": "specific_floor_plans",
+                "floor_plan_refs": ["a1"],
+            }
+        ]
+    }
+    label = load_label(write_label(tmp_path / "x.json", payload))
+    assert label.scoped_claims["dishwasher"][0].floor_plan_refs == ["a1"]
+
+    payload["scoped_claims"]["dishwasher"][0]["floor_plan_refs"] = ["invented"]
+    with pytest.raises(LabelError, match="unknown label Floor Plans"):
+        load_label(write_label(tmp_path / "x.json", payload))
+
+
+def test_scoped_heating_label_uses_utility_claim_vocabulary(tmp_path: Path) -> None:
+    payload = valid_payload()
+    payload["unknown"] = []
+    payload["scoped_claims"] = {
+        "heating_type": [
+            {
+                "value": "gas",
+                "applicability": "all_units",
+                "floor_plan_refs": [],
+            }
+        ]
+    }
+    label = load_label(write_label(tmp_path / "x.json", payload))
+    assert label.scoped_claims["heating_type"][0].value == "gas"
+
+    payload["scoped_claims"]["heating_type"][0]["value"] = "oil"
+    with pytest.raises(LabelError, match="must be gas or electric"):
+        load_label(write_label(tmp_path / "x.json", payload))
+
+
+def test_ambiguous_diagram_label_cannot_name_a_plan(tmp_path: Path) -> None:
+    payload = valid_payload()
+    payload["floor_plans"] = [
+        {
+            "response_key": "a1",
+            "plan_name": "A1",
+            "beds": 2,
+            "baths": 1.0,
+            "rent_min": 1500.0,
+        }
+    ]
+    payload["diagram_associations"] = [
+        {"candidate_ref": "diagram-1", "ambiguous": True, "floor_plan_refs": ["a1"]}
+    ]
+    with pytest.raises(LabelError, match="ambiguous"):
+        load_label(write_label(tmp_path / "x.json", payload))
+
+
+def test_scoped_coverage_audit_reports_only_human_label_cases() -> None:
+    label = BenchLabel.model_validate(
+        {
+            "slug": "coverage",
+            "url": "https://example.test",
+            "labeled_at": "2026-07-27",
+            "floor_plans": [
+                {"response_key": "a1", "plan_name": "A1"},
+                {"response_key": "a2", "plan_name": "A2"},
+            ],
+            "scoped_claims": {
+                "dishwasher": [
+                    {
+                        "value": False,
+                        "applicability": "specific_floor_plans",
+                        "floor_plan_refs": ["a1", "a2"],
+                    }
+                ],
+                "parking": [],
+            },
+            "diagram_associations": [
+                {"candidate_ref": "ambiguous", "ambiguous": True},
+                {
+                    "candidate_ref": "a1-diagram",
+                    "ambiguous": False,
+                    "floor_plan_refs": ["a1"],
+                },
+            ],
+        }
+    )
+    coverage = scoped_coverage_audit([label])
+    assert coverage["exact"] == ["coverage"]
+    assert coverage["negative"] == ["coverage"]
+    assert coverage["missing"] == ["coverage"]
+    assert coverage["shared_plan"] == ["coverage"]
+    assert coverage["diagram_ambiguous"] == ["coverage"]
+    assert coverage["diagram_unambiguous"] == ["coverage"]
+    assert coverage["all_units"] == []
