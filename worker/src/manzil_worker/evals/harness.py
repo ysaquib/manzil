@@ -31,7 +31,12 @@ from uuid import uuid4
 
 import structlog
 from manzil_shared.errors import CheckpointRaised, ManzilError
-from manzil_shared.models import Confidence, FetchOutcome, JobType, RubricCriterion
+from manzil_shared.models import (
+    Confidence,
+    FetchOutcome,
+    JobType,
+    RubricCriterion,
+)
 from pydantic import BaseModel, Field
 
 from manzil_worker.evals.labels import BenchLabel, SkippedLabel
@@ -69,6 +74,15 @@ class PlanGrade(BaseModel):
     field_ok: int = 0
 
 
+class ScopedClaimGrade(BaseModel):
+    expected: list[dict[str, Any]]
+    got: list[dict[str, Any]]
+    ok: bool
+    expected_exact_targets: int = 0
+    correct_exact_targets: int = 0
+    wrong_exact_targets: int = 0
+
+
 class ListingResult(BaseModel):
     slug: str
     job_id: str  # Langfuse session id for live/record runs
@@ -82,6 +96,7 @@ class ListingResult(BaseModel):
     evidence_flags: int = 0
     verify_flags: int = 0
     plans: PlanGrade | None = None
+    scoped_claims: dict[str, ScopedClaimGrade] = Field(default_factory=dict)
     calls: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
@@ -219,6 +234,45 @@ def _grade(
             ok=got is None,  # truth: the page doesn't say — any value is invented
         )
 
+    def expand_expected(key: str) -> list[tuple[Any, str, str | None]]:
+        expanded: list[tuple[Any, str, str | None]] = []
+        for claim in label.scoped_claims[key]:
+            refs = claim.floor_plan_refs or [None]
+            expanded.extend((claim.value, claim.applicability.value, ref) for ref in refs)
+        return expanded
+
+    for key in label.scoped_claims:
+        expected_rows = expand_expected(key)
+        got_rows = [
+            (
+                claim.value,
+                claim.applicability.value if claim.applicability else "",
+                claim.floor_plan_ref,
+            )
+            for claim in state.source_claims
+            if claim.criterion_key == key
+        ]
+        expected_set = set(expected_rows)
+        got_set = set(got_rows)
+        expected_exact = {
+            row for row in expected_set if row[1] == "specific_floor_plans"
+        }
+        got_exact = {row for row in got_set if row[1] == "specific_floor_plans"}
+        result.scoped_claims[key] = ScopedClaimGrade(
+            expected=[
+                {"value": value, "applicability": applicability, "floor_plan_ref": ref}
+                for value, applicability, ref in sorted(expected_set, key=repr)
+            ],
+            got=[
+                {"value": value, "applicability": applicability, "floor_plan_ref": ref}
+                for value, applicability, ref in sorted(got_set, key=repr)
+            ],
+            ok=got_set == expected_set,
+            expected_exact_targets=len(expected_exact),
+            correct_exact_targets=len(expected_exact & got_exact),
+            wrong_exact_targets=len(got_exact - expected_exact),
+        )
+
     graded = result.criteria
     if graded:
         result.criterion_accuracy = sum(r.ok for r in graded.values()) / len(graded)
@@ -287,6 +341,10 @@ def _summarize(listings: list[ListingResult], skipped: list[SkippedLabel]) -> di
     values_extracted = sum(1 for r in graded for c in r.criteria.values() if c.got is not None)
     plan_checks = sum(r.plans.field_checks for r in graded if r.plans)
     plan_ok = sum(r.plans.field_ok for r in graded if r.plans)
+    scoped_checks = [grade for r in graded for grade in r.scoped_claims.values()]
+    expected_exact = sum(grade.expected_exact_targets for grade in scoped_checks)
+    correct_exact = sum(grade.correct_exact_targets for grade in scoped_checks)
+    wrong_exact = sum(grade.wrong_exact_targets for grade in scoped_checks)
 
     def rate(ok: int, total: int) -> float | None:
         return round(ok / total, 4) if total else None
@@ -300,6 +358,9 @@ def _summarize(listings: list[ListingResult], skipped: list[SkippedLabel]) -> di
         "unknown_accuracy": rate(sum(c.ok for c in unknown_checks), len(unknown_checks)),
         "evidence_flag_rate": rate(sum(r.evidence_flags for r in graded), values_extracted),
         "plan_field_accuracy": rate(plan_ok, plan_checks),
+        "scoped_claim_accuracy": rate(sum(grade.ok for grade in scoped_checks), len(scoped_checks)),
+        "exact_target_recall": rate(correct_exact, expected_exact),
+        "wrong_exact_associations": wrong_exact,
         "total_cost_usd": round(sum(r.cost_usd for r in graded), 6),
         "total_input_tokens": sum(r.input_tokens for r in graded),
         "total_output_tokens": sum(r.output_tokens for r in graded),

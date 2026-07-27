@@ -23,6 +23,8 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from manzil_shared.catalog import SCOPED_UNIT_CLAIM_KEYS
+from manzil_shared.models import UnitApplicability
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from manzil_worker.fetching.tiers import site_domain
@@ -31,10 +33,11 @@ from manzil_worker.state import FloorPlanIn
 
 BENCH_DIR = Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "bench"
 LABELS_DIR = BENCH_DIR / "labels"
+SCOPED_BENCH_CLAIM_KEYS = SCOPED_UNIT_CLAIM_KEYS | {"heating_type"}
 
 MANIFEST_HEADER = """# Bench manifest (P0-11)
 
-One row per bench listing. ~20 rows is the Phase 0 exit gate. Labels live in
+One row per bench listing. Exactly 10 reviewed rows is the current canonical set. Labels live in
 `labels/{slug}.json`; `manzil bench-skeleton <slug>` (run after `manzil
 save-page`) scaffolds the label and appends this row with slug/site/tier
 prefilled. Fill in the rest by hand — a blank page-traits / why / labeled cell
@@ -60,6 +63,15 @@ Labeling rules (learned the hard way):
    UTC date of that listing's corpus `meta.json` `saved_at`, never invent a
    calendar date in the label. Delete the key if the page states no
    availability at all.
+4. **Scoped unit features live in `scoped_claims`, not `criteria`.** Use exact
+   response-local Floor Plan refs only when the page itself makes the
+   association; generic lists are `unit_scope_unspecified`, explicit
+   “select/some units” language is `select_units`, and `all_units` requires an
+   explicit universal statement. Empty lists mean the page is silent.
+5. The canonical ten together must cover exact/all/select/unspecified,
+   explicit negative, missing, one shared multi-plan claim, and both ambiguous
+   and unambiguous diagram cases. Run `manzil bench-audit-scoped` before a
+   baseline; zero wrong exact associations is the acceptance gate.
 
 Column guide:
 
@@ -88,6 +100,30 @@ class IncompleteLabelError(LabelError):
     warns and skips these; every other LabelError still fails the run loudly."""
 
 
+class ScopedClaimLabel(BaseModel):
+    """Human truth for one sparse unit claim before persistence expansion."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    value: Any
+    applicability: UnitApplicability
+    floor_plan_refs: list[str] = Field(default_factory=list)
+
+
+class DiagramAssociationLabel(BaseModel):
+    """P3-SC5-ready human truth for a discovered diagram candidate.
+
+    P3-SC4 records the label contract only; diagram discovery/association is
+    still deferred to P3-SC5.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    candidate_ref: str
+    floor_plan_refs: list[str] = Field(default_factory=list)
+    ambiguous: bool = False
+
+
 class BenchLabel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -98,9 +134,11 @@ class BenchLabel(BaseModel):
     criteria: dict[str, Any] = Field(default_factory=dict)
     unknown: list[str] = Field(default_factory=list)
     floor_plans: list[FloorPlanIn] | None = None  # None = don't grade plans
+    scoped_claims: dict[str, list[ScopedClaimLabel]] = Field(default_factory=dict)
+    diagram_associations: list[DiagramAssociationLabel] | None = None
 
     def graded_keys(self) -> set[str]:
-        return set(self.criteria) | set(self.unknown)
+        return set(self.criteria) | set(self.unknown) | set(self.scoped_claims)
 
 
 def validate_label(label: BenchLabel) -> None:
@@ -116,6 +154,10 @@ def validate_label(label: BenchLabel) -> None:
         problems.append(f"unknown key {key!r} is not an extractable catalog key")
     for key in sorted(set(label.criteria) & set(label.unknown)):
         problems.append(f"key {key!r} is in both criteria and unknown — pick one")
+    for key in sorted(set(label.scoped_claims) - SCOPED_BENCH_CLAIM_KEYS):
+        problems.append(f"scoped_claims key {key!r} is not in the P3-SC4 scoped tranche")
+    for key in sorted(set(label.scoped_claims) & (set(label.criteria) | set(label.unknown))):
+        problems.append(f"key {key!r} is graded in both scoped_claims and criteria/unknown")
 
     for key, value in label.criteria.items():
         if key not in entries:
@@ -127,6 +169,68 @@ def validate_label(label: BenchLabel) -> None:
         except ValidationError as error:
             first = error.errors()[0]["msg"]
             problems.append(f"criteria.{key} = {value!r} violates the catalog schema: {first}")
+
+    plan_refs = {
+        plan.response_key
+        for plan in (label.floor_plans or [])
+        if plan.response_key is not None
+    }
+    entries = {e.key: e for e in extractable_entries()}
+    for key, claims in label.scoped_claims.items():
+        entry = entries.get(key)
+        if entry is None and key != "heating_type":
+            continue
+        seen_targets: set[str | None] = set()
+        for index, claim in enumerate(claims):
+            if key == "heating_type":
+                if claim.value not in {"gas", "electric"}:
+                    problems.append(
+                        f"scoped_claims.{key}[{index}].value = {claim.value!r} "
+                        "must be gas or electric"
+                    )
+            else:
+                try:
+                    value_adapter(entry).validate_python(claim.value)
+                except ValidationError as error:
+                    first = error.errors()[0]["msg"]
+                    problems.append(
+                        f"scoped_claims.{key}[{index}].value = {claim.value!r} "
+                        f"violates the claim schema: {first}"
+                    )
+            exact = claim.applicability is UnitApplicability.SPECIFIC_FLOOR_PLANS
+            if exact and not claim.floor_plan_refs:
+                problems.append(
+                    f"scoped_claims.{key}[{index}] exact claim needs floor_plan_refs"
+                )
+            if not exact and claim.floor_plan_refs:
+                problems.append(
+                    f"scoped_claims.{key}[{index}] non-exact claim cannot name Floor Plans"
+                )
+            unknown_refs = set(claim.floor_plan_refs) - plan_refs
+            if unknown_refs:
+                problems.append(
+                    f"scoped_claims.{key}[{index}] references unknown label Floor Plans "
+                    f"{sorted(unknown_refs)}"
+                )
+            targets: list[str | None] = claim.floor_plan_refs or [None]
+            duplicates = seen_targets.intersection(targets)
+            if duplicates:
+                problems.append(
+                    f"scoped_claims.{key}[{index}] duplicates a concrete claim target"
+                )
+            seen_targets.update(targets)
+
+    for association in label.diagram_associations or []:
+        if association.ambiguous and association.floor_plan_refs:
+            problems.append(
+                f"diagram {association.candidate_ref!r} is ambiguous but has Floor Plan targets"
+            )
+        unknown_refs = set(association.floor_plan_refs) - plan_refs
+        if unknown_refs:
+            problems.append(
+                f"diagram {association.candidate_ref!r} references unknown label Floor Plans "
+                f"{sorted(unknown_refs)}"
+            )
 
     if problems:
         raise LabelError(f"label {label.slug!r}: " + "; ".join(problems))
@@ -157,10 +261,16 @@ def load_label(path: Path) -> BenchLabel:
     return label
 
 
-def load_labels(slugs: list[str] = [], labels_dir: Path = LABELS_DIR) -> list[BenchLabel]:
+def load_labels(
+    slugs: list[str] | None = None, labels_dir: Path = LABELS_DIR
+) -> list[BenchLabel]:
     if not labels_dir.is_dir():
         return []
-    return [load_label(path) for path in sorted(labels_dir.glob("*.json")) if (not slugs or path.stem in slugs)]
+    return [
+        load_label(path)
+        for path in sorted(labels_dir.glob("*.json"))
+        if not slugs or path.stem in slugs
+    ]
 
 
 class SkippedLabel(BaseModel):
@@ -170,8 +280,52 @@ class SkippedLabel(BaseModel):
     reason: str
 
 
+SCOPED_COVERAGE_CASES = (
+    "exact",
+    "all_units",
+    "select_units",
+    "unit_scope_unspecified",
+    "negative",
+    "missing",
+    "shared_plan",
+    "diagram_ambiguous",
+    "diagram_unambiguous",
+)
+
+
+def scoped_coverage_audit(labels: list[BenchLabel]) -> dict[str, list[str]]:
+    """Return canonical-bench coverage with the contributing label slugs.
+
+    This audits human labels only; it never infers truth from model output.
+    """
+    coverage = {case: [] for case in SCOPED_COVERAGE_CASES}
+    for label in labels:
+        claims = [claim for rows in label.scoped_claims.values() for claim in rows]
+        applicability = {claim.applicability for claim in claims}
+        if UnitApplicability.SPECIFIC_FLOOR_PLANS in applicability:
+            coverage["exact"].append(label.slug)
+        if UnitApplicability.ALL_UNITS in applicability:
+            coverage["all_units"].append(label.slug)
+        if UnitApplicability.SELECT_UNITS in applicability:
+            coverage["select_units"].append(label.slug)
+        if UnitApplicability.UNIT_SCOPE_UNSPECIFIED in applicability:
+            coverage["unit_scope_unspecified"].append(label.slug)
+        if any(claim.value is False or claim.value == "none" for claim in claims):
+            coverage["negative"].append(label.slug)
+        if any(not rows for rows in label.scoped_claims.values()):
+            coverage["missing"].append(label.slug)
+        if any(len(claim.floor_plan_refs) > 1 for claim in claims):
+            coverage["shared_plan"].append(label.slug)
+        diagrams = label.diagram_associations or []
+        if any(diagram.ambiguous for diagram in diagrams):
+            coverage["diagram_ambiguous"].append(label.slug)
+        if any(not diagram.ambiguous and diagram.floor_plan_refs for diagram in diagrams):
+            coverage["diagram_unambiguous"].append(label.slug)
+    return coverage
+
+
 def load_labels_split(
-    slugs: list[str] = [], labels_dir: Path = LABELS_DIR
+    slugs: list[str] | None = None, labels_dir: Path = LABELS_DIR
 ) -> tuple[list[BenchLabel], list[SkippedLabel]]:
     """Load labels for a bench run, partitioning unfinished skeletons (null/empty
     values) out as `skipped` instead of aborting. Genuinely broken labels — bad
@@ -200,9 +354,15 @@ def skeleton_payload(slug: str, url: str) -> dict[str, Any]:
         "url": url,
         "labeled_at": None,
         "notes": "",
-        "criteria": {entry.key: None for entry in extractable_entries()},
+        "criteria": {
+            entry.key: None
+            for entry in extractable_entries()
+            if entry.key not in SCOPED_UNIT_CLAIM_KEYS
+        },
         "unknown": [],
         "floor_plans": [FloorPlanIn().model_dump()],
+        "scoped_claims": {key: [] for key in sorted(SCOPED_BENCH_CLAIM_KEYS)},
+        "diagram_associations": None,
     }
 
 
