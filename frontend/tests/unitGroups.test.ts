@@ -60,6 +60,8 @@ function listing(plans: FloorPlan[], scores: Score[], pins: Record<string, strin
       state: null,
       county: null,
       official_url: null,
+      lat: null,
+      lng: null,
       floor_plans: plans,
       sources: [],
     },

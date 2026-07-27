@@ -35,6 +35,8 @@ function makeListing(id: string, official: string | null, sourceUrls: string[] =
       state: null,
       county: null,
       official_url: official,
+      lat: null,
+      lng: null,
       floor_plans: [],
       sources,
     },

@@ -42,6 +42,11 @@ if (typeof window !== "undefined") {
   window.HTMLElement.prototype.scrollIntoView =
     window.HTMLElement.prototype.scrollIntoView || (() => {});
 
+  // jsdom implements neither scroll method; the drawer scrolls its body back
+  // to the top when the selected listing changes.
+  window.HTMLElement.prototype.scrollTo =
+    window.HTMLElement.prototype.scrollTo || (() => {});
+
   // Node's experimental localStorage global leaves window.localStorage
   // undefined under vitest; back it with a plain in-memory Storage.
   if (!window.localStorage) {

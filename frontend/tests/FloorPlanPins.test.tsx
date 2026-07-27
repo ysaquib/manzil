@@ -71,6 +71,8 @@ const listingFixture: Listing = {
     state: null,
     county: null,
     official_url: null,
+    lat: null,
+    lng: null,
     floor_plans: [birch],
     sources: [],
   },

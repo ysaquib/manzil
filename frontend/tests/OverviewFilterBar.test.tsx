@@ -24,7 +24,7 @@ function renderBar(
 describe("OverviewFilterBar counts", () => {
   it("hides visible/filtered-out counts when no filters are active", () => {
     renderBar();
-    expect(screen.queryByText(/visible/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Filter result summary")).not.toBeInTheDocument();
   });
 
   it("shows visible and filtered-out counts when filters are active", () => {
@@ -33,7 +33,9 @@ describe("OverviewFilterBar counts", () => {
       visibleCount: 12,
       totalCount: 19,
     });
-    expect(screen.getByText("12 visible · 7 filtered out")).toBeInTheDocument();
+    expect(screen.getByLabelText("Filter result summary")).toHaveTextContent(
+      "12 visible · 7 filtered out",
+    );
   });
 
   it("shows zero visible when every row is filtered out", () => {
@@ -42,7 +44,9 @@ describe("OverviewFilterBar counts", () => {
       visibleCount: 0,
       totalCount: 8,
     });
-    expect(screen.getByText("0 visible · 8 filtered out")).toBeInTheDocument();
+    expect(screen.getByLabelText("Filter result summary")).toHaveTextContent(
+      "0 visible · 8 filtered out",
+    );
   });
 
   it("still exposes the filter controls while counts are shown", () => {
@@ -53,6 +57,8 @@ describe("OverviewFilterBar counts", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
     expect(screen.getByLabelText("City")).toBeInTheDocument();
-    expect(screen.getByText("3 visible · 7 filtered out")).toBeInTheDocument();
+    expect(screen.getByLabelText("Filter result summary")).toHaveTextContent(
+      "3 visible · 7 filtered out",
+    );
   });
 });

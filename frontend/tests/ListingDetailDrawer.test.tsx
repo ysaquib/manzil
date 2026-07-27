@@ -70,6 +70,8 @@ function makeListing(): Listing {
       state: null,
       county: null,
       official_url: null,
+      lat: null,
+      lng: null,
       floor_plans: [
         {
           id: "plan1",
@@ -131,7 +133,7 @@ function renderDrawer() {
 }
 
 describe("ListingDetailDrawer", () => {
-  it("renders the hero and the five section cards for a scored listing", () => {
+  it("renders the hero and the six section cards for a scored listing", () => {
     renderDrawer();
     expect(screen.getByRole("heading", { name: "Maple Court" })).toBeInTheDocument();
     expect(screen.getByText("1420 Alder St")).toBeInTheDocument();
@@ -139,6 +141,19 @@ describe("ListingDetailDrawer", () => {
     expect(screen.getByRole("heading", { name: /Cost & fees/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /Floor plans/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /Notes & ratings/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Location/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /Sources/ })).toBeInTheDocument();
+  });
+
+  // The fixture property has no geocode and no browser Maps key in the test
+  // env — the Location card must still render its address-only fallback
+  // rather than an error (§12: coordinates arrive with a run, not at submit).
+  it("falls back to an address-only location card without coordinates", () => {
+    renderDrawer();
+    expect(screen.getByText("Address only")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Open in Maps/ })).toHaveAttribute(
+      "href",
+      expect.stringContaining("1420%20Alder%20St"),
+    );
   });
 });
