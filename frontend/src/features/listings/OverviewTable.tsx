@@ -495,7 +495,11 @@ export function OverviewTable({
               <SortHeader label="Property" sortKey="name" sort={sort} onSort={onSort} />
             </Table.Th>
             <Table.Th className={cellClass("unit")}>Unit</Table.Th>
-            {show("sqft") && <Table.Th className={cellClass("sqft")}>Sqft</Table.Th>}
+            {show("sqft") && (
+              <Table.Th className={cellClass("sqft")}>
+                <SortHeader label="Sqft" sortKey="sqft" sort={sort} onSort={onSort} />
+              </Table.Th>
+            )}
             {show("allIn") && (
               <Table.Th className={cellClass("allIn")}>
                 <SortHeader label="All-In Monthly" sortKey="allIn" sort={sort} onSort={onSort} />
@@ -518,7 +522,11 @@ export function OverviewTable({
               </Table.Th>
             )}
             {show("city") && <Table.Th className={cellClass("city")}>City</Table.Th>}
-            {show("curation") && <Table.Th className={cellClass("curation")}>Status</Table.Th>}
+            {show("curation") && (
+              <Table.Th className={cellClass("curation")}>
+                <SortHeader label="Status" sortKey="status" sort={sort} onSort={onSort} />
+              </Table.Th>
+            )}
             {show("people") && <Table.Th className={cellClass("people")}>People</Table.Th>}
           </Table.Tr>
         </Table.Thead>

@@ -1,7 +1,13 @@
 // Overview row building, filtering, sorting (P1-10). Pure and unit-tested;
 // the table component stays declarative.
 import { cityFilterMatches, propertyLocationLabel } from "./locality";
-import type { AllInComponents, InterestStatus, Listing, UnitGroupState } from "./types";
+import {
+  INTEREST_STATUSES,
+  type AllInComponents,
+  type InterestStatus,
+  type Listing,
+  type UnitGroupState,
+} from "./types";
 import { deriveUnitGroups, type UnitGroupRow } from "./unitGroups";
 
 export type StatusFilter = InterestStatus | "undecided";
@@ -403,7 +409,15 @@ export function filterPills(filters: OverviewFilterState): FilterPill[] {
   return pills;
 }
 
-export type SortKey = "score" | "rent" | "name" | "allIn" | "available" | "added";
+export type SortKey =
+  | "score"
+  | "rent"
+  | "name"
+  | "allIn"
+  | "available"
+  | "added"
+  | "sqft"
+  | "status";
 
 export interface SortState {
   key: SortKey;
@@ -428,6 +442,14 @@ function sortValue(row: OverviewRow, key: SortKey): number | string | null {
   // ISO dates and timestamps sort correctly as strings.
   if (key === "available") return earliestAvailability(row);
   if (key === "added") return row.listing.created_at;
+  if (key === "sqft") return row.group ? (row.group.sqftMin ?? row.group.sqftMax) : null;
+  if (key === "status") {
+    // No unit group → pending / fetching / failed hand-off row; not a curation value.
+    if (row.group === null) return null;
+    const status = row.state?.interest_status ?? null;
+    if (status === null) return -1;
+    return INTEREST_STATUSES.indexOf(status);
+  }
   return row.listing.property.name.toLowerCase();
 }
 

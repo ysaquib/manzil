@@ -28,6 +28,11 @@ export function unitGroupKey(beds: number, baths: number): string {
   return `${beds}-${baths}`;
 }
 
+/** Human label for a Unit Group — "Studio / 1 ba", "2 bd / 2 ba". */
+export function unitGroupLabel(beds: number, baths: number): string {
+  return `${beds === 0 ? "Studio" : `${beds} bd`} / ${baths} ba`;
+}
+
 function rangeMin(values: (number | null)[]): number | null {
   const known = values.filter((v): v is number => v !== null);
   return known.length ? Math.min(...known) : null;

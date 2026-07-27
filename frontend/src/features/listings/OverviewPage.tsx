@@ -20,7 +20,7 @@ import {
 import { useLocalStorage, useMediaQuery } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { IconArchive, IconArrowsLeftRight, IconChevronDown, IconHome } from "@tabler/icons-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { PageHeader } from "../../components/PageHeader";
@@ -29,8 +29,7 @@ import { jobsByListing, rowPipelineState, type RowPipeline } from "./rowState";
 import { OverviewRowList } from "./OverviewRowList";
 import { resolveSettings } from "../../lib/contracts";
 import { sentenceCase } from "../../lib/text";
-import { useCurrentMember } from "../collaboration/api";
-import { useHunt, usePublishSharedFilters, useSharedFilters } from "../hunts/api";
+import { useHunt } from "../hunts/api";
 import { usePatchListingStatus, usePatchUnitGroupState } from "./api";
 import { useListings, useUnitGroupStates } from "./api";
 import { ArchivedListings } from "./ArchivedListings";
@@ -49,15 +48,13 @@ import {
 import {
   applyOverviewFilters,
   buildRows,
-  DEFAULT_OVERVIEW_FILTERS,
   hasActiveFilters,
-  sanitizeFilterState,
   sortRows,
-  type OverviewFilterState,
   type OverviewRow,
   type SortKey,
   type SortState,
 } from "./overviewRows";
+import { useOverviewFilters } from "./filterState";
 import { propertyLocationLabel } from "./locality";
 import { INTEREST_STATUSES, type InterestStatus } from "./types";
 import { SubmitUrlControl } from "./SubmitUrlControl";
@@ -77,42 +74,21 @@ export function OverviewPage() {
   const patchState = usePatchUnitGroupState(huntId);
   const compare = useCompareSet(huntId);
 
-  const [filters, setFilters] = useState<OverviewFilterState>(DEFAULT_OVERVIEW_FILTERS);
   const [sort, setSort] = useState<SortState>({ key: "score", dir: "desc" });
   const [view, setView] = useState<"active" | "archived">("active");
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  // Hunt-wide filters (§13.2, §20 2026-07-19): the published set seeds the
-  // local state once per mount — after that the member deviates freely.
-  const { data: sharedRow } = useSharedFilters(huntId);
-  const publishFilters = usePublishSharedFilters(huntId);
-  const { data: currentMember } = useCurrentMember(huntId);
-  const sharedFilters = useMemo(
-    () => (sharedRow ? sanitizeFilterState(sharedRow.filters) : null),
-    [sharedRow],
-  );
-  const touchedRef = useRef(false);
-  const seededRef = useRef(false);
-  useEffect(() => {
-    if (seededRef.current || sharedFilters === null) return;
-    seededRef.current = true;
-    if (hasActiveFilters(sharedFilters) && !touchedRef.current) setFilters(sharedFilters);
-  }, [sharedFilters]);
-  const onFiltersChange = (next: OverviewFilterState) => {
-    touchedRef.current = true;
-    setFilters(next);
-  };
-  const canPublish = currentMember?.role === "owner" || currentMember?.role === "curator";
+  // Filters (incl. the hunt-wide seed, §13.2 / §20 2026-07-19) are hunt-scoped
+  // context now, shared with the Map view (§20 2026-07-26).
+  const {
+    filters,
+    setFilters: onFiltersChange,
+    sharedFilters,
+    canPublish,
+    publish: onPublish,
+    publishPending,
+  } = useOverviewFilters();
   const canCurate = canPublish;
-  const onPublish = (next: OverviewFilterState) =>
-    publishFilters.mutate({ ...next }, {
-      onSuccess: () =>
-        notifications.show({
-          message: hasActiveFilters(next)
-            ? "Filters applied hunt-wide — members start from this view."
-            : "Hunt-wide filters cleared.",
-        }),
-    });
   // View preferences, not hunt data — persist per browser.
   const [density, setDensity] = useLocalStorage<TableDensity>({
     key: "manzil:overview-density",
@@ -264,7 +240,7 @@ export function OverviewPage() {
               sharedFilters={sharedFilters}
               canPublish={canPublish}
               onPublish={onPublish}
-              publishPending={publishFilters.isPending}
+              publishPending={publishPending}
             />
           )}
         </Box>
