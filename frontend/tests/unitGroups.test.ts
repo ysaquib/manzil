@@ -21,7 +21,11 @@ function plan(overrides: Partial<FloorPlan> & { id: string }): FloorPlan {
   };
 }
 
-function score(floorPlanId: string, total: number): Score {
+function score(
+  floorPlanId: string,
+  total: number,
+  dishwasher: "confirmed" | "none" | null = null,
+): Score {
   return {
     hunt_listing_id: "listing-1",
     floor_plan_id: floorPlanId,
@@ -32,7 +36,10 @@ function score(floorPlanId: string, total: number): Score {
       rubric_version: 1,
       clamped: false,
       gates: [],
-      criteria: [],
+      criteria:
+        dishwasher === null
+          ? []
+          : [{ key: "dishwasher", value: dishwasher, matched: null, delta: 0 }],
     },
     rubric_version: 1,
     computed_at: "2026-07-08T00:00:00Z",
@@ -137,6 +144,16 @@ describe("deriveUnitGroups", () => {
     expect(rows[0].displayPlan.id).toBe("a");
     expect(rows[0].displayScore?.total).toBe(8);
     expect(rows[0].pinnedPlanId).toBe("a");
+  });
+
+  it("best and pinned rows use that Floor Plan's scoped criterion values", () => {
+    const plans = [plan({ id: "a" }), plan({ id: "b" })];
+    const scores = [score("a", 8, "none"), score("b", 11.5, "confirmed")];
+    const best = deriveUnitGroups(listing(plans, scores))[0];
+    expect(best.displayScore?.breakdown.criteria[0].value).toBe("confirmed");
+
+    const pinned = deriveUnitGroups(listing(plans, scores, { "2-2": "a" }))[0];
+    expect(pinned.displayScore?.breakdown.criteria[0].value).toBe("none");
   });
 
   it("ignores a pin pointing at a plan no longer in the group", () => {

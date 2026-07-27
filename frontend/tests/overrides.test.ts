@@ -53,6 +53,12 @@ describe("activeOverrides", () => {
     expect(activeOverrides([exact, allUnits], "fp-1").get("beds")?.value).toBe(3);
     expect(activeOverrides([exact, allUnits], "fp-2").get("beds")?.value).toBe(2);
   });
+
+  it("ignores a legacy Property override for a scoped unit Criterion", () => {
+    expect(
+      activeOverrides([row("dishwasher", true, "2026-07-18")], "fp-1").has("dishwasher"),
+    ).toBe(false);
+  });
 });
 
 describe("extractionForFloorPlan", () => {
@@ -90,5 +96,15 @@ describe("extractionForFloorPlan", () => {
     expect(extractionForFloorPlan([base, exact], "dishwasher", "fp-2")?.value).toBe(
       "unspecified",
     );
+  });
+
+  it("does not present a legacy Property boolean as scoped unit truth", () => {
+    const legacy: Extraction = {
+      ...base,
+      id: "e-legacy",
+      applicability: null,
+      value: true,
+    };
+    expect(extractionForFloorPlan([legacy], "dishwasher", "fp-1")).toBeUndefined();
   });
 });

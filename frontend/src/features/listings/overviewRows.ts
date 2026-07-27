@@ -277,6 +277,7 @@ function enumCriterionPredicate(
     if (selected.length === 0) return true;
     const value = criterionValue(row, criterionKey);
     if (typeof value !== "string") return true;
+    if (value === "advertised_unconfirmed") return true;
     return selected.includes(value);
   };
 }
@@ -284,8 +285,8 @@ function enumCriterionPredicate(
 function dishwasherPredicate(row: OverviewRow, filters: OverviewFilterState): boolean {
   if (filters.dishwasher === null) return true;
   const value = criterionValue(row, "dishwasher");
-  if (typeof value !== "boolean") return true;
-  return value === filters.dishwasher;
+  if (value !== "confirmed" && value !== "none") return true;
+  return filters.dishwasher ? value === "confirmed" : value === "none";
 }
 
 function maxAllInPredicate(row: OverviewRow, filters: OverviewFilterState): boolean {
