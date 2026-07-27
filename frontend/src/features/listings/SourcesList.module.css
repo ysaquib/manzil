@@ -4,10 +4,9 @@
 .source {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: var(--mantine-spacing-xs);
-  padding: 0.5rem 0;
-  border-top: 1px solid var(--mantine-color-default-border);
+  justify-content: space-between;
+  /* padding: 0.5rem 0; */
+  /* border-top: 1px solid var(--mantine-color-default-border); */
 }
 .source:first-of-type {
   border-top: 0;
@@ -36,7 +35,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 0 1 auto;
-  max-width: min(12rem, 42vw);
+  max-width: min(20rem, 42vw);
   min-width: 0;
 }
 .tier {
