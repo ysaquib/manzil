@@ -2,7 +2,6 @@ import { Avatar, Box, Group, Rating, Stack, Text } from "@mantine/core";
 
 import { useRatings, type HuntMember } from "./api";
 import { memberColor, starColorCss } from "./memberColors";
-import { StarRating } from "./StarRating";
 
 export function TeamRatings({
   listingId,

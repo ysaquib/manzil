@@ -1,0 +1,23 @@
+/* Thin, theme-aware scrollbar for overflow regions (WebKit + Firefox). */
+.customScrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--mantine-color-dimmed) 50%, transparent) transparent;
+}
+
+.customScrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.customScrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.customScrollbar::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background-color: color-mix(in srgb, var(--mantine-color-dimmed) 45%, transparent);
+}
+
+.customScrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--mantine-color-dimmed) 65%, transparent);
+}
