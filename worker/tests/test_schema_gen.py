@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from manzil_shared.catalog import CATALOG
+from manzil_shared.catalog import CATALOG, SCOPED_UNIT_CLAIM_KEYS
 from manzil_worker.stages.schema_gen import (
     build_extraction_schema,
     extractable_entries,
@@ -149,7 +149,10 @@ def test_every_criterion_field_is_value_confidence_evidence() -> None:
     parsed = schema.model_validate(extraction_payload())
     for key in EXPECTED_KEYS:
         field = getattr(parsed, key)
-        assert set(type(field).model_fields) == {"value", "confidence", "evidence_quote"}
+        if key in SCOPED_UNIT_CLAIM_KEYS:
+            assert field == []
+        else:
+            assert set(type(field).model_fields) == {"value", "confidence", "evidence_quote"}
 
 
 def test_full_realistic_payload_validates() -> None:
@@ -291,9 +294,7 @@ def test_null_criterion_wrapper_is_normalized_to_unknown() -> None:
 
     parsed = build_extraction_schema().model_validate(payload)
 
-    assert parsed.parking.value is None
-    assert parsed.parking.confidence == "not_found"
-    assert parsed.parking.evidence_quote is None
+    assert parsed.parking == []
 
 
 def test_null_floor_plan_entries_are_removed() -> None:
@@ -317,5 +318,56 @@ def test_object_not_string_instruction_rides_in_the_tool_schema() -> None:
 def test_null_value_needs_no_evidence_but_keeps_confidence() -> None:
     schema = build_extraction_schema()
     parsed = schema.model_validate(extraction_payload())
-    assert parsed.dishwasher.value is None
-    assert parsed.dishwasher.confidence == "not_found"
+    assert parsed.dishwasher == []
+
+
+def test_scoped_claim_requires_valid_source_local_target() -> None:
+    schema = build_extraction_schema()
+    payload = extraction_payload(
+        floor_plans=[{"response_key": "a1", "plan_name": "A1"}],
+        dishwasher=[
+            {
+                "value": True,
+                "confidence": "high",
+                "evidence_quote": "A1 includes dishwasher",
+                "applicability": "specific_floor_plans",
+                "floor_plan_refs": ["a1"],
+            }
+        ],
+    )
+    parsed = schema.model_validate(payload)
+    assert parsed.dishwasher[0].floor_plan_refs == ["a1"]
+
+    payload["dishwasher"][0]["floor_plan_refs"] = ["invented"]
+    with pytest.raises(ValidationError, match="unknown Source-local"):
+        schema.model_validate(payload)
+
+
+def test_scoped_claim_rejects_universal_scope_with_refs() -> None:
+    payload = extraction_payload(
+        floor_plans=[{"response_key": "a1", "plan_name": "A1"}],
+        cooling=[
+            {
+                "value": "central",
+                "confidence": "high",
+                "evidence_quote": "All homes have central air",
+                "applicability": "all_units",
+                "floor_plan_refs": ["a1"],
+            }
+        ],
+    )
+    with pytest.raises(ValidationError, match="only specific_floor_plans"):
+        build_extraction_schema().model_validate(payload)
+
+
+def test_scoped_claim_rejects_two_values_for_same_concrete_target() -> None:
+    claim = {
+        "value": "in_unit",
+        "confidence": "high",
+        "evidence_quote": "Laundry amenities",
+        "applicability": "unit_scope_unspecified",
+        "floor_plan_refs": [],
+    }
+    payload = extraction_payload(in_unit_laundry=[claim, {**claim, "value": "on_site"}])
+    with pytest.raises(ValidationError, match="one value per concrete target"):
+        build_extraction_schema().model_validate(payload)

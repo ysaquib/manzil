@@ -25,6 +25,7 @@ from decimal import Decimal
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 import structlog
+from manzil_shared.catalog import BOOLEAN_PRESENCE_KEYS, SCOPED_UNIT_CLAIM_KEYS
 from manzil_shared.models import Confidence, FloorPlan
 from manzil_shared.scoped_facts import (
     ScopedValue,
@@ -147,8 +148,6 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
         if (state.utilities and state.utilities.included is not None)
         else None
     )
-    heating = state.heating.heating if state.heating else None
-
     scorable = [
         (plan, floor_plan)
         for index, plan in enumerate(state.floor_plans)
@@ -163,6 +162,8 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
                 floor_plan_id=floor_plan.id,
                 extractions=scoped_rows,
                 min_confidence=ctx.min_confidence,
+                presence_like_keys=SCOPED_UNIT_CLAIM_KEYS,
+                boolean_presence_keys=BOOLEAN_PRESENCE_KEYS,
             )
             rent = conservative_rent(plan_in)
             composition = None
@@ -174,12 +175,24 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
                     if state_code is not None
                     else None
                 )
+                heating_value = resolve_effective_values(
+                    criterion_keys=["heating_type"],
+                    floor_plan_id=floor_plan.id,
+                    extractions=scoped_rows,
+                    min_confidence=ctx.min_confidence,
+                    presence_like_keys=frozenset({"heating_type"}),
+                ).get("heating_type")
+                plan_heating = (
+                    heating_value
+                    if heating_value in {"gas", "electric"}
+                    else None
+                )
                 composition = compose_all_in(
                     rent=rent,
                     pet_add=pet_add,
                     mandatory_fees=fees,
                     included=included,
-                    heating=heating,
+                    heating=plan_heating,
                     baselines=baseline_set.values if baseline_set else None,
                     baseline_scope_note=(
                         region_estimate_note(baseline_set.region) if baseline_set else None
@@ -214,6 +227,8 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
             floor_plan_id=display_floor_plan.id,
             extractions=scoped_rows,
             min_confidence=ctx.min_confidence,
+            presence_like_keys=SCOPED_UNIT_CLAIM_KEYS,
+            boolean_presence_keys=BOOLEAN_PRESENCE_KEYS,
         )
         display_composition = compositions[state.display_score_index]
         state.all_in_components = (
@@ -225,6 +240,8 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
             floor_plan_id=None,
             extractions=scoped_rows,
             min_confidence=ctx.min_confidence,
+            presence_like_keys=SCOPED_UNIT_CLAIM_KEYS,
+            boolean_presence_keys=BOOLEAN_PRESENCE_KEYS,
         )
         state.effective_values = dict(base_values)
         breakdown = score(ctx.rubric, base_values, None, rubric_version=ctx.rubric_version)

@@ -12,7 +12,10 @@ error appended to the content; a second failure raises ExtractionInvalid
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 import structlog
+from manzil_shared.catalog import SCOPED_UNIT_CLAIM_KEYS
 from manzil_shared.errors import ExtractionInvalid
 from manzil_shared.models import FactScope, TargetScope, UnitApplicability
 from pydantic import ValidationError
@@ -23,7 +26,6 @@ from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.schema_gen import build_extraction_schema, extractable_entries
 from manzil_worker.state import (
     FloorPlanIn,
-    HeatingIn,
     MandatoryFeesIn,
     OneTimeFeesIn,
     PetCostsIn,
@@ -69,10 +71,10 @@ async def extract_stage(state: RunState, ctx: StageCtx) -> RunState:
         # it gets ignored (observed: byte-identical retry output at temp 0).
         corrective = (
             "Your previous attempt failed schema validation — emit a corrected "
-            "result. Most common cause: a criterion field emitted as a "
-            "JSON-encoded STRING. Every criterion field must be a JSON OBJECT "
-            "with keys value/confidence/evidence_quote (floor_plans a JSON "
-            "array); the tool call handles all escaping, including quotes "
+            "result. Most common cause: a field emitted as a JSON-encoded "
+            "STRING. Property criterion fields must be JSON OBJECTS; scoped "
+            "unit criterion fields and floor_plans must be JSON ARRAYS. The "
+            "tool call handles all escaping, including quotes "
             f"inside evidence. The validation errors:\n{first_error}\n\n{content}"
         )
         try:
@@ -84,9 +86,41 @@ async def extract_stage(state: RunState, ctx: StageCtx) -> RunState:
 
     model = model_for_stage("extract")
     prompt_version = load_prompt("extract").version
+    plans = extraction.floor_plans
+    assert isinstance(plans, list)
+    state.floor_plans = [FloorPlanIn.model_validate(p, from_attributes=True) for p in plans]
     state.source_claims = []
     for entry in extractable_entries():
         raw = getattr(extraction, entry.key)
+        if entry.key in SCOPED_UNIT_CLAIM_KEYS:
+            for scoped in raw:
+                claim_group_id = uuid4()
+                refs = (
+                    scoped.floor_plan_refs
+                    if scoped.applicability is UnitApplicability.SPECIFIC_FLOOR_PLANS
+                    else [None]
+                )
+                for ref in refs:
+                    state.source_claims.append(
+                        SourceClaim(
+                            criterion_key=entry.key,
+                            value=scoped.value,
+                            confidence=scoped.confidence,
+                            evidence_quote=scoped.evidence_quote,
+                            source_id=source.url,
+                            model=model,
+                            prompt_version=prompt_version,
+                            target_scope=(
+                                TargetScope.FLOOR_PLAN
+                                if ref is not None
+                                else TargetScope.PROPERTY
+                            ),
+                            floor_plan_ref=ref,
+                            applicability=scoped.applicability,
+                            claim_group_id=claim_group_id,
+                        )
+                    )
+            continue
         generalized_unit = entry.fact_scope in {FactScope.FLOOR_PLAN, FactScope.MIXED}
         state.source_claims.append(
             SourceClaim(
@@ -103,9 +137,31 @@ async def extract_stage(state: RunState, ctx: StageCtx) -> RunState:
                 ),
             )
         )
-    plans = extraction.floor_plans
-    assert isinstance(plans, list)
-    state.floor_plans = [FloorPlanIn.model_validate(p, from_attributes=True) for p in plans]
+    for scoped in extraction.heating:
+        claim_group_id = uuid4()
+        refs = (
+            scoped.floor_plan_refs
+            if scoped.applicability is UnitApplicability.SPECIFIC_FLOOR_PLANS
+            else [None]
+        )
+        for ref in refs:
+            state.source_claims.append(
+                SourceClaim(
+                    criterion_key="heating_type",
+                    value=scoped.value,
+                    confidence=scoped.confidence,
+                    evidence_quote=scoped.evidence_quote,
+                    source_id=source.url,
+                    model=model,
+                    prompt_version=prompt_version,
+                    target_scope=(
+                        TargetScope.FLOOR_PLAN if ref is not None else TargetScope.PROPERTY
+                    ),
+                    floor_plan_ref=ref,
+                    applicability=scoped.applicability,
+                    claim_group_id=claim_group_id,
+                )
+            )
     identity = extraction.property_identity
     state.property_identity = (
         PropertyIdentityIn.model_validate(identity, from_attributes=True)
@@ -131,10 +187,7 @@ async def extract_stage(state: RunState, ctx: StageCtx) -> RunState:
         if mandatory_fees is not None
         else None
     )
-    heating = getattr(extraction, "heating", None)
-    state.heating = (
-        HeatingIn.model_validate(heating, from_attributes=True) if heating is not None else None
-    )
+    state.heating = None
     one_time = getattr(extraction, "one_time_fees", None)
     state.one_time_fees = (
         OneTimeFeesIn.model_validate(one_time, from_attributes=True)

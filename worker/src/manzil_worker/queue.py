@@ -401,6 +401,9 @@ def _auxiliary_claims(state: RunState, source_url: str) -> list[SourceClaim]:
             [fee.model_dump(mode="json") for fee in state.one_time_fees.fees],
             state.one_time_fees.evidence_quote,
         )
+    # Snapshot compatibility only: P3-SC4 emits heating_type directly in
+    # state.source_claims. Older persisted RunState snapshots may still carry
+    # the former singleton block, so preserve it without promoting its scope.
     if state.heating is not None and state.heating.heating is not None:
         add("heating_type", state.heating.heating, state.heating.evidence_quote)
     return claims

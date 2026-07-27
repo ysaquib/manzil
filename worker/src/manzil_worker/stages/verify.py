@@ -15,6 +15,7 @@ from datetime import date
 from typing import Any
 
 import structlog
+from manzil_shared.catalog import SCOPED_UNIT_CLAIM_KEYS
 from manzil_shared.config import (
     DEPOSIT_MAX_RENT_MULTIPLIER,
     EVIDENCE_FUZZY_THRESHOLD,
@@ -29,6 +30,8 @@ from manzil_shared.models import (
     CheckpointPrompt,
     Confidence,
     RubricCriterion,
+    TargetScope,
+    UnitApplicability,
 )
 from manzil_shared.scoring.engine import criterion_key
 from pydantic import BaseModel, Field, ValidationError
@@ -153,7 +156,40 @@ def _check_conformance(state: RunState) -> None:
                 "conformance",
                 "exact claim references no Source-local Floor Plan in this response",
             )
+        exact = claim.applicability is UnitApplicability.SPECIFIC_FLOOR_PLANS
+        if exact != (claim.target_scope is TargetScope.FLOOR_PLAN):
+            _demote(
+                state,
+                claim,
+                key,
+                "conformance",
+                "specific applicability and Floor Plan target must appear together",
+            )
+        if (
+            claim.target_scope is TargetScope.PROPERTY
+            and claim.applicability is None
+            and (key in SCOPED_UNIT_CLAIM_KEYS or key == "heating_type")
+        ):
+            # True Property facts are valid; the migrated unit tranche and
+            # heating_type must never fall back to the legacy shape.
+            _demote(
+                state,
+                claim,
+                key,
+                "conformance",
+                "scoped unit claim is missing unit applicability",
+            )
         if claim.value is None:
+            continue
+        if key == "heating_type":
+            if claim.value not in {"gas", "electric"}:
+                _demote(
+                    state,
+                    claim,
+                    key,
+                    "conformance",
+                    "heating_type must be gas or electric",
+                )
             continue
         try:
             model.model_validate({"value": claim.value, "confidence": "high"})
@@ -277,16 +313,16 @@ def _check_plausibility(state: RunState, today: date) -> None:
 
 async def _check_consistency(state: RunState, ctx: StageCtx, page_text: str) -> None:
     """Check 4 — the one narrow LLM judgment in this P2 stage."""
-    known = {
-        claim.criterion_key: {"value": claim.value, "evidence": claim.evidence_quote}
-        for claim in state.source_claims
-        if claim.value is not None
-    }
+    known = [claim for claim in state.source_claims if claim.value is not None]
     if not known:
         return
     lines = [
-        f"- {key}: {entry['value']!r} (evidence: {entry['evidence']!r})"
-        for key, entry in known.items()
+        f"- {claim.criterion_key}: {claim.value!r}; "
+        f"target={claim.target_scope.value}; "
+        f"applicability={claim.applicability.value if claim.applicability else None}; "
+        f"floor_plan_ref={claim.floor_plan_ref!r} "
+        f"(evidence: {claim.evidence_quote!r})"
+        for claim in known
     ]
     for plan in state.floor_plans:
         lines.append(f"- floor plan: {plan.model_dump(exclude_none=True)!r}")

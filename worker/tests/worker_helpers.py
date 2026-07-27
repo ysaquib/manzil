@@ -10,7 +10,14 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from manzil_shared.models import Confidence, FetchOutcome, JobType
+from manzil_shared.catalog import SCOPED_UNIT_CLAIM_KEYS
+from manzil_shared.models import (
+    Confidence,
+    FetchOutcome,
+    JobType,
+    TargetScope,
+    UnitApplicability,
+)
 from manzil_worker.fetching.results import FetchResult
 from manzil_worker.llm.client import call_structured
 from manzil_worker.llm.tools import AgentResult
@@ -48,10 +55,36 @@ async def seed_recorded_llm(stage: str, schema: type[Any], content: str) -> Any:
     # every Catalog field from the generated schema. P3-SC4 owns the canonical
     # scoped bench/recording refresh after its human labels are complete.
     for entry in extractable_entries():
-        output.setdefault(
-            entry.key,
-            {"value": None, "confidence": "not_found", "evidence_quote": None},
-        )
+        if entry.key in SCOPED_UNIT_CLAIM_KEYS:
+            legacy = output.get(entry.key)
+            if isinstance(legacy, dict) and legacy.get("value") is not None:
+                output[entry.key] = [
+                    {
+                        **legacy,
+                        "applicability": "unit_scope_unspecified",
+                        "floor_plan_refs": [],
+                    }
+                ]
+            else:
+                output[entry.key] = []
+        else:
+            output.setdefault(
+                entry.key,
+                {"value": None, "confidence": "not_found", "evidence_quote": None},
+            )
+    legacy_heating = output.get("heating")
+    if isinstance(legacy_heating, dict) and legacy_heating.get("heating") is not None:
+        output["heating"] = [
+            {
+                "value": legacy_heating["heating"],
+                "confidence": "high",
+                "evidence_quote": legacy_heating.get("evidence_quote") or "",
+                "applicability": "unit_scope_unspecified",
+                "floor_plan_refs": [],
+            }
+        ]
+    else:
+        output["heating"] = []
     return schema.model_validate(output)
 
 
@@ -93,12 +126,34 @@ def field_payload(value: Any, quote: str | None = None, confidence: str = "high"
     return {"value": value, "confidence": confidence, "evidence_quote": quote}
 
 
+def scoped_claim_payload(
+    value: Any,
+    quote: str,
+    *,
+    applicability: str = "unit_scope_unspecified",
+    floor_plan_refs: list[str] | None = None,
+    confidence: str = "high",
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "value": value,
+            "confidence": confidence,
+            "evidence_quote": quote,
+            "applicability": applicability,
+            "floor_plan_refs": floor_plan_refs or [],
+        }
+    ]
+
+
 def extraction_payload(**overrides: dict[str, Any]) -> dict[str, Any]:
     """A full ListingExtraction payload: everything not_found unless overridden."""
-    payload: dict[str, Any] = {
-        entry.key: {"value": None, "confidence": "not_found", "evidence_quote": None}
-        for entry in extractable_entries()
-    }
+    payload: dict[str, Any] = {}
+    for entry in extractable_entries():
+        payload[entry.key] = (
+            []
+            if entry.key in SCOPED_UNIT_CLAIM_KEYS
+            else {"value": None, "confidence": "not_found", "evidence_quote": None}
+        )
     payload["floor_plans"] = []
     payload.update(overrides)
     return payload
@@ -111,14 +166,25 @@ def maple_extraction() -> dict[str, Any]:
         beds=field_payload(2, "2 bedroom, 1.5 bathroom apartment home"),
         baths=field_payload(1.5, "2 bedroom, 1.5 bathroom apartment home"),
         sqft=field_payload(950, "950 square feet of thoughtfully designed living space"),
-        patio_balcony=field_payload(True, "Private balcony or ground-floor patio"),
-        in_unit_laundry=field_payload("in_unit", "Full-size washer and dryer in every home"),
+        patio_balcony=scoped_claim_payload(
+            True,
+            "Private balcony or ground-floor patio",
+        ),
+        in_unit_laundry=scoped_claim_payload(
+            "in_unit",
+            "Full-size washer and dryer in every home",
+            applicability="all_units",
+        ),
         pets_policy=field_payload("cats_and_dogs", "Cats and small dogs welcome!"),
         security_deposit=field_payload(500.0, "Security deposit | $500 with approved credit"),
         availability_date=field_payload("2026-08-01", "Available August 1, 2026"),
-        parking=field_payload("dedicated_lot", "Dedicated parking lot with one assigned space"),
-        cooling=field_payload("central", "Central air conditioning and forced-air heating"),
-        dishwasher=field_payload(True, "Dishwasher, garbage disposal"),
+        parking=scoped_claim_payload(
+            "dedicated_lot", "Dedicated parking lot with one assigned space"
+        ),
+        cooling=scoped_claim_payload(
+            "central", "Central air conditioning and forced-air heating"
+        ),
+        dishwasher=scoped_claim_payload(True, "Dishwasher, garbage disposal"),
         min_lease_months=field_payload(12, "Minimum lease term | 12 months"),
     )
     payload["property_identity"] = {
@@ -128,6 +194,7 @@ def maple_extraction() -> dict[str, Any]:
     }
     payload["floor_plans"] = [
         {
+            "response_key": "the-maple",
             "plan_name": "The Maple",
             "beds": 2,
             "baths": 1.5,
@@ -162,6 +229,15 @@ def fe(
         model="test-model",
         prompt_version=1,
     )
+
+
+def all_units_fe(
+    value: Any, quote: str | None = None, confidence: Confidence = Confidence.HIGH
+) -> SourceClaim:
+    claim = fe(value, quote, confidence)
+    claim.target_scope = TargetScope.PROPERTY
+    claim.applicability = UnitApplicability.ALL_UNITS
+    return claim
 
 
 def set_claim(state: RunState, key: str, extraction: SourceClaim) -> None:

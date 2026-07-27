@@ -14,12 +14,11 @@ from manzil_worker.stages.score import score_stage
 from manzil_worker.state import (
     FloorPlanIn,
     GeocodeIn,
-    HeatingIn,
     MandatoryFeeIn,
     MandatoryFeesIn,
     UtilitiesIn,
 )
-from worker_helpers import make_state
+from worker_helpers import all_units_fe, make_state, set_claim
 
 BASELINES = {
     "electric": (120.0, 80.0),
@@ -51,7 +50,7 @@ def _state():  # type: ignore[no-untyped-def]
     state.geocode = GeocodeIn(place_id="x", lat=42.3, lng=-83.0, city="Canton", state="MI")
     state.floor_plans = [FloorPlanIn(plan_name="2x2", beds=2, baths=2.0, rent_max=1500.0)]
     state.utilities = UtilitiesIn(included=[])
-    state.heating = HeatingIn(heating="gas")
+    set_claim(state, "heating_type", all_units_fe("gas", "Gas heat in every home"))
     state.mandatory_fees = MandatoryFeesIn(
         fees=[MandatoryFeeIn(name="valet trash", amount_monthly=25.0)]
     )
