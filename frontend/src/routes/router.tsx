@@ -17,6 +17,7 @@ import { InviteAcceptPage } from "../features/invites/InviteAcceptPage";
 import { InvitationLinkJoinPage } from "../features/invites/InvitationLinkJoinPage";
 import { ComparePage } from "../features/listings/ComparePage";
 import { OverviewPage } from "../features/listings/OverviewPage";
+import { HuntMapPage } from "../features/map/HuntMapPage";
 import { TasksPage } from "../features/jobs/TasksPage";
 import { RubricPage } from "../features/rubric/RubricPage";
 
@@ -47,6 +48,7 @@ export const router = createBrowserRouter([
     element: protectedRoute(<AppLayout />),
     children: [
       { index: true, element: <OverviewPage /> },
+      { path: "map", element: <HuntMapPage /> },
       { path: "compare", element: <ComparePage /> },
       { path: "rubric", element: <RubricPage /> },
       { path: "tasks", element: <TasksPage /> },
