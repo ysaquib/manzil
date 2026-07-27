@@ -2,6 +2,14 @@
    child sections (header, All-in, Fees, hero band text, Criterion total). Unique
    layout/tints stay in each child’s co-located module (UI_DESIGN §3). */
 
+/* --- Drawer body scroll --- */
+.drawerScroll {
+  composes: customScrollbar from "../../components/customScrollbar.module.css";
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+
 /* --- Drawer header (property identity) --- */
 .eyebrow {
   font-size: 0.625rem;

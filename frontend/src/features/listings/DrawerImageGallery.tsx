@@ -1,8 +1,9 @@
-import { AspectRatio, Box, Image, Skeleton, Text } from "@mantine/core";
+import { AspectRatio, Box, Image, Skeleton, Text, UnstyledButton } from "@mantine/core";
 import { Carousel } from "@mantine/carousel";
 import type { EmblaCarouselType } from "embla-carousel";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
+import { useHorizontalDragScroll } from "../../lib/useHorizontalDragScroll";
 import type { PropertyImage } from "./api";
 import { ImageLightbox } from "./ImageLightbox";
 import classes from "./DrawerImageGallery.module.css";
@@ -15,6 +16,26 @@ export function DrawerImageGallery({ images, loading }: { images: PropertyImage[
   const [embla, setEmbla] = useState<EmblaCarouselType | null>(null);
   const [index, setIndex] = useState(0);
   const [lightbox, setLightbox] = useState<number | null>(null);
+  const thumbRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const {
+    ref: filmRef,
+    dragging: filmDragging,
+    consumeClickSuppression,
+    onPointerDown: onFilmPointerDown,
+  } = useHorizontalDragScroll<HTMLDivElement>();
+
+  useEffect(() => {
+    thumbRefs.current.length = images.length;
+  }, [images.length]);
+
+  useEffect(() => {
+    if (images.length <= 1) return;
+    thumbRefs.current[index]?.scrollIntoView({
+      block: "nearest",
+      inline: "nearest",
+      behavior: "smooth",
+    });
+  }, [index, images.length]);
 
   const onSelect = useCallback((api: EmblaCarouselType) => setIndex(api.selectedScrollSnap()), []);
   useEffect(() => {
@@ -55,48 +76,47 @@ export function DrawerImageGallery({ images, loading }: { images: PropertyImage[
           classNames={{ viewport: classes.viewport, control: classes.control }}
         >
           {images.map((img, i) => (
-            <Carousel.Slide 
-              key={img.id}
-              w="100%"
-              // h="100px"
-            >
-              {/* <button
-                type="button"
+            <Carousel.Slide key={img.id} w="100%">
+              <UnstyledButton
                 className={classes.primaryBtn}
                 aria-label={`open photo ${i + 1} of ${images.length}`}
                 onClick={() => setLightbox(i)}
-              > */}
+              >
                 <Image
                   src={img.url}
                   alt={`listing photo ${i + 1} of ${images.length}`}
                   loading="lazy"
                   className={classes.primary}
-                  // width={100}
-                  // height={100}
                 />
-                {/* <img
-                  // className={classes.primary}
-                  src={img.url}
-                  alt={`listing photo ${i + 1} of ${images.length}`}
-                  loading="lazy"
-                /> */}
-              {/* </button> */}
+              </UnstyledButton>
             </Carousel.Slide>
           ))}
         </Carousel>
         {many && <span className={classes.counter}>{index + 1} / {images.length}</span>}
       </div>
       {many && (
-        <div className={classes.film}>
+        <div
+          ref={filmRef}
+          className={`${classes.film} ${filmDragging ? classes.filmDragging : ""}`}
+          onPointerDown={onFilmPointerDown}
+        >
           {images.map((img, i) => (
             <Box
+              component="button"
+              type="button"
               key={img.id}
+              ref={(node) => {
+                thumbRefs.current[i] = node as HTMLDivElement | null;
+              }}
               className={`${classes.thumb} ${i === index ? classes.active : ""}`}
               aria-label={`show photo ${i + 1}`}
               aria-pressed={i === index}
-              onClick={() => embla?.scrollTo(i)}
+              onClick={() => {
+                if (consumeClickSuppression()) return;
+                embla?.scrollTo(i);
+              }}
             >
-              <Image src={img.url} alt="" />
+              <Image src={img.url} alt="" draggable={false} />
             </Box>
           ))}
         </div>
