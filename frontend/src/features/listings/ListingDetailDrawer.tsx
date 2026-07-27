@@ -26,6 +26,7 @@ import { CommentsSection } from "../collaboration/CommentsSection";
 import { RatingControl } from "../collaboration/RatingControl";
 import { useCurrentMember, useMembers } from "../collaboration/api";
 import { useHunt } from "../hunts/api";
+import { ListingLocationMap } from "../map/ListingLocationMap";
 import { useCatalog } from "../rubric/api";
 import { AllInBreakdown, AllInOverrideControl } from "./AllInCost";
 import { activeOverrides, extractionForFloorPlan } from "./overrides";
@@ -34,6 +35,7 @@ import { DrawerHero } from "./DrawerHero";
 import { FeeChecklist } from "./FeeChecklist";
 import { FloorPlanPins } from "./FloorPlanPins";
 import { ListingDetailDraftProvider, useListingDetailDraft } from "./ListingDetailDraft";
+import { propertyLocationLabel } from "./locality";
 import { extractedFeeOriginals, parseOneTimeFees } from "./oneTimeFees";
 import { SourcesList } from "./SourcesList";
 import { useExtractions, useFees, useListings, useOverrides, usePropertyImages } from "./api";
@@ -199,6 +201,13 @@ function DrawerShell({
 }) {
   const { draftPins, isDirty, saving, saveAll, resetDraft } = useListingDetailDraft();
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [headerScrolled, setHeaderScrolled] = useState(false);
+
+  const syncHeaderScroll = useCallback(() => {
+    const el = scrollRef.current;
+    setHeaderScrolled((el?.scrollTop ?? 0) > 0);
+  }, []);
 
   const { listing, group } = resolveRowWithDraft(
     listings,
@@ -240,6 +249,11 @@ function DrawerShell({
     });
   }, [isDirty, onClose, setCloseHandler]);
 
+  useEffect(() => {
+    setHeaderScrolled(false);
+    scrollRef.current?.scrollTo({ top: 0 });
+  }, [listing?.id, selection?.groupKey]);
+
   if (!listing) return null;
 
   const score = group?.displayScore ?? null;
@@ -266,7 +280,11 @@ function DrawerShell({
 
   return (
     <>
-      <Drawer.Header style={{ alignItems: "flex-start" }}>
+      <Drawer.Header
+        className={drawerClasses.drawerHeader}
+        data-scrolled={headerScrolled || undefined}
+        style={{ alignItems: "flex-start" }}
+      >
         <Stack gap={0}>
           <Text className={drawerClasses.eyebrow} tt="uppercase" fw={600} c="dimmed">
             Listing
@@ -285,7 +303,14 @@ function DrawerShell({
       </Drawer.Header>
 
       <Drawer.Body>
-        <Box component="div" style={{ flex: 1, overflow: "auto", minHeight: 0 }} px="md" pt="xs">
+        <Box
+          ref={scrollRef}
+          component="div"
+          onScroll={syncHeaderScroll}
+          style={{ flex: 1, overflow: "auto", minHeight: 0 }}
+          px="md"
+          pt="xs"
+        >
           <DrawerHero
             images={images ?? []}
             imagesLoading={imagesLoading}
@@ -391,6 +416,18 @@ function DrawerShell({
                   }
                 />
               </Stack>
+            </SectionCard>
+
+            {/* Near the bottom by design: the map answers "where is this?"
+                once the reader has decided the score is worth caring about. */}
+            <SectionCard
+              title="Location"
+              hint={propertyLocationLabel(listing.property)}
+            >
+              <ListingLocationMap
+                property={listing.property}
+                score={group?.displayScore?.total ?? null}
+              />
             </SectionCard>
 
             <SectionCard title="Sources">

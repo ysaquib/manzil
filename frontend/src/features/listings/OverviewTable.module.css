@@ -42,7 +42,8 @@
 
 .table td,
 .table th {
-  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+  /* Honor Table `verticalSpacing` / `horizontalSpacing` (row density menu). */
+  padding: var(--table-vertical-spacing) var(--table-horizontal-spacing, var(--mantine-spacing-sm));
   text-align: left;
   vertical-align: middle;
   background: var(--surface);

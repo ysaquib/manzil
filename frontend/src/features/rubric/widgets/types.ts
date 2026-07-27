@@ -25,4 +25,6 @@ export interface WidgetProps {
   unit?: UnitFormat;
   /** Hide the number spinner in tight layouts (rubric option rows). */
   hideControls?: boolean;
+  /** Forwarded to Select/MultiSelect when nested inside another floating layer (e.g. Popover). */
+  comboboxProps?: { withinPortal?: boolean };
 }

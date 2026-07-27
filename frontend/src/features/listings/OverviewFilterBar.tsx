@@ -283,14 +283,13 @@ export function OverviewFilterBar({
           </Pill>
         ))}
         {filtersActive && (
-          <Text size="xs" c="dimmed">
+          <Text size="xs" c="dimmed" aria-label="Filter result summary">
             {visibleCount} visible · {filteredOut} filtered out
           </Text>
         )}
       </Group>
 
       <Collapse expanded={opened}>
-        {opened && (
         <Paper withBorder radius="md" p="md">
           <SimpleGrid cols={{ base: 1, xs: 2, md: 3, lg: 4 }} spacing="lg" verticalSpacing="md">
             <Section label="Score">
@@ -504,7 +503,6 @@ export function OverviewFilterBar({
             )}
           </Group>
         </Paper>
-        )}
       </Collapse>
     </Stack>
   );

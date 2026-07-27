@@ -9,6 +9,9 @@ import { WidgetForSchema } from "../rubric/widgets/widgetForSchema";
 import type { ValueSchema } from "../rubric/widgets/types";
 import type { WidgetValue } from "../rubric/widgets/types";
 
+/** Portaled combobox dropdowns sit outside the Popover DOM and count as outside clicks. */
+const NESTED_COMBOBOX_PROPS = { withinPortal: false } as const;
+
 export function OverrideControl({
   criterionKey,
   schema,
@@ -92,10 +95,17 @@ export function OverrideControl({
               value={target}
               onChange={(next) => setTarget(next === "all_units" ? "all_units" : "floor_plan")}
               allowDeselect={false}
+              comboboxProps={NESTED_COMBOBOX_PROPS}
             />
           )}
           {schema ? (
-            <WidgetForSchema schema={schema} value={value} onChange={setValue} label="New value" />
+            <WidgetForSchema
+              schema={schema}
+              value={value}
+              onChange={setValue}
+              label="New value"
+              comboboxProps={NESTED_COMBOBOX_PROPS}
+            />
           ) : (
             <TextInput
               label="New value"

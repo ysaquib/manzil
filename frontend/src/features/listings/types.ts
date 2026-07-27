@@ -11,6 +11,11 @@ export interface Property {
   state: string | null;
   county: string | null;
   official_url: string | null;
+  // §12 geocode forever-cache, written by DEDUPE only-when-null. Null until a
+  // run geocodes the property — the map surfaces (§13.2) treat that as
+  // "not mapped yet", never as an error.
+  lat: number | null;
+  lng: number | null;
 }
 
 export const INTEREST_STATUSES = [
