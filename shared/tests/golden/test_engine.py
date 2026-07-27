@@ -153,6 +153,22 @@ def test_non_negotiable_satisfied_by_acceptable_match() -> None:
     assert breakdown.total == 11.0
 
 
+def test_advertised_unconfirmed_never_satisfies_non_negotiable() -> None:
+    laundry_gate = crit(
+        "in_unit_laundry",
+        [opt(MatchOp.EQ, "advertised_unconfirmed", 0.0)],
+        non_negotiable=2.0,
+    )
+    breakdown = score(
+        [laundry_gate],
+        {"in_unit_laundry": "advertised_unconfirmed"},
+        rubric_version=1,
+    )
+    assert [gate.model_dump(mode="json") for gate in breakdown.gates] == [
+        {"key": "in_unit_laundry", "kind": "non_negotiable", "set_score": 2.0}
+    ]
+
+
 def test_multiple_gates_take_min_never_average() -> None:
     g1 = crit("beds", [opt(MatchOp.EQ, 0, 0.0, dealbreaker=2.0)])
     g2 = crit("pets_policy", [opt(MatchOp.EQ, "cats_only", 0.5)], non_negotiable=1.0)

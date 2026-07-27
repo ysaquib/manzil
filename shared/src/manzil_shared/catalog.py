@@ -112,10 +112,15 @@ CATALOG: tuple[CatalogEntry, ...] = (
         label="Patio or balcony",
         category=CriterionCategory.UNIT,
         domain=CriterionDomain.RENT,
-        value_schema={"type": "boolean"},
+        value_schema={
+            "type": "string",
+            "enum": ["confirmed", "advertised_unconfirmed", "none"],
+        },
+        claim_value_schema={"type": "boolean"},
         default_options=[
-            _opt(MatchOp.BOOL, True, 0.5),
-            _opt(MatchOp.BOOL, False, 0.0),
+            _opt(MatchOp.EQ, "confirmed", 0.5),
+            _opt(MatchOp.EQ, "advertised_unconfirmed", 0.0),
+            _opt(MatchOp.EQ, "none", 0.0),
         ],
         extraction_hint="True if the unit has a private patio or balcony.",
         requires_tool=None,
@@ -126,10 +131,15 @@ CATALOG: tuple[CatalogEntry, ...] = (
         label="Private entrance",
         category=CriterionCategory.UNIT,
         domain=CriterionDomain.RENT,
-        value_schema={"type": "boolean"},
+        value_schema={
+            "type": "string",
+            "enum": ["confirmed", "advertised_unconfirmed", "none"],
+        },
+        claim_value_schema={"type": "boolean"},
         default_options=[
-            _opt(MatchOp.BOOL, True, 0.25),
-            _opt(MatchOp.BOOL, False, 0.0),
+            _opt(MatchOp.EQ, "confirmed", 0.25),
+            _opt(MatchOp.EQ, "advertised_unconfirmed", 0.0),
+            _opt(MatchOp.EQ, "none", 0.0),
         ],
         extraction_hint=(
             "True if the unit has its own exterior entrance rather than a shared interior corridor."
@@ -142,12 +152,20 @@ CATALOG: tuple[CatalogEntry, ...] = (
         label="Laundry",
         category=CriterionCategory.FITTINGS,
         domain=CriterionDomain.RENT,
-        value_schema={"type": "string", "enum": ["in_unit", "hookups", "on_site", "none"]},
+        value_schema={
+            "type": "string",
+            "enum": ["in_unit", "hookups", "on_site", "none", "advertised_unconfirmed"],
+        },
+        claim_value_schema={
+            "type": "string",
+            "enum": ["in_unit", "hookups", "on_site", "none"],
+        },
         default_options=[
             _opt(MatchOp.EQ, "in_unit", 0.0),
             _opt(MatchOp.EQ, "hookups", -0.25),
             _opt(MatchOp.EQ, "on_site", -1.0),
             _opt(MatchOp.EQ, "none", -2.0),
+            _opt(MatchOp.EQ, "advertised_unconfirmed", 0.0),
         ],
         extraction_hint=(
             "in_unit = washer/dryer inside the unit; hookups = connections only; "
@@ -285,6 +303,18 @@ CATALOG: tuple[CatalogEntry, ...] = (
         domain=CriterionDomain.RENT,
         value_schema={
             "type": "string",
+            "enum": [
+                "garage",
+                "carport",
+                "covered",
+                "dedicated_lot",
+                "street_only",
+                "none",
+                "advertised_unconfirmed",
+            ],
+        },
+        claim_value_schema={
+            "type": "string",
             "enum": ["garage", "carport", "covered", "dedicated_lot", "street_only", "none"],
         },
         default_options=[
@@ -294,6 +324,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
             _opt(MatchOp.EQ, "dedicated_lot", 0.0),
             _opt(MatchOp.EQ, "street_only", -0.5),
             _opt(MatchOp.EQ, "none", -1.0),
+            _opt(MatchOp.EQ, "advertised_unconfirmed", 0.0),
         ],
         extraction_hint=(
             "Best parking included or available with the unit: garage, carport, covered, "
@@ -307,11 +338,19 @@ CATALOG: tuple[CatalogEntry, ...] = (
         label="Cooling",
         category=CriterionCategory.FITTINGS,
         domain=CriterionDomain.RENT,
-        value_schema={"type": "string", "enum": ["central", "window_units", "none"]},
+        value_schema={
+            "type": "string",
+            "enum": ["central", "window_units", "none", "advertised_unconfirmed"],
+        },
+        claim_value_schema={
+            "type": "string",
+            "enum": ["central", "window_units", "none"],
+        },
         default_options=[
             _opt(MatchOp.EQ, "central", 0.5),
             _opt(MatchOp.EQ, "window_units", 0.0),
             _opt(MatchOp.EQ, "none", -1.0),
+            _opt(MatchOp.EQ, "advertised_unconfirmed", 0.0),
         ],
         extraction_hint=(
             "central = central air conditioning; window_units = window/wall units "
@@ -325,10 +364,15 @@ CATALOG: tuple[CatalogEntry, ...] = (
         label="Dishwasher",
         category=CriterionCategory.FITTINGS,
         domain=CriterionDomain.RENT,
-        value_schema={"type": "boolean"},
+        value_schema={
+            "type": "string",
+            "enum": ["confirmed", "advertised_unconfirmed", "none"],
+        },
+        claim_value_schema={"type": "boolean"},
         default_options=[
-            _opt(MatchOp.BOOL, True, 0.25),
-            _opt(MatchOp.BOOL, False, 0.0),
+            _opt(MatchOp.EQ, "confirmed", 0.25),
+            _opt(MatchOp.EQ, "advertised_unconfirmed", 0.0),
+            _opt(MatchOp.EQ, "none", 0.0),
         ],
         extraction_hint="True if the unit includes a dishwasher.",
         requires_tool=None,
@@ -721,6 +765,22 @@ for _entry in CATALOG:
         _entry.fact_scope = FactScope.MIXED
     else:
         _entry.fact_scope = FactScope.PROPERTY
+
+# P3-SC4: these Catalog entries use sparse applicability-bearing Source claims.
+# Boolean claims compose to the effective presence vocabulary; typed claims
+# retain their confirmed value and use advertised_unconfirmed only when the
+# Source does not identify the applicable Floor Plan(s).
+SCOPED_UNIT_CLAIM_KEYS = frozenset(
+    {
+        "patio_balcony",
+        "private_entry",
+        "in_unit_laundry",
+        "parking",
+        "cooling",
+        "dishwasher",
+    }
+)
+BOOLEAN_PRESENCE_KEYS = frozenset({"patio_balcony", "private_entry", "dishwasher"})
 
 
 # --- seed.sql generation ---

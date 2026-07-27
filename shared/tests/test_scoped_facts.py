@@ -67,6 +67,65 @@ def test_select_and_unspecified_presence_are_advertised_not_confirmed() -> None:
         assert _resolve(extractions=[row], presence_like=True) == "advertised_unconfirmed"
 
 
+def test_typed_presence_keeps_exact_value_but_generalized_is_unconfirmed() -> None:
+    target = uuid4()
+    exact = ScopedValue(
+        criterion_key="patio_balcony",
+        value="central",
+        target_scope=TargetScope.FLOOR_PLAN,
+        floor_plan_id=target,
+        applicability=UnitApplicability.SPECIFIC_FLOOR_PLANS,
+    )
+    generalized = ScopedValue(
+        criterion_key="patio_balcony",
+        value="central",
+        target_scope=TargetScope.PROPERTY,
+        applicability=UnitApplicability.SELECT_UNITS,
+    )
+    assert (
+        resolve_effective_value(
+            criterion_key="patio_balcony",
+            floor_plan_id=target,
+            extractions=[exact],
+            min_confidence=Confidence.MEDIUM,
+            presence_like=True,
+            boolean_presence=False,
+        )
+        == "central"
+    )
+    assert (
+        resolve_effective_value(
+            criterion_key="patio_balcony",
+            floor_plan_id=target,
+            extractions=[generalized],
+            min_confidence=Confidence.MEDIUM,
+            presence_like=True,
+            boolean_presence=False,
+        )
+        == "advertised_unconfirmed"
+    )
+
+
+def test_legacy_property_boolean_never_becomes_confirmed_unit_truth() -> None:
+    legacy = ScopedValue(
+        criterion_key="patio_balcony",
+        value=True,
+        target_scope=TargetScope.PROPERTY,
+        applicability=None,
+    )
+    assert _resolve(extractions=[legacy], presence_like=True) is None
+
+
+def test_legacy_property_override_never_becomes_confirmed_unit_truth() -> None:
+    legacy = ScopedOverrideValue(
+        criterion_key="patio_balcony",
+        value=True,
+        target_scope=TargetScope.PROPERTY,
+        applicability=None,
+    )
+    assert _resolve(overrides=[legacy], presence_like=True) is None
+
+
 def test_override_specificity_and_target_local_tombstone() -> None:
     target = uuid4()
     all_units = ScopedOverrideValue(
