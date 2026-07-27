@@ -20,6 +20,7 @@ from worker_helpers import (
     get_claim,
     make_state,
     maple_extraction,
+    scoped_claim_payload,
 )
 
 CLEANED = clean_html((PAGES / "e2e_listing.html").read_text()).text
@@ -32,7 +33,7 @@ def test_extract_populates_every_criterion_with_provenance() -> None:
 
     assert {claim.criterion_key for claim in state.source_claims} == {
         e.key for e in extractable_entries()
-    }
+    } - {"private_entry"}
     beds = get_claim(state, "beds")
     assert beds.value == 2
     assert beds.source_id == state.sources[0].url
@@ -40,9 +41,7 @@ def test_extract_populates_every_criterion_with_provenance() -> None:
     from manzil_worker.llm.prompt_loader import load_prompt
 
     assert beds.prompt_version == load_prompt("extract").version  # provenance, not a pin
-    unknown = get_claim(state, "private_entry")
-    assert unknown.value is None
-    assert unknown.confidence == "not_found"
+    assert not any(claim.criterion_key == "private_entry" for claim in state.source_claims)
     assert [p.plan_name for p in state.floor_plans] == ["The Maple"]
 
 
@@ -189,7 +188,15 @@ def test_extract_lands_p39_fee_and_heating_blocks() -> None:
         "fees": [{"name": "valet trash", "amount_monthly": 25.0}],
         "evidence_quote": "Valet trash $25/mo",
     }
-    payload["heating"] = {"heating": "gas", "evidence_quote": "gas forced-air heat"}
+    payload["heating"] = [
+        {
+            "value": "gas",
+            "confidence": "high",
+            "evidence_quote": "gas forced-air heat",
+            "applicability": "specific_floor_plans",
+            "floor_plan_refs": ["the-maple"],
+        }
+    ]
     llm = FakeLLM({"extract": payload})
     state = make_state(cleaned_text=CLEANED)
     state = asyncio.run(extract_stage(state, StageCtx(call_structured=llm)))
@@ -197,7 +204,34 @@ def test_extract_lands_p39_fee_and_heating_blocks() -> None:
     assert state.mandatory_fees is not None
     assert state.mandatory_fees.fees[0].name == "valet trash"
     assert state.mandatory_fees.fees[0].amount_monthly == 25.0
-    assert state.heating is not None and state.heating.heating == "gas"
+    heating = get_claim(state, "heating_type")
+    assert heating.value == "gas"
+    assert heating.floor_plan_ref == "the-maple"
+    assert heating.applicability == "specific_floor_plans"
+
+
+def test_extract_expands_one_claim_across_several_floor_plans() -> None:
+    payload = extraction_payload(
+        floor_plans=[
+            {"response_key": "a1", "plan_name": "A1"},
+            {"response_key": "a2", "plan_name": "A2"},
+        ],
+        dishwasher=scoped_claim_payload(
+            True,
+            "A1 and A2 include dishwashers",
+            applicability="specific_floor_plans",
+            floor_plan_refs=["a1", "a2"],
+        ),
+    )
+    state = asyncio.run(
+        extract_stage(
+            make_state(cleaned_text="A1 and A2 include dishwashers"),
+            StageCtx(call_structured=FakeLLM({"extract": payload})),
+        )
+    )
+    claims = [claim for claim in state.source_claims if claim.criterion_key == "dishwasher"]
+    assert [claim.floor_plan_ref for claim in claims] == ["a1", "a2"]
+    assert len({claim.claim_group_id for claim in claims}) == 1
 
 
 def test_extract_blocks_absent_stay_none() -> None:

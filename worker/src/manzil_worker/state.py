@@ -176,6 +176,34 @@ class HeatingIn(BaseModel):
     evidence_quote: str | None = None
 
 
+class HeatingClaimIn(BaseModel):
+    """One sparse, applicability-bearing heating claim (P3-SC4).
+
+    Heating is not a Rubric Criterion, but it must use the same Source-local
+    target contract because it changes per-Floor-Plan utility composition.
+    """
+
+    value: Literal["gas", "electric"]
+    confidence: Literal["low", "medium", "high"]
+    evidence_quote: str
+    applicability: UnitApplicability
+    floor_plan_refs: list[str] = Field(default_factory=list)
+
+    @field_validator("floor_plan_refs")
+    @classmethod
+    def floor_plan_refs_are_unique(cls, value: list[str]) -> list[str]:
+        if len(value) != len(set(value)):
+            raise ValueError("floor_plan_refs must contain unique values")
+        return value
+
+    @field_validator("applicability")
+    @classmethod
+    def applicability_is_unit_scoped(
+        cls, value: UnitApplicability
+    ) -> UnitApplicability:
+        return value
+
+
 class SourceState(BaseModel):
     """One source's fetch results (IMPL §3: url, tier_used, outcome, cleaned, hash)."""
 

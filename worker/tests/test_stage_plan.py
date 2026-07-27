@@ -293,4 +293,4 @@ def test_ingest_stages_walk_runs_plan_first_then_the_spine(tmp_path) -> None:  #
     assert out.plan.sources[0].action == "fetch"  # no DB → fresh lookup None
     assert [stage for stage, _ in llm.calls] == ["validate", "extract", "verify"]
     (plan_score,) = out.scores
-    assert plan_score.breakdown["total"] == 13.5  # identical to the PHASE0 e2e
+    assert plan_score.breakdown["total"] == 13.0  # identical to the scoped PHASE0 e2e

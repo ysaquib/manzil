@@ -6,12 +6,12 @@ from __future__ import annotations
 
 import asyncio
 
-from manzil_shared.models import Confidence
+from manzil_shared.models import Confidence, TargetScope, UnitApplicability
 from manzil_worker.phase0_rubric import PHASE0_RUBRIC_VERSION, phase0_rubric
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.score import score_stage
 from manzil_worker.state import FloorPlanIn, PetCostsIn
-from worker_helpers import fe, get_claim, make_state, set_claim
+from worker_helpers import all_units_fe, fe, get_claim, make_state, set_claim
 
 
 def _all_in(breakdown: dict) -> float | None:  # type: ignore[type-arg]
@@ -26,9 +26,9 @@ def make_ctx() -> StageCtx:
 def seeded_state():  # type: ignore[no-untyped-def]
     state = make_state()
     set_claim(state, "beds", fe(2, "2 bed"))
-    set_claim(state, "in_unit_laundry", fe("in_unit", "washer and dryer in unit"))
+    set_claim(state, "in_unit_laundry", all_units_fe("in_unit", "washer and dryer in every home"))
     set_claim(state, "pets_policy", fe("cats_and_dogs", "cats and dogs welcome"))
-    set_claim(state, "patio_balcony", fe(True, "private balcony"))
+    set_claim(state, "patio_balcony", all_units_fe(True, "private balcony in every home"))
     return state
 
 
@@ -184,3 +184,49 @@ def test_min_confidence_low_admits_demoted_values() -> None:
     assert state.effective_values["pets_policy"] == "cats_and_dogs"
     assert state.scores[0].breakdown["gates"] == []
     assert state.scores[0].breakdown["total"] == 13.5
+
+
+def test_exact_unit_feature_changes_only_target_floor_plan() -> None:
+    state = seeded_state()
+    state.floor_plans = [
+        FloorPlanIn(response_key="a", plan_name="A", beds=2, baths=1.0, rent_min=1700.0),
+        FloorPlanIn(response_key="b", plan_name="B", beds=2, baths=1.0, rent_min=1700.0),
+    ]
+    exact = fe(False, "Plan A has no balcony")
+    exact.target_scope = TargetScope.FLOOR_PLAN
+    exact.floor_plan_ref = "a"
+    exact.applicability = UnitApplicability.SPECIFIC_FLOOR_PLANS
+    set_claim(state, "patio_balcony", exact)
+
+    state = asyncio.run(score_stage(state, make_ctx()))
+
+    values = [
+        next(
+            criterion["value"]
+            for criterion in score.breakdown["criteria"]
+            if criterion["key"] == "patio_balcony"
+        )
+        for score in state.scores
+    ]
+    assert values == ["none", None]
+
+
+def test_unspecified_laundry_cannot_pass_gate() -> None:
+    state = seeded_state()
+    set_claim(
+        state,
+        "in_unit_laundry",
+        fe("in_unit", "Washer and dryer listed among amenities"),
+    )
+    claim = get_claim(state, "in_unit_laundry")
+    claim.applicability = UnitApplicability.UNIT_SCOPE_UNSPECIFIED
+    state.floor_plans = [
+        FloorPlanIn(response_key="a", plan_name="A", beds=2, baths=1.0, rent_min=1700.0)
+    ]
+
+    state = asyncio.run(score_stage(state, make_ctx()))
+
+    assert state.effective_values["in_unit_laundry"] == "advertised_unconfirmed"
+    assert state.scores[0].breakdown["gates"] == [
+        {"key": "in_unit_laundry", "kind": "non_negotiable", "set_score": 2.0}
+    ]

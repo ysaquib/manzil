@@ -30,7 +30,6 @@ from manzil_worker.stages.extract import extract_stage
 from manzil_worker.stages.verify import verify_stage
 from manzil_worker.state import (
     FloorPlanIn,
-    HeatingIn,
     MandatoryFeesIn,
     OneTimeFeesIn,
     PetCostsIn,
@@ -69,7 +68,6 @@ class CorpusRunResult(BaseModel):
     utilities: UtilitiesIn | None
     mandatory_fees: MandatoryFeesIn | None
     one_time_fees: OneTimeFeesIn | None
-    heating: HeatingIn | None
     verify_flags: list[VerifyFlag]
     checkpoint: CheckpointPrompt | None
     usage: CorpusRunUsage
@@ -146,7 +144,6 @@ async def run_corpus_extraction(
         utilities=state.utilities,
         mandatory_fees=state.mandatory_fees,
         one_time_fees=state.one_time_fees,
-        heating=state.heating,
         verify_flags=state.verify_flags,
         checkpoint=state.checkpoint,
         usage=CorpusRunUsage(

@@ -67,7 +67,9 @@ def test_ingest_end_to_end_prints_a_clean_breakdown(tmp_path: Path) -> None:
     assert plan_score.plan_name == "The Maple"
     breakdown = plan_score.breakdown
     assert breakdown["gates"] == []
-    assert breakdown["total"] == 13.5
+    # The page advertises a patio/balcony but does not bind it to The Maple;
+    # P3-SC4 scores it advertised_unconfirmed (neutral), not confirmed (+0.5).
+    assert breakdown["total"] == 13.0
     assert state.display_score_index == 0
 
     # Persist-before-advance left a resumable run file behind.

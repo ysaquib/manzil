@@ -12,7 +12,7 @@ from manzil_worker.phase0_rubric import phase0_rubric
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.score import score_stage
 from manzil_worker.stages.verify import verify_stage
-from worker_helpers import FakeLLM, fe, get_claim, make_state, set_claim
+from worker_helpers import FakeLLM, all_units_fe, fe, get_claim, make_state, set_claim
 
 TODAY = date(2026, 7, 6)
 NO_CONTRADICTIONS = {"verify": {"contradictions": []}}
@@ -47,7 +47,11 @@ def test_gate_relevant_demotion_raises_confirm_value() -> None:
 def test_checkpoint_answer_yes_upgrades_confidence_for_score() -> None:
     state = make_state(cleaned_text=PAGE_TEXT)
     set_claim(state, "beds", fe(2, "this quote is not on the page at all"))
-    set_claim(state, "in_unit_laundry", fe("in_unit", "washer and dryer hookups in every unit"))
+    set_claim(
+        state,
+        "in_unit_laundry",
+        all_units_fe("in_unit", "washer and dryer hookups in every unit"),
+    )
     state.checkpoint_answer = {"choice": "yes", "context_ref": "beds"}
 
     asyncio.run(verify_stage(state, _ctx()))
@@ -60,7 +64,11 @@ def test_checkpoint_answer_yes_upgrades_confidence_for_score() -> None:
 def test_checkpoint_answer_no_leaves_demoted() -> None:
     state = make_state(cleaned_text=PAGE_TEXT)
     set_claim(state, "beds", fe(2, "this quote is not on the page at all"))
-    set_claim(state, "in_unit_laundry", fe("in_unit", "washer and dryer hookups in every unit"))
+    set_claim(
+        state,
+        "in_unit_laundry",
+        all_units_fe("in_unit", "washer and dryer hookups in every unit"),
+    )
     state.checkpoint_answer = {"choice": "no", "context_ref": "beds"}
 
     asyncio.run(verify_stage(state, _ctx()))

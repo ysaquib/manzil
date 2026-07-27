@@ -13,6 +13,7 @@ from typing import Any
 from uuid import UUID
 
 import structlog
+from manzil_shared.catalog import BOOLEAN_PRESENCE_KEYS, SCOPED_UNIT_CLAIM_KEYS
 from manzil_shared.models import Confidence, FloorPlan, RubricCriterion
 from manzil_shared.scoped_facts import resolve_effective_value, resolve_effective_values
 from manzil_shared.scoring.engine import criterion_key, score, select_display_score
@@ -170,8 +171,6 @@ async def rescore_hunt(
         fees = await _mandatory_fees(conn, listing_id, catalog_ext)
         included_ext = catalog_ext.get("utilities_included")
         included = included_ext[0] if included_ext is not None else None
-        heating_ext = catalog_ext.get("heating_type")
-        heating = heating_ext[0] if heating_ext is not None else None
         baselines_by_bucket: dict[int, BaselineSet | None] = {}
 
         floor_plans = await conn.fetch(
@@ -203,7 +202,18 @@ async def rescore_hunt(
                 extractions=current_extractions,
                 overrides=current_overrides,
                 min_confidence=min_confidence,
+                presence_like_keys=SCOPED_UNIT_CLAIM_KEYS,
+                boolean_presence_keys=BOOLEAN_PRESENCE_KEYS,
             )
+            heating_value = resolve_effective_value(
+                criterion_key="heating_type",
+                floor_plan_id=fp["id"],
+                extractions=current_extractions,
+                min_confidence=min_confidence,
+                presence_like=True,
+                boolean_presence=False,
+            )
+            heating = heating_value if heating_value in {"gas", "electric"} else None
             rent = _conservative_rent(fp["rent_min"], fp["rent_max"])
             composition = None
             # A live all_in_monthly override beats the composition (§9.6, §20

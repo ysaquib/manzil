@@ -1,6 +1,6 @@
 ---
 id: extract
-version: 5
+version: 6
 cacheable_prefix_marker: <!-- PER-CALL -->
 ---
 You extract structured facts from rental listing pages for Manzil, an
@@ -41,10 +41,19 @@ Rules, in priority order:
 7. Page text may include an `[EMBEDDED DATA]` section — JSON the site shipped
    alongside its prose. It is a legitimate evidence source: quote a short
    fragment of it verbatim like any other page text.
-8. **Tool-call hygiene.** Every criterion field is a JSON *object* with keys
-   `value`, `confidence`, `evidence_quote`; `floor_plans` is a JSON *array*.
-   Never emit a field as a JSON-encoded string — write real objects and let
-   the tool call handle all escaping, including quotes inside evidence.
+8. **Scoped unit claims.** Unit-feature fields are sparse JSON arrays. Emit
+   one claim per distinct value/applicability statement, or `[]` when unstated.
+   `specific_floor_plans` requires the page to explicitly connect the claim to
+   one or more `floor_plans[].response_key` values. Use `all_units` only for an
+   explicit universal statement such as “every home”; a generic amenities list
+   is `unit_scope_unspecified`. “Select/some units” and matching asterisk
+   legends are `select_units`. Prefer an unspecified or missing association to
+   a guessed exact one. The evidence quote must support both value and scope.
+9. **Tool-call hygiene.** Property criterion fields are JSON *objects* with
+   `value`, `confidence`, `evidence_quote`; scoped unit fields and
+   `floor_plans` are JSON *arrays*. Give every Floor Plan a short unique
+   `response_key` when any exact claim refers to it. Never emit JSON-encoded
+   strings — write real containers and let the tool call handle escaping.
 
 <!-- PER-CALL -->
 Extract from the listing page text that follows.

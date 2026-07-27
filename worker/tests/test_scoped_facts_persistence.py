@@ -189,6 +189,58 @@ async def test_response_local_floor_plan_reference_resolves_before_persistence(
         await pg_pool.execute("delete from properties where id = $1", property_id)
 
 
+async def test_shared_claim_group_persists_once_per_target_floor_plan(
+    pg_pool: asyncpg.Pool,
+) -> None:
+    property_id, source_id = await _seed_property_source(pg_pool)
+    source_url = await pg_pool.fetchval("select url from property_sources where id = $1", source_id)
+    plan_ids = await pg_pool.fetch(
+        "insert into floor_plans (property_id, source_id, plan_name, beds, baths) "
+        "values ($1, $2, 'A1', 1, 1), ($1, $2, 'B1', 2, 1) returning id, plan_name",
+        property_id,
+        source_id,
+    )
+    ids_by_ref = {f"response:{row['plan_name'].lower()}": row["id"] for row in plan_ids}
+    group_id = uuid4()
+    claims = [
+        SourceClaim(
+            criterion_key="dishwasher",
+            value=True,
+            confidence=Confidence.HIGH,
+            evidence_quote="A1 and B1 include dishwashers",
+            source_id=source_url,
+            model="fixture",
+            prompt_version=1,
+            target_scope=TargetScope.FLOOR_PLAN,
+            floor_plan_ref=ref,
+            applicability=UnitApplicability.SPECIFIC_FLOOR_PLANS,
+            claim_group_id=group_id,
+        )
+        for ref in ids_by_ref
+    ]
+    try:
+        async with pg_pool.acquire() as conn, conn.transaction():
+            await persist_single_source_claims(
+                conn,
+                property_id=property_id,
+                hunt_id=None,
+                source_id=source_id,
+                source_url=source_url,
+                job_id=None,
+                claims=claims,
+                floor_plan_ids_by_ref=ids_by_ref,
+            )
+        rows = await pg_pool.fetch(
+            "select floor_plan_id, claim_group_id from current_extraction_candidates "
+            "where property_id = $1 and criterion_key = 'dishwasher'",
+            property_id,
+        )
+        assert {row["floor_plan_id"] for row in rows} == set(ids_by_ref.values())
+        assert {row["claim_group_id"] for row in rows} == {group_id}
+    finally:
+        await pg_pool.execute("delete from properties where id = $1", property_id)
+
+
 async def test_floor_plan_unit_types_round_trip_through_source_local_upsert(
     pg_pool: asyncpg.Pool,
 ) -> None:

@@ -19,8 +19,8 @@ from __future__ import annotations
 import json
 from typing import Annotated, Any, Literal
 
-from manzil_shared.catalog import CATALOG
-from manzil_shared.models import CatalogEntry, Confidence
+from manzil_shared.catalog import CATALOG, SCOPED_UNIT_CLAIM_KEYS
+from manzil_shared.models import CatalogEntry, Confidence, UnitApplicability
 from pydantic import (
     AfterValidator,
     BaseModel,
@@ -33,7 +33,7 @@ from pydantic import (
 
 from manzil_worker.state import (
     FloorPlanIn,
-    HeatingIn,
+    HeatingClaimIn,
     MandatoryFeesIn,
     OneTimeFeesIn,
     PetCostsIn,
@@ -82,17 +82,56 @@ def _normalize_top_level(cls: type[BaseModel], data: Any) -> Any:
         criterion_keys = {entry.key for entry in extractable_entries()}
         for key in criterion_keys & normalized.keys():
             if normalized[key] is None:
-                normalized[key] = {
-                    "value": None,
-                    "confidence": "not_found",
-                    "evidence_quote": None,
-                }
+                normalized[key] = (
+                    []
+                    if key in SCOPED_UNIT_CLAIM_KEYS
+                    else {
+                        "value": None,
+                        "confidence": "not_found",
+                        "evidence_quote": None,
+                    }
+                )
         if isinstance(normalized.get("floor_plans"), list):
             normalized["floor_plans"] = [
                 plan for plan in normalized["floor_plans"] if plan is not None
             ]
         return normalized
     return data
+
+
+def _validate_scoped_refs(self: BaseModel) -> BaseModel:
+    """Cross-check exact claims against this response's Source-local plans."""
+    plans = getattr(self, "floor_plans", [])
+    refs = [plan.response_key for plan in plans if plan.response_key is not None]
+    if len(refs) != len(set(refs)):
+        raise ValueError("floor_plans response_key values must be unique")
+    known_refs = set(refs)
+    claim_lists = [
+        getattr(self, key, []) for key in SCOPED_UNIT_CLAIM_KEYS
+    ] + [getattr(self, "heating", [])]
+    for claims in claim_lists:
+        seen_targets: set[str | None] = set()
+        for claim in claims:
+            exact = claim.applicability is UnitApplicability.SPECIFIC_FLOOR_PLANS
+            if exact and not claim.floor_plan_refs:
+                raise ValueError("specific_floor_plans claim requires floor_plan_refs")
+            if not exact and claim.floor_plan_refs:
+                raise ValueError("only specific_floor_plans claims may carry floor_plan_refs")
+            unknown = set(claim.floor_plan_refs) - known_refs
+            if unknown:
+                raise ValueError(
+                    "exact claim references unknown Source-local Floor Plan(s): "
+                    + ", ".join(sorted(unknown))
+                )
+            targets: list[str | None] = claim.floor_plan_refs or [None]
+            duplicates = seen_targets.intersection(targets)
+            if duplicates:
+                rendered = ", ".join("<generalized>" if ref is None else ref for ref in duplicates)
+                raise ValueError(
+                    "scoped claims may emit only one value per concrete target: " + rendered
+                )
+            seen_targets.update(targets)
+    return self
 
 
 def extractable_entries(catalog: tuple[CatalogEntry, ...] = CATALOG) -> list[CatalogEntry]:
@@ -153,18 +192,20 @@ def _bounds(value_schema: dict[str, Any]) -> dict[str, Any]:
 def value_adapter(entry: CatalogEntry) -> TypeAdapter[Any]:
     """Validator for a bare criterion value (no confidence/evidence wrapper) —
     used by the bench label loader (P0-11) so hand-labeled ground truth obeys
-    the same catalog `value_schema` the extraction schema is generated from."""
-    ann = Annotated[_value_type(entry.value_schema), Field(**_bounds(entry.value_schema))]
+    the same raw claim schema the Extraction schema is generated from."""
+    schema = entry.claim_value_schema or entry.value_schema
+    ann = Annotated[_value_type(schema), Field(**_bounds(schema))]
     return TypeAdapter(ann)
 
 
 def field_model(entry: CatalogEntry) -> type[BaseModel]:
     """`{value, confidence, evidence_quote}` for one criterion. `value` is None
     when the page doesn't state it — the model must still emit the field."""
-    value_ann = _value_type(entry.value_schema)
+    schema = entry.claim_value_schema or entry.value_schema
+    value_ann = _value_type(schema)
     description = f"{entry.label}. {entry.extraction_hint}"
     value_field = (
-        Annotated[value_ann, Field(**_bounds(entry.value_schema))] | None,
+        Annotated[value_ann, Field(**_bounds(schema))] | None,
         Field(default=None, description=description),
     )
     return create_model(
@@ -193,6 +234,58 @@ def field_model(entry: CatalogEntry) -> type[BaseModel]:
     )
 
 
+def scoped_claim_model(entry: CatalogEntry) -> type[BaseModel]:
+    """One sparse unit claim. An empty top-level list means page silence."""
+    schema = entry.claim_value_schema or entry.value_schema
+    value_ann = _value_type(schema)
+    description = f"{entry.label}. {entry.extraction_hint}"
+
+    def _validate_claim(self: BaseModel) -> BaseModel:
+        refs = self.floor_plan_refs
+        if len(refs) != len(set(refs)):
+            raise ValueError("floor_plan_refs must contain unique values")
+        exact = self.applicability is UnitApplicability.SPECIFIC_FLOOR_PLANS
+        if exact and not refs:
+            raise ValueError("specific_floor_plans claim requires floor_plan_refs")
+        if not exact and refs:
+            raise ValueError("only specific_floor_plans claims may carry floor_plan_refs")
+        return self
+
+    return create_model(
+        f"ScopedClaim_{entry.key}",
+        __doc__=(
+            f"{entry.label}: emit one item per distinct value/applicability claim. "
+            "Use an empty list when the page does not state the feature."
+        ),
+        __config__=ConfigDict(extra="forbid"),
+        __validators__={
+            "_validate_claim": model_validator(mode="after")(_validate_claim),
+        },
+        value=(
+            Annotated[value_ann, Field(**_bounds(schema))],
+            Field(description=description),
+        ),
+        confidence=(
+            Literal["low", "medium", "high"],
+            Field(description="Confidence in both the value and asserted applicability."),
+        ),
+        evidence_quote=(
+            str,
+            Field(
+                description="Verbatim page evidence supporting both value and applicability."
+            ),
+        ),
+        applicability=(UnitApplicability, ...),
+        floor_plan_refs=(
+            list[str],
+            Field(
+                default_factory=list,
+                description="Response-local Floor Plan keys; required only for exact claims.",
+            ),
+        ),
+    )
+
+
 def build_extraction_schema(
     catalog: tuple[CatalogEntry, ...] = CATALOG,
 ) -> type[BaseModel]:
@@ -202,9 +295,13 @@ def build_extraction_schema(
     expressed as value null + confidence not_found. The non-catalog blocks
     (floor_plans, property_identity) are optional so recorded fixtures and stored
     RunState snapshots that predate them keep validating."""
-    fields: dict[str, Any] = {
-        entry.key: (field_model(entry), ...) for entry in extractable_entries(catalog)
-    }
+    fields: dict[str, Any] = {}
+    for entry in extractable_entries(catalog):
+        fields[entry.key] = (
+            (list[scoped_claim_model(entry)], ...)
+            if entry.key in SCOPED_UNIT_CLAIM_KEYS
+            else (field_model(entry), ...)
+        )
     fields["property_identity"] = (
         PropertyIdentityIn | None,
         Field(
@@ -281,20 +378,20 @@ def build_extraction_schema(
         ),
     )
     fields["heating"] = (
-        HeatingIn | None,
+        list[HeatingClaimIn],
         Field(
-            default=None,
-            description="The unit's heating fuel when the page states it: 'gas' (gas "
-            "heat/furnace) or 'electric' (electric heat/baseboard/heat pump). Null the "
-            "block when the page does not state the heating type. Never guess from "
-            "region or building age.",
+            default_factory=list,
+            description="Sparse applicability-bearing unit heating claims. Use gas for "
+            "gas heat/furnace and electric for electric heat/baseboard/heat pump. "
+            "Empty when unstated; never guess from region or building age.",
         ),
     )
     return create_model(
         "ListingExtraction",
         __config__=ConfigDict(extra="forbid"),
         __validators__={
-            "_normalize_top_level": model_validator(mode="before")(_normalize_top_level)
+            "_normalize_top_level": model_validator(mode="before")(_normalize_top_level),
+            "_validate_scoped_refs": model_validator(mode="after")(_validate_scoped_refs),
         },
         **fields,
     )
