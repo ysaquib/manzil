@@ -191,11 +191,11 @@ describe("applyOverviewFilters (criterion + cost + availability-date)", () => {
   const inUnit = makeCriteriaListing("f1", [
     { key: "in_unit_laundry", value: "in_unit" },
     { key: "parking", value: "covered" },
-    { key: "dishwasher", value: true },
+    { key: "dishwasher", value: "confirmed" },
   ]);
   const onSite = makeCriteriaListing("f2", [
     { key: "in_unit_laundry", value: "on_site" },
-    { key: "dishwasher", value: false },
+    { key: "dishwasher", value: "none" },
   ], { availability_date: "2026-10-01" });
   const unknownRow = makeCriteriaListing("f3", [
     { key: "in_unit_laundry", value: null, unknown: true },
@@ -223,6 +223,19 @@ describe("applyOverviewFilters (criterion + cost + availability-date)", () => {
     expect(withDw.map((r) => r.listing.id)).toEqual(["f1", "f3"]);
     const withoutDw = applyOverviewFilters(rows, { ...DEFAULT_OVERVIEW_FILTERS, dishwasher: false });
     expect(withoutDw.map((r) => r.listing.id)).toEqual(["f2", "f3"]);
+  });
+
+  it("passes advertised-unconfirmed unit features through filters", () => {
+    const uncertain = makeCriteriaListing("uncertain", [
+      { key: "in_unit_laundry", value: "advertised_unconfirmed" },
+      { key: "dishwasher", value: "advertised_unconfirmed" },
+    ]);
+    const filtered = applyOverviewFilters(buildRows([uncertain]), {
+      ...DEFAULT_OVERVIEW_FILTERS,
+      laundry: ["in_unit"],
+      dishwasher: true,
+    });
+    expect(filtered.map((r) => r.listing.id)).toEqual(["uncertain"]);
   });
 
   it("applies a max all-in ceiling via the composed total, unknown passing", () => {

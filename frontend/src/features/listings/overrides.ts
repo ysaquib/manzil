@@ -5,6 +5,14 @@
 import type { Extraction, Override } from "./types";
 
 export const REVERT_NOTE = "Reverted to original";
+const SCOPED_UNIT_CRITERIA = new Set([
+  "patio_balcony",
+  "private_entry",
+  "in_unit_laundry",
+  "parking",
+  "cooling",
+  "dishwasher",
+]);
 
 /** Latest non-tombstone override per criterion key. `overrides` must be
  * newest-first, which is how useOverrides orders them. */
@@ -19,7 +27,9 @@ export function activeOverrides(
     const selected = [
       rows.find((row) => row.target_scope === "floor_plan" && row.floor_plan_id === floorPlanId),
       rows.find((row) => row.target_scope === "property" && row.applicability === "all_units"),
-      rows.find((row) => row.target_scope === "property" && row.applicability === null),
+      SCOPED_UNIT_CRITERIA.has(key)
+        ? undefined
+        : rows.find((row) => row.target_scope === "property" && row.applicability === null),
     ].find((row) => row !== undefined && row.value !== null);
     if (selected) active.set(key, selected);
   }
@@ -32,10 +42,13 @@ export function extractionForFloorPlan(
   floorPlanId: string | null,
 ): Extraction | undefined {
   const rows = extractions.filter((row) => row.criterion_key === criterionKey);
+  const legacyPropertyFact = SCOPED_UNIT_CRITERIA.has(criterionKey)
+    ? undefined
+    : rows.find((row) => row.target_scope === "property" && row.applicability === null);
   return (
     rows.find((row) => row.target_scope === "floor_plan" && row.floor_plan_id === floorPlanId) ??
-    rows.find((row) => row.target_scope === "property" && row.applicability === null) ??
     rows.find((row) => row.target_scope === "property" && row.applicability === "all_units") ??
+    legacyPropertyFact ??
     rows.find((row) => row.target_scope === "property" && row.applicability === "select_units") ??
     rows.find(
       (row) => row.target_scope === "property" && row.applicability === "unit_scope_unspecified",
