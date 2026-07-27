@@ -66,8 +66,18 @@ def _newest_override(values: Iterable[ScopedOverrideValue]) -> ScopedOverrideVal
     )
 
 
-def compose_presence(value: Any, applicability: UnitApplicability | None) -> Any:
-    """Compose a boolean Source claim into the scoreable presence vocabulary."""
+def compose_presence(
+    value: Any,
+    applicability: UnitApplicability | None,
+    *,
+    boolean_claim: bool = True,
+) -> Any:
+    """Compose Source claim value + applicability into a scoreable unit value.
+
+    Boolean claims use the effective presence vocabulary. Typed presence
+    claims (laundry, parking, cooling) retain their exact/all-units value, but
+    a generalized positive can assert only ``advertised_unconfirmed``.
+    """
     if value is None:
         return None
     if value is False or value == "none":
@@ -77,7 +87,7 @@ def compose_presence(value: Any, applicability: UnitApplicability | None) -> Any
         UnitApplicability.UNIT_SCOPE_UNSPECIFIED,
     }:
         return "advertised_unconfirmed"
-    return "confirmed"
+    return "confirmed" if boolean_claim else value
 
 
 def resolve_effective_value(
@@ -88,6 +98,7 @@ def resolve_effective_value(
     overrides: Iterable[ScopedOverrideValue] = (),
     min_confidence: Confidence,
     presence_like: bool = False,
+    boolean_presence: bool = True,
 ) -> Any:
     """Resolve one Criterion for one Floor Plan in DESIGN §9.3 order.
 
@@ -111,13 +122,14 @@ def resolve_effective_value(
     )
     if all_override is not None and all_override.value is not None:
         return all_override.value
-    property_override = _newest_override(
-        row
-        for row in relevant_overrides
-        if row.target_scope is TargetScope.PROPERTY and row.applicability is None
-    )
-    if property_override is not None and property_override.value is not None:
-        return property_override.value
+    if not presence_like:
+        property_override = _newest_override(
+            row
+            for row in relevant_overrides
+            if row.target_scope is TargetScope.PROPERTY and row.applicability is None
+        )
+        if property_override is not None and property_override.value is not None:
+            return property_override.value
 
     eligible = [
         row
@@ -132,18 +144,27 @@ def resolve_effective_value(
         if row.target_scope is TargetScope.FLOOR_PLAN and row.floor_plan_id == floor_plan_id
     )
     if exact is not None:
-        return compose_presence(exact.value, exact.applicability) if presence_like else exact.value
+        return (
+            compose_presence(
+                exact.value,
+                exact.applicability,
+                boolean_claim=boolean_presence,
+            )
+            if presence_like
+            else exact.value
+        )
 
     # A true Property fact is distinct from generalized unit evidence. It is
     # still a valid effective value for every plan because its subject is the
     # Property, not because a unit association was inferred.
-    property_fact = _newest(
-        row
-        for row in eligible
-        if row.target_scope is TargetScope.PROPERTY and row.applicability is None
-    )
-    if property_fact is not None:
-        return property_fact.value
+    if not presence_like:
+        property_fact = _newest(
+            row
+            for row in eligible
+            if row.target_scope is TargetScope.PROPERTY and row.applicability is None
+        )
+        if property_fact is not None:
+            return property_fact.value
 
     for applicability in (
         UnitApplicability.ALL_UNITS,
@@ -157,7 +178,11 @@ def resolve_effective_value(
         )
         if generalized is not None:
             return (
-                compose_presence(generalized.value, generalized.applicability)
+                compose_presence(
+                    generalized.value,
+                    generalized.applicability,
+                    boolean_claim=boolean_presence,
+                )
                 if presence_like
                 else generalized.value
             )
@@ -172,6 +197,7 @@ def resolve_effective_values(
     overrides: Iterable[ScopedOverrideValue] = (),
     min_confidence: Confidence,
     presence_like_keys: frozenset[str] = frozenset(),
+    boolean_presence_keys: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     extraction_rows = list(extractions)
     override_rows = list(overrides)
@@ -184,6 +210,7 @@ def resolve_effective_values(
             overrides=override_rows,
             min_confidence=min_confidence,
             presence_like=key in presence_like_keys,
+            boolean_presence=key in boolean_presence_keys,
         )
         if value is not None:
             values[key] = value

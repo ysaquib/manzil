@@ -127,9 +127,8 @@ def test_catalog_contains_the_approved_p3_sc3_tranche() -> None:
     assert by_key["property_types"].default_options[0].match.op.value == "contains_any"
 
 
-RECATEGORIZE_HEADER = """-- Re-categorization only (DESIGN §20 2026-07-25): category is a presentation
--- vocabulary with no functional readers, so this rewrites every row's category
--- and changes nothing else. Idempotent on hosted and local databases."""
+SCOPED_UNIT_HEADER = """-- P3-SC4 separates raw Source claim schemas from scoreable per-Floor-Plan
+-- values for the migrated unit-feature tranche. Idempotent on hosted/local DBs."""
 
 
 def test_seed_sql_round_trips() -> None:
@@ -145,23 +144,31 @@ def test_committed_seed_sql_is_current() -> None:
     )
 
 
-def test_catalog_sync_migration_is_generated_from_catalog() -> None:
-    """The newest full sync must be generator output, never hand-edited.
+def test_scoped_unit_catalog_migration_is_generated_from_catalog() -> None:
+    """P3-SC4's six-key sync is generator output, never hand-edited.
 
-    Earlier per-tranche sync migrations (20260726 location_safety, 20260802
-    P3-SC3) are frozen history: they record what shipped then, and re-pinning
-    them to the live generator would break on every later Catalog edit that
-    touches their keys. The newest sync covers every key, so guarding it guards
-    the whole Catalog.
+    The preceding full sync is frozen history. This tranche is intentionally
+    narrow so the scoped schema change does not silently rule unrelated
+    pre-existing Catalog/seed drift.
     """
-    keys = [entry.key for entry in CATALOG]
+    keys = [
+        "patio_balcony",
+        "private_entry",
+        "in_unit_laundry",
+        "parking",
+        "cooling",
+        "dishwasher",
+    ]
     migration = (
-        REPO_ROOT / "supabase" / "migrations" / "20260805000000_catalog_recategorize.sql"
+        REPO_ROOT
+        / "supabase"
+        / "migrations"
+        / "20260806000000_scoped_unit_claim_values.sql"
     ).read_text()
     assert migration == generate_catalog_sync_sql(*keys).replace(
         "-- P3-SC3 first Property/Unit type tranche; "
         "idempotent on hosted and local databases.",
-        RECATEGORIZE_HEADER,
+        SCOPED_UNIT_HEADER,
     )
 
 

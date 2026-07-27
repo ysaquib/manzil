@@ -178,7 +178,10 @@ def score(
             )
         if criterion.non_negotiable is not None:
             acceptable = (
-                matched is not None and matched.delta >= 0 and matched.dealbreaker_set_score is None
+                value != "advertised_unconfirmed"
+                and matched is not None
+                and matched.delta >= 0
+                and matched.dealbreaker_set_score is None
             )
             if not acceptable:
                 gates.append(
