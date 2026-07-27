@@ -5,11 +5,33 @@
 // permanent form chrome for a value that changes occasionally. The chip shows
 // the state at rest and becomes the control on click; visited says the word
 // rather than leaving an unlabelled tick to be guessed at.
-import { Badge, Group, Menu, Tooltip, UnstyledButton } from "@mantine/core";
+import { Badge, Box, Group, Menu, Tooltip, UnstyledButton } from "@mantine/core";
 import { IconCheck, IconChevronDown } from "@tabler/icons-react";
 
 import { interestLabel, interestTone } from "./interestStatus";
 import { INTEREST_STATUSES, type InterestStatus } from "./types";
+
+/** Keeps badge triggers on one line box so adjacent chips align in table cells. */
+const CHIP_TRIGGER_STYLES = {
+  root: {
+    display: "inline-flex",
+    alignItems: "center",
+    lineHeight: 1,
+  },
+} as const;
+
+const CHIP_BADGE_STYLES = {
+  root: {
+    display: "inline-flex",
+    alignItems: "center",
+  },
+} as const;
+
+const CHIP_SLOT_STYLE = {
+  display: "inline-flex",
+  alignItems: "center",
+  lineHeight: 1,
+} as const;
 
 export function StatusChip({
   status,
@@ -24,12 +46,21 @@ export function StatusChip({
   return (
     <Menu position="bottom-start" withinPortal disabled={disabled}>
       <Menu.Target>
-        <UnstyledButton aria-label={`interest status: ${label}`} disabled={disabled}>
+        <UnstyledButton
+          aria-label={`interest status: ${label}`}
+          disabled={disabled}
+          styles={CHIP_TRIGGER_STYLES}
+        >
           <Badge
             variant={status === null ? "outline" : "light"}
-            color={status === null ? "gray" : interestTone(status)}
+            color={status === null ? "var(--mantine-color-dimmed)" : interestTone(status)}
             rightSection={!disabled && <IconChevronDown size={11} stroke={2} />}
-            styles={status === null ? { root: { borderStyle: "dashed" } } : undefined}
+            styles={{
+              root: {
+                ...CHIP_BADGE_STYLES.root,
+                ...(status === null ? { borderStyle: "dashed" as const } : null),
+              },
+            }}
           >
             {label}
           </Badge>
@@ -63,9 +94,17 @@ export function VisitedToggle({
           aria-label="mark visited"
           disabled={disabled}
           onClick={() => onChange(true)}
+          styles={CHIP_TRIGGER_STYLES}
         >
-          <Badge variant="outline" color="gray" c="dimmed" leftSection={<IconCheck size={11} />}>
-            Visit
+          <Badge
+            variant="outline"
+            color="var(--mantine-color-dimmed)"
+            c="dimmed"
+            style={{ borderStyle: "dashed"}}
+            // leftSection={<IconCircleDotted size={11} />}
+            styles={CHIP_BADGE_STYLES}
+          >
+            Unvisited
           </Badge>
         </UnstyledButton>
       </Tooltip>
@@ -73,8 +112,18 @@ export function VisitedToggle({
   }
   return (
     <Tooltip label="Visited — click to clear" openDelay={300}>
-      <UnstyledButton aria-label="visited" disabled={disabled} onClick={() => onChange(false)}>
-        <Badge variant="default" leftSection={<IconCheck size={11} stroke={2.5} />}>
+      <UnstyledButton
+        aria-label="visited"
+        disabled={disabled}
+        onClick={() => onChange(false)}
+        styles={CHIP_TRIGGER_STYLES}
+      >
+        <Badge
+          variant="light"
+          color="green"
+          leftSection={<IconCheck size={11} stroke={2} />}
+          styles={CHIP_BADGE_STYLES}
+        >
           Visited
         </Badge>
       </UnstyledButton>
@@ -91,13 +140,17 @@ export function CurationCell(props: {
   onVisited: (next: boolean) => void;
 }) {
   return (
-    <Group gap={6} wrap="nowrap">
-      <StatusChip status={props.status} disabled={props.disabled} onChange={props.onStatus} />
-      <VisitedToggle
-        visited={props.visited}
-        disabled={props.disabled}
-        onChange={props.onVisited}
-      />
+    <Group gap={6} wrap="nowrap" align="center">
+      <Box style={CHIP_SLOT_STYLE}>
+        <StatusChip status={props.status} disabled={props.disabled} onChange={props.onStatus} />
+      </Box>
+      <Box style={CHIP_SLOT_STYLE}>
+        <VisitedToggle
+          visited={props.visited}
+          disabled={props.disabled}
+          onChange={props.onVisited}
+        />
+      </Box>
     </Group>
   );
 }

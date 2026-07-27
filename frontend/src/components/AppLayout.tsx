@@ -7,6 +7,7 @@ import {
   IconArrowsLeftRight,
   IconLayoutDashboard,
   IconListCheck,
+  IconMap2,
   IconScale,
   IconSettings,
 } from "@tabler/icons-react";
@@ -14,12 +15,14 @@ import { Link, NavLink as RouterNavLink, Outlet, useLocation, useParams } from "
 
 import { useHuntRealtime } from "../lib/realtime";
 import { useCompareSet } from "../features/listings/compareSet";
+import { OverviewFiltersProvider } from "../features/listings/filterState";
 import { CreateRubricPrompt } from "../features/rubric/CreateRubricPrompt";
 import { ColorSchemeToggle } from "./ColorSchemeToggle";
 import { UserMenu } from "./UserMenu";
 
 const NAV = [
   { label: "Overview", to: "", icon: IconLayoutDashboard },
+  { label: "Map", to: "map", icon: IconMap2 },
   { label: "Compare", to: "compare", icon: IconArrowsLeftRight },
   { label: "Rubric", to: "rubric", icon: IconScale },
   { label: "Tasks", to: "tasks", icon: IconListCheck },
@@ -95,7 +98,11 @@ export function AppLayout() {
       </AppShell.Navbar>
       <AppShell.Main>
         {huntId && <CreateRubricPrompt huntId={huntId} />}
-        <Outlet />
+        {/* Filter state lives above the Outlet so Overview and Map filter the
+            same set; keying on huntId re-seeds hunt-wide filters on switch. */}
+        <OverviewFiltersProvider key={huntId ?? ""} huntId={huntId ?? ""}>
+          <Outlet />
+        </OverviewFiltersProvider>
       </AppShell.Main>
     </AppShell>
   );

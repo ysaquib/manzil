@@ -69,24 +69,27 @@ export function SourcesList({
           className={classes.source}
           title={fetchTitle(source)}
           wrap="nowrap"
-          gap="xs"
-          justify="center"
+          gap="sm"
         >
           <Box
             component="span"
             className={`${classes.favdot} ${source.is_official ? classes.official : classes.neutral}`}
           />
-          <Text size="sm" fw={600} className={classes.name}>
-            {source.site_domain}
-          </Text>
-          <Text size="xs" c="dimmed" className={classes.host}>
-            {pathOf(source.url)}
-          </Text>
+          <Group flex={1}>
+            <Group gap={0}>
+            <Text size="sm" fw={600} className={classes.name}>
+              {source.site_domain}
+            </Text>
+            <Text size="xs" c="dimmed" className={classes.host}>
+              {pathOf(source.url)}
+            </Text>
+            </Group>
           {source.is_official && (
             <Text component="span" className={classes.tier}>
               official
             </Text>
           )}
+          </Group>
           <Anchor
             href={source.url}
             target="_blank"

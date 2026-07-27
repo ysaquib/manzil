@@ -20,12 +20,14 @@ export interface ScoreCellProps {
 export function ScoreCell({ total, pinned = false, planCount = 1 }: ScoreCellProps) {
   return (
     <Group wrap="nowrap" gap={6}>
-      <Text ff={"monospace"} fz="xs" fw={600} c={scoreColor(total)}>
-        {formatScore(total)}
+      <Group gap={0} c={scoreColor(total)}>
+        <Text ff={"monospace"} fz="xs" fw={600}>
+          {formatScore(total)}
+        </Text>
         {scoreBand(total) === 0 && (
-          <Text span aria-hidden ml={2}>✦</Text>
+          <Text span aria-hidden ml={2} fz="sm">✦</Text>
         )}
-      </Text>
+      </Group>
       {pinned && (
         <Tooltip label="Pinned">
           <Box c={"dimmed"} w={12} display="flex">
