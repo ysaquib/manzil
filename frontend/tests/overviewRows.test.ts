@@ -71,6 +71,8 @@ function makeListing(
       state: null,
       county: null,
       official_url: null,
+      lat: null,
+      lng: null,
       floor_plans: floorPlans,
       sources: [],
     },
@@ -538,5 +540,52 @@ describe("sortRows (m2 keys)", () => {
     fresh.created_at = "2026-07-18T00:00:00Z";
     const rows = sortRows(buildRows([old, fresh]), { key: "added", dir: "desc" });
     expect(rows.map((r) => r.listing.property.name)).toEqual(["Fresh", "Old"]);
+  });
+
+  it("sorts by sqft with unknowns last", () => {
+    const small = makeListing("q1", "Small", [{ sqft_min: 600, sqft_max: 650 }]);
+    const large = makeListing("q2", "Large", [{ sqft_min: 1100, sqft_max: 1200 }]);
+    const unknown = makeListing("q3", "Unknown", [{ beds: 1 }]);
+    const rows = sortRows(buildRows([large, unknown, small]), { key: "sqft", dir: "asc" });
+    expect(rows.map((r) => r.listing.property.name)).toEqual(["Small", "Large", "Unknown"]);
+  });
+
+  it("sorts by interest status in lifecycle order; undecided sorts, hand-off rows last", () => {
+    const applied = makeListing("c1", "Applied", [{ beds: 1 }]);
+    const interested = makeListing("c2", "Interested", [{ beds: 1 }]);
+    const undecided = makeListing("c3", "Undecided", [{ beds: 1 }]);
+    const states = [
+      {
+        hunt_listing_id: "c1",
+        unit_group_key: "1-2",
+        interest_status: "applied" as const,
+        visited: false,
+        updated_by: "u1",
+        updated_at: "2026-07-08T00:00:00Z",
+      },
+      {
+        hunt_listing_id: "c2",
+        unit_group_key: "1-2",
+        interest_status: "interested" as const,
+        visited: false,
+        updated_by: "u1",
+        updated_at: "2026-07-08T00:00:00Z",
+      },
+    ];
+    const rows = sortRows(buildRows([applied, undecided, interested], states), {
+      key: "status",
+      dir: "asc",
+    });
+    expect(rows.map((r) => r.listing.property.name)).toEqual(["Undecided", "Interested", "Applied"]);
+  });
+
+  it("keeps listing-level hand-off rows last when sorting by status", () => {
+    const scored = makeListing("c1", "Scored", [{ beds: 1 }], { "c1-plan-0": 8 });
+    const ingesting = makeListing("c2", "Ingesting", [{ beds: 1 }]);
+    // No scores → no unit groups in deriveUnitGroups? Actually beds:1 plan with no score still creates group
+    const pending = makeListing("c3", "Pending", []);
+    pending.unavailable_at = null;
+    const rows = sortRows(buildRows([pending, scored, ingesting]), { key: "status", dir: "asc" });
+    expect(rows.map((r) => r.listing.property.name)).toEqual(["Scored", "Ingesting", "Pending"]);
   });
 });
