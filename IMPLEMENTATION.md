@@ -2,14 +2,14 @@
 
 | | |
 |---|---|
-| **Version** | 2.0.77 |
+| **Version** | 2.0.78 |
 | **Status** | Living — churns freely, no ceremony required. **v2.0 is the implementation-start baseline**: further changes should come from code reality, not further pre-code polishing |
 | **Sibling** | `DESIGN.md` (intent + contracts; wins all conflicts about *what* and *why*) |
 | **Repo location** | `/IMPLEMENTATION.md` |
 
 **Division of authority:** DESIGN.md owns intent, requirements, and cross-component contracts. This document owns *current mechanics* — how things are actually built right now. Code and docstrings win on exact interfaces; this doc points at modules rather than duplicating signatures once they exist. If this doc and DESIGN.md disagree, stop and flag it (CLAUDE.md rule) — do not silently pick a side. Update protocol here is deliberately lightweight: edit in place, add a line to the [Changelog](#9-changelog). No decision-log ceremony; that lives in DESIGN.md §20 for *design* changes only.
 
-`docs/scoped-criteria-and-amenities.md` is the supplementary decision workbook for the P3-SC series. DESIGN (currently v3.11) and this document supersede it wherever wording or mechanics differ.
+`docs/scoped-criteria-and-amenities.md` is the supplementary decision workbook for the P3-SC series. DESIGN (currently v3.15) and this document supersede it wherever wording or mechanics differ.
 
 **Status labels.** Every section below carries one, so nobody — human or agent — has to guess how binding a given detail is:
 
@@ -200,6 +200,49 @@ never a production Hunt default. P3-SC4 owns the human-labeled scoped bench
 and canonical recording refresh; the pre-SC3 synthetic seed/API recordings
 are adapted only at their test helper seams with explicit `not_found` values.
 
+### P3-SC4 scoped unit-claim contract
+
+*Status: implementation landed 2026-07-27; human canonical-ten acceptance
+tail pending, so P3-SC4 remains partial and P3-6 remains blocked.*
+
+The dynamic zero-tool EXTRACT schema emits required sparse arrays for
+`patio_balcony`, `private_entry`, `in_unit_laundry`, `parking`, `cooling`,
+`dishwasher`, and `heating`; an empty list means Source silence. Each item has
+one non-null raw claim value, confidence/evidence, Unit Applicability, and
+response-local Floor Plan refs only for `specific_floor_plans`. Response keys
+must be unique; exact refs must exist in that response; a Criterion may emit
+only one value per concrete target. One claim may name several Floor Plans;
+EXTRACT expands it to candidates sharing one `claim_group_id`.
+
+Catalog `claim_value_schema` validates the raw Source value while
+`value_schema` remains the Rubric/effective-score contract. Boolean exact/all
+claims compose to `confirmed` or `none`; typed exact/all claims keep the raw
+laundry/parking/cooling value. Select/unspecified positives compose to
+`advertised_unconfirmed`, which the engine explicitly refuses as satisfaction
+of a confirmed-feature Gate regardless of configured delta. Old
+Property/no-applicability rows for this migrated tranche never participate in
+presence composition. Heating follows the same applicability path per Floor
+Plan and affects utility composition only when gas/electric is exact or
+explicit all-units.
+
+The local bench label schema now carries raw scoped claims and Source-local
+targets plus P3-SC5-ready diagram association truth. The harness reports
+scoped-claim accuracy, exact-target recall, and wrong exact associations;
+`manzil bench-audit-scoped` requires exactly ten finished labels and coverage
+for exact/all/select/unspecified, negative, missing, shared-plan, and
+ambiguous/unambiguous diagrams. The current local audit finds 10 gradeable
+legacy labels plus 11 unfinished skeletons, but no scoped claims or diagram
+labels, so every new coverage case is missing. Those labels are human-only:
+finish/review them, rerun the current model pin, and record zero wrong exact
+associations plus the Gate regression report before marking P3-SC4 complete.
+
+Validation also exposed unrelated pre-existing Catalog drift: the authoritative
+DESIGN §8.2 and pinned test/seed say studio `beds` delta `-0.5`, while the
+committed Python Catalog says `-1.0`; several other committed Catalog defaults
+also differ from the generated seed. P3-SC4 deliberately did not bury that
+separate decision inside its six-key migration. Resolve the Catalog drift
+explicitly before requiring the global Catalog generator guard to be green.
+
 ### Stage protocol and runner (`runner.py`)
 ```python
 Stage = Callable[[RunState, StageCtx], Awaitable[RunState]]
@@ -265,7 +308,7 @@ worker/tests/fixtures/corpus/{domain}--{slug}/
     cleaned.txt     # produced by the cleaner (regenerate when cleaner changes)
     meta.json       # url, saved_at, is_official, notes
 ```
-**Bench** — `fixtures/bench/manifest.md` names the canonical 10 frozen cases and why; `fixtures/bench/labels/{slug}.json` holds hand-labeled ground truth for Gate-bearing Criteria + rent/fees (DESIGN §19 Phase 0). Before the first scoped bench, P3-SC4 must finalize those ten cases so the set includes exact, all-unit, select-unit, unqualified, negative, missing, shared-plan, and ambiguous/unambiguous diagram evidence. Extend the label/harness schema for target/applicability and diagram association before measuring a scoped tranche; do not infer new labels from old outputs. Expected work from the P3-SC1 inventory: 1–2 h corpus/manifest audit, 1–2 engineering days for label/harness support, 6–10 human labeling hours, and 2–4 h to run and interpret the baseline.
+**Bench** — `fixtures/bench/manifest.md` names the canonical 10 frozen cases and why; `fixtures/bench/labels/{slug}.json` holds hand-labeled ground truth for Gate-bearing Criteria + rent/fees (DESIGN §19 Phase 0). P3-SC4 landed the scoped label/harness contract and `manzil bench-audit-scoped`; the human labels must now finalize those ten cases so the set includes exact, all-unit, select-unit, unqualified, negative, missing, shared-plan, and ambiguous/unambiguous diagram evidence. Do not infer labels from old outputs. The 2026-07-27 audit found 10 gradeable legacy labels plus 11 unfinished skeletons and no coverage for any new scoped/diagram case. Remaining estimate: 6–10 human labeling hours and 2–4 h to run and interpret the current-pin baseline.
 
 **Local eval kit (DESIGN §20 v2.8)** — `corpus/` and `bench/labels/` are **gitignored** (scraped third-party pages with embedded vendor keys; labels are ground truth about those exact local snapshots). Only `.gitkeep` placeholders and `bench/manifest.md` are tracked. CI reads the committed synthetic `fixtures/pages/` only; the corpus sweep test skips when the corpus is empty. Back the kit up (§8) — delisted/hostile pages cannot be re-fetched.
 
@@ -397,8 +440,9 @@ stages ride the existing Haiku/Sonnet pins until the P0-14 model-pin verdict
 `openrouter:web_search`; P3-SC2 and P3-SC3 are also complete. The 2026-07-21
 scoped-Criteria decision adds a second branch: P3-SC2 → P3-SC3 → P3-SC4 may
 run alongside P3-5 after P3-SC1, and both branches join at P3-6. P3-5 is now
-complete, so the single-implementer order resumes at P3-SC4 → P3-6;
-P3-6 still must not build on the obsolete Property/Criterion identity.*
+complete. P3-SC4's engineering tranche landed 2026-07-27; its human label and
+current-pin baseline tail is next. P3-6 still must not start until that tail
+records zero wrong exact associations.*
 
 #### Entry readiness
 
@@ -419,7 +463,7 @@ P3-6 still must not build on the obsolete Property/Criterion identity.*
 |---|---|---|---|
 | A — foundations | P3-2 ingest Planner · P3-3 Maps/cache; P3-1 ⚠ only if triggered | Phase 2 exits; each task's external gate above is satisfied | P3-2/P3-3 are independent; worker isolation is not on the critical path |
 | B — identity and sources | P3-4 DEDUPE → P3-5 DISCOVER | P3-2 + P3-3 for DEDUPE; provider chosen for DISCOVER | Canonical identity precedes sibling discovery. P3-5 is one prerequisite branch for P3-6 |
-| SC foundation | P3-SC1 ✅ → P3-SC2 ✅ → P3-SC3 ✅ → P3-SC4 | P3-SC3 Property Catalog/set-valued Rubric path complete; database remains resettable | P3-SC4 and landed P3-5 join at P3-6; never reconcile against the old identity |
+| SC foundation | P3-SC1 ✅ → P3-SC2 ✅ → P3-SC3 ✅ → P3-SC4 ◐ | P3-SC4 engineering landed; human canonical-ten labels/current-pin baseline remain | P3-SC4 acceptance and landed P3-5 join at P3-6; never reconcile against the old identity |
 | B/SC join | P3-6 scoped multi-source/RECONCILE | P3-5 + P3-SC4 | Reconcile Property and exact Floor Plan candidates independently; generalized applicability never becomes exact by voting |
 | C — evidence/enrichment | P3-7 VISION · P3-8 ENRICH/Places · P3-9 utilities · P3-10 custom criteria · P3-SC5 detail/diagrams · P3-SC6/7 unit tranches · P3-SC8 move-in cost | Relevant truth layers exist; see each row | P3-SC5 may run after P3-SC2 + P3-7a and does not block P3-6. SC6/7 follow P3-6; SC8 follows stable scoped-cost inputs |
 | D — lifecycle and UX | P3-11 checkpoints · P3-12 refresh Planner · P3-13 compare/mobile · P3-16 Account Settings | Producing stages and persistence shapes are stable | P3-12 follows the stages whose TTL/hash inputs it plans; P3-16 builds on the landed profile contract |
@@ -449,7 +493,7 @@ P3-6 still must not build on the obsolete Property/Criterion identity.*
 | P3-SC1 ✅ | **Landed 2026-07-21 (docs/contracts only):** promote approved scoped-Criteria intent into DESIGN v3.7 + §20; inventory every current Extraction consumer; select and record the clean-reset schema, current-value views, persistence order, RLS, and task dependencies. Supplementary workbook retained at `docs/scoped-criteria-and-amenities.md` | §3, §8–§10, §13–§14, §18–§20 | DESIGN/IMPLEMENTATION are authoritative; audit below covers writes, reads, lifecycle, RLS, UI, tests; no production schema/code changed |
 | P3-SC2 ✅ | **Landed 2026-07-21 (2.0.71, DESIGN v3.9):** unified append-only scoped Extraction foundation: destructive pre-live reset migration, domain models, sparse claims, Source-local Floor Plan identity, candidate/resolution provenance, centralized current views, effective-value resolver, scoped Overrides, authoritative-success refresh, split/merge and RLS updates | §3, §8.1–§8.3, §9.3, §9.6, §14 | clean reset and exact/all/select/unspecified persistence/resolution fixtures pass; same-Property database/API/RLS guards hold; audited production consumers use the centralized seam; partial refresh retires nothing |
 | P3-SC3 ✅ | **Landed 2026-07-22 (2.0.72, DESIGN v3.10):** `property` Catalog category; generated 13-Criterion Property tranche and sync migration; strict array/set schema, API, engine, OpenAPI and frontend support; controlled persisted Floor Plan `unit_types`; grouped Property/Floor Plan presentation; versioned Gate-free dev Rubric with guarded idempotent installer | §8.2, §9.2–§9.4 | clean reset and Catalog round-trip pass; `contains_any/all` strict goldens/widgets/API validation pass; dev seed no-ops/refuses drift/forces explicitly; Property facts render once and separately from Floor Plan facts |
-| P3-SC4 | Migrate existing unit Criteria to exact/all/select/unspecified semantics; extend/finalize canonical 10-case scoped bench and record current-pin baseline | §8.2, §9.3, §10.5, §19 | patio/balcony, private entry, laundry, dishwasher, parking/cooling and relevant costs no longer become all-unit truth from a bare mention; zero wrong exact associations on labeled set; Gate regressions reported; P3-6 unblocked |
+| P3-SC4 ◐ | **Engineering landed 2026-07-27 (2.0.78, DESIGN v3.15):** sparse exact/all/select/unspecified claims for patio/balcony, private entry, laundry, dishwasher, parking, cooling, and heating; raw-claim/effective-value schema split; deterministic per-plan presence composition; Gate-insufficient advertised-unconfirmed state; Source-local multi-plan expansion; legacy Property-bool guard; UI/filter and scoped bench/harness/audit support. **Pending:** human-finalize the canonical ten, run current pin, record zero wrong exact associations + Gate regressions | §8.2, §9.3, §10.5, §19 | implementation fixtures and clean reset pass; human acceptance tail is the only P3-SC4 remainder; P3-6 remains blocked |
 | P3-SC5 | Floor Plan detail modal + diagram discovery, normalized private Storage, many-to-many Source-local association/provenance/lifecycle, unmatched gallery and explicit purge path | §8.2, §9.4, §13.2, §14 | each plan opens without losing Listing draft; associated diagrams are legible and sourced; ambiguous images stay unmatched; partial refresh retires nothing; 3-per-plan/30-per-Property caps hold |
 | P3-SC6 | First new objective unit-feature tranche: `walk_in_closets`, `pantry`, `disposal`, `fireplace`, `ceiling_fans`, and `stainless_steel_appliances` | §8.2, §9.2–§9.3 | scoped extraction/reconciliation/score/UI path passes fixtures and measured bench thresholds; no new Criterion bypasses P3-6 truth |
 | P3-SC7 | Flooring-material mixed-scope tranche with array/set matching and overlap warning | §8.2, §9.2–§9.3 | exact/generalized material claims remain distinguishable; overlap warnings catch ambiguous Rubric options; storage/basement/granular internet remain absent |
@@ -530,10 +574,12 @@ prompt/schema, bench, migration, gallery, retention, and rollout gates.
 
 ## 9. Changelog
 
-Ascending chronological (matching DESIGN §20's convention); same-day entries ordered by version.
+The current entry is pinned first; older entries retain their existing append
+history. Version and date, rather than row position, define chronology.
 
 | Version | Date | Change |
 |---|---|---|
+| 2.0.78 | 2026-07-27 | **P3-SC4 engineering tranche landed; human scoped-bench acceptance remains (DESIGN v3.15 / §20 2026-07-27).** Six unit-feature Criteria split raw `claim_value_schema` from effective per-Floor-Plan `value_schema`; EXTRACT prompt v6 and its zero-tool schema use sparse applicability-bearing arrays for those six plus heating. Exact refs are response-local, shared-plan claims expand under one `claim_group_id`, select/unspecified claims compose to Gate-insufficient `advertised_unconfirmed`, and legacy Property/no-app rows cannot become confirmed unit truth. SCORE/rescore, filters, synthetic fixtures, and clean-database persistence checks cover the contract. The label/harness schema grades value + applicability + exact target and diagram associations; `manzil bench-audit-scoped` enforces the canonical-ten coverage matrix. **Not complete:** the local kit has 10 gradeable legacy labels plus 11 unfinished skeletons and no new scoped/diagram coverage, so P3-6 stays blocked pending human labeling and the current-pin zero-wrong-exact/Gate report. **Unrelated conflict surfaced and left explicit:** DESIGN/pinned seed use studio beds `-0.5`, while the committed Python Catalog uses `-1.0` and has other seed drift; the global Catalog generator guard remains red until that separate decision is resolved. |
 | 1.0 | 2026-07-03 | Created at Phase 0 kickoff: environment, conventions, interface proposals, prompt/fixture/observability mechanics, Phase 0 work plan (14 tasks), runbooks. |
 | 1.1 | 2026-07-03 | Phases 1–3 broken into task tables (14/9/14) with ⚠ marks on outcome-dependent items; "expand on entry" → "revise on entry". Critique fixes: DB-access strategy (asyncpg worker / supabase-py API / `privileged.py` exception), CI + branching defined, Langfuse removed from API env, record/replay hash keying specified, `manzil` script entry noted, catalog-sync migration + deploy runbooks added, frontend test convention added, P1-13 polling interim made explicit. |
 | 1.2 | 2026-07-03 | Status taxonomy (settled / proposal / interim-conditional) with per-section labels; §3 records interfaces reviewed and deliberately left as proposals with graduation at end of Phase 0; tunables split — home settled, values are starting points. |
