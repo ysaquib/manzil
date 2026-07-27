@@ -307,7 +307,7 @@ function DrawerShell({
           ref={scrollRef}
           component="div"
           onScroll={syncHeaderScroll}
-          style={{ flex: 1, overflow: "auto", minHeight: 0 }}
+          className={drawerClasses.drawerScroll}
           px="md"
           pt="xs"
         >
