@@ -238,7 +238,7 @@ export function FeeChecklist({
           );
         })}
       {estimate !== null && (
-        <Text size="xs" c="dimmed">
+        <Text size="xs" mt="sm">
           Est. move-in fees for your household: ${estimate.toLocaleString()} (excludes
           security deposit)
         </Text>

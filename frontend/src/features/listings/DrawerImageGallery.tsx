@@ -1,4 +1,4 @@
-import { AspectRatio, Image, Skeleton, Text } from "@mantine/core";
+import { AspectRatio, Box, Image, Skeleton, Text } from "@mantine/core";
 import { Carousel } from "@mantine/carousel";
 import type { EmblaCarouselType } from "embla-carousel";
 import { useCallback, useEffect, useState } from "react";
@@ -89,16 +89,15 @@ export function DrawerImageGallery({ images, loading }: { images: PropertyImage[
       {many && (
         <div className={classes.film}>
           {images.map((img, i) => (
-            <button
+            <Box
               key={img.id}
-              type="button"
               className={`${classes.thumb} ${i === index ? classes.active : ""}`}
               aria-label={`show photo ${i + 1}`}
               aria-pressed={i === index}
               onClick={() => embla?.scrollTo(i)}
             >
-              <img src={img.url} alt="" />
-            </button>
+              <Image src={img.url} alt="" />
+            </Box>
           ))}
         </div>
       )}

@@ -146,7 +146,7 @@ export function RubricEditor({
             />
             {/* Two columns max: edit rows (op + value + points + actions) need
                 the width; the read-only view keeps its denser grid. */}
-            <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md" style={{ alignItems: "start" }}>
+            <SimpleGrid cols={{ base: 1, md: 2, lg: 3, xl: 4 }} spacing="md" style={{ alignItems: "start" }}>
               {scored.map((entry) => {
                 const criterion = criterionByKey.get(entry.key);
                 return criterion ? (
