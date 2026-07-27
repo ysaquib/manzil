@@ -20,6 +20,25 @@
   opacity: 0.8;
 }
 
+/* Shadow under the identity header once detail content has scrolled. */
+.drawerHeader {
+  position: relative;
+  z-index: 2;
+  flex-shrink: 0;
+  background: var(--mantine-color-body);
+  transition: box-shadow 120ms ease;
+}
+
+.drawerHeader[data-scrolled] {
+  box-shadow: var(--mantine-shadow-md);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawerHeader {
+    transition: none;
+  }
+}
+
 /* --- Utilities block (sage) --- */
 .utilBlock {
   display: flex;
@@ -113,28 +132,28 @@
 
 /* --- Score band text (hero numeral, match tag, criterion total) --- */
 .bandText[data-band="highest"] {
-  color: var(--mantine-color-teal-7);
+  color: var(--mantine-color-scoreHighest-7);
 }
 
 .bandText[data-band="high"] {
-  color: var(--mantine-color-green-7);
+  color: var(--mantine-color-scoreHigh-7);
 }
 
 .bandText[data-band="good"] {
-  color: var(--mantine-color-lime-7);
+  color: var(--mantine-color-scoreGood-7);
 }
 
 .bandText[data-band="mid"] {
-  color: var(--mantine-color-yellow-7);
+  color: var(--mantine-color-scoreMid-7);
 }
 
 .bandText[data-band="low"] {
-  color: var(--mantine-color-orange-7);
+  color: var(--mantine-color-scoreLow-7);
 }
 
 .bandText[data-band="poor"],
 .bandText[data-band="poorest"] {
-  color: var(--mantine-color-red-7);
+  color: var(--mantine-color-scorePoor-7);
 }
 
 /* --- Exceptional band marker (≥10) --- */

@@ -1,4 +1,4 @@
-import classes from "./StarRating.module.css";
+import { Rating } from "@mantine/core";
 
 export function StarRating({
   value,
@@ -7,16 +7,18 @@ export function StarRating({
 }: {
   value: number;
   size?: "sm" | "lg";
-  /** CSS color for the filled stars; omitted → the module's yellow default. */
+  /** Mantine/CSS color for filled stars; omitted → theme yellow. */
   color?: string;
 }) {
-  const pct = Math.max(0, Math.min(100, (value / 5) * 100));
+  const clamped = Math.max(0, Math.min(5, value));
   return (
-    <span className={`${classes.stars} ${classes[size]}`} aria-label={`${value} of 5`}>
-      <span className={classes.base}>★★★★★</span>
-      <span className={classes.fill} data-fill style={{ width: `${pct}%`, color }}>
-        ★★★★★
-      </span>
-    </span>
+    <Rating
+      value={clamped}
+      readOnly
+      fractions={2}
+      color={color ?? "yellow"}
+      size={size}
+      aria-label={`${value} of 5`}
+    />
   );
 }

@@ -50,7 +50,7 @@ export function JobCard({
       {job.state === "running" && since && <ElapsedTimer since={since} />}
       <Tooltip label="Cancel" withArrow>
         <ActionIcon
-          variant="light"
+          variant="outline"
           color="red"
           radius="xl"
           size="sm"

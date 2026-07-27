@@ -4,7 +4,7 @@ import { Select } from "@mantine/core";
 
 import type { WidgetProps } from "./types";
 
-export function BoolWidget({ value, onChange, label }: WidgetProps) {
+export function BoolWidget({ value, onChange, label, comboboxProps }: WidgetProps) {
   return (
     <Select
       label={label}
@@ -16,6 +16,7 @@ export function BoolWidget({ value, onChange, label }: WidgetProps) {
       onChange={(next) => next && onChange(next === "true")}
       allowDeselect={false}
       size="xs"
+      comboboxProps={comboboxProps}
     />
   );
 }

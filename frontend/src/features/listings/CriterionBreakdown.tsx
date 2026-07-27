@@ -337,7 +337,7 @@ function CriterionRow({
         }`}
       >
         {criterion.delta > 0 ? "+" : ""}
-        {criterion.delta.toFixed(1)}
+        {criterion.delta.toFixed(2)}
       </Text>
       <Group gap={4} wrap="nowrap" justify="flex-end">
         <OverrideControl
