@@ -158,11 +158,15 @@ def score(
     floor_plan: FloorPlan | None = None,
     *,
     rubric_version: int,
+    gate_values: Mapping[str, Any] | None = None,
 ) -> ScoreBreakdown:
     """Facts in, points out — nothing else. See module docstring for the passes."""
     values: dict[str, Any] = dict(effective_values)
     if floor_plan is not None:
         values.update(plan_values(floor_plan))
+    gates_input = dict(values if gate_values is None else gate_values)
+    if floor_plan is not None:
+        gates_input.update(plan_values(floor_plan))
 
     enabled = [c for c in rubric if c.enabled]
 
@@ -170,7 +174,7 @@ def score(
     gates: list[GateFiring] = []
     for criterion in enabled:
         key = criterion_key(criterion)
-        value = values.get(key)
+        value = gates_input.get(key)
         matched = first_match(criterion.options, value)
         if matched is not None and matched.dealbreaker_set_score is not None:
             gates.append(

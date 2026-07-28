@@ -6,10 +6,18 @@ import asyncio
 import io
 from uuid import uuid4
 
+from manzil_shared.config import (
+    DIAGRAM_NORMALIZATION_PROFILE,
+    MAX_FLOOR_PLAN_DIAGRAMS_PER_PROPERTY,
+    MAX_STORED_IMAGES,
+)
 from manzil_shared.models import JobType
 from manzil_worker.enrich.images import normalize_image
 from manzil_worker.stages.base import StageCtx
-from manzil_worker.stages.image_fetch import image_fetch_stage
+from manzil_worker.stages.image_fetch import (
+    PHOTO_NORMALIZATION_PROFILE,
+    image_fetch_stage,
+)
 from manzil_worker.state import PlanManifest, RunState, SourceState
 from PIL import Image
 
@@ -65,7 +73,7 @@ def test_changed_images_are_deduped_stored_and_leave_vision_enabled() -> None:
     assert state.plan is not None and "VISION" not in state.plan.skipped
 
 
-def test_same_normalized_hashes_mark_vision_skipped() -> None:
+def test_same_normalized_hashes_leave_quality_gate_to_classifier_digest() -> None:
     raw = _bytes("green")
     expected = normalize_image(raw).content_hash
 
@@ -87,7 +95,7 @@ def test_same_normalized_hashes_mark_vision_skipped() -> None:
         )
     )
     assert state.plan is not None
-    assert state.plan.skipped == {"VISION": "images_unchanged"}
+    assert state.plan.skipped == {}
     assert state.property_images[0].content_hash == expected
     assert store.objects == {}  # content-addressed object already exists
 
@@ -136,7 +144,7 @@ def test_all_candidates_failing_stores_nothing_and_skips_vision() -> None:
     assert state.plan.skipped == {"VISION": "no_usable_images"}
 
 
-def test_partial_set_adding_no_new_hashes_skips_vision() -> None:
+def test_partial_set_adding_no_new_hashes_leaves_quality_gate_to_classifier() -> None:
     raw = _bytes("green")
     expected = normalize_image(raw).content_hash
 
@@ -159,4 +167,141 @@ def test_partial_set_adding_no_new_hashes_skips_vision() -> None:
         )
     )
     assert state.plan is not None
-    assert state.plan.skipped == {"VISION": "images_unchanged"}
+    assert state.plan.skipped == {}
+
+
+# --- P3-SC5: diagrams get their own profile, budget, and full-size preference ---
+
+
+def _diagram_state(candidates: list[dict[str, object]]) -> RunState:
+    state = RunState(job_id=uuid4(), job_type=JobType.INGEST, url="https://listing.test")
+    state.property_id = uuid4()
+    state.sources = [SourceState(url=state.url, image_candidates=candidates)]
+    state.plan = PlanManifest(
+        job_type="ingest",
+        trigger="user:submit",
+        source_policy="tiers_1_2_3",
+        stages=["IMAGE_FETCH", "VISION"],
+        skipped={},
+        est_cost_usd=0.03,
+    )
+    return state
+
+
+def _candidate(order: int, url: str, **over: object) -> dict[str, object]:
+    return {"url": url, "page_order": order, "discovery_mechanism": "markup", **over}
+
+
+async def _no_previous(property_id):  # type: ignore[no-untyped-def]
+    return set()
+
+
+def test_labelled_diagram_uses_the_full_size_target_and_diagram_profile() -> None:
+    """An explicit diagram is stored once, from the anchor's full-size asset."""
+    fetched: list[str] = []
+
+    async def fetch(url: str) -> bytes:
+        fetched.append(url)
+        return _bytes("white")
+
+    store = MemoryStore()
+    state = asyncio.run(
+        image_fetch_stage(
+            _diagram_state(
+                [
+                    _candidate(
+                        0,
+                        "https://img.test/thumb.jpg",
+                        alt="The Winslow floor plan",
+                        full_size_url="https://img.test/full.png",
+                    ),
+                    _candidate(1, "https://img.test/kitchen.jpg", alt="Kitchen"),
+                ]
+            ),
+            StageCtx(
+                download_image=fetch, image_store=store, existing_image_hashes=_no_previous
+            ),
+        )
+    )
+
+    diagram = next(i for i in state.property_images if i.kind == "floor_plan_diagram")
+    photo = next(i for i in state.property_images if i.kind == "listing_photo")
+    assert "https://img.test/full.png" in fetched
+    assert "https://img.test/thumb.jpg" not in fetched  # never downloaded twice
+    assert diagram.normalization_profile == DIAGRAM_NORMALIZATION_PROFILE
+    assert photo.normalization_profile == PHOTO_NORMALIZATION_PROFILE
+    assert len(store.objects) == 2
+
+
+def test_full_size_failure_falls_back_to_the_thumbnail() -> None:
+    async def fetch(url: str) -> bytes:
+        if url.endswith("full.png"):
+            raise OSError("gone")
+        return _bytes("white")
+
+    store = MemoryStore()
+    state = asyncio.run(
+        image_fetch_stage(
+            _diagram_state(
+                [
+                    _candidate(
+                        0,
+                        "https://img.test/thumb.jpg",
+                        containing_floor_plan_card=True,
+                        full_size_url="https://img.test/full.png",
+                    )
+                ]
+            ),
+            StageCtx(
+                download_image=fetch, image_store=store, existing_image_hashes=_no_previous
+            ),
+        )
+    )
+    assert len(state.property_images) == 1
+    assert state.property_images[0].kind == "floor_plan_diagram"
+
+
+def test_diagram_budget_is_separate_so_photos_cannot_evict_a_late_diagram() -> None:
+    """A diagram after MAX_STORED_IMAGES photos still lands (§P3-SC5 caps)."""
+    photos = [_candidate(i, f"https://img.test/p{i}.jpg") for i in range(MAX_STORED_IMAGES + 5)]
+    late = _candidate(
+        MAX_STORED_IMAGES + 5, "https://img.test/plan.jpg", alt="Floor plan for the Winslow"
+    )
+
+    async def fetch(url: str) -> bytes:
+        return _bytes(f"#{abs(hash(url)) % 0xFFFFFF:06x}")
+
+    store = MemoryStore()
+    state = asyncio.run(
+        image_fetch_stage(
+            _diagram_state([*photos, late]),
+            StageCtx(
+                download_image=fetch, image_store=store, existing_image_hashes=_no_previous
+            ),
+        )
+    )
+    kinds = [image.kind for image in state.property_images]
+    assert kinds.count("listing_photo") == MAX_STORED_IMAGES
+    assert kinds.count("floor_plan_diagram") == 1
+
+
+def test_property_diagram_cap_holds() -> None:
+    candidates = [
+        _candidate(i, f"https://img.test/d{i}.jpg", alt="Floor plan")
+        for i in range(MAX_FLOOR_PLAN_DIAGRAMS_PER_PROPERTY + 4)
+    ]
+
+    async def fetch(url: str) -> bytes:
+        return _bytes(f"#{abs(hash(url)) % 0xFFFFFF:06x}")
+
+    store = MemoryStore()
+    state = asyncio.run(
+        image_fetch_stage(
+            _diagram_state(candidates),
+            StageCtx(
+                download_image=fetch, image_store=store, existing_image_hashes=_no_previous
+            ),
+        )
+    )
+    diagrams = [i for i in state.property_images if i.kind == "floor_plan_diagram"]
+    assert len(diagrams) == MAX_FLOOR_PLAN_DIAGRAMS_PER_PROPERTY

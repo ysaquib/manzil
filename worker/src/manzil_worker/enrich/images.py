@@ -14,12 +14,16 @@ import os
 from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass
 from typing import Protocol
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 from lxml import etree, html
 from manzil_shared.config import (
+    DIAGRAM_MAX_DIM,
+    DIAGRAM_WEBP_QUALITY,
     FETCH_MAX_REDIRECTS,
+    IMAGE_CLASSIFY_MAX_DIM,
+    IMAGE_CLASSIFY_WEBP_QUALITY,
     IMAGE_FETCH_TIMEOUT_SECONDS,
     IMAGE_MAX_DIM,
     IMAGE_MAX_DOWNLOAD_BYTES,
@@ -50,8 +54,32 @@ class NormalizedImage:
     height: int
 
 
+@dataclass(frozen=True)
+class DiscoveredImage:
+    """One image candidate plus evidence available without visual inference."""
+
+    url: str
+    page_order: int
+    discovery_mechanism: str
+    alt: str | None = None
+    title: str | None = None
+    caption: str | None = None
+    containing_floor_plan_card: bool = False
+    source_native_plan_id: str | None = None
+    nearby_plan_label: str | None = None
+    # P3-SC5: listing pages routinely wrap a small diagram thumbnail in an
+    # anchor pointing at the full-size asset. That link is the legible copy;
+    # IMAGE_FETCH prefers it for diagrams and ignores it for ordinary photos.
+    full_size_url: str | None = None
+
+
 class ImageObjectStore(Protocol):
     async def put(self, path: str, content: bytes) -> None: ...
+    async def get(self, path: str) -> bytes: ...
+    # Only the explicit P3-SC5 purge path calls this. Nothing in the pipeline
+    # deletes stored bytes — inactive evidence is retained while its Property
+    # exists (§9.3 third-party diagram posture).
+    async def delete(self, path: str) -> None: ...
 
 
 DownloadImage = Callable[[str], Awaitable[bytes]]
@@ -94,6 +122,22 @@ def _srcset_urls(value: str | None) -> Iterable[str]:
     return candidates[-1:]
 
 
+_IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif", ".bmp", ".tif", ".tiff")
+
+
+def _image_href(value: str | None) -> str | None:
+    """Return `value` only when it points at an image asset, else None.
+
+    A floor-plan thumbnail is often wrapped in a link to the full-size file,
+    but just as often in a link to the plan's detail *page*. Suffix-checking
+    the path keeps the second case out — following it would download HTML.
+    """
+    if not value:
+        return None
+    path = urlsplit(value).path.lower()
+    return value if path.endswith(_IMAGE_SUFFIXES) else None
+
+
 def _json_image_urls(value: object, *, image_context: bool = False) -> Iterable[str]:
     """Walk JSON-LD while only treating image-shaped fields as image URLs."""
     if isinstance(value, list):
@@ -114,10 +158,10 @@ def _json_image_urls(value: object, *, image_context: bool = False) -> Iterable[
                 yield from _json_image_urls(item, image_context=in_image)
 
 
-def discover_image_urls(
+def discover_images(
     document: str, base_url: str, *, limit: int = MAX_STORED_IMAGES * 4
-) -> list[str]:
-    """Return de-duplicated listing image candidates in page order.
+) -> list[DiscoveredImage]:
+    """Return de-duplicated candidates with Source-local DOM context.
 
     The wider discovery cap leaves room for download failures and byte-level
     duplicates; IMAGE_FETCH applies the final ``MAX_STORED_IMAGES`` cap after
@@ -128,42 +172,127 @@ def discover_image_urls(
     except (ValueError, etree.ParserError):
         return []
 
-    candidates: list[str] = []
-    candidates.extend(root.xpath("//meta[@property='og:image']/@content"))
-    candidates.extend(root.xpath("//meta[@name='twitter:image']/@content"))
-    candidates.extend(root.xpath("//link[@rel='image_src']/@href"))
+    raw_candidates: list[tuple[str, dict[str, object]]] = []
+    raw_candidates.extend(
+        (value, {"discovery_mechanism": "metadata"})
+        for value in root.xpath("//meta[@property='og:image']/@content")
+    )
+    raw_candidates.extend(
+        (value, {"discovery_mechanism": "metadata"})
+        for value in root.xpath("//meta[@name='twitter:image']/@content")
+    )
+    raw_candidates.extend(
+        (value, {"discovery_mechanism": "metadata"})
+        for value in root.xpath("//link[@rel='image_src']/@href")
+    )
     for node in root.xpath("//img | //source"):
-        candidates.extend(
-            value
-            for value in (
-                node.get("src"),
-                node.get("data-src"),
-                node.get("data-lazy-src"),
-            )
-            if value
+        card = next(
+            iter(
+                node.xpath(
+                    "ancestor::*[contains(translate(@class,'ABCDEFGHIJKLMNOPQRSTUVWXYZ',"
+                    "'abcdefghijklmnopqrstuvwxyz'),'floor-plan') or @data-plan-id or "
+                    "@data-floor-plan-id][1]"
+                )
+            ),
+            None,
         )
-        candidates.extend(_srcset_urls(node.get("srcset") or node.get("data-srcset")))
+        native_id = None
+        label = None
+        caption = None
+        if card is not None:
+            native_id = card.get("data-plan-id") or card.get("data-floor-plan-id")
+            labels = card.xpath(
+                ".//*[self::h1 or self::h2 or self::h3 or self::h4 or "
+                "contains(@class,'plan-name')]/text()"
+            )
+            label = next((str(value).strip() for value in labels if str(value).strip()), None)
+        figure = next(iter(node.xpath("ancestor::figure[1]")), None)
+        if figure is not None:
+            captions = figure.xpath(".//figcaption//text()")
+            joined = " ".join(str(value).strip() for value in captions if str(value).strip())
+            caption = joined or None
+        # An enclosing anchor whose target is itself an image is the full-size
+        # copy of this thumbnail. Only image-suffixed targets qualify — a plan
+        # detail page is a navigation link, not an asset.
+        anchor = next(iter(node.xpath("ancestor::a[@href][1]")), None)
+        full_size = _image_href(anchor.get("href")) if anchor is not None else None
+        context: dict[str, object] = {
+            "discovery_mechanism": "markup",
+            "alt": node.get("alt"),
+            "title": node.get("title"),
+            "caption": caption,
+            "containing_floor_plan_card": card is not None,
+            "source_native_plan_id": native_id,
+            "nearby_plan_label": label,
+            "full_size_url": full_size,
+        }
+        for value in (node.get("src"), node.get("data-src"), node.get("data-lazy-src")):
+            if value:
+                raw_candidates.append((value, context))
+        raw_candidates.extend(
+            (value, {**context, "discovery_mechanism": "srcset"})
+            for value in _srcset_urls(node.get("srcset") or node.get("data-srcset"))
+        )
     for raw in root.xpath("//script[@type='application/ld+json']/text()"):
         try:
-            candidates.extend(_json_image_urls(json.loads(raw)))
+            raw_candidates.extend(
+                (value, {"discovery_mechanism": "json_ld"})
+                for value in _json_image_urls(json.loads(raw))
+            )
         except (json.JSONDecodeError, TypeError):
             continue
 
     seen: set[str] = set()
-    output: list[str] = []
-    for candidate in candidates:
+    output: list[DiscoveredImage] = []
+    for candidate, context in raw_candidates:
         url = _absolute_http_url(candidate, base_url)
         if url is None or url in seen:
             continue
         seen.add(url)
-        output.append(url)
+        output.append(
+            DiscoveredImage(
+                url=url,
+                page_order=len(output),
+                discovery_mechanism=str(context["discovery_mechanism"]),
+                alt=context.get("alt") if isinstance(context.get("alt"), str) else None,
+                title=context.get("title") if isinstance(context.get("title"), str) else None,
+                caption=context.get("caption") if isinstance(context.get("caption"), str) else None,
+                containing_floor_plan_card=bool(context.get("containing_floor_plan_card", False)),
+                source_native_plan_id=(
+                    context.get("source_native_plan_id")
+                    if isinstance(context.get("source_native_plan_id"), str)
+                    else None
+                ),
+                nearby_plan_label=(
+                    context.get("nearby_plan_label")
+                    if isinstance(context.get("nearby_plan_label"), str)
+                    else None
+                ),
+                full_size_url=(
+                    _absolute_http_url(str(context["full_size_url"]), base_url)
+                    if isinstance(context.get("full_size_url"), str)
+                    else None
+                ),
+            )
+        )
         if len(output) >= limit:
             break
     return output
 
 
-def normalize_image(data: bytes) -> NormalizedImage:
-    """Decode, orient, resize, and encode one image as deterministic-ish WebP."""
+def discover_image_urls(
+    document: str, base_url: str, *, limit: int = MAX_STORED_IMAGES * 4
+) -> list[str]:
+    """Compatibility wrapper for callers that need only URLs."""
+    return [candidate.url for candidate in discover_images(document, base_url, limit=limit)]
+
+
+def _normalize(data: bytes, *, max_dim: int, quality: int) -> NormalizedImage:
+    """Decode, orient, resize, and encode one image as deterministic-ish WebP.
+
+    Byte and decompression-bomb limits are profile-independent: a diagram gets
+    more pixels, never more trust.
+    """
     if not data or len(data) > IMAGE_MAX_DOWNLOAD_BYTES:
         raise ImageError("image is empty or exceeds IMAGE_MAX_DOWNLOAD_BYTES")
     try:
@@ -171,11 +300,11 @@ def normalize_image(data: bytes) -> NormalizedImage:
             if opened.width * opened.height > IMAGE_MAX_PIXELS:
                 raise ImageError("image exceeds IMAGE_MAX_PIXELS")
             image = ImageOps.exif_transpose(opened)
-            image.thumbnail((IMAGE_MAX_DIM, IMAGE_MAX_DIM), Image.Resampling.LANCZOS)
+            image.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
             if image.mode not in ("RGB", "RGBA"):
                 image = image.convert("RGBA" if "transparency" in image.info else "RGB")
             output = io.BytesIO()
-            image.save(output, format="WEBP", quality=IMAGE_WEBP_QUALITY, method=6)
+            image.save(output, format="WEBP", quality=quality, method=6)
             webp = output.getvalue()
             return NormalizedImage(
                 content_hash=hashlib.sha256(webp).hexdigest(),
@@ -185,6 +314,61 @@ def normalize_image(data: bytes) -> NormalizedImage:
             )
     except (Image.DecompressionBombError, UnidentifiedImageError, OSError) as error:
         raise ImageError(f"invalid image: {error}") from error
+
+
+def normalize_image(data: bytes) -> NormalizedImage:
+    """Ordinary listing-photo profile (§P3-7a)."""
+    return _normalize(data, max_dim=IMAGE_MAX_DIM, quality=IMAGE_WEBP_QUALITY)
+
+
+def normalize_diagram(data: bytes) -> NormalizedImage:
+    """Floor Plan diagram profile (§P3-SC5): more pixels, higher quality.
+
+    Diagrams carry room labels and dimensions that the photo profile renders
+    unreadable. The exact numbers stay provisional until the §7.5 legibility
+    comparison fixes them.
+    """
+    return _normalize(data, max_dim=DIAGRAM_MAX_DIM, quality=DIAGRAM_WEBP_QUALITY)
+
+
+def classification_thumbnail(data: bytes) -> bytes:
+    """Create an unstored low-resolution classifier input."""
+    try:
+        with Image.open(io.BytesIO(data)) as opened:
+            image = ImageOps.exif_transpose(opened).convert("RGB")
+            image.thumbnail(
+                (IMAGE_CLASSIFY_MAX_DIM, IMAGE_CLASSIFY_MAX_DIM),
+                Image.Resampling.LANCZOS,
+            )
+            output = io.BytesIO()
+            image.save(
+                output,
+                format="WEBP",
+                quality=IMAGE_CLASSIFY_WEBP_QUALITY,
+                method=6,
+            )
+            return output.getvalue()
+    except (Image.DecompressionBombError, UnidentifiedImageError, OSError) as error:
+        raise ImageError(f"invalid classifier image: {error}") from error
+
+
+def difference_hash(data: bytes) -> str:
+    """Return a deterministic 64-bit dHash as 16 lowercase hex chars."""
+    try:
+        with Image.open(io.BytesIO(data)) as opened:
+            gray = ImageOps.exif_transpose(opened).convert("L").resize(
+                (9, 8), Image.Resampling.LANCZOS
+            )
+            pixels = list(gray.get_flattened_data())
+    except (Image.DecompressionBombError, UnidentifiedImageError, OSError) as error:
+        raise ImageError(f"invalid perceptual-hash image: {error}") from error
+    bits = 0
+    for row in range(8):
+        for column in range(8):
+            bits = (bits << 1) | int(
+                pixels[row * 9 + column] > pixels[row * 9 + column + 1]
+            )
+    return f"{bits:016x}"
 
 
 async def download_image(url: str) -> bytes:
@@ -252,3 +436,20 @@ class SupabaseImageStore:
         async with httpx.AsyncClient(timeout=IMAGE_FETCH_TIMEOUT_SECONDS) as client:
             response = await client.post(endpoint, headers=headers, content=content)
             response.raise_for_status()
+
+    async def get(self, path: str) -> bytes:
+        endpoint = f"{self._url}/storage/v1/object/{self._bucket}/{path}"
+        headers = {"Authorization": f"Bearer {self._key}", "apikey": self._key}
+        async with httpx.AsyncClient(timeout=IMAGE_FETCH_TIMEOUT_SECONDS) as client:
+            response = await client.get(endpoint, headers=headers)
+            response.raise_for_status()
+            return response.content
+
+    async def delete(self, path: str) -> None:
+        """Remove one stored object. Purge path only (P3-SC5)."""
+        endpoint = f"{self._url}/storage/v1/object/{self._bucket}/{path}"
+        headers = {"Authorization": f"Bearer {self._key}", "apikey": self._key}
+        async with httpx.AsyncClient(timeout=IMAGE_FETCH_TIMEOUT_SECONDS) as client:
+            response = await client.delete(endpoint, headers=headers)
+            if response.status_code != 404:
+                response.raise_for_status()

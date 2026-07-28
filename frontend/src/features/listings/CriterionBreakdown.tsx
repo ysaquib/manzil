@@ -19,12 +19,13 @@ import { Fragment, useState } from "react";
 import type { ScoreBreakdown } from "../../lib/contracts";
 import { displayValue as formatCriterionValue } from "./displayValue";
 import { useListingDetailDraft } from "./ListingDetailDraft";
+import { useResolutionCandidates } from "./api";
 import { OverrideControl } from "./OverrideControl";
 import { activeOverrides, extractionForFloorPlan, REVERT_NOTE } from "./overrides";
 import { scoreBand, scoreColor, formatScore } from "./scoreBands";
 import classes from "./CriterionBreakdown.module.css";
 import drawer from "./ListingDetailDrawer.module.css";
-import type { Extraction, Override } from "./types";
+import type { Extraction, Override, ResolutionCandidate } from "./types";
 import type { CatalogEntry } from "../rubric/api";
 
 function applicabilityLabel(extraction: Extraction): string | null {
@@ -38,9 +39,11 @@ function applicabilityLabel(extraction: Extraction): string | null {
 function EvidenceContent({
   extraction,
   overridden,
+  candidates,
 }: {
   extraction: Extraction;
   overridden: boolean;
+  candidates: ResolutionCandidate[];
 }) {
   return (
     <Stack gap={4}>
@@ -70,6 +73,26 @@ function EvidenceContent({
           ? ` · ${new Date(extraction.extracted_at).toLocaleDateString()}`
           : ""}
       </Text>
+      {extraction.resolution_rule && (
+        <Text size="xs" c="dimmed">
+          Resolution: {extraction.resolution_rule.replaceAll("_", " ")}
+        </Text>
+      )}
+      {candidates.length > 1 && (
+        <Stack gap={2} mt={2}>
+          <Text size="xs" fw={600}>
+            Source candidates
+          </Text>
+          {candidates.map((candidate) => (
+            <Text key={candidate.id} size="xs" c={candidate.selected ? undefined : "dimmed"}>
+              {candidate.selected ? "Selected: " : ""}
+              {formatCriterionValue(candidate.value, extraction.criterion_key)}
+              {candidate.source ? ` · ${candidate.source.site_domain}` : ""}
+              {` · ${candidate.confidence}`}
+            </Text>
+          ))}
+        </Stack>
+      )}
     </Stack>
   );
 }
@@ -84,6 +107,11 @@ function EvidenceButton({
   isMobile: boolean;
 }) {
   const [opened, setOpened] = useState(false);
+  const multiSource =
+    extraction.resolution_rule !== null &&
+    extraction.resolution_rule !== "single_source" &&
+    !extraction.resolution_rule.startsWith("vision_");
+  const { data: candidates = [] } = useResolutionCandidates(extraction.id, multiSource);
 
   if (isMobile) {
     return (
@@ -100,7 +128,11 @@ function EvidenceButton({
           </ActionIcon>
         </Popover.Target>
         <Popover.Dropdown>
-          <EvidenceContent extraction={extraction} overridden={overridden} />
+          <EvidenceContent
+            extraction={extraction}
+            overridden={overridden}
+            candidates={candidates}
+          />
         </Popover.Dropdown>
       </Popover>
     );
@@ -114,7 +146,11 @@ function EvidenceButton({
         </ActionIcon>
       </HoverCard.Target>
       <HoverCard.Dropdown>
-        <EvidenceContent extraction={extraction} overridden={overridden} />
+        <EvidenceContent
+          extraction={extraction}
+          overridden={overridden}
+          candidates={candidates}
+        />
       </HoverCard.Dropdown>
     </HoverCard>
   );
@@ -307,6 +343,13 @@ function CriterionRow({
           </Tooltip>
         )}
         <Text size="sm">{entry?.label ?? criterion.key}</Text>
+        {extraction?.resolution_rule === "vision_weighted_median_gallery" && (
+          <Tooltip label="Property-gallery estimate — this kitchen may not represent this Floor Plan.">
+            <Text component="span" size="xs" c="dimmed" fw={500}>
+              Property-gallery estimate
+            </Text>
+          </Tooltip>
+        )}
         {flag && (
           <Text component="span" size="xs" c="dimmed" fw={500} className={classes.flag}>
             {flag}

@@ -5,6 +5,10 @@
 import type { Extraction, Override } from "./types";
 
 export const REVERT_NOTE = "Reverted to original";
+// P3-SC4's migrated tranche: legacy Property rows carrying no applicability
+// never participate in presence composition for these keys, so the fallback
+// below must skip them. `heating` follows the same applicability path per
+// Floor Plan (IMPLEMENTATION §P3-SC4) and had been missing from this set.
 const SCOPED_UNIT_CRITERIA = new Set([
   "patio_balcony",
   "private_entry",
@@ -12,6 +16,7 @@ const SCOPED_UNIT_CRITERIA = new Set([
   "parking",
   "cooling",
   "dishwasher",
+  "heating",
 ]);
 
 /** Latest non-tombstone override per criterion key. `overrides` must be

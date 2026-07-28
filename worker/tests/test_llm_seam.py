@@ -46,6 +46,14 @@ def test_smoke_prompt_loads_and_splits_at_marker() -> None:
     assert "<!-- PER-CALL -->" not in prompt.per_call
 
 
+def test_reconcile_equivalence_prompt_uses_batched_item_contract() -> None:
+    prompt = load_prompt("reconcile_equivalence")
+    assert prompt.id == "reconcile_equivalence"
+    assert prompt.version == 2
+    assert "item_id exactly once" in prompt.per_call
+    assert "within the same target_key" in " ".join(prompt.per_call.split())
+
+
 def test_prompt_without_marker_is_all_per_call(tmp_path: Path) -> None:
     (tmp_path / "validate.md").write_text("---\nid: validate\nversion: 3\n---\nJudge the page.\n")
     prompt = load_prompt("validate", prompts_dir=tmp_path)
@@ -212,6 +220,13 @@ def test_live_call_without_langfuse_keys_is_refused(
 def test_unknown_stage_has_no_silent_fallback() -> None:
     with pytest.raises(KeyError, match="no model assignment"):
         model_for_stage("brand-new-stage")
+
+
+def test_image_classify_uses_owner_selected_pin(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("MANZIL_MODEL_IMAGE_CLASSIFY", raising=False)
+    assert model_for_stage("image_classify") == "google/gemini-3-flash-preview"
 
 
 # ── OpenRouter routing + cache economics ─────────────────────────────────────

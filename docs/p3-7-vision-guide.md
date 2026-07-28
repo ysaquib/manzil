@@ -1,268 +1,188 @@
-# P3-7 Images + VISION completion guide
+# P3-7a2 / P3-7b — Kitchen-first VISION guide
 
-Status: **P3-7a substrate implemented; P3-7b remains intentionally fail-closed.**
+P3-7a2 engineering and kitchen-quality scoring are live. Yusuf explicitly
+overrode the external quality-benchmark gate on 2026-07-28: the approved
+reference profile v1, VISION prompt v1, and `anthropic/claude-sonnet-4.6` are
+released for scoring. The external quality benchmark remains owed and the
+current release is not described as bench-validated. Flooring and bathroom are
+disabled.
 
-The repository can now discover listing images, download them through the
-fetcher-layer SSRF guard, normalize them to content-addressed WebP objects,
-persist their metadata, and prove that unchanged bytes cause no VISION call.
-It must not produce `kitchen_quality` or `flooring_quality` ratings until Yusuf
-approves the versioned reference set and its bench result.
+## Pipeline and caching
 
-## 1. What is implemented
-
-- `FETCH` extracts ordered image candidates from Open Graph/Twitter metadata,
-  `img`/`source` markup and JSON-LD, and persists the URLs on `SourceState` and
-  `property_sources.image_urls`.
-- `IMAGE_FETCH` runs after DEDUPE, so Storage paths use the canonical Property.
-  It downloads at most the candidate budget, rejects private/non-http targets,
-  non-images, oversized inputs and decompression bombs, applies EXIF orientation,
-  resizes within 1024 px, encodes WebP, de-duplicates normalized bytes, and keeps
-  at most `MAX_STORED_IMAGES` (currently 20). VISION consumes at most
-  `MAX_VISION_IMAGES` (currently 8) of those — the two caps are deliberately
-  separate (DESIGN §15 lever 3, §20 2026-07-20): storage is cheap, model input is
-  the lever, and photos past the first handful are amenity/floor-plan/stock shots
-  that dilute the kitchen/flooring signal. **P3-7b owes the slice**: whatever
-  enables the anchored call must take the first `MAX_VISION_IMAGES`, not the
-  whole stored set.
-- Objects use `properties/{property_id}/{sha256}.webp` in the private
-  `property-images` bucket. `property_images` records source URL, normalized-byte
-  hash, dimensions, byte size, kind and the future per-image assessment.
-- `IMAGE_FETCH` compares the current normalized-hash set with the Property's
-  persisted set and skips VISION unless the current set contains a hash the
-  Property does not already hold (`current - previous`). Writing
-  `VISION: images_unchanged` into `plan.skipped` makes the runner honor the skip
-  before opening a cost tally or model call. A reused URL whose bytes changed
-  therefore reruns VISION; a changed URL with identical normalized bytes does not.
-  The gate is new-hash rather than set-equality so that a *partial* set — one
-  where some candidate failed to download — does not read as "changed" merely
-  because images went missing.
-- A partial set is stored but not marked `image_fetch_completed`. Persistence
-  keys its authoritative replace off that flag, so an incomplete set writes
-  additively and can never delete a prior row. The stage no longer discards the
-  images that did download: a permanently-404 candidate would otherwise starve
-  the Property of images on every run.
-- `call_vision` supports forced-schema OpenRouter calls, NFR6 Langfuse tracing,
-  cost tallying, and record/replay. Recordings contain input hashes, never image
-  bytes. There is deliberately no `vision.md` prompt yet.
-- PLAN writes `VISION: missing_reference_set` while the reference gate is not
-  complete. `stages/vision.py` has a second fail-closed guard.
-
-Not implemented yet: anchored rating prompt, VISION response/aggregation,
-assessment projection into Extractions, gallery UI, tier-2 screenshot persistence,
-or the 30-day Storage cleanup tick.
-
-## 2. Why IMAGE_FETCH is a separate boundary
-
-PLAN runs before the page is fetched, so it cannot know whether an image at a
-URL now has different bytes. `IMAGE_FETCH` is the deterministic P2 boundary that
-learns those hashes. The manifest retains the ordered `VISION` entry and uses the
-pinned `skipped` map to suppress it. This keeps the cursor stable across crashes:
-IMAGE_FETCH output and the skip reason persist before the runner advances.
-
-Current P3-7a sequence (P3-5/P3-6 are not in the runner yet):
+New manifests preserve this order:
 
 ```text
-FETCH (discover URLs)
-  → DEDUPE (canonical Property)
-  → IMAGE_FETCH (download → normalize → hash → private Storage)
-      ├─ same complete hash set → plan.skipped.VISION = images_unchanged
-      ├─ no usable images       → plan.skipped.VISION = no_usable_images
-      └─ changed hash set       → VISION remains eligible
-  → VISION (skipped while the reference gate is closed)
-  → VERIFY → SCORE
+… → IMAGE_FETCH → IMAGE_CLASSIFY → VISION → VERIFY → ENRICH → SCORE
 ```
 
-When P3-5/P3-6 add sibling sources, new manifests move IMAGE_FETCH/VISION to
-the final DESIGN §10.1 position after per-source VERIFY and RECONCILE, so the
-batch contains the settled slate's images. Existing manifests keep their own
-recorded order and resume safely. At P3-7b rollout, confirm the placement against
-the then-current runner; do not accidentally leave VISION ahead of an already
-landed sibling fan-out.
+Old manifests retain their recorded stage list and resume cursor. IMAGE_FETCH
+stores up to 30 exact-normalized-hash-distinct photos, source-balanced, with
+Source/page order and DOM context. A partial download is additive and cannot
+retire prior images. A complete refresh marks missing assets non-current.
 
-## 3. Build and approve the reference set (human gate)
+IMAGE_CLASSIFY makes one structured call with up to 30 separately labeled,
+unstored ≤384 px WebP thumbnails. Its result is cached per normalized image hash
+plus classifier model/prompt version. It must return every requested original
+hash exactly once and no unknown hash. The Owner-selected shadow pin is
+`google/gemini-3-flash-preview` (DESIGN §20, 2026-07-28). Its live 30-image
+smoke returned 29/30 requested hashes, and every other candidate also failed
+the strict completeness contract. This is an explicit selection-gate override:
+malformed batches still fail closed, and the pin does not approve live kitchen
+quality.
 
-Create `worker/prompts/vision_refs/manifest.json` plus its WebP assets. A single
-photo may anchor both criteria; its `ratings` object says which dimensions Yusuf
-personally rated. The validator requires 3–4 examples for every value 1–5 of
-both criteria and verifies every file hash.
+Quality selection is deterministic: high-confidence assessable kitchens only;
+no irrelevant images or diagrams; one representative per dHash cluster
+(Hamming distance ≤5); exact Source-local Floor Plan evidence and distinct-plan
+coverage first; then full-room framing and stable Source/page order; maximum
+three kitchen targets. Quality caching keys the selected target/association
+digest, quality model/prompt, and reference version independently from
+classification.
 
-Example (illustrative hashes only):
+## Source-local image associations
+
+Automatic association is allowed only from a Source-native plan ID, containing
+Floor Plan card, or unambiguous nearby plan label. It never uses visual
+similarity and never crosses Sources. Ordinary photos and diagrams share the
+append-only `floor_plan_images` ledger. Partial refresh cannot append `unlink`.
+
+## Reference profile
+
+Keep third-party originals in the gitignored
+`worker/prompts/vision_refs/originals/`. Commit only normalized anchors,
+generated sheets, and `manifest.json`.
+
+The manifest is criterion-specific:
 
 ```json
 {
   "version": 1,
-  "prompt_version": 1,
-  "status": "approved",
-  "approved_by": "Yusuf",
-  "approved_at": "2026-07-13",
-  "references": [
-    {
-      "file": "kitchen-floor-01.webp",
-      "sha256": "<sha256-of-exact-file>",
-      "source_url": "https://source-listing.example/...",
-      "ratings": {"kitchen_quality": 1, "flooring_quality": 2},
-      "note": "Short reason this is a stable anchor."
+  "profiles": {
+    "kitchen_quality": {
+      "version": 1,
+      "prompt_version": 1,
+      "status": "approved",
+      "quality_status": "approved",
+      "quality_benchmark_status": "deferred_owner_override",
+      "quality_model": "anthropic/claude-sonnet-4.6",
+      "approved_by": "Yusuf",
+      "approved_at": "YYYY-MM-DD",
+      "anchors": [
+        {
+          "file": "normalized/kitchen-1-a.webp",
+          "sha256": "...",
+          "rating": 1,
+          "source_url": "optional",
+          "note": "Why this is a stable anchor"
+        }
+      ],
+      "sheets": {
+        "1": {
+          "file": "kitchen_quality-rating-1.webp",
+          "sha256": "...",
+          "members": ["normalized/kitchen-1-a.webp"]
+        }
+      }
     }
-  ]
+  }
 }
 ```
 
-Selection checklist:
+`status = approved` records that the anchors and sheets are approved.
+`quality_status = approved` permits live kitchen VISION. The separate
+`quality_benchmark_status = deferred_owner_override` records that the Owner
+released scoring without accepting an external quality benchmark; it must not
+be interpreted as benchmark evidence.
 
-1. Select real listing photos Yusuf has rated, not generated stand-ins.
-2. Cover meaningful variation within a level (lighting, angle, occupied/vacant,
-   carpet/hard floor, cabinet/appliance styles) without letting photographic
-   quality become the rating.
-3. Crop only to remove irrelevant content; do not cosmetically enhance finishes.
-4. Normalize reference assets with the same 1024 px/WebP policy as target images.
-5. Record provenance and confirm the repository/storage location is acceptable
-   for those third-party images before committing them.
-6. Have Yusuf review the contact sheet and set `status: approved` only after all
-   10 criterion/level cells have 3–4 examples.
-7. Validate the asset alone with `load_reference_manifest()`. After §4.1 adds
-   the matching prompt, run `vision_references_ready()`; a missing file, changed
-   hash, invalid rating, incomplete coverage, non-approved status, absent prompt,
-   or prompt-version mismatch must return false.
+Use 3–5 anchors per level; the initial kitchen set uses all five current
+anchors at every 1–5 level. Normalize targets with the production 1024 px WebP
+profile. `build_reference_sheets()` produces five deterministic 1024×1024,
+3-by-2 contain-fitted sheets: five examples plus one blank neutral cell. It does
+not cover-crop or cosmetically change examples. `load_reference_manifest()`
+checks every anchor hash, sheet hash, and exact membership order.
 
-Changing any file, rating, or anchor note that affects interpretation is a
-reviewed migration: increment reference `version` and prompt `version`, re-run
-the bench, inspect diffs, then accept or roll back. Never edit an approved set in
-place under the same version.
+## Kitchen quality and aggregation
 
-## 4. Implement P3-7b after approval
+One quality call contains the five reference sheets and at most three full
+targets. Each target result has original content hash, visibility, rating,
+confidence, and a short visual rationale. Unknown/duplicate hashes, missing
+targets, and ratings on `not_visible` results fail validation.
 
-### 4.1 Prompt and response schema
+The aggregate is a confidence-weighted median: high=2, medium=1, low and
+not-visible excluded; an exact half-weight tie chooses the lower rating. One
+high assessment yields medium aggregate confidence. Two or more within one star
+yield high if at least one is high. A two-star spread yields medium. A spread
+greater than two emits no scored aggregate.
 
-Add `worker/src/manzil_worker/llm/prompts/vision.md` with matching front matter:
+VISION writes a generalized Property-target Extraction with
+`unit_scope_unspecified`, plus one exact Floor Plan Extraction for each reliably
+associated represented plan. Rules are `vision_weighted_median_gallery` and
+`vision_weighted_median_exact`. `extraction_images` links both candidate and
+resolved Extractions to every contributing `property_images` row.
 
-```text
----
-id: vision
-version: 1
-cacheable_prefix_marker: <!-- PER-CALL -->
----
-```
+Exact values ignore the gallery policy and normally receive full Rubric
+behavior; the low-confidence Gate exclusion below still applies. The Hunt's
+`generalized_vision_policy` controls only generalized `vision:*` values:
+`full_rubric` (default) affects points and Gates; `points_only` affects points
+while Gates see unknown; `unknown` persists/displays but does not score. A
+policy edit bumps `rubric_version` and enqueues a zero-LLM rescore.
 
-The stable prefix must define the two 1–5 scales, tell the model to compare only
-against supplied anchors, allow `not_visible`, and prohibit inferring quality
-from text, rent, neighborhood, staging, camera quality, or exterior appearance.
-Reference images should be labeled `reference:<criterion>:<rating>`; target
-images should be labeled `target:<content_hash>`.
+VISION confidence is independent from the ordinary Extraction threshold.
+`min_vision_confidence` defaults to `low`, so low-confidence image assessments
+may remain visible and affect points. Low-confidence VISION never enters the
+Gate-value map, exact or generalized. Medium/high generalized values still
+follow `generalized_vision_policy`; Overrides are unaffected. Changing the
+threshold bumps `rubric_version` and enqueues the same zero-LLM rescore.
 
-Define a forced-schema result with one record per target image:
+## Local labeling and acceptance
 
-- `content_hash`
-- `kind`: kitchen | flooring | mixed | irrelevant
-- `kitchen_quality`: 1–5 or null
-- `flooring_quality`: 1–5 or null
-- `confidence`: high | medium | low | not_found
-- a short visual rationale (not textual-listing evidence)
+The gitignored label kit belongs under
+`worker/tests/fixtures/vision_labels/`. Build a contact sheet for 10 Properties
+and roughly 200–300 real gallery photos. Human labels cover kitchen
+presence/assessability, flooring visibility, bathroom presence,
+irrelevant/diagram images, and near-duplicate groups.
 
-Reject unknown hashes, duplicates, ratings outside 1–5, and results for reference
-images. Keep the model output in `property_images.vision_assessment`.
+Classifier gate:
 
-### 4.2 Aggregation and Extractions
+- ≥95% precision among selected kitchen targets;
+- ≥90% Property-level kitchen recall at three targets;
+- zero high-confidence selections on labeled no-kitchen galleries;
+- zero selected Floor Plan diagrams;
+- <$0.005 classification cost per 30-image Property.
 
-Aggregate each criterion independently over relevant target images. The exact
-tie/outlier rule must be deterministic and added to DESIGN §10.8 before enabling
-the stage. Recommended bench candidate: confidence-weighted median, requiring at
-least one medium-or-higher assessment; otherwise emit unknown. Do not silently
-choose this rule—the first labeled bench should decide it.
+Kitchen-quality bench uses Properties outside the 25 anchors. Yusuf rates
+targets before seeing model output. Every accepted aggregate must be within ±1.
+Report exact and within-one agreement, unknown rate, confusion by level, cost,
+latency, and every irrelevant/non-kitchen confident rating.
 
-Write the aggregate as an append-only global Extraction:
+The 2026-07-28 sweep benchmarked Gemini 2.5 Flash Lite, Gemini 3.1 Flash Lite,
+Gemini 3 Flash, and the prescribed Sonnet fallback. None passed exact 30-image
+response completeness. Yusuf selected Gemini 3 Flash Preview anyway; preserve
+that decision and the strict fail-closed contract unless a later Decision Log
+entry changes either.
 
-- criterion key `kitchen_quality` or `flooring_quality`
-- integer value 1–5
-- confidence derived by the approved deterministic rule
-- `model` and prompt/reference versions
-- contributing Storage paths as structured visual evidence
-- a VISION-specific `resolution_rule`
+## Verification and rollout
 
-Then let SCORE consume those effective values exactly like other catalog facts.
-Do not route VISION through EXTRACT or give it tools.
-
-### 4.3 Storage reads and projection
-
-Extend the injected image store with a `get(path)` operation, load normalized
-targets and approved local references, construct `VisionImage` blocks, and call
-`ctx.call_vision`/the client seam once per Property batch. Never hand the model
-remote image URLs. Keep the service-role key out of state, events and traces.
-
-On success, project per-image assessments and the two aggregate Extractions in
-the same terminal transaction as the DONE flip. A replay fixture must list image
-hashes and structured output only.
-
-### 4.4 Frontend gallery
-
-Add the detail-drawer gallery only after rows exist. Read the private bucket with
-short-lived signed URLs (or authenticated Storage requests), show the aggregate
-rating first, and expose per-image assessment/rationale as provenance. Broken or
-expired image URLs must not break the drawer. Respect RLS; client visibility is
-UX, not the security boundary.
-
-### 4.5 Screenshots and retention
-
-Tier-2 already can capture a screenshot but P3-7a does not request/persist it.
-When P3-11 supplies the scheduler tick:
-
-1. request a compressed full-page WebP only for browser-tier fetches that need it;
-2. store its path in `property_sources.screenshot_path` (separate from rating
-   inputs—debug screenshots must not accidentally enter VISION);
-3. delete screenshots older than 30 days;
-4. delete content-addressed Property image objects only when no
-   `property_images.storage_path` references them and the retention grace has
-   elapsed.
-
-## 5. Validation and rollout gates
-
-Automated gates:
-
-- discovery order, URL normalization, duplicate suppression and cap;
-- SSRF redirect refusal, content-type/size/pixel/decode rejection;
-- EXIF orientation, max dimension, WebP output and deterministic content hash;
-- same URL/different bytes reruns; different URL/same bytes skips;
-- two identical complete hash sets produce `images_unchanged`, zero calls and
-  zero VISION cost;
-- record→replay round trip with no image bytes in the fixture;
-- crash after IMAGE_FETCH save resumes without uploading/spending twice;
-- DB projection is idempotent and DEDUPE merge/split behavior remains correct.
-
-Human/bench gates:
-
-1. Choose at least five representative Properties outside the reference set,
-   including weak/ambiguous imagery.
-2. Yusuf rates both criteria blind before seeing model output.
-3. Run the same normalized targets against prompt/reference v1 in record mode.
-4. Require each aggregate within ±1 of Yusuf's rating; report exact agreement,
-   within-one agreement, unknown rate, per-level confusion, cost and latency.
-5. Review every >1 disagreement and any confident rating of an irrelevant image.
-6. Adjust anchors/prompt only with a version bump and rerun the complete bench.
-7. Enable live VISION only after the report is accepted and recorded in the
-   DESIGN decision log.
-
-Operational rollout:
+Automated coverage must include normalization/thumbnail parity, sheet
+determinism and hashes, classifier hash validation, provider-limit chunking,
+dHash clusters, quotas, exact/generalized precedence, all three policies,
+weighted-median edges, authoritative/partial refresh safety, RLS/same-Property
+guards, record/replay, and zero calls on unchanged inputs.
 
 ```bash
 uv sync --all-packages
 supabase db reset
+uv run --package manzil-shared pytest shared/tests
 uv run --package manzil-worker pytest worker/tests
+uv run --package manzil-api pytest api/tests
+pnpm -C frontend test
+pnpm -C frontend build
 uv run ruff check .
 ```
 
-Then run one local ingest with images, inspect the private bucket and
-`property_images`, retry unchanged and confirm the job manifest says
-`VISION: images_unchanged` with no Langfuse VISION generation. Finally change one
-served image at the same URL and confirm the hash and VISION eligibility change.
-
-## 6. Definition of done
-
-P3-7 is complete only when all of these are true:
-
-- the approved versioned reference set and matching prompt exist;
-- the accepted bench meets the ±1 gate and its report/version are recorded;
-- per-image assessments and aggregate Extractions persist with provenance;
-- the authenticated gallery renders;
-- unchanged second runs show zero VISION calls and zero VISION spend;
-- changed bytes at a stable URL rerun VISION;
-- screenshot and unreferenced-object retention cleanup is live;
-- DESIGN/IMPLEMENTATION status changes from P3-7a partial to P3-7 complete.
+Both model selection and kitchen-quality release are recorded Owner overrides.
+Run the external quality report when time permits and append its actual results
+to DESIGN §20; do not change the recorded benchmark status to passed unless the
+acceptance criteria are met. Run one live ingest plus an unchanged retry. The
+retry must show zero classifier and quality calls.
+Do not activate flooring or bathroom without their own Catalog decision,
+references, quality bench, quota activation, and Decision Log entry.
