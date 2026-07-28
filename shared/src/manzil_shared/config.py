@@ -10,6 +10,9 @@ EVIDENCE_FUZZY_THRESHOLD = 85
 # RECONCILE rung 2 — numeric tolerance collapse (percent)
 RENT_AGREE_PCT = 3.0
 SQFT_AGREE_PCT = 5.0
+RECONCILE_SUPERMAJORITY = 2 / 3
+ESCALATION_MAX_SIBLING_ROUNDS = 1
+ESCALATION_MAX_SIBLING_SOURCES = 3
 
 # VERIFY check 3 — plausibility bands cold start (listings per metro)
 PLAUSIBILITY_COLD_START_N = 8
@@ -85,8 +88,10 @@ STAGE_COST_ESTIMATES_USD = {
     "DEDUPE": 0.0,  # geocode is a Maps call, not an LLM call; no LLM cost here
     "DISCOVER": 0.04,  # judgment call + up to 3 native searches
     "IMAGE_FETCH": 0.0,
+    "IMAGE_CLASSIFY": 0.005,
     "VISION": 0.03,
     "VERIFY": 0.01,
+    "RECONCILE": 0.005,
     "ENRICH": 0.005,  # one small review-synthesis call; Maps calls carry no LLM cost
     "SCORE": 0.0,
 }
@@ -113,19 +118,42 @@ UTILITY_BASELINE_TTL_DAYS = 120
 # without it a persistently failing pass would fire one live LLM call per tick.
 UTILITY_BASELINE_RETRY_SECONDS = 3600.0
 
-# Image discipline. Two caps, deliberately split (DESIGN §20 2026-07-20):
-# storage is effectively free (WebP @1024px, ~60KB each) and a wider stored set
-# lets the UI browse and lets a re-analysis run without refetching, while the
-# VISION cap is what DESIGN §15 lever 3 actually constrains — both for spend and
-# because images past the first handful are amenity/floor-plan/stock shots that
-# dilute the kitchen_quality / flooring_quality signal.
-MAX_STORED_IMAGES = 20
-MAX_VISION_IMAGES = 8
+# P3-7a2 image discipline. Classification sees the complete stored gallery as
+# cheap ≤384 px in-memory thumbnails; quality VISION sees only deterministic
+# profile-selected 1024 px targets. The quotas deliberately sum to no more than
+# MAX_VISION_TARGET_IMAGES.
+MAX_STORED_IMAGES = 30
+MAX_IMAGE_CLASSIFY_IMAGES = 30
+MAX_VISION_TARGET_IMAGES = 8
+VISION_TARGET_QUOTAS = {"kitchen_quality": 3}
+IMAGE_CLASSIFY_MAX_DIM = 384
+IMAGE_CLASSIFY_WEBP_QUALITY = 70
+IMAGE_PERCEPTUAL_HASH_DISTANCE = 5
 IMAGE_MAX_DIM = 1024
 IMAGE_MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024
 IMAGE_MAX_PIXELS = 40_000_000
 IMAGE_WEBP_QUALITY = 82
 IMAGE_FETCH_TIMEOUT_SECONDS = 20.0
+
+# P3-SC5 Floor Plan diagrams. Diagrams carry small labels and dimensions that
+# the 1024 px photo profile makes illegible, so they get their own profile and
+# their own budget: photo ordering and MAX_STORED_IMAGES must never evict a
+# diagram found late in a page, and diagrams must not enlarge the P3-7b
+# quality-rating image budget. Unmatched diagrams count against the Property
+# cap.
+#
+# Fixed by the §7.5 legibility comparison (IMPLEMENTATION §P3-SC5), which found
+# the *dimension* carries legibility and the *quality* barely moves it: on a
+# 2400 px source sheet an 8 pt dimension string survives as 10.2 px at the
+# photo profile and 20.5 px at 2048. Raising quality from 82 to 95 cut mean
+# error only 0.91 → 0.79 while costing 14 KB → 106 KB per diagram, and lossless
+# cost 412 KB — real money against the Supabase free-tier ceiling (§17 R9) for a
+# difference invisible at these glyph sizes. So: more pixels, ordinary quality.
+DIAGRAM_MAX_DIM = 2048
+DIAGRAM_WEBP_QUALITY = 82
+DIAGRAM_NORMALIZATION_PROFILE = "webp-2048-q82-v1"
+MAX_FLOOR_PLAN_DIAGRAMS_PER_PLAN = 3
+MAX_FLOOR_PLAN_DIAGRAMS_PER_PROPERTY = 30
 
 # Fetch outcome classifier — body-size floor (bytes)
 FETCH_MIN_BODY_BYTES = 5_000

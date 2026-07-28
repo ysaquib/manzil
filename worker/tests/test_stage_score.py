@@ -5,8 +5,18 @@ best-plan display selection (§9.3-9.4)."""
 from __future__ import annotations
 
 import asyncio
+from uuid import uuid4
 
-from manzil_shared.models import Confidence, TargetScope, UnitApplicability
+from manzil_shared.models import (
+    Confidence,
+    MatchOp,
+    NonNegotiable,
+    OptionMatch,
+    RubricCriterion,
+    RubricOption,
+    TargetScope,
+    UnitApplicability,
+)
 from manzil_worker.phase0_rubric import PHASE0_RUBRIC_VERSION, phase0_rubric
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.score import score_stage
@@ -184,6 +194,50 @@ def test_min_confidence_low_admits_demoted_values() -> None:
     assert state.effective_values["pets_policy"] == "cats_and_dogs"
     assert state.scores[0].breakdown["gates"] == []
     assert state.scores[0].breakdown["total"] == 13.5
+
+
+def test_low_confidence_vision_is_kept_for_points_but_cannot_pass_gate() -> None:
+    state = make_state()
+    state.floor_plans = [
+        FloorPlanIn(
+            response_key="a",
+            plan_name="A",
+            beds=2,
+            baths=1.0,
+            rent_min=1700.0,
+        )
+    ]
+    visual = fe(4, "Reference-anchored kitchen", confidence=Confidence.LOW)
+    visual.target_scope = TargetScope.FLOOR_PLAN
+    visual.floor_plan_ref = "a"
+    visual.applicability = UnitApplicability.SPECIFIC_FLOOR_PLANS
+    visual.origin_key = "vision:model"
+    visual.resolution_rule = "vision_weighted_median_exact"
+    set_claim(state, "kitchen_quality", visual)
+    criterion = RubricCriterion(
+        hunt_id=uuid4(),
+        catalog_key="kitchen_quality",
+        options=[
+            RubricOption(
+                match=OptionMatch(op=MatchOp.EQ, value=4),
+                delta=1.0,
+            )
+        ],
+        non_negotiable=NonNegotiable(set_score=2.0),
+    )
+    ctx = StageCtx(rubric=[criterion], rubric_version=1)
+
+    state = asyncio.run(score_stage(state, ctx))
+
+    assert state.effective_values["kitchen_quality"] == 4
+    assert state.scores[0].breakdown["total"] == 2.0
+    assert state.scores[0].breakdown["gates"] == [
+        {
+            "key": "kitchen_quality",
+            "kind": "non_negotiable",
+            "set_score": 2.0,
+        }
+    ]
 
 
 def test_exact_unit_feature_changes_only_target_floor_plan() -> None:

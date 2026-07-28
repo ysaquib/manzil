@@ -12,10 +12,11 @@ import json
 from uuid import uuid4
 
 import asyncpg
+import pytest
 from manzil_shared.models import JobState, JobType
 from manzil_worker.postgres_persistence import PostgresPersistence
 from manzil_worker.queue import _make_fresh_source_lookup
-from manzil_worker.runner import run_job
+from manzil_worker.runner import STAGE_REGISTRY, run_job
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.plan import plan_stage
 from manzil_worker.state import RunState
@@ -25,6 +26,13 @@ URL = "https://plan-persist.test/floorplans"
 
 async def _cost_stage(state: RunState, ctx: StageCtx) -> RunState:
     state.cost_usd = 0.0417  # stand in for a real tally
+    return state
+
+
+async def _test_plan_stage(state: RunState, ctx: StageCtx) -> RunState:
+    state = await plan_stage(state, ctx)
+    assert state.plan is not None
+    state.plan.stages = ["PLAN", "cost"]
     return state
 
 
@@ -59,7 +67,9 @@ async def _cleanup(pool: asyncpg.Pool, *, property_id, hunt_id, job_id) -> None:
     await pool.execute("delete from hunts where id = $1", hunt_id)
 
 
-async def test_completed_job_persists_plan_and_cost(pg_pool: asyncpg.Pool) -> None:
+async def test_completed_job_persists_plan_and_cost(
+    pg_pool: asyncpg.Pool, monkeypatch: pytest.MonkeyPatch
+) -> None:
     property_id, hunt_id, listing_id, job_id = uuid4(), uuid4(), uuid4(), uuid4()
     await _seed(
         pg_pool, property_id=property_id, hunt_id=hunt_id, listing_id=listing_id, job_id=job_id
@@ -72,7 +82,10 @@ async def test_completed_job_persists_plan_and_cost(pg_pool: asyncpg.Pool) -> No
             persistence=persistence, fresh_source_lookup=_make_fresh_source_lookup(pg_pool)
         )
 
-        final = await run_job(state, ctx, [("PLAN", plan_stage), ("cost", _cost_stage)])
+        monkeypatch.setitem(STAGE_REGISTRY, "cost", _cost_stage)
+        final = await run_job(
+            state, ctx, [("PLAN", _test_plan_stage), ("cost", _cost_stage)]
+        )
         assert final.status is JobState.DONE
         assert final.plan is not None
 

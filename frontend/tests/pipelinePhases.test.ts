@@ -26,9 +26,13 @@ const fullPlan = {
     "EXTRACT",
     "DEDUPE",
     "DISCOVER",
-    "IMAGE_FETCH",
-    "VISION",
+    "FETCH",
+    "EXTRACT",
     "VERIFY",
+    "RECONCILE",
+    "IMAGE_FETCH",
+    "IMAGE_CLASSIFY",
+    "VISION",
     "ENRICH",
     "SCORE",
   ],
@@ -61,19 +65,22 @@ describe("phasesForJob", () => {
   });
 
   it("reports the active phase's sub-steps: total stages and current index", () => {
-    // Read covers EXTRACT · DEDUPE · DISCOVER · IMAGE_FETCH · VISION.
+    // Read covers EXTRACT · DEDUPE · DISCOVER.
     expect(phasesForJob(job({ plan: fullPlan, current_stage: "EXTRACT" })).substeps).toEqual({
-      total: 5,
+      total: 3,
       index: 0,
     });
     expect(phasesForJob(job({ plan: fullPlan, current_stage: "DISCOVER" })).substeps).toEqual({
-      total: 5,
+      total: 3,
       index: 2,
     });
-    // Verify covers VERIFY · ENRICH.
+    // Verify covers source reconciliation, image evidence, and ENRICH.
     expect(
       phasesForJob(job({ plan: fullPlan, current_stage: "VERIFY", state: "waiting_user" })).substeps,
-    ).toEqual({ total: 2, index: 0 });
+    ).toEqual({ total: 6, index: 0 });
+    expect(
+      phasesForJob(job({ plan: fullPlan, current_stage: "RECONCILE", state: "running" })).substeps,
+    ).toEqual({ total: 6, index: 1 });
   });
 
   it("counts only the sub-stages this job's plan actually runs", () => {

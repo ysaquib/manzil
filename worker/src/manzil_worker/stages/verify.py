@@ -412,18 +412,63 @@ def _maybe_raise_confirm_value(state: RunState, ctx: StageCtx) -> None:
         raise CheckpointRaised(prompt)
 
 
-async def verify_stage(state: RunState, ctx: StageCtx) -> RunState:
+async def _verify_single(
+    state: RunState, ctx: StageCtx, *, allow_checkpoint: bool = True
+) -> RunState:
     page_text = state.sources[0].cleaned_text
     _check_evidence(state, page_text)
     _check_conformance(state)
     _check_plausibility(state, ctx.today())
     await _check_consistency(state, ctx, page_text)
     _apply_checkpoint_answer(state, ctx)
-    _maybe_raise_confirm_value(state, ctx)
+    if allow_checkpoint:
+        _maybe_raise_confirm_value(state, ctx)
     log.info(
         "verified",
         job_id=str(state.job_id),
         stage="verify",
         flags=len(state.verify_flags),
     )
+    return state
+
+
+async def verify_stage(state: RunState, ctx: StageCtx) -> RunState:
+    """VERIFY every Source slice without allowing one suspect sibling to park
+    the run before RECONCILE can use stronger evidence from another Source."""
+    multi_source = state.plan is not None and "RECONCILE" in state.plan.stages
+    if not multi_source or not state.source_results:
+        return await _verify_single(state, ctx)
+
+    for result in state.source_results:
+        if result.verified:
+            continue
+        source = next((item for item in state.sources if item.url == result.source_url), None)
+        if source is None:
+            continue
+        isolated = state.model_copy(deep=True)
+        isolated.sources = [source.model_copy(deep=True)]
+        isolated.source_claims = [claim.model_copy(deep=True) for claim in result.source_claims]
+        isolated.floor_plans = [plan.model_copy(deep=True) for plan in result.floor_plans]
+        isolated.property_identity = result.property_identity
+        isolated.pet_costs = result.pet_costs
+        isolated.utilities = result.utilities
+        isolated.mandatory_fees = result.mandatory_fees
+        isolated.heating = result.heating
+        isolated.one_time_fees = result.one_time_fees
+        isolated.property_contact = result.property_contact
+        isolated.verify_flags = []
+        verified = await _verify_single(isolated, ctx, allow_checkpoint=False)
+        result.source_claims = verified.source_claims
+        result.floor_plans = verified.floor_plans
+        result.verify_flags = verified.verify_flags
+        result.verified = True
+
+    primary = next(
+        (result for result in state.source_results if result.source_url == state.url),
+        None,
+    )
+    if primary is not None:
+        state.source_claims = [claim.model_copy(deep=True) for claim in primary.source_claims]
+        state.floor_plans = [plan.model_copy(deep=True) for plan in primary.floor_plans]
+        state.verify_flags = [flag.model_copy(deep=True) for flag in primary.verify_flags]
     return state

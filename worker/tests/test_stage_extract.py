@@ -7,11 +7,13 @@ import asyncio
 
 import pytest
 from manzil_shared.errors import ExtractionInvalid
+from manzil_shared.models import Confidence
 from manzil_worker.fetching.cleaner import clean_html
 from manzil_worker.llm.config import model_for_stage
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.extract import extract_stage
 from manzil_worker.stages.schema_gen import extractable_entries
+from manzil_worker.state import SourceClaim, SourceState
 from worker_helpers import (
     PAGES,
     FakeLLM,
@@ -24,6 +26,47 @@ from worker_helpers import (
 )
 
 CLEANED = clean_html((PAGES / "e2e_listing.html").read_text()).text
+
+
+def test_extract_isolates_each_source_and_mirrors_submitted_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = make_state(cleaned_text="submitted body")
+    state.sources.append(
+        SourceState(
+            url="https://sibling.example/property",
+            cleaned_text="sibling body",
+            cleaned_hash="sibling",
+        )
+    )
+
+    async def fake_extract_single(source_state, ctx):  # type: ignore[no-untyped-def]
+        source = source_state.sources[0]
+        source_state.source_claims = [
+            SourceClaim(
+                criterion_key="pool",
+                value=source.url,
+                confidence=Confidence.HIGH,
+                source_id=source.url,
+                model="fixture",
+                prompt_version=1,
+            )
+        ]
+        return source_state
+
+    monkeypatch.setattr("manzil_worker.stages.extract._extract_single", fake_extract_single)
+    out = asyncio.run(extract_stage(state, StageCtx()))
+
+    assert [result.source_url for result in out.source_results] == [
+        state.url,
+        "https://sibling.example/property",
+    ]
+    assert [result.source_claims[0].value for result in out.source_results] == [
+        state.url,
+        "https://sibling.example/property",
+    ]
+    assert out.source_claims[0].value == state.url
+    assert all(source.authoritative_extraction for source in out.sources)
 
 
 def test_extract_populates_every_criterion_with_provenance() -> None:
@@ -133,6 +176,45 @@ def test_invalid_first_response_gets_one_corrective_retry() -> None:
     retry_content = llm.calls[1][1]
     assert "failed schema validation" in retry_content
     assert "beds" in retry_content  # the validation error travels back to the model
+
+
+def test_conflicting_laundry_none_and_on_site_canonicalizes_to_positive() -> None:
+    """Rent.com can state both "no in-unit" and shared laundry. `none` means no
+    laundry at all, so the redundant negative must not fail the Job or persist
+    beside the explicitly supported positive for one Property target."""
+    none = {
+        "value": "none",
+        "confidence": "high",
+        "evidence_quote": "In-unit laundry is not available.",
+        "applicability": "all_units",
+        "floor_plan_refs": [],
+    }
+    on_site = {
+        "value": "on_site",
+        "confidence": "high",
+        "evidence_quote": "laundry facility located in each building",
+        "applicability": "unit_scope_unspecified",
+        "floor_plan_refs": [],
+    }
+    bad = extraction_payload(in_unit_laundry=[none, on_site])
+    llm = FakeLLM({"extract": bad})
+
+    state = asyncio.run(
+        extract_stage(
+            make_state(
+                cleaned_text=(
+                    "In-unit laundry is not available. Residents have a laundry "
+                    "facility located in each building."
+                )
+            ),
+            StageCtx(call_structured=llm),
+        )
+    )
+
+    laundry = get_claim(state, "in_unit_laundry")
+    assert laundry.value == "on_site"
+    assert laundry.applicability == "unit_scope_unspecified"
+    assert len(llm.calls) == 1
 
 
 def test_second_invalid_response_is_a_job_error_not_a_retry() -> None:
@@ -268,3 +350,56 @@ def test_extract_lands_one_time_fees_block() -> None:
     ]
     assert fees[2].refundable is True
     assert fees[0].refundable is None  # page silent → never invented
+
+
+# ── P3-21: property contact block ─────────────────────────────────────────────
+
+
+def test_property_contact_block_projects_onto_state() -> None:
+    """Rungs 1 and 3 share one schema block; provenance is decided at persist
+    time from the Source's is_official flag, not here."""
+    llm = FakeLLM(
+        {
+            "extract": extraction_payload(
+                property_contact={
+                    "phone": "(313) 555-0142",
+                    "contact_url": "https://maplecourt.test/contact",
+                    "evidence_quote": "Call our leasing office at (313) 555-0142",
+                }
+            )
+        }
+    )
+    state = make_state(cleaned_text=CLEANED)
+    state = asyncio.run(extract_stage(state, StageCtx(call_structured=llm)))
+
+    assert state.property_contact is not None
+    assert state.property_contact.phone == "(313) 555-0142"
+    assert state.property_contact.contact_url == "https://maplecourt.test/contact"
+
+
+def test_property_contact_block_is_optional() -> None:
+    """Absent on pre-P3-21 recordings and on pages with no published contact —
+    both must validate and leave the block unset."""
+    llm = FakeLLM({"extract": extraction_payload()})
+    state = make_state(cleaned_text=CLEANED)
+    state = asyncio.run(extract_stage(state, StageCtx(call_structured=llm)))
+
+    assert state.property_contact is None
+
+
+def test_property_contact_never_becomes_a_scored_claim() -> None:
+    """§16/§8.2: contact info is unscored display metadata. It must not appear in
+    source_claims, which is the path into the scoring engine."""
+    llm = FakeLLM({"extract": extraction_payload(property_contact={"phone": "(313) 555-0142"})})
+    state = make_state(cleaned_text=CLEANED)
+    state = asyncio.run(extract_stage(state, StageCtx(call_structured=llm)))
+
+    assert not any(c.criterion_key == "property_contact" for c in state.source_claims)
+
+
+def test_property_contact_schema_has_no_person_field() -> None:
+    """§16 PII control by construction: the block cannot carry an agent's name or
+    role, so a named individual's identity has nowhere to land."""
+    from manzil_worker.state import PropertyContactIn
+
+    assert set(PropertyContactIn.model_fields) == {"phone", "contact_url", "evidence_quote"}

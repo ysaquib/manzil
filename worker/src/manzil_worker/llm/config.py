@@ -4,8 +4,9 @@ Pinned OpenRouter model slugs, per-stage assignment, and list prices for the
 cost tally. Swapping a stage's model is a config change here — nowhere else.
 P0-13 (model bench) settles these choices empirically and rewrites this file.
 P0-14 landed the first non-Anthropic pin (DESIGN §20 2026-07-21): EXTRACT and
-VERIFY moved to gemini-3-flash-preview on bench evidence; every other workhorse
-stage still rides the §11.2 all-Anthropic baseline (routed via OpenRouter).
+VERIFY moved to gemini-3-flash-preview on bench evidence. DESIGN v3.21 adds an
+Owner waiver for P3-6's plan-assist and semantic-equivalence calls; the other
+workhorse stages retain the Anthropic baseline.
 
 Cache economics are keyed by upstream family (`anthropic/` → Anthropic rates,
 `google/` → Google rates). Provider pinning for deterministic routing lives in
@@ -18,8 +19,8 @@ from __future__ import annotations
 import os
 
 # Baseline pins (§11.2) as OpenRouter slugs.
-# WORKHORSE_MODEL = "anthropic/claude-haiku-4.5"
-WORKHORSE_MODEL = "google/gemini-3-flash-preview"
+WORKHORSE_MODEL = "anthropic/claude-haiku-4.5"
+P3_6_MODEL = "google/gemini-3-flash-preview"
 TASTE_MODEL = "anthropic/claude-sonnet-4.6"
 
 # P0-14 model-pin (DESIGN §20 2026-07-21). The 10-listing bench (P0-13) ranked
@@ -29,9 +30,8 @@ TASTE_MODEL = "anthropic/claude-sonnet-4.6"
 # stay on WORKHORSE_MODEL because the bench never measured them, and this model
 # trades a higher evidence-flag rate (0.20 vs 0.03) for that accuracy/cost win.
 #
-# 2026-07-22: gemini-3-flash-preview is now the default for extract/verify as
-# well as WORKHORSE since it is cheaper and better performance.
-EXTRACT_VERIFY_MODEL = WORKHORSE_MODEL
+# P3-6's Owner waiver deliberately reuses the same Gemini pin.
+EXTRACT_VERIFY_MODEL = P3_6_MODEL
 
 # 2026-07-22: claude-haiku-4.5 is now the default for discover since trying to
 # use gemini-3-flash-preview for discover was causing issues with the web search
@@ -46,11 +46,13 @@ STAGE_MODELS: dict[str, str] = {
     "validate": WORKHORSE_MODEL,
     "extract": EXTRACT_VERIFY_MODEL,  # P0-14 pin (DESIGN §20 2026-07-21)
     "verify": EXTRACT_VERIFY_MODEL,  # P0-14 pin; check 4 only, checks 1-3 are code
-    "reconcile_equivalence": WORKHORSE_MODEL,
+    "reconcile_equivalence": P3_6_MODEL,
     "custom_match": WORKHORSE_MODEL,
     "enrich_reviews": WORKHORSE_MODEL,  # P3-8 ratings stage 1 review synthesis
     "utility_baselines": WORKHORSE_MODEL,  # P3-9 metro baselines pass (scheduler tick)
-    "plan_assist": WORKHORSE_MODEL,
+    "plan_assist": P3_6_MODEL,
+    # Owner-selected shadow classifier pin (DESIGN §20 2026-07-28).
+    "image_classify": "google/gemini-3-flash-preview",
     # taste tier
     "vision": TASTE_MODEL,
     # discover
@@ -94,6 +96,7 @@ DEFAULT_MAX_TOKENS = 2048
 STAGE_MAX_TOKENS: dict[str, int] = {
     "smoke": 256,
     "extract": 8192,  # full catalog-wide extraction is the largest output
+    "image_classify": 8192,
 }
 
 # List $ / MTok (input, output) — §11.2 table, mid-2026. The Gemini rows are

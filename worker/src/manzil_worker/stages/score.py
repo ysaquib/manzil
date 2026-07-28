@@ -11,6 +11,9 @@ Assembly semantics (Phase 0, single source):
   stays on `reconciled`/extractions as provenance; a Phase 1 `confirm_value`
   checkpoint answer is what upgrades it back. Floor-plan figures carry no
   confidence dimension yet, so the plan overlay is not thresholded.
+- VISION uses its separate `ctx.min_vision_confidence` threshold (default
+  `low`) for point values. A low-confidence VISION value never enters the Gate
+  map, even when retained for points and display.
 - `all_in_monthly` interim composition: the plan's conservative advertised
   rent (rent_max, else rent_min) — never cheaper than a worst realistic
   month. Full §9.5 composition (fees, utilities) lands P3-9.
@@ -29,7 +32,9 @@ from manzil_shared.catalog import BOOLEAN_PRESENCE_KEYS, SCOPED_UNIT_CLAIM_KEYS
 from manzil_shared.models import Confidence, FloorPlan
 from manzil_shared.scoped_facts import (
     ScopedValue,
+    resolve_effective_facts,
     resolve_effective_values,
+    scoring_values_for_policy,
 )
 from manzil_shared.scoped_facts import (
     meets_confidence as scoped_meets_confidence,
@@ -88,19 +93,24 @@ def conservative_rent(plan: FloorPlanIn) -> float | None:
 
 
 async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
-    state.resolved_claims = [
-        claim.model_copy(
-            update={
-                "resolution_rule": "single_source",
-                "candidate_claim_group_ids": [claim.claim_group_id],
-            },
-            deep=True,
-        )
-        for claim in state.source_claims
-    ]
+    if not state.resolved_claims:
+        state.resolved_claims = [
+            claim.model_copy(
+                update={
+                    "resolution_rule": "single_source",
+                    "candidate_claim_group_ids": [claim.claim_group_id],
+                },
+                deep=True,
+            )
+            for claim in state.source_claims
+        ]
     criterion_keys = [criterion_key(criterion) for criterion in ctx.rubric]
     plan_ids_by_ref = {
-        plan.response_key: floor_plan_runtime_id(plan, state.sources[0].url, index)
+        (plan.source_url or state.sources[0].url, plan.response_key): floor_plan_runtime_id(
+            plan,
+            plan.source_url or state.sources[0].url,
+            index,
+        )
         for index, plan in enumerate(state.floor_plans)
         if plan.response_key is not None
     }
@@ -111,11 +121,15 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
             confidence=claim.confidence,
             target_scope=claim.target_scope,
             floor_plan_id=(
-                plan_ids_by_ref.get(claim.floor_plan_ref)
+                plan_ids_by_ref.get(
+                    (claim.source_id or state.sources[0].url, claim.floor_plan_ref)
+                )
                 if claim.floor_plan_ref is not None
                 else claim.floor_plan_id
             ),
             applicability=claim.applicability,
+            origin_key=claim.origin_key,
+            resolution_rule=claim.resolution_rule,
         )
         for claim in state.resolved_claims
     ]
@@ -151,19 +165,30 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
     scorable = [
         (plan, floor_plan)
         for index, plan in enumerate(state.floor_plans)
-        if (floor_plan := _to_floor_plan(plan, state.sources[0].url, index)) is not None
+        if (
+            floor_plan := _to_floor_plan(
+                plan,
+                plan.source_url or state.sources[0].url,
+                index,
+            )
+        )
+        is not None
     ]
     if scorable:
         breakdowns = []
         compositions = []
         for plan_in, floor_plan in scorable:
-            values = resolve_effective_values(
+            facts = resolve_effective_facts(
                 criterion_keys=criterion_keys,
                 floor_plan_id=floor_plan.id,
                 extractions=scoped_rows,
                 min_confidence=ctx.min_confidence,
+                min_vision_confidence=ctx.min_vision_confidence,
                 presence_like_keys=SCOPED_UNIT_CLAIM_KEYS,
                 boolean_presence_keys=BOOLEAN_PRESENCE_KEYS,
+            )
+            values, gate_values = scoring_values_for_policy(
+                facts, ctx.generalized_vision_policy
             )
             rent = conservative_rent(plan_in)
             composition = None
@@ -205,11 +230,18 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
                 # unknown_delta rather than a fabricated number (§9.5).
                 if composition.total is not None:
                     values["all_in_monthly"] = composition.total
+                    gate_values["all_in_monthly"] = composition.total
             compositions.append(composition)
             breakdowns.append(
                 (
                     floor_plan.plan_name,
-                    score(ctx.rubric, values, floor_plan, rubric_version=ctx.rubric_version),
+                    score(
+                        ctx.rubric,
+                        values,
+                        floor_plan,
+                        rubric_version=ctx.rubric_version,
+                        gate_values=gate_values,
+                    ),
                 )
             )
         state.scores = [
@@ -227,6 +259,7 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
             floor_plan_id=display_floor_plan.id,
             extractions=scoped_rows,
             min_confidence=ctx.min_confidence,
+            min_vision_confidence=ctx.min_vision_confidence,
             presence_like_keys=SCOPED_UNIT_CLAIM_KEYS,
             boolean_presence_keys=BOOLEAN_PRESENCE_KEYS,
         )
@@ -235,16 +268,26 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
             display_composition.to_json() if display_composition is not None else None
         )
     else:
-        base_values = resolve_effective_values(
+        facts = resolve_effective_facts(
             criterion_keys=criterion_keys,
             floor_plan_id=None,
             extractions=scoped_rows,
             min_confidence=ctx.min_confidence,
+            min_vision_confidence=ctx.min_vision_confidence,
             presence_like_keys=SCOPED_UNIT_CLAIM_KEYS,
             boolean_presence_keys=BOOLEAN_PRESENCE_KEYS,
         )
+        base_values, gate_values = scoring_values_for_policy(
+            facts, ctx.generalized_vision_policy
+        )
         state.effective_values = dict(base_values)
-        breakdown = score(ctx.rubric, base_values, None, rubric_version=ctx.rubric_version)
+        breakdown = score(
+            ctx.rubric,
+            base_values,
+            None,
+            rubric_version=ctx.rubric_version,
+            gate_values=gate_values,
+        )
         state.scores = [PlanScore(plan_name=None, breakdown=breakdown.to_contract())]
         state.display_score_index = 0
 

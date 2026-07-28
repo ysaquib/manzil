@@ -45,6 +45,7 @@ DedupeCandidates = Callable[[], Awaitable[list["DedupeCandidate"]]]
 # a fake, and a fake raising `MapsError` exercises the geocode-failed path.
 GeocodeAddress = Callable[[str], Awaitable["GeocodeIn"]]
 ExistingImageHashes = Callable[[UUID], Awaitable[set[str]]]
+ExistingImageClassifications = Callable[[UUID], Awaitable[dict[str, dict[str, Any]]]]
 
 # ENRICH's Maps seams (P3-8): plain function calls, not tools (§10.2 — ENRICH is
 # not a tool-loop stage). Defaults wrap the live Maps calls lazily, mirroring
@@ -59,6 +60,7 @@ UtilityBaselines = Callable[
     [str | None, str | None, str | None, int],
     Awaitable[BaselineSet | None],
 ]
+ReconcileRubricLookup = Callable[[UUID], Awaitable[list[RubricCriterion]]]
 
 
 async def _no_fresh_source(property_id: UUID | None, url: str) -> SourceFreshness | None:
@@ -77,10 +79,20 @@ async def _no_existing_image_hashes(property_id: UUID) -> set[str]:
     return set()
 
 
+async def _no_existing_image_classifications(
+    property_id: UUID,
+) -> dict[str, dict[str, Any]]:
+    return {}
+
+
 async def _no_utility_baselines(
     city: str | None, state: str | None, county: str | None, bucket: int
 ) -> BaselineSet | None:
     return None
+
+
+async def _no_reconcile_rubric(property_id: UUID) -> list[RubricCriterion]:
+    return []
 
 
 async def _live_nearby_places(lat: float, lng: float, keyword: str) -> list[dict[str, Any]]:
@@ -135,10 +147,19 @@ class StageCtx:
     call_agent: CallAgent = llm_client.call_agent
     call_vision: CallVision = llm_client.call_vision
     rubric: list[RubricCriterion] = field(default_factory=list)
+    # P3-6 escalation relevance is Property-global: a Gate/penalty in any Hunt
+    # using the Property may justify bounded corroboration. SCORE still reads
+    # only `rubric`, the current Hunt's contract.
+    reconcile_rubric: list[RubricCriterion] = field(default_factory=list)
+    reconcile_rubric_lookup: ReconcileRubricLookup = _no_reconcile_rubric
     rubric_version: int = 0
     # Hunt setting (§8.2 contract, DESIGN v2.3): effective values below this
     # score as unknown. Phase 0 uses the contract default; hunts own it from P1-5.
     min_confidence: Confidence = Confidence.MEDIUM
+    # VISION keeps a separate, permissive threshold because image judgments are
+    # useful as estimates. Low-confidence VISION may score points but never Gates.
+    min_vision_confidence: Confidence = Confidence.LOW
+    generalized_vision_policy: str = "full_rubric"
     # Household counts (§8.2 hunt settings, §9.5 v1): pet counts drive the pet-rent
     # component of `all_in_monthly`. Default 0 so Phase 0 CLI runs compose no pet rent.
     cats: int = 0
@@ -174,6 +195,9 @@ class StageCtx:
     download_image: DownloadImage | None = None
     image_store: ImageObjectStore | None = None
     existing_image_hashes: ExistingImageHashes = _no_existing_image_hashes
+    existing_image_classifications: ExistingImageClassifications = (
+        _no_existing_image_classifications
+    )
     # DISCOVER's bounded loop writes every local/server tool use through this
     # sink. Queue mode wires Postgres; CLI/tests may leave it null (log-only).
     tool_event_sink: Any = None

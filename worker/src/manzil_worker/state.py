@@ -52,6 +52,7 @@ class SourceClaim(BaseModel):
     resolution_rule: str | None = None
     disputed: bool = False
     candidate_claim_group_ids: list[UUID] = Field(default_factory=list)
+    image_hashes: list[str] = Field(default_factory=list)
 
 
 class FloorPlanIn(BaseModel):
@@ -59,6 +60,7 @@ class FloorPlanIn(BaseModel):
     the shared FloorPlan model happens at the scoring/persistence boundary."""
 
     response_key: str | None = None
+    source_url: str | None = None
     source_native_id: str | None = None
     detail_url: str | None = None
     plan_name: str | None = None
@@ -99,6 +101,22 @@ class PropertyIdentityIn(BaseModel):
     name: str | None = None
     address: str | None = None
     official_url: str | None = None
+
+
+class PropertyContactIn(BaseModel):
+    """How to reach the property's leasing office, as stated on the page (P3-21,
+    DESIGN §8.2, §16) — a non-catalog EXTRACT block, unscored display metadata
+    that never enters the rubric/scoring path.
+
+    PII control by construction: there is no field for a person's name or role.
+    Property-level business contact only — even if a page attributes a number to
+    a named agent, the model has nowhere to record who they are (§16 as amended
+    2026-07-27). The prompt additionally instructs the model to null the field in
+    that case rather than store the individual's line as the property's."""
+
+    phone: str | None = None
+    contact_url: str | None = None
+    evidence_quote: str | None = None
 
 
 class PetCostsIn(BaseModel):
@@ -209,13 +227,32 @@ class SourceState(BaseModel):
 
     url: str
     is_official: bool = False
+    syndication_family: str | None = None
+    role: Literal["submitted", "baseline", "official_arbiter", "sibling_round"] = "baseline"
     tier_used: int | None = None
+    fetched_at: datetime | None = None
     outcome: FetchOutcome | None = None
     cleaned_text: str = ""
     cleaned_hash: str = ""
     fee_tables_found: int = 0
     image_urls: list[str] = Field(default_factory=list)
+    image_candidates: list[ImageCandidateIn] = Field(default_factory=list)
     authoritative_extraction: bool = False
+
+
+class ImageCandidateIn(BaseModel):
+    url: str
+    page_order: int
+    discovery_mechanism: str
+    alt: str | None = None
+    title: str | None = None
+    caption: str | None = None
+    containing_floor_plan_card: bool = False
+    source_native_plan_id: str | None = None
+    nearby_plan_label: str | None = None
+    # P3-SC5: enclosing anchor target when it points at an image asset. Only
+    # diagrams prefer it — a photo's thumbnail is already the right size.
+    full_size_url: str | None = None
 
 
 class PropertyImageIn(BaseModel):
@@ -227,7 +264,13 @@ class PropertyImageIn(BaseModel):
     width: int
     height: int
     byte_size: int
-    kind: str | None = None
+    kind: Literal["listing_photo", "floor_plan_diagram", "other"] = "listing_photo"
+    source_url_page: str | None = None
+    source_page_order: int | None = None
+    normalization_profile: str = "webp-1024-q82-v1"
+    perceptual_hash: str | None = None
+    discovery_context: dict[str, Any] = Field(default_factory=dict)
+    exact_floor_plan_refs: list[str] = Field(default_factory=list)
     vision_assessment: dict[str, Any] | None = None
 
 
@@ -240,6 +283,42 @@ class VerifyFlag(BaseModel):
     check: VerifyCheck
     note: str
     source_id: str | None = None
+
+
+class SourceResult(BaseModel):
+    """One Source's isolated EXTRACT/VERIFY output for P3-6 fan-out."""
+
+    source_url: str
+    syndication_family: str
+    role: Literal["submitted", "baseline", "official_arbiter", "sibling_round"]
+    is_official: bool = False
+    fetched_at: datetime | None = None
+    source_claims: list[SourceClaim] = Field(default_factory=list)
+    floor_plans: list[FloorPlanIn] = Field(default_factory=list)
+    property_identity: PropertyIdentityIn | None = None
+    pet_costs: PetCostsIn | None = None
+    utilities: UtilitiesIn | None = None
+    mandatory_fees: MandatoryFeesIn | None = None
+    heating: HeatingIn | None = None
+    one_time_fees: OneTimeFeesIn | None = None
+    property_contact: PropertyContactIn | None = None
+    verify_flags: list[VerifyFlag] = Field(default_factory=list)
+    verified: bool = False
+
+
+class ReconcileEscalation(BaseModel):
+    """Resume-safe bounded escalation state; old RunState snapshots omit it."""
+
+    official_attempted: bool = False
+    sibling_rounds_used: int = 0
+    source_urls_tried: list[str] = Field(default_factory=list)
+    settled_targets: list[str] = Field(default_factory=list)
+
+
+class PendingDispute(BaseModel):
+    target_key: str
+    option_claim_groups: dict[str, UUID] = Field(default_factory=dict)
+    candidate_claims: list[SourceClaim] = Field(default_factory=list)
 
 
 class PlanScore(BaseModel):
@@ -351,6 +430,18 @@ class PlanSource(BaseModel):
     why: str | None = None
 
 
+class PlanEscalationRound(BaseModel):
+    kind: Literal["official_arbiter", "sibling_round"]
+    trigger_targets: list[str] = Field(default_factory=list)
+    sources: list[PlanSource] = Field(default_factory=list)
+    status: Literal["planned", "completed", "skipped"] = "planned"
+    rung_reached: str | None = None
+
+
+class PlanEscalation(BaseModel):
+    rounds: list[PlanEscalationRound] = Field(default_factory=list)
+
+
 class PlanManifest(BaseModel):
     """The pinned §10.4 plan manifest — the runner's stage list travelling with
     the job (P3-2, §2.1). Do not reshape the keys. `stages` are the live stage
@@ -364,6 +455,7 @@ class PlanManifest(BaseModel):
     stages: list[str] = Field(default_factory=list)
     skipped: dict[str, str] = Field(default_factory=dict)
     est_cost_usd: float
+    escalation: PlanEscalation | None = None
 
 
 class RunState(BaseModel):
@@ -396,8 +488,12 @@ class RunState(BaseModel):
     )
     discover_error: str | None = None
     sources: list[SourceState] = Field(default_factory=list)
+    source_results: list[SourceResult] = Field(default_factory=list)
+    reconcile_escalation: ReconcileEscalation = Field(default_factory=ReconcileEscalation)
+    pending_dispute: PendingDispute | None = None
     property_images: list[PropertyImageIn] = Field(default_factory=list)
     image_fetch_completed: bool = False
+    vision_targets: dict[str, list[str]] = Field(default_factory=dict)
     source_claims: list[SourceClaim] = Field(default_factory=list)
     resolved_claims: list[SourceClaim] = Field(default_factory=list)
     floor_plans: list[FloorPlanIn] = Field(default_factory=list)
@@ -409,6 +505,12 @@ class RunState(BaseModel):
     mandatory_fees: MandatoryFeesIn | None = None
     heating: HeatingIn | None = None
     one_time_fees: OneTimeFeesIn | None = None
+    # P3-21 contact blocks, same optional-with-default posture. `property_contact`
+    # is EXTRACT's page-derived pair; `maps_contact` is ENRICH's Places-derived
+    # pair. They stay separate because provenance decides precedence at persist
+    # time and merging them here would erase which rung a value came from.
+    property_contact: PropertyContactIn | None = None
+    maps_contact: PropertyContactIn | None = None
     verify_flags: list[VerifyFlag] = Field(default_factory=list)
     effective_values: dict[str, Any] = Field(default_factory=dict)
     # §9.5 P3-9: the display plan's composition detail (components + tags +

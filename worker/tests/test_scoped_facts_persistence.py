@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import json
 from uuid import uuid4
 
 import asyncpg
 import pytest
 from manzil_shared.models import Confidence, JobType, TargetScope, UnitApplicability
 from manzil_worker.queue import _upsert_floor_plans
-from manzil_worker.scoped_facts import append_candidate_resolution, persist_single_source_claims
+from manzil_worker.scoped_facts import (
+    append_candidate_resolution,
+    persist_reconciled_claims,
+    persist_single_source_claims,
+)
 from manzil_worker.state import FloorPlanIn, RunState, SourceClaim, SourceState
 
 
@@ -189,6 +194,175 @@ async def test_response_local_floor_plan_reference_resolves_before_persistence(
         await pg_pool.execute("delete from properties where id = $1", property_id)
 
 
+async def test_multi_source_resolution_links_every_candidate(
+    pg_pool: asyncpg.Pool,
+) -> None:
+    property_id, first_source_id = await _seed_property_source(pg_pool)
+    first_url = await pg_pool.fetchval(
+        "select url from property_sources where id = $1", first_source_id
+    )
+    second_source_id = uuid4()
+    second_url = f"https://second.example/{second_source_id}"
+    await pg_pool.execute(
+        "insert into property_sources (id, property_id, url, site_domain) "
+        "values ($1, $2, $3, 'second.example')",
+        second_source_id,
+        property_id,
+        second_url,
+    )
+    first = SourceClaim(
+        criterion_key="pets_policy",
+        value="cats_and_dogs",
+        confidence=Confidence.HIGH,
+        evidence_quote="Pets welcome",
+        source_id=first_url,
+        model="fixture",
+        prompt_version=1,
+    )
+    second = SourceClaim(
+        criterion_key="pets_policy",
+        value="cats_only",
+        confidence=Confidence.MEDIUM,
+        evidence_quote="Cats welcome",
+        source_id=second_url,
+        model="fixture",
+        prompt_version=1,
+    )
+    resolution = first.model_copy(
+        update={
+            "resolution_rule": "family_majority",
+            "candidate_claim_group_ids": [
+                first.claim_group_id,
+                second.claim_group_id,
+            ],
+        }
+    )
+    try:
+        async with pg_pool.acquire() as conn, conn.transaction():
+            await persist_reconciled_claims(
+                conn,
+                property_id=property_id,
+                hunt_id=None,
+                job_id=None,
+                candidate_claims=[first, second],
+                resolved_claims=[resolution],
+                source_ids_by_url={
+                    first_url: first_source_id,
+                    second_url: second_source_id,
+                },
+                floor_plan_ids_by_source_ref={},
+            )
+        rows = await pg_pool.fetch(
+            """
+            select candidate.value #>> '{}' as value, edge.selected
+            from current_extractions resolved
+            join extraction_resolution_candidates edge
+              on edge.resolution_extraction_id = resolved.id
+            join extractions candidate on candidate.id = edge.candidate_extraction_id
+            where resolved.property_id = $1 and resolved.criterion_key = 'pets_policy'
+            order by value
+            """,
+            property_id,
+        )
+        assert [(row["value"], row["selected"]) for row in rows] == [
+            ("cats_and_dogs", True),
+            ("cats_only", False),
+        ]
+    finally:
+        await pg_pool.execute("delete from properties where id = $1", property_id)
+
+
+async def test_authoritative_source_omission_retires_only_that_candidate(
+    pg_pool: asyncpg.Pool,
+) -> None:
+    property_id, first_source_id = await _seed_property_source(pg_pool)
+    first_url = await pg_pool.fetchval(
+        "select url from property_sources where id = $1", first_source_id
+    )
+    second_source_id = uuid4()
+    second_url = f"https://second.example/{second_source_id}"
+    await pg_pool.execute(
+        "insert into property_sources (id, property_id, url, site_domain) "
+        "values ($1, $2, $3, 'second.example')",
+        second_source_id,
+        property_id,
+        second_url,
+    )
+
+    def claim(url: str) -> SourceClaim:
+        return SourceClaim(
+            criterion_key="pool",
+            value=True,
+            confidence=Confidence.HIGH,
+            source_id=url,
+            model="fixture",
+            prompt_version=1,
+        )
+
+    first, second = claim(first_url), claim(second_url)
+    initial_resolution = first.model_copy(
+        update={
+            "resolution_rule": "family_supermajority",
+            "candidate_claim_group_ids": [
+                first.claim_group_id,
+                second.claim_group_id,
+            ],
+        }
+    )
+    refreshed_second = claim(second_url)
+    refreshed_resolution = refreshed_second.model_copy(
+        update={
+            "resolution_rule": "single_source",
+            "candidate_claim_group_ids": [refreshed_second.claim_group_id],
+        }
+    )
+    source_ids = {
+        first_url: first_source_id,
+        second_url: second_source_id,
+    }
+    try:
+        async with pg_pool.acquire() as conn, conn.transaction():
+            await persist_reconciled_claims(
+                conn,
+                property_id=property_id,
+                hunt_id=None,
+                job_id=None,
+                candidate_claims=[first, second],
+                resolved_claims=[initial_resolution],
+                source_ids_by_url=source_ids,
+                floor_plan_ids_by_source_ref={},
+            )
+            await persist_reconciled_claims(
+                conn,
+                property_id=property_id,
+                hunt_id=None,
+                job_id=None,
+                candidate_claims=[refreshed_second],
+                resolved_claims=[refreshed_resolution],
+                source_ids_by_url=source_ids,
+                floor_plan_ids_by_source_ref={},
+                authoritative_source_urls=[first_url, second_url],
+            )
+        first_candidate = await pg_pool.fetchrow(
+            "select value, confidence from current_extraction_candidates "
+            "where property_id = $1 and source_id = $2 and criterion_key = 'pool'",
+            property_id,
+            first_source_id,
+        )
+        assert json.loads(first_candidate["value"]) is None
+        assert first_candidate["confidence"] == Confidence.NOT_FOUND.value
+        assert (
+            await pg_pool.fetchval(
+                "select value from current_extractions "
+                "where property_id = $1 and criterion_key = 'pool'",
+                property_id,
+            )
+            == "true"
+        )
+    finally:
+        await pg_pool.execute("delete from properties where id = $1", property_id)
+
+
 async def test_shared_claim_group_persists_once_per_target_floor_plan(
     pg_pool: asyncpg.Pool,
 ) -> None:
@@ -220,15 +394,26 @@ async def test_shared_claim_group_persists_once_per_target_floor_plan(
     ]
     try:
         async with pg_pool.acquire() as conn, conn.transaction():
-            await persist_single_source_claims(
+            await persist_reconciled_claims(
                 conn,
                 property_id=property_id,
                 hunt_id=None,
-                source_id=source_id,
-                source_url=source_url,
                 job_id=None,
-                claims=claims,
-                floor_plan_ids_by_ref=ids_by_ref,
+                candidate_claims=claims,
+                resolved_claims=[
+                    claim.model_copy(
+                        update={
+                            "resolution_rule": "single_source",
+                            "candidate_claim_group_ids": [group_id],
+                        }
+                    )
+                    for claim in claims
+                ],
+                source_ids_by_url={source_url: source_id},
+                floor_plan_ids_by_source_ref={
+                    (source_url, ref): floor_plan_id
+                    for ref, floor_plan_id in ids_by_ref.items()
+                },
             )
         rows = await pg_pool.fetch(
             "select floor_plan_id, claim_group_id from current_extraction_candidates "
@@ -237,6 +422,21 @@ async def test_shared_claim_group_persists_once_per_target_floor_plan(
         )
         assert {row["floor_plan_id"] for row in rows} == set(ids_by_ref.values())
         assert {row["claim_group_id"] for row in rows} == {group_id}
+        assert (
+            await pg_pool.fetchval(
+                """
+                select count(*)
+                from current_extractions resolved
+                join extraction_resolution_candidates edge
+                  on edge.resolution_extraction_id = resolved.id
+                where resolved.property_id = $1
+                  and resolved.criterion_key = 'dishwasher'
+                  and edge.selected
+                """,
+                property_id,
+            )
+            == 2
+        )
     finally:
         await pg_pool.execute("delete from properties where id = $1", property_id)
 

@@ -30,9 +30,10 @@ describe("PipelineTrack", () => {
   it("renders sub-pips and a fraction for the active phase's stage position", () => {
     const j = job({ current_stage: "DISCOVER", state: "running" });
     const { container } = renderWithProviders(<PipelineTrack model={phasesForJob(j)} />);
-    // Read runs 5 stages; DISCOVER is the 3rd.
-    expect(container.querySelectorAll("[data-s]")).toHaveLength(5);
-    expect(screen.getByText("DISCOVER · 3/5")).toBeInTheDocument();
+    // Read runs EXTRACT · DEDUPE · DISCOVER; image evidence now follows
+    // RECONCILE in the Verify phase.
+    expect(container.querySelectorAll("[data-s]")).toHaveLength(3);
+    expect(screen.getByText("DISCOVER · 3/3")).toBeInTheDocument();
   });
 
   it("shows no expand affordance when not expandable", () => {
