@@ -1,0 +1,29 @@
+{
+  "cache_read_tokens": 0,
+  "cache_write_tokens": 0,
+  "content_sha256": "caf271b1372a21272ef43802a56833b59c5a613ca2f5068eaebef7344af1d917",
+  "image_hashes": null,
+  "input_tokens": 1310,
+  "model": "google/gemini-3-flash-preview",
+  "output": {
+    "contradictions": [
+      {
+        "criterion_key": "availability_date",
+        "note": "The extracted date '2026-07-28' contradicts the page text which states the unit is 'Available now.'"
+      },
+      {
+        "criterion_key": "parking",
+        "note": "The extracted value 'dedicated_lot' contradicts the page text stating parking is 'available on a first-come basis', which implies unassigned/undedicated surface parking."
+      }
+    ]
+  },
+  "output_tokens": 105,
+  "prompt_version": 1,
+  "recorded_at": "2026-07-28T19:53:01.356517+00:00",
+  "reported_cost_usd": null,
+  "server_tool_events": null,
+  "stage": "verify",
+  "stop_reason": null,
+  "text": null,
+  "tool_calls": null
+}

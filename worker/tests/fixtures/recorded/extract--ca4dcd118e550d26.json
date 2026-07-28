@@ -1,0 +1,170 @@
+{
+  "cache_read_tokens": 8026,
+  "cache_write_tokens": 0,
+  "content_sha256": "d642843c01f45a7d62eb4d24d92e7d00ab7656098ce1ebf2502276a73b1a6468",
+  "image_hashes": null,
+  "input_tokens": 297,
+  "model": "google/gemini-3-flash-preview",
+  "output": {
+    "availability_date": {
+      "confidence": "high",
+      "evidence_quote": "Available now.",
+      "value": "available_now"
+    },
+    "baths": {
+      "confidence": "high",
+      "evidence_quote": "one bath",
+      "value": 1
+    },
+    "beds": {
+      "confidence": "high",
+      "evidence_quote": "one and two bedroom",
+      "value": 2
+    },
+    "clubhouse": {
+      "confidence": "high",
+      "evidence_quote": "Community clubhouse",
+      "value": true
+    },
+    "cooling": [],
+    "dishwasher": [],
+    "emergency_maintenance": {
+      "confidence": "not_found",
+      "evidence_quote": null,
+      "value": null
+    },
+    "fitness_center": {
+      "confidence": "not_found",
+      "evidence_quote": null,
+      "value": null
+    },
+    "floor_plans": [
+      {
+        "availability_date": "available_now",
+        "baths": 1,
+        "beds": 2,
+        "evidence_quote": "Two bedroom, one bath apartments with 900 square feet rent for $1,650 per month. Security deposit equal to one month's rent. Available now.",
+        "plan_name": "Two bedroom, one bath",
+        "rent_max": 1650,
+        "rent_min": 1650,
+        "response_key": "2br_1ba",
+        "sqft_max": 900,
+        "sqft_min": 900,
+        "unit_types": [
+          "apartment"
+        ]
+      }
+    ],
+    "in_unit_laundry": [
+      {
+        "applicability": "all_units",
+        "confidence": "high",
+        "evidence_quote": "Shared laundry facilities on site in every building",
+        "value": "on_site"
+      }
+    ],
+    "internet_readiness": {
+      "confidence": "not_found",
+      "evidence_quote": null,
+      "value": null
+    },
+    "maintenance_on_site": {
+      "confidence": "not_found",
+      "evidence_quote": null,
+      "value": null
+    },
+    "management_on_site": {
+      "confidence": "not_found",
+      "evidence_quote": null,
+      "value": null
+    },
+    "min_lease_months": {
+      "confidence": "not_found",
+      "evidence_quote": null,
+      "value": null
+    },
+    "online_maintenance_requests": {
+      "confidence": "high",
+      "evidence_quote": "resident portal for online rent payment and maintenance requests",
+      "value": true
+    },
+    "online_payments": {
+      "confidence": "high",
+      "evidence_quote": "resident portal for online rent payment and maintenance requests",
+      "value": true
+    },
+    "package_handling": {
+      "confidence": "not_found",
+      "evidence_quote": null,
+      "value": null
+    },
+    "parking": [
+      {
+        "applicability": "unit_scope_unspecified",
+        "confidence": "high",
+        "evidence_quote": "Surface parking available on a first-come basis",
+        "value": "dedicated_lot"
+      }
+    ],
+    "patio_balcony": [],
+    "pets_policy": {
+      "confidence": "not_found",
+      "evidence_quote": null,
+      "value": null
+    },
+    "pool": {
+      "confidence": "not_found",
+      "evidence_quote": null,
+      "value": null
+    },
+    "private_entry": [],
+    "property_contact": {
+      "contact_url": "https://willow-bend.seed.example/apartments",
+      "evidence_quote": "book a self-guided tour online at your convenience",
+      "phone": null
+    },
+    "property_identity": {
+      "address": "88 Willow Bend Pkwy, Detroit, MI 48201",
+      "name": "Willow Bend Flats",
+      "official_url": "https://willow-bend.seed.example/apartments"
+    },
+    "property_types": {
+      "confidence": "high",
+      "evidence_quote": "apartment homes",
+      "value": [
+        "apartment"
+      ]
+    },
+    "security_deposit": {
+      "confidence": "high",
+      "evidence_quote": "Security deposit equal to one month's rent.",
+      "value": 1650
+    },
+    "smoking_policy": {
+      "confidence": "not_found",
+      "evidence_quote": null,
+      "value": null
+    },
+    "sqft": {
+      "confidence": "high",
+      "evidence_quote": "900 square feet",
+      "value": 900
+    },
+    "unit_types": {
+      "confidence": "high",
+      "evidence_quote": "apartment homes",
+      "value": [
+        "apartment"
+      ]
+    }
+  },
+  "output_tokens": 849,
+  "prompt_version": 7,
+  "recorded_at": "2026-07-28T19:52:59.722217+00:00",
+  "reported_cost_usd": null,
+  "server_tool_events": null,
+  "stage": "extract",
+  "stop_reason": null,
+  "text": null,
+  "tool_calls": null
+}

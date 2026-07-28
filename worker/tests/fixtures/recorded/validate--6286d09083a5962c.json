@@ -1,0 +1,22 @@
+{
+  "cache_read_tokens": 0,
+  "cache_write_tokens": 0,
+  "content_sha256": "9c3b5bf5795d281b41da566f1f30d16e369353620fc0db3e7a3ac6a8f937c194",
+  "image_hashes": null,
+  "input_tokens": 722,
+  "model": "google/gemini-3-flash-preview",
+  "output": {
+    "is_listing": true,
+    "property_name": "Birch Run Apartments",
+    "reason": "The page advertises a specific apartment complex with a name, address, price, and unit details."
+  },
+  "output_tokens": 52,
+  "prompt_version": 1,
+  "recorded_at": "2026-07-28T19:52:46.176624+00:00",
+  "reported_cost_usd": null,
+  "server_tool_events": null,
+  "stage": "validate",
+  "stop_reason": null,
+  "text": null,
+  "tool_calls": null
+}

@@ -1,0 +1,22 @@
+{
+  "cache_read_tokens": 0,
+  "cache_write_tokens": 0,
+  "content_sha256": "ce9676e544851f18ac234f3a846e7b2d809b6ee91a3fec43ba4afdfabe8f7717",
+  "image_hashes": null,
+  "input_tokens": 660,
+  "model": "google/gemini-3-flash-preview",
+  "output": {
+    "is_listing": true,
+    "property_name": "Willow Bend Flats",
+    "reason": "The page advertises a specific apartment complex with pricing, floor plans, and amenities."
+  },
+  "output_tokens": 48,
+  "prompt_version": 1,
+  "recorded_at": "2026-07-28T19:52:54.942634+00:00",
+  "reported_cost_usd": null,
+  "server_tool_events": null,
+  "stage": "validate",
+  "stop_reason": null,
+  "text": null,
+  "tool_calls": null
+}
