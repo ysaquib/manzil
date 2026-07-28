@@ -124,6 +124,79 @@ def ingest(
     asyncio.run(run())
 
 
+@app.command("purge-images")
+def purge_images_cmd(
+    property_id: str = typer.Option(
+        None, "--property", help="Scope the purge to one Property UUID (default: all)"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Report what would be removed without deleting anything"
+    ),
+) -> None:
+    """Remove Storage objects for unreferenced, non-current images (P3-SC5).
+
+    Deletes only images that are non-current AND carry no current Floor Plan
+    association AND are cited by no Extraction. Inactive evidence is otherwise
+    retained while its Property exists (DESIGN §9.3), so this is an explicit
+    admin action rather than a scheduled sweep.
+
+    Admin-only, service-role: connects via DATABASE_URL below the RLS boundary.
+    Start with --dry-run.
+    """
+    import uuid
+
+    import asyncpg
+    import structlog
+
+    from manzil_worker.enrich.images import SupabaseImageStore
+    from manzil_worker.ops.purge_images import purge_unreferenced_images
+
+    log = structlog.get_logger()
+
+    async def run() -> None:
+        dsn = os.environ.get("DATABASE_URL")
+        if not dsn:
+            typer.echo(
+                "DATABASE_URL is not set — purge-images needs the service-role DB URL",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        store = SupabaseImageStore.from_env()
+        if store is None:
+            typer.echo(
+                "SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are not set — "
+                "purge-images needs Storage credentials",
+                err=True,
+            )
+            raise typer.Exit(code=2)
+        pid = uuid.UUID(property_id) if property_id else None
+
+        pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
+        try:
+            async with pool.acquire() as conn, conn.transaction():
+                result = await purge_unreferenced_images(
+                    conn, store, property_id=pid, dry_run=dry_run
+                )
+        finally:
+            await pool.close()
+
+        log.info(
+            "purge_images_done",
+            property_id=str(pid) if pid else None,
+            dry_run=dry_run,
+            **result.__dict__,
+        )
+        prefix = "would remove" if dry_run else "removed"
+        typer.echo(f"{result.considered} unreferenced image(s) considered")
+        typer.echo(f"  {prefix} {result.deleted_objects} Storage object(s)")
+        if not dry_run:
+            typer.echo(f"  deleted {result.deleted_rows} row(s)")
+        if result.retained_shared:
+            typer.echo(f"  kept {result.retained_shared} object(s) still shared by other rows")
+
+    asyncio.run(run())
+
+
 @app.command("split-property")
 def split_property_cmd(
     property_id: str = typer.Argument(..., help="Merged Property UUID to split"),
@@ -238,9 +311,7 @@ def backfill_locality_cmd(
                 result = await backfill_locality(conn, property_ids=ids)
         finally:
             await pool.close()
-        typer.echo(
-            f"attempted={result.attempted} updated={result.updated} failed={result.failed}"
-        )
+        typer.echo(f"attempted={result.attempted} updated={result.updated} failed={result.failed}")
 
     asyncio.run(run())
 
@@ -378,6 +449,186 @@ def bench_skeleton(
         raise typer.Exit(code=1) from None
     typer.echo(f"skeleton written to {path}")
     typer.echo("manifest.md row added; fill in criteria values and its trait columns by hand")
+
+
+@app.command("vision-label-kit")
+def vision_label_kit_cmd(
+    property_id: list[str] = typer.Option(
+        [],
+        "--property-id",
+        help=(
+            "Property UUID to include (repeatable). Omit to select the 10 "
+            "most recently imaged Properties."
+        ),
+    ),
+    max_properties: int = typer.Option(10, "--max-properties"),
+    max_images_per_property: int = typer.Option(30, "--max-images-per-property"),
+    from_corpus: bool = typer.Option(
+        False,
+        "--from-corpus",
+        help="Use saved local corpus pages when no Property images are stored yet.",
+    ),
+    out_dir: Path = typer.Option(
+        Path("worker/tests/fixtures/vision_labels"),
+        "--out-dir",
+        help="Gitignored local output directory.",
+    ),
+    force: bool = typer.Option(False, "--force", help="Replace an existing local kit at --out-dir"),
+) -> None:
+    """Build the local P3-7 classifier labeling kit from current Property images.
+
+    Reads the service-role database and private image bucket by default. With
+    --from-corpus it discovers and downloads gallery images from saved local
+    corpus pages instead. It writes only gitignored artifacts: contact-sheet,
+    labels, manifest, and normalized copies. No LLM call or production mutation
+    occurs.
+    """
+    import asyncpg
+
+    from manzil_worker.enrich.images import SupabaseImageStore
+    from manzil_worker.evals.vision_label_kit import (
+        LabelKitError,
+        collect_corpus_images,
+        collect_current_images,
+        write_label_kit,
+    )
+
+    async def run() -> None:
+        try:
+            if from_corpus:
+                from manzil_worker.enrich.images import download_image
+
+                corpus_set = await collect_corpus_images(
+                    download_image,
+                    max_properties=max_properties,
+                    max_images_per_property=max_images_per_property,
+                )
+
+                async def local_image(path: str) -> bytes:
+                    return corpus_set.contents[path]
+
+                result = await write_label_kit(
+                    corpus_set.images, local_image, out_dir=out_dir, force=force
+                )
+            else:
+                dsn = os.environ.get("DATABASE_URL")
+                store = SupabaseImageStore.from_env()
+                if not dsn or store is None:
+                    typer.echo(
+                        "DATABASE_URL, SUPABASE_URL, and SUPABASE_SERVICE_ROLE_KEY are "
+                        "required to build a vision label kit",
+                        err=True,
+                    )
+                    raise typer.Exit(code=2)
+                conn = await asyncpg.connect(dsn)
+                try:
+                    images = await collect_current_images(
+                        conn,
+                        property_ids=property_id,
+                        max_properties=max_properties,
+                        max_images_per_property=max_images_per_property,
+                    )
+                    result = await write_label_kit(images, store.get, out_dir=out_dir, force=force)
+                finally:
+                    await conn.close()
+        except LabelKitError as error:
+            typer.echo(str(error), err=True)
+            raise typer.Exit(code=1) from None
+
+        typer.echo(
+            f"vision label kit: {result.image_count} images across "
+            f"{result.property_count} Properties"
+        )
+        typer.echo(f"contact sheet: {result.contact_sheet}")
+        typer.echo(f"labels: {result.labels_csv}")
+        if result.image_count < 200:
+            typer.echo(
+                "warning: fewer than the 200-image classifier-bench target; "
+                "add Properties or raise --max-images-per-property",
+                err=True,
+            )
+
+    asyncio.run(run())
+
+
+@app.command("vision-duplicate-suggestions")
+def vision_duplicate_suggestions_cmd(
+    out_dir: Path = typer.Option(
+        Path("worker/tests/fixtures/vision_labels"),
+        "--out-dir",
+        help="Existing gitignored local labeling-kit directory.",
+    ),
+) -> None:
+    """Generate dHash duplicate suggestions for human review without editing labels."""
+    from manzil_worker.evals.vision_label_kit import LabelKitError, write_duplicate_suggestions
+
+    try:
+        result = write_duplicate_suggestions(out_dir)
+    except LabelKitError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=1) from None
+    typer.echo(
+        f"duplicate suggestions: {result.cluster_count} groups / {result.image_count} images"
+    )
+    typer.echo(f"review sheet: {result.review_sheet}")
+    typer.echo(f"suggestions: {result.suggestions_csv}")
+
+
+@app.command("vision-classifier-bench")
+def vision_classifier_bench_cmd(
+    labels_dir: Path = typer.Option(
+        Path("worker/tests/fixtures/vision_labels"),
+        "--labels-dir",
+        help="Completed local classifier label kit.",
+    ),
+    out: Path = typer.Option(
+        Path("worker/evals/reports/vision-classifier-bench.json"),
+        "--out",
+        help="Gitignored local JSON report.",
+    ),
+    model: list[str] = typer.Option(
+        [],
+        "--model",
+        help="Model to sweep (repeatable); defaults to the three approved candidates.",
+    ),
+) -> None:
+    """Run the traced P3-7a2 classifier benchmark against human labels."""
+    from manzil_worker.evals.vision_classifier import (
+        DEFAULT_CLASSIFIER_BENCH_MODELS,
+        ClassifierBenchError,
+        report_json,
+        run_classifier_bench,
+    )
+
+    try:
+        results = asyncio.run(
+            run_classifier_bench(
+                labels_dir=labels_dir,
+                models=tuple(model) if model else DEFAULT_CLASSIFIER_BENCH_MODELS,
+            )
+        )
+    except ClassifierBenchError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=1) from None
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(report_json(results))
+    for result in results:
+        precision = (
+            f"{result.selected_kitchen_precision:.1%}"
+            if result.selected_kitchen_precision is not None
+            else "n/a"
+        )
+        recall = (
+            f"{result.kitchen_property_recall:.1%}"
+            if result.kitchen_property_recall is not None
+            else "n/a"
+        )
+        typer.echo(
+            f"{result.model}: {'PASS' if result.passed else 'FAIL'} · "
+            f"precision {precision} · recall {recall} · "
+            f"${result.cost_per_property_usd:.4f}/Property · {result.latency_seconds:.1f}s"
+        )
+    typer.echo(f"report: {out}")
 
 
 @app.command("extract-corpus")

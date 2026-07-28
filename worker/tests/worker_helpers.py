@@ -61,7 +61,11 @@ async def seed_recorded_llm(stage: str, schema: type[Any], content: str) -> Any:
                 output[entry.key] = [
                     {
                         **legacy,
-                        "applicability": "unit_scope_unspecified",
+                        "applicability": (
+                            "all_units"
+                            if entry.key == "in_unit_laundry"
+                            else "unit_scope_unspecified"
+                        ),
                         "floor_plan_refs": [],
                     }
                 ]

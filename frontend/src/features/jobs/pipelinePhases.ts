@@ -60,8 +60,8 @@ const PHASE_GERUND: Record<PhaseKey, string> = {
 const PHASE_STAGES: Record<PhaseKey, string[]> = {
   prepare: ["PLAN", "VALIDATE_URL"],
   fetch: ["FETCH", "VALIDATE"],
-  read: ["EXTRACT", "DEDUPE", "DISCOVER", "IMAGE_FETCH", "VISION"],
-  verify: ["VERIFY", "ENRICH"],
+  read: ["EXTRACT", "DEDUPE", "DISCOVER"],
+  verify: ["VERIFY", "RECONCILE", "IMAGE_FETCH", "IMAGE_CLASSIFY", "VISION", "ENRICH"],
   score: ["SCORE"],
 };
 

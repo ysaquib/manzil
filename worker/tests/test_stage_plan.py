@@ -13,12 +13,14 @@ from uuid import uuid4
 
 import pytest
 from manzil_shared.models import JobType
+from manzil_worker.fetching.registry import InMemoryRegistry
 from manzil_worker.llm.tools import AgentResult
 from manzil_worker.runner import INGEST_STAGE_NAMES, STAGE_REGISTRY, run_job
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.fetch import fetch_stage
 from manzil_worker.stages.plan import plan_stage
 from manzil_worker.state import PlanManifest, RunState, SourceFreshness
+from worker_helpers import PAGES, FakeFetcher
 
 URL = "https://maplecourt.test/floorplans"
 LIVE_STAGES = [
@@ -29,9 +31,13 @@ LIVE_STAGES = [
     "EXTRACT",
     "DEDUPE",
     "DISCOVER",
-    "IMAGE_FETCH",
-    "VISION",
+    "FETCH",
+    "EXTRACT",
     "VERIFY",
+    "RECONCILE",
+    "IMAGE_FETCH",
+    "IMAGE_CLASSIFY",
+    "VISION",
     "ENRICH",
     "SCORE",
 ]
@@ -68,8 +74,8 @@ def test_manifest_new_submission() -> None:
         "source_policy": "tiers_1_2_3",
         "sources": [{"url": URL, "action": "fetch", "tier": 1}],
         "stages": LIVE_STAGES,
-        "skipped": {"VISION": "missing_reference_set"},
-        "est_cost_usd": 0.08,
+        "skipped": {},
+        "est_cost_usd": 0.14,
     }
     # Nothing pre-loaded — FETCH will fetch.
     assert state.sources == []
@@ -91,8 +97,8 @@ def test_manifest_same_property_reingest_skips_on_fresh_hash() -> None:
         "source_policy": "tiers_1_2_3",
         "sources": [{"url": URL, "action": "skip", "why": "hash_fresh"}],
         "stages": LIVE_STAGES,
-        "skipped": {"VISION": "missing_reference_set"},
-        "est_cost_usd": 0.08,
+        "skipped": {},
+        "est_cost_usd": 0.14,
     }
     # PLAN handed FETCH the persisted cleaned text so it skips the network.
     assert len(state.sources) == 1
@@ -147,6 +153,26 @@ def test_fetch_uses_persisted_text_when_plan_skips() -> None:
     out = asyncio.run(fetch_stage(state, StageCtx()))  # registry=None on purpose
 
     assert out.sources[0].cleaned_text == "persisted body"
+
+
+def test_fetch_fans_out_across_the_source_slate() -> None:
+    state = _state()
+    sibling = "https://sibling.test/maple-court"
+    state.slate_urls = [state.url, sibling]
+    body = (PAGES / "e2e_listing.html").read_text()
+
+    out = asyncio.run(
+        fetch_stage(
+            state,
+            StageCtx(
+                registry=InMemoryRegistry(),
+                fetchers={1: FakeFetcher(1, body)},
+            ),
+        )
+    )
+
+    assert [source.url for source in out.sources] == [state.url, sibling]
+    assert all(source.cleaned_text for source in out.sources)
 
 
 # ── manifest-driven resume (§2.1) ────────────────────────────────────────────
@@ -212,6 +238,33 @@ def test_manifest_skipped_stage_is_not_called(monkeypatch: pytest.MonkeyPatch) -
     assert log == ["x1", "x3"]
 
 
+def test_manifest_walk_executes_stages_inserted_after_current_cursor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    log: list[str] = []
+
+    async def expands(state: RunState, ctx: StageCtx) -> RunState:
+        log.append("x1")
+        assert state.plan is not None
+        state.plan.stages[state.cursor + 1 : state.cursor + 1] = ["x3", "x4"]
+        return state
+
+    stages = _recording_stages(log)
+    monkeypatch.setitem(STAGE_REGISTRY, "x1", expands)
+    monkeypatch.setitem(STAGE_REGISTRY, "x2", stages["x2"])
+    monkeypatch.setitem(STAGE_REGISTRY, "x3", stages["x3"])
+    monkeypatch.setitem(STAGE_REGISTRY, "x4", stages["x4"])
+    state = RunState(
+        job_id=uuid4(),
+        job_type=JobType.INGEST,
+        url=URL,
+        plan=_plan(["x1", "x2"]),
+    )
+
+    asyncio.run(run_job(state, StageCtx()))
+    assert log == ["x1", "x3", "x4", "x2"]
+
+
 def test_legacy_fallback_when_plan_is_none() -> None:
     # A pre-P3 snapshot (plan=None) resumes through the caller's fixed list.
     log: list[str] = []
@@ -231,10 +284,10 @@ def test_legacy_fallback_when_plan_is_none() -> None:
 
 
 def test_est_cost_matches_live_stage_estimates() -> None:
-    # VISION is fail-closed (reference set absent), so only text LLM stages count.
+    # The released kitchen profile includes the anchored VISION call.
     state = asyncio.run(plan_stage(_state(), StageCtx()))
     assert state.plan is not None
-    assert state.plan.est_cost_usd == 0.08
+    assert state.plan.est_cost_usd == 0.14
     assert state.plan.stages == list(INGEST_STAGE_NAMES)
 
 

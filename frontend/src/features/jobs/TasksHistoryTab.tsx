@@ -59,6 +59,24 @@ function jobMeta(job: Job, memberName: string): string {
   return parts.join(" · ");
 }
 
+function escalationSummary(plan: unknown): string | null {
+  const rounds = (
+    plan as {
+      escalation?: {
+        rounds?: Array<{
+          kind?: string;
+          trigger_targets?: unknown[];
+          sources?: Array<{ url?: string }>;
+        }>;
+      };
+    } | null
+  )?.escalation?.rounds;
+  if (!rounds?.length) return null;
+  const sourceCount = rounds.reduce((total, round) => total + (round.sources?.length ?? 0), 0);
+  const targetCount = new Set(rounds.flatMap((round) => round.trigger_targets ?? [])).size;
+  return `Cross-check escalated ${rounds.length} time${rounds.length === 1 ? "" : "s"} · ${sourceCount} additional Source${sourceCount === 1 ? "" : "s"} · ${targetCount} unresolved field${targetCount === 1 ? "" : "s"}`;
+}
+
 function HistoryCard({ job, listingName, memberName, onRetry, retrying }: {
   job: Job;
   listingName: string | null;
@@ -70,6 +88,7 @@ function HistoryCard({ job, listingName, memberName, onRetry, retrying }: {
   const [planExpanded, setPlanExpanded] = useState(false);
   const canRetry = job.state === "failed" || job.state === "cancelled";
   const togglePlan = () => setPlanExpanded((value) => !value);
+  const escalation = escalationSummary(job.plan);
 
   return (
     <Card className={classes.card}>
@@ -83,6 +102,11 @@ function HistoryCard({ job, listingName, memberName, onRetry, retrying }: {
         <EventTimeline jobId={job.id} expanded={expanded} />
       </PipelineTrack>
       {job.error && <div className={classes.error}>{job.error}</div>}
+      {escalation && (
+        <Text size="xs" c="dimmed">
+          {escalation}
+        </Text>
+      )}
       {job.plan && planExpanded && (
         <div>
           <div className={classes.planHeader}>

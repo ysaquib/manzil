@@ -27,7 +27,7 @@ from collections.abc import Awaitable, Callable
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import structlog
 from manzil_shared.config import (
@@ -44,8 +44,14 @@ from manzil_shared.models import (
     RubricCriterion,
     RubricOption,
     TargetScope,
+    UnitApplicability,
 )
 
+from manzil_worker.enrich.contacts import (
+    ContactProvenance,
+    ContactRecord,
+    build_contact_records,
+)
 from manzil_worker.enrich.images import SupabaseImageStore
 from manzil_worker.fetching.registry import InMemoryRegistry, PostgresRegistry
 from manzil_worker.fetching.tiers import Fetcher, site_domain
@@ -58,7 +64,11 @@ from manzil_worker.runner import (
     PHASE0_STAGES,
     run_job,
 )
-from manzil_worker.scoped_facts import append_candidate_resolution, persist_single_source_claims
+from manzil_worker.scoped_facts import (
+    append_candidate_resolution,
+    persist_reconciled_claims,
+    persist_single_source_claims,
+)
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.pet_costs import slot_for_fee, slot_for_one_time_fee
 from manzil_worker.stages.rescore import rescore_hunt
@@ -209,6 +219,26 @@ async def _load_rubric(conn: asyncpg.Connection, hunt_id: UUID) -> list[RubricCr
     return [_rubric_criterion(r) for r in rows]
 
 
+def _make_reconcile_rubric_lookup(pool: asyncpg.Pool):
+    async def lookup(property_id: UUID) -> list[RubricCriterion]:
+        rows = await pool.fetch(
+            """
+            select rc.hunt_id, rc.catalog_key, rc.custom_def, rc.options,
+                   rc.unknown_delta, rc.non_negotiable, rc.is_bonus, rc.position
+            from rubric_criteria rc
+            where rc.enabled and exists (
+                select 1 from hunt_listings hl
+                where hl.hunt_id = rc.hunt_id
+                  and hl.property_id = $1
+            )
+            """,
+            property_id,
+        )
+        return [_rubric_criterion(row) for row in rows]
+
+    return lookup
+
+
 def _build_run_state(job: asyncpg.Record) -> RunState:
     """Fresh from the enqueue payload, or reconstructed from a persisted snapshot
     (resume). The snapshot carries the resume cursor and all prior stage output."""
@@ -289,6 +319,68 @@ async def _persist_discovery_results(
         hunt_listing_id,
         state.single_source_reason,
     )
+
+
+async def _persist_property_contacts(
+    conn: asyncpg.Connection,
+    *,
+    property_id: UUID,
+    source_id: UUID,
+    source_is_official: bool,
+    state: RunState,
+) -> None:
+    """Write the run's contact observations (P3-21, DESIGN §8.2, §16).
+
+    Two producers, three rungs: EXTRACT's page block is `official_site` when the
+    fetched Source is the property's official site and `listing` otherwise, and
+    ENRICH's Places block is always `google_places`. Precedence between them is
+    the `property_contacts_current` view's job, not this function's — every
+    observation is recorded, and the view picks the winner.
+
+    Values that fail normalization are dropped, never raised: a missing contact is
+    the designed give-up state (§13.2 renders no Contact row and the reader falls
+    back to the official link), so an unparseable phone must not fail a job.
+    """
+    official_url = await conn.fetchval(
+        "select official_url from properties where id = $1", property_id
+    )
+
+    records: list[tuple[ContactRecord, UUID | None]] = []
+    if state.property_contact is not None:
+        provenance = (
+            ContactProvenance.OFFICIAL_SITE if source_is_official else ContactProvenance.LISTING
+        )
+        for record in build_contact_records(
+            phone=state.property_contact.phone,
+            contact_url=state.property_contact.contact_url,
+            provenance=provenance,
+            official_url=official_url,
+        ):
+            records.append((record, source_id))
+    if state.maps_contact is not None:
+        for record in build_contact_records(
+            phone=state.maps_contact.phone,
+            contact_url=state.maps_contact.contact_url,
+            provenance=ContactProvenance.GOOGLE_PLACES,
+            official_url=official_url,
+        ):
+            # No source_id: Places is an API observation, not one of our Sources.
+            records.append((record, None))
+
+    for record, record_source_id in records:
+        await conn.execute(
+            """
+            insert into property_contacts (property_id, kind, value, provenance, source_id)
+            values ($1, $2, $3, $4, $5)
+            on conflict (property_id, kind, value, provenance)
+                do update set observed_at = now(), source_id = excluded.source_id
+            """,
+            property_id,
+            record.kind.value,
+            record.value,
+            record.provenance.value,
+            record_source_id,
+        )
 
 
 async def _upsert_floor_plans(
@@ -433,31 +525,40 @@ async def _persist_ingest_results(
     `unavailable_at = now()`, and it renders as a dimmed, null-score row. When
     plans are found the marker is cleared, so the state reverses on refresh."""
 
-    source = state.sources[0]
-    submitted_is_official = state.official_source_url == source.url
-    source_id = await conn.fetchval(
-        """
-        insert into property_sources
-            (property_id, url, site_domain, is_official, cleaned_text_hash,
-             cleaned_text, image_urls, last_fetched_at, last_success_at)
-        values ($1, $2, $3, $4, $5, $6, $7::jsonb, now(), now())
-        on conflict (url) do update set
-            is_official = property_sources.is_official or excluded.is_official,
-            cleaned_text_hash = excluded.cleaned_text_hash,
-            cleaned_text = excluded.cleaned_text,
-            image_urls = excluded.image_urls,
-            last_fetched_at = now(),
-            last_success_at = now()
-        returning id
-        """,
-        property_id,
-        source.url,
-        site_domain(source.url),
-        submitted_is_official,
-        source.cleaned_hash,
-        source.cleaned_text,
-        json.dumps(source.image_urls),
-    )
+    source = next(item for item in state.sources if item.url == state.url)
+    source_ids_by_url: dict[str, UUID] = {}
+    source_official_by_url: dict[str, bool] = {}
+    for fetched_source in state.sources:
+        source_row = await conn.fetchrow(
+            """
+            insert into property_sources
+                (property_id, url, site_domain, is_official, cleaned_text_hash,
+                 cleaned_text, image_urls, last_fetched_at, last_success_at)
+            values ($1, $2, $3, $4, $5, $6, $7::jsonb, now(), now())
+            on conflict (url) do update set
+                is_official = property_sources.is_official or excluded.is_official,
+                cleaned_text_hash = excluded.cleaned_text_hash,
+                cleaned_text = excluded.cleaned_text,
+                image_urls = excluded.image_urls,
+                last_fetched_at = now(),
+                last_success_at = now()
+            returning id, is_official
+            """,
+            property_id,
+            fetched_source.url,
+            site_domain(fetched_source.url),
+            fetched_source.is_official or state.official_source_url == fetched_source.url,
+            fetched_source.cleaned_hash,
+            fetched_source.cleaned_text,
+            json.dumps(fetched_source.image_urls),
+        )
+        source_ids_by_url[fetched_source.url] = source_row["id"]
+        source_official_by_url[fetched_source.url] = source_row["is_official"]
+    source_id = source_ids_by_url[source.url]
+    # The persisted flag, not this run's: DISCOVER may have already marked the URL
+    # official, and the upsert ORs the two. P3-21 reads it to rank the page's
+    # contact block as the official-site rung rather than a plain listing.
+    source_is_official = source_official_by_url[source.url]
 
     await _persist_discovery_results(
         conn,
@@ -469,23 +570,42 @@ async def _persist_ingest_results(
 
     # IMAGE_FETCH outputs are content-addressed. The later scheduler cleanup
     # removes unreferenced Storage objects after the retention window.
+    #
+    # Retirement is **Source-local** (§P3-SC5, DESIGN "refresh authority is
+    # Source-local"): only a Source this run actually fetched may retire its
+    # own images. A Property-wide sweep here would let a run over one Source
+    # silently retire every other Source's photos and Floor Plan diagrams.
+    refreshed_source_ids = [
+        source_ids_by_url[fetched.url]
+        for fetched in state.sources
+        if fetched.url in source_ids_by_url
+    ]
     current_hashes = [image.content_hash for image in state.property_images]
-    if state.image_fetch_completed and current_hashes:
+    if state.image_fetch_completed and refreshed_source_ids:
         await conn.execute(
-            "delete from property_images where property_id = $1 "
-            "and not (content_hash = any($2::text[]))",
+            "update property_images set is_current = false "
+            "where property_id = $1 and source_id = any($2::uuid[]) "
+            "and not (content_hash = any($3::text[]))",
             property_id,
+            refreshed_source_ids,
             current_hashes,
         )
-    elif state.image_fetch_completed:
-        await conn.execute("delete from property_images where property_id = $1", property_id)
+    image_ids_by_hash: dict[str, UUID] = {}
     for image in state.property_images:
-        await conn.execute(
+        image_source_id = await conn.fetchval(
+            "select id from property_sources where property_id = $1 and url = $2",
+            property_id,
+            image.source_url_page or source.url,
+        )
+        image_id = await conn.fetchval(
             """
             insert into property_images
                 (property_id, source_url, storage_path, content_hash, width,
-                 height, byte_size, kind, vision_assessment)
-            values ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb)
+                 height, byte_size, kind, vision_assessment, source_id,
+                 source_page_order, perceptual_hash, normalization_profile,
+                 discovery_context, is_current)
+            values ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11,
+                    $12, $13, $14::jsonb, true)
             on conflict (property_id, content_hash) where content_hash is not null do update set
                 source_url = excluded.source_url,
                 storage_path = excluded.storage_path,
@@ -493,9 +613,16 @@ async def _persist_ingest_results(
                 height = excluded.height,
                 byte_size = excluded.byte_size,
                 kind = coalesce(excluded.kind, property_images.kind),
+                source_id = coalesce(excluded.source_id, property_images.source_id),
+                source_page_order = excluded.source_page_order,
+                perceptual_hash = excluded.perceptual_hash,
+                normalization_profile = excluded.normalization_profile,
+                discovery_context = excluded.discovery_context,
+                is_current = true,
                 vision_assessment = coalesce(
                     excluded.vision_assessment, property_images.vision_assessment
                 )
+            returning id
             """,
             property_id,
             image.source_url,
@@ -506,7 +633,13 @@ async def _persist_ingest_results(
             image.byte_size,
             image.kind,
             json.dumps(image.vision_assessment) if image.vision_assessment is not None else None,
+            image_source_id,
+            image.source_page_order,
+            image.perceptual_hash,
+            image.normalization_profile,
+            json.dumps(image.discovery_context),
         )
+        image_ids_by_hash[image.content_hash] = image_id
 
     # Project EXTRACT's identity block onto the global properties row, replacing the
     # URL-slug placeholders written at submit. Non-null-wins: an extracted value
@@ -555,27 +688,316 @@ async def _persist_ingest_results(
             geocode.county,
         )
 
+    # P3-21: after the identity projection so the contact-URL domain guard sees the
+    # freshest official_url, and before scoring — which never reads contacts.
+    await _persist_property_contacts(
+        conn,
+        property_id=property_id,
+        source_id=source_id,
+        source_is_official=source_is_official,
+        state=state,
+    )
+
     # P3-SC2's load-bearing persistence order: Floor Plans first so response-local
     # references can resolve, then candidate/resolution facts + lineage, then
     # scores/projection. No scoped fact can point across Properties.
-    scorable, floor_plan_ids, floor_plan_ids_by_ref = await _upsert_floor_plans(
-        conn,
-        property_id=property_id,
-        source_id=source_id,
-        state=state,
-    )
+    scorable: list[FloorPlanIn] = []
+    floor_plan_ids: list[UUID] = []
+    floor_plan_ids_by_ref: dict[str, UUID] = {}
+    floor_plan_ids_by_source_ref: dict[tuple[str, str], UUID] = {}
+    if state.source_results:
+        for result in state.source_results:
+            result_source_id = source_ids_by_url.get(result.source_url)
+            result_source = next(
+                (item for item in state.sources if item.url == result.source_url),
+                None,
+            )
+            if result_source_id is None or result_source is None:
+                continue
+            isolated = state.model_copy(deep=True)
+            isolated.sources = [result_source.model_copy(deep=True)]
+            isolated.floor_plans = [plan.model_copy(deep=True) for plan in result.floor_plans]
+            result_scorable, result_ids, result_refs = await _upsert_floor_plans(
+                conn,
+                property_id=property_id,
+                source_id=result_source_id,
+                state=isolated,
+            )
+            floor_plan_ids_by_source_ref.update(
+                {(result.source_url, ref): plan_id for ref, plan_id in result_refs.items()}
+            )
+            scorable.extend(result_scorable)
+            floor_plan_ids.extend(result_ids)
+            if result.source_url == state.url:
+                floor_plan_ids_by_ref = result_refs
+    else:
+        scorable, floor_plan_ids, floor_plan_ids_by_ref = await _upsert_floor_plans(
+            conn,
+            property_id=property_id,
+            source_id=source_id,
+            state=state,
+        )
+        floor_plan_ids_by_source_ref.update(
+            {(source.url, ref): plan_id for ref, plan_id in floor_plan_ids_by_ref.items()}
+        )
+    # `floor_plan_images.producer_job_id` FKs to `jobs`, and this projection is
+    # reachable from paths where the job row does not exist (replay fixtures,
+    # ad-hoc reprocessing). Resolve it once, defensively, exactly as the
+    # Extraction writes below already do — provenance is worth recording but
+    # never worth failing the whole terminal transaction over.
     persisted_job_id = await conn.fetchval("select id from jobs where id = $1", state.job_id)
-    await persist_single_source_claims(
-        conn,
-        property_id=property_id,
-        hunt_id=None,
-        source_id=source_id,
-        source_url=source.url,
-        job_id=persisted_job_id,
-        claims=[*state.source_claims, *_auxiliary_claims(state, source.url)],
-        floor_plan_ids_by_ref=floor_plan_ids_by_ref,
-        authoritative=source.authoritative_extraction,
-    )
+
+    linked_pairs: set[tuple[UUID, UUID]] = set()
+    for image in state.property_images:
+        property_image_id = image_ids_by_hash.get(image.content_hash)
+        image_page_url = image.source_url_page or source.url
+        image_source_id = await conn.fetchval(
+            "select id from property_sources where property_id = $1 and url = $2",
+            property_id,
+            image_page_url,
+        )
+        if property_image_id is None or image_source_id is None:
+            continue
+        for ref in image.exact_floor_plan_refs:
+            # Resolve the response-local ref against the map for *this image's
+            # own Source*. Using the primary Source's map would let an image
+            # from Source B link to a Floor Plan from Source A, breaking the
+            # v1 same-Source association rule (workbook §7.2).
+            floor_plan_id = floor_plan_ids_by_source_ref.get((image_page_url, ref))
+            if floor_plan_id is None:
+                continue
+            linked_pairs.add((floor_plan_id, property_image_id))
+            context = image.discovery_context
+            method = (
+                "source_native_id"
+                if context.get("source_native_plan_id")
+                else "containing_card"
+            )
+            current_link = await conn.fetchval(
+                """
+                select id from current_floor_plan_images
+                where floor_plan_id = $1 and property_image_id = $2
+                """,
+                floor_plan_id,
+                property_image_id,
+            )
+            if current_link is None:
+                await conn.execute(
+                    """
+                    insert into floor_plan_images
+                        (floor_plan_id, property_image_id, source_id, action,
+                         association_method, confidence, evidence_context,
+                         display_order, producer_job_id)
+                    values ($1, $2, $3, 'link', $4, 'high', $5::jsonb, $6, $7)
+                    """,
+                    floor_plan_id,
+                    property_image_id,
+                    image_source_id,
+                    method,
+                    json.dumps(context),
+                    image.source_page_order,
+                    persisted_job_id,
+                )
+
+    # Retire associations this Source no longer asserts. Append-only: an
+    # `unlink` row drops the pair out of `current_floor_plan_images` while the
+    # link's history survives. Only a *complete* refresh may do this — a
+    # partial or failed discovery retires nothing (§P3-SC5 lifecycle).
+    if state.image_fetch_completed and refreshed_source_ids:
+        stale = await conn.fetch(
+            """
+            select floor_plan_id, property_image_id, source_id
+            from current_floor_plan_images
+            where source_id = any($1::uuid[])
+            """,
+            refreshed_source_ids,
+        )
+        for row in stale:
+            pair = (row["floor_plan_id"], row["property_image_id"])
+            if pair in linked_pairs:
+                continue
+            await conn.execute(
+                """
+                insert into floor_plan_images
+                    (floor_plan_id, property_image_id, source_id, action,
+                     association_method, confidence, evidence_context,
+                     producer_job_id)
+                values ($1, $2, $3, 'unlink', 'containing_card', 'high',
+                        '{"reason": "absent_from_complete_refresh"}'::jsonb, $4)
+                """,
+                row["floor_plan_id"],
+                row["property_image_id"],
+                row["source_id"],
+                persisted_job_id,
+            )
+    if state.image_fetch_completed:
+        unsupported_visuals = await conn.fetch(
+            """
+            select e.*
+            from current_extractions e
+            where e.property_id = $1
+              and e.resolution_rule in (
+                  'vision_weighted_median_exact',
+                  'vision_weighted_median_gallery'
+              )
+              and exists (
+                  select 1 from extraction_images xi
+                  where xi.extraction_id = e.id
+              )
+              and not exists (
+                  select 1
+                  from extraction_images xi
+                  join property_images pi on pi.id = xi.property_image_id
+                  where xi.extraction_id = e.id and pi.is_current
+              )
+            """,
+            property_id,
+        )
+        for prior in unsupported_visuals:
+            await append_candidate_resolution(
+                conn,
+                property_id=property_id,
+                hunt_id=prior["hunt_id"],
+                criterion_key=prior["criterion_key"],
+                value=None,
+                confidence=Confidence.NOT_FOUND,
+                evidence_quote=None,
+                source_id=None,
+                origin_key=f"vision_refresh:{state.job_id}",
+                target_scope=TargetScope(prior["target_scope"]),
+                floor_plan_id=prior["floor_plan_id"],
+                applicability=(
+                    UnitApplicability(prior["applicability"])
+                    if prior["applicability"] is not None
+                    else None
+                ),
+                claim_group_id=uuid4(),
+                model="deterministic:image_refresh",
+                job_id=persisted_job_id,
+                resolution_rule="vision_image_refresh_not_found",
+            )
+    if state.source_results:
+        page_candidates = [
+            claim
+            for result in state.source_results
+            for claim in result.source_claims
+        ]
+        candidate_groups = {claim.claim_group_id for claim in page_candidates}
+        page_resolutions = [
+            claim
+            for claim in state.resolved_claims
+            if any(
+                group_id in candidate_groups
+                for group_id in claim.candidate_claim_group_ids
+            )
+        ]
+        await persist_reconciled_claims(
+            conn,
+            property_id=property_id,
+            hunt_id=None,
+            job_id=persisted_job_id,
+            candidate_claims=page_candidates,
+            resolved_claims=page_resolutions,
+            source_ids_by_url=source_ids_by_url,
+            floor_plan_ids_by_source_ref=floor_plan_ids_by_source_ref,
+            authoritative_source_urls=(
+                source.url
+                for source in state.sources
+                if source.authoritative_extraction
+            ),
+        )
+        non_page_claims = [
+            claim
+            for claim in state.resolved_claims
+            if claim not in page_resolutions
+        ]
+        if non_page_claims:
+            await persist_single_source_claims(
+                conn,
+                property_id=property_id,
+                hunt_id=None,
+                source_id=source_id,
+                source_url=source.url,
+                job_id=persisted_job_id,
+                claims=non_page_claims,
+                floor_plan_ids_by_ref=floor_plan_ids_by_ref,
+                authoritative=False,
+            )
+    else:
+        await persist_single_source_claims(
+            conn,
+            property_id=property_id,
+            hunt_id=None,
+            source_id=source_id,
+            source_url=source.url,
+            job_id=persisted_job_id,
+            claims=[*state.source_claims, *_auxiliary_claims(state, source.url)],
+            floor_plan_ids_by_ref=floor_plan_ids_by_ref,
+            authoritative=source.authoritative_extraction,
+        )
+    for claim in state.source_claims:
+        if not claim.image_hashes or not claim.resolution_rule:
+            continue
+        claim_floor_plan_id = (
+            floor_plan_ids_by_ref.get(claim.floor_plan_ref)
+            if claim.floor_plan_ref is not None
+            else claim.floor_plan_id
+        )
+        resolution_ids = await conn.fetch(
+            """
+            select id from extractions
+            where job_id = $1 and property_id = $2 and record_kind = 'resolved'
+              and criterion_key = $3 and target_scope = $4
+              and floor_plan_id is not distinct from $5
+              and resolution_rule = $6
+            """,
+            persisted_job_id,
+            property_id,
+            claim.criterion_key,
+            claim.target_scope.value,
+            claim_floor_plan_id,
+            claim.resolution_rule,
+        )
+        for row in resolution_ids:
+            extraction_ids = [
+                row["id"],
+                *[
+                    candidate["candidate_extraction_id"]
+                    for candidate in await conn.fetch(
+                        """
+                        select candidate_extraction_id
+                        from extraction_resolution_candidates
+                        where resolution_extraction_id = $1
+                        """,
+                        row["id"],
+                    )
+                ],
+            ]
+            for order, content_hash in enumerate(claim.image_hashes):
+                property_image_id = image_ids_by_hash.get(content_hash)
+                if property_image_id is None:
+                    property_image_id = await conn.fetchval(
+                        """
+                        select id from property_images
+                        where property_id = $1 and content_hash = $2
+                        """,
+                        property_id,
+                        content_hash,
+                    )
+                if property_image_id is None:
+                    continue
+                for extraction_id in extraction_ids:
+                    await conn.execute(
+                        """
+                        insert into extraction_images
+                            (extraction_id, property_image_id, contribution_order)
+                        values ($1, $2, $3)
+                        on conflict do nothing
+                        """,
+                        extraction_id,
+                        property_image_id,
+                        order,
+                    )
 
     # §9.5 v1 species-specific pet rent → fee_checklist slots. Extracted amounts
     # never clobber a human 'manual' entry (the DO UPDATE's WHERE guards that);
@@ -743,6 +1165,32 @@ async def _merge_into_canonical(
     # Content-addressed duplicates may already exist on both Properties. Keep the
     # canonical row/assessment, discard the placeholder duplicate, then re-point
     # the remaining images without violating the Property/hash unique index.
+    #
+    # Before deleting a duplicate, move its Floor Plan associations onto the
+    # surviving canonical image (§P3-SC5). `floor_plan_images.property_image_id`
+    # cascades on delete, so skipping this would silently strip a merged plan of
+    # its diagrams. `on conflict do nothing` covers the case where both sides
+    # already assert the same pair.
+    await conn.execute(
+        """
+        update floor_plan_images incoming
+        set property_image_id = canonical.id
+        from property_images placeholder
+        join property_images canonical
+          on canonical.property_id = $2
+         and canonical.content_hash = placeholder.content_hash
+        where incoming.property_image_id = placeholder.id
+          and placeholder.property_id = $1
+          and placeholder.content_hash is not null
+          and not exists (
+              select 1 from floor_plan_images existing
+              where existing.floor_plan_id = incoming.floor_plan_id
+                and existing.property_image_id = canonical.id
+          )
+        """,
+        placeholder_id,
+        canonical_id,
+    )
     await conn.execute(
         """
         delete from property_images incoming
@@ -820,10 +1268,16 @@ def make_ingest_dispatcher(
 
         settings = json.loads(listing["settings"]) if listing["settings"] else {}
         min_confidence = Confidence(settings.get("min_confidence", "medium"))
+        min_vision_confidence = Confidence(
+            settings.get("min_vision_confidence", "low")
+        )
         cats = int(settings.get("cats", 0))
         dogs = int(settings.get("dogs", 0))
         proximity_mode = str(settings.get("proximity_mode", "driving"))
         cost_estimate_mode = str(settings.get("cost_estimate_mode", "conservative"))
+        generalized_vision_policy = str(
+            settings.get("generalized_vision_policy", "full_rubric")
+        )
         occupants = int(settings.get("occupants", 1))
 
         payload = json.loads(job["payload"])
@@ -896,12 +1350,15 @@ def make_ingest_dispatcher(
             fetchers=fetchers_factory(),
             registry=registry,
             rubric=rubric,
+            reconcile_rubric_lookup=_make_reconcile_rubric_lookup(pool),
             rubric_version=listing["rubric_version"],
             min_confidence=min_confidence,
+            min_vision_confidence=min_vision_confidence,
             cats=cats,
             dogs=dogs,
             proximity_mode=proximity_mode,
             cost_estimate_mode=cost_estimate_mode,
+            generalized_vision_policy=generalized_vision_policy,
             occupants=occupants,
             utility_baselines_lookup=_make_utility_baselines_lookup(pool),
             persistence=persistence,
@@ -909,6 +1366,7 @@ def make_ingest_dispatcher(
             dedupe_candidates=_make_dedupe_candidates(pool, listing["property_id"]),
             image_store=SupabaseImageStore.from_env(),
             existing_image_hashes=_make_existing_image_hashes(pool),
+            existing_image_classifications=_make_existing_image_classifications(pool),
             tool_event_sink=make_tool_event_sink(pool, job_id),
             plan_trigger="user:retry" if resumed else "user:submit",
             **({} if call_structured is None else {"call_structured": call_structured}),
@@ -983,6 +1441,30 @@ def _make_existing_image_hashes(pool: asyncpg.Pool):  # type: ignore[no-untyped-
     return lookup
 
 
+def _make_existing_image_classifications(pool: asyncpg.Pool):  # type: ignore[no-untyped-def]
+    async def lookup(property_id: UUID) -> dict[str, dict[str, Any]]:
+        rows = await pool.fetch(
+            """
+            select content_hash, vision_assessment
+            from property_images
+            where property_id = $1 and is_current
+              and vision_assessment ? 'classification'
+            """,
+            property_id,
+        )
+        return {
+            row["content_hash"]: (
+                json.loads(row["vision_assessment"])
+                if isinstance(row["vision_assessment"], str)
+                else row["vision_assessment"]
+            )
+            for row in rows
+            if row["content_hash"] and row["vision_assessment"]
+        }
+
+    return lookup
+
+
 def make_rescore_dispatcher() -> Dispatcher:
     """Build the `rescore` handler — hunt-level, no stage machine."""
 
@@ -1007,9 +1489,15 @@ def make_rescore_dispatcher() -> Dispatcher:
 
         settings = json.loads(hunt["settings"]) if hunt["settings"] else {}
         min_confidence = Confidence(settings.get("min_confidence", "medium"))
+        min_vision_confidence = Confidence(
+            settings.get("min_vision_confidence", "low")
+        )
         cats = int(settings.get("cats", 0))
         dogs = int(settings.get("dogs", 0))
         cost_estimate_mode = str(settings.get("cost_estimate_mode", "conservative"))
+        generalized_vision_policy = str(
+            settings.get("generalized_vision_policy", "full_rubric")
+        )
         occupants = int(settings.get("occupants", 1))
 
         try:
@@ -1027,9 +1515,11 @@ def make_rescore_dispatcher() -> Dispatcher:
                     rubric=rubric,
                     rubric_version=hunt["rubric_version"],
                     min_confidence=min_confidence,
+                    min_vision_confidence=min_vision_confidence,
                     cats=cats,
                     dogs=dogs,
                     cost_estimate_mode=cost_estimate_mode,
+                    generalized_vision_policy=generalized_vision_policy,
                     occupants=occupants,
                 )
                 await conn.execute(
@@ -1107,9 +1597,15 @@ def make_enrich_refresh_dispatcher(
         settings = json.loads(hunt["settings"]) if hunt["settings"] else {}
         proximity_mode = str(settings.get("proximity_mode", "driving"))
         min_confidence = Confidence(settings.get("min_confidence", "medium"))
+        min_vision_confidence = Confidence(
+            settings.get("min_vision_confidence", "low")
+        )
         cats = int(settings.get("cats", 0))
         dogs = int(settings.get("dogs", 0))
         cost_estimate_mode = str(settings.get("cost_estimate_mode", "conservative"))
+        generalized_vision_policy = str(
+            settings.get("generalized_vision_policy", "full_rubric")
+        )
         occupants = int(settings.get("occupants", 1))
 
         try:
@@ -1177,9 +1673,11 @@ def make_enrich_refresh_dispatcher(
                     rubric=rubric,
                     rubric_version=hunt["rubric_version"],
                     min_confidence=min_confidence,
+                    min_vision_confidence=min_vision_confidence,
                     cats=cats,
                     dogs=dogs,
                     cost_estimate_mode=cost_estimate_mode,
+                    generalized_vision_policy=generalized_vision_policy,
                     occupants=occupants,
                 )
                 await conn.execute(

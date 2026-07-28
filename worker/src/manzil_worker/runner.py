@@ -32,8 +32,10 @@ from manzil_worker.stages.discover import discover_stage
 from manzil_worker.stages.enrich import enrich_stage
 from manzil_worker.stages.extract import extract_stage
 from manzil_worker.stages.fetch import fetch_stage
+from manzil_worker.stages.image_classify import image_classify_stage
 from manzil_worker.stages.image_fetch import image_fetch_stage
 from manzil_worker.stages.plan import plan_stage
+from manzil_worker.stages.reconcile import reconcile_stage
 from manzil_worker.stages.score import score_stage
 from manzil_worker.stages.validate import validate_stage
 from manzil_worker.stages.validate_url import validate_url_stage
@@ -70,9 +72,16 @@ INGEST_STAGES: list[tuple[str, Stage]] = [
     ("EXTRACT", extract_stage),
     ("DEDUPE", dedupe_stage),
     ("DISCOVER", discover_stage),
-    ("IMAGE_FETCH", image_fetch_stage),
-    ("VISION", vision_stage),
+    # P3-6 baseline fan-out: these second FETCH/EXTRACT entries process only
+    # not-yet-completed slate Sources; stage idempotency keeps the submitted
+    # Source from being paid for twice.
+    ("FETCH", fetch_stage),
+    ("EXTRACT", extract_stage),
     ("VERIFY", verify_stage),
+    ("RECONCILE", reconcile_stage),
+    ("IMAGE_FETCH", image_fetch_stage),
+    ("IMAGE_CLASSIFY", image_classify_stage),
+    ("VISION", vision_stage),
     # ENRICH sits downstream of VERIFY (§10.1): its values are API-derived, so
     # the page-evidence audit must never run on them.
     ("ENRICH", enrich_stage),
@@ -140,11 +149,21 @@ async def run_job(
     integer cursor); with `plan is None` it walks the caller's fixed `stages`
     (`PHASE0_STAGES` for the CLI/legacy snapshots, `INGEST_STAGES` for a fresh
     queue ingest whose PLAN sets `state.plan` on its first stage)."""
-    walk = _manifest_walk(state) if state.plan is not None else stages
     trace_ctx = RunContext(job_type=state.job_type.value, job_id=str(state.job_id), mode=state.mode)
     with run_context(trace_ctx):
-        for index in range(state.cursor, len(walk)):
-            name, stage = walk[index]
+        index = state.cursor
+        while True:
+            if state.plan is not None:
+                if index >= len(state.plan.stages):
+                    break
+                name = state.plan.stages[index]
+                stage = STAGE_REGISTRY.get(name)
+                if stage is None:
+                    raise StageFatal(f"plan references unknown stage {name!r}")
+            else:
+                if index >= len(stages):
+                    break
+                name, stage = stages[index]
             log.info("stage_start", job_id=str(state.job_id), stage=name, cursor=index)
             # The pinned manifest carries its full ordered stage list plus an
             # explicit skipped map (§10.4). IMAGE_FETCH may add VISION here after
@@ -159,6 +178,7 @@ async def run_job(
                 await ctx.persistence.save(state)
                 state.cursor = index + 1
                 await ctx.persistence.save(state)
+                index += 1
                 continue
             try:
                 state = await _run_stage(name, stage, state, ctx)
@@ -182,6 +202,7 @@ async def run_job(
             await ctx.persistence.save(state)  # outputs durable BEFORE the cursor moves
             state.cursor = index + 1
             await ctx.persistence.save(state)
+            index += 1
     state.status = JobState.DONE
     await ctx.persistence.save(state)
     return state

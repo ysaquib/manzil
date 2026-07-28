@@ -25,7 +25,7 @@ def _json_value(raw: Any) -> Any:
     return raw
 
 
-async def append_candidate_resolution(
+async def append_candidate(
     conn: asyncpg.Connection,
     *,
     property_id: UUID,
@@ -42,10 +42,7 @@ async def append_candidate_resolution(
     claim_group_id: UUID,
     model: str,
     job_id: UUID | None,
-    resolution_rule: str = "single_source",
-    disputed: bool = False,
-) -> tuple[UUID, UUID]:
-    """Append one candidate, its one-Source resolution, and lineage edge."""
+) -> UUID:
     candidate_id: UUID = await conn.fetchval(
         """
         insert into extractions
@@ -72,6 +69,22 @@ async def append_candidate_resolution(
         model,
         job_id,
     )
+    return candidate_id
+
+
+async def append_resolution(
+    conn: asyncpg.Connection,
+    *,
+    property_id: UUID,
+    hunt_id: UUID | None,
+    claim: SourceClaim,
+    floor_plan_id: UUID | None,
+    model: str,
+    job_id: UUID | None,
+    candidate_ids: Mapping[
+        UUID, list[tuple[TargetScope, UUID | None, UUID]]
+    ],
+) -> UUID:
     resolution_group_id = uuid4()
     resolution_id: UUID = await conn.fetchval(
         """
@@ -86,30 +99,283 @@ async def append_candidate_resolution(
         """,
         property_id,
         hunt_id,
-        criterion_key,
+        claim.criterion_key,
         f"resolution:{job_id or resolution_group_id}",
-        target_scope.value,
+        claim.target_scope.value,
         floor_plan_id,
-        applicability.value if applicability is not None else None,
+        claim.applicability.value if claim.applicability is not None else None,
         resolution_group_id,
-        json.dumps(value),
-        confidence.value,
-        evidence_quote,
+        json.dumps(claim.value),
+        claim.confidence.value,
+        claim.evidence_quote,
         model,
-        resolution_rule,
-        disputed,
+        claim.resolution_rule or "single_source",
+        claim.disputed,
         job_id,
     )
-    await conn.execute(
-        """
-        insert into extraction_resolution_candidates
-            (resolution_extraction_id, candidate_extraction_id, selected)
-        values ($1, $2, true)
-        """,
-        resolution_id,
-        candidate_id,
+    for group_id in claim.candidate_claim_group_ids:
+        candidate_id = next(
+            (
+                row_id
+                for target_scope, candidate_floor_plan_id, row_id in candidate_ids.get(
+                    group_id, []
+                )
+                if target_scope is claim.target_scope
+                and candidate_floor_plan_id == floor_plan_id
+            ),
+            None,
+        )
+        if candidate_id is None:
+            continue
+        await conn.execute(
+            """
+            insert into extraction_resolution_candidates
+                (resolution_extraction_id, candidate_extraction_id, selected)
+            values ($1, $2, $3)
+            """,
+            resolution_id,
+            candidate_id,
+            group_id == claim.claim_group_id,
+        )
+    return resolution_id
+
+
+async def append_candidate_resolution(
+    conn: asyncpg.Connection,
+    *,
+    property_id: UUID,
+    hunt_id: UUID | None,
+    criterion_key: str,
+    value: Any,
+    confidence: Confidence,
+    evidence_quote: str | None,
+    source_id: UUID | None,
+    origin_key: str,
+    target_scope: TargetScope,
+    floor_plan_id: UUID | None,
+    applicability: UnitApplicability | None,
+    claim_group_id: UUID,
+    model: str,
+    job_id: UUID | None,
+    resolution_rule: str = "single_source",
+    disputed: bool = False,
+) -> tuple[UUID, UUID]:
+    """Append one candidate, its one-Source resolution, and lineage edge."""
+    candidate_id = await append_candidate(
+        conn,
+        property_id=property_id,
+        hunt_id=hunt_id,
+        criterion_key=criterion_key,
+        value=value,
+        confidence=confidence,
+        evidence_quote=evidence_quote,
+        source_id=source_id,
+        origin_key=origin_key,
+        target_scope=target_scope,
+        floor_plan_id=floor_plan_id,
+        applicability=applicability,
+        claim_group_id=claim_group_id,
+        model=model,
+        job_id=job_id,
+    )
+    resolution_claim = SourceClaim(
+        criterion_key=criterion_key,
+        value=value,
+        confidence=confidence,
+        evidence_quote=evidence_quote,
+        source_id=str(source_id) if source_id else None,
+        model=model,
+        prompt_version=0,
+        target_scope=target_scope,
+        floor_plan_id=floor_plan_id,
+        applicability=applicability,
+        claim_group_id=claim_group_id,
+        resolution_rule=resolution_rule,
+        disputed=disputed,
+        candidate_claim_group_ids=[claim_group_id],
+    )
+    resolution_id = await append_resolution(
+        conn,
+        property_id=property_id,
+        hunt_id=hunt_id,
+        claim=resolution_claim,
+        floor_plan_id=floor_plan_id,
+        model=model,
+        job_id=job_id,
+        candidate_ids={
+            claim_group_id: [(target_scope, floor_plan_id, candidate_id)]
+        },
     )
     return candidate_id, resolution_id
+
+
+async def persist_reconciled_claims(
+    conn: asyncpg.Connection,
+    *,
+    property_id: UUID,
+    hunt_id: UUID | None,
+    job_id: UUID | None,
+    candidate_claims: Iterable[SourceClaim],
+    resolved_claims: Iterable[SourceClaim],
+    source_ids_by_url: Mapping[str, UUID],
+    floor_plan_ids_by_source_ref: Mapping[tuple[str, str], UUID],
+    authoritative_source_urls: Iterable[str] = (),
+) -> None:
+    """Append every Source candidate, then one resolution with full lineage.
+
+    A successfully extracted Source is authoritative only for its own candidate
+    identities. Omitted identities receive a Source-local not-found candidate;
+    the Property resolution is retired only when no Source in this run still
+    supports that identity.
+    """
+    materialized_candidates = list(candidate_claims)
+    materialized_resolutions = list(resolved_claims)
+    authoritative_urls = set(authoritative_source_urls)
+    prior_by_url: dict[str, list[asyncpg.Record]] = {}
+    for source_url in authoritative_urls:
+        source_id = source_ids_by_url.get(source_url)
+        if source_id is None:
+            continue
+        prior_by_url[source_url] = await conn.fetch(
+            """
+            select criterion_key, target_scope, floor_plan_id, applicability, confidence
+            from current_extraction_candidates
+            where property_id = $1 and hunt_id is not distinct from $2 and source_id = $3
+            """,
+            property_id,
+            hunt_id,
+            source_id,
+        )
+
+    candidate_ids: dict[
+        UUID, list[tuple[TargetScope, UUID | None, UUID]]
+    ] = {}
+    observed_by_url: dict[str, set[tuple[str, TargetScope, UUID | None]]] = {
+        url: set() for url in authoritative_urls
+    }
+    observed_any: set[tuple[str, TargetScope, UUID | None]] = set()
+    for claim in materialized_candidates:
+        source_url = claim.source_id or ""
+        source_id = source_ids_by_url.get(source_url)
+        floor_plan_id = claim.floor_plan_id
+        if claim.floor_plan_ref is not None:
+            floor_plan_id = floor_plan_ids_by_source_ref.get(
+                (source_url, claim.floor_plan_ref)
+            )
+            if floor_plan_id is None:
+                raise ValueError(
+                    f"unknown Source-local Floor Plan {source_url}#{claim.floor_plan_ref}"
+                )
+        identity = (claim.criterion_key, claim.target_scope, floor_plan_id)
+        observed_any.add(identity)
+        if source_url in observed_by_url:
+            observed_by_url[source_url].add(identity)
+        candidate_id = await append_candidate(
+            conn,
+            property_id=property_id,
+            hunt_id=hunt_id,
+            criterion_key=claim.criterion_key,
+            value=claim.value,
+            confidence=claim.confidence,
+            evidence_quote=claim.evidence_quote,
+            source_id=source_id,
+            origin_key=f"property_source:{source_id}",
+            target_scope=claim.target_scope,
+            floor_plan_id=floor_plan_id,
+            applicability=claim.applicability,
+            claim_group_id=claim.claim_group_id,
+            model=claim.model,
+            job_id=job_id,
+        )
+        candidate_ids.setdefault(claim.claim_group_id, []).append(
+            (claim.target_scope, floor_plan_id, candidate_id)
+        )
+
+    resolved_identities: set[tuple[str, TargetScope, UUID | None]] = set()
+    for claim in materialized_resolutions:
+        source_url = claim.source_id or ""
+        floor_plan_id = claim.floor_plan_id
+        if claim.floor_plan_ref is not None:
+            floor_plan_id = floor_plan_ids_by_source_ref.get(
+                (source_url, claim.floor_plan_ref)
+            )
+        resolved_identities.add((claim.criterion_key, claim.target_scope, floor_plan_id))
+        await append_resolution(
+            conn,
+            property_id=property_id,
+            hunt_id=hunt_id,
+            claim=claim,
+            floor_plan_id=floor_plan_id,
+            model=claim.model,
+            job_id=job_id,
+            candidate_ids=candidate_ids,
+        )
+
+    refresh_model = (
+        materialized_candidates[0].model
+        if materialized_candidates
+        else "authoritative_refresh"
+    )
+    for source_url, prior_rows in prior_by_url.items():
+        source_id = source_ids_by_url[source_url]
+        for row in prior_rows:
+            target_scope = TargetScope(row["target_scope"])
+            identity = (row["criterion_key"], target_scope, row["floor_plan_id"])
+            if (
+                identity in observed_by_url[source_url]
+                or row["confidence"] == Confidence.NOT_FOUND.value
+            ):
+                continue
+            applicability = (
+                UnitApplicability(row["applicability"])
+                if row["applicability"] is not None
+                else None
+            )
+            group_id = uuid4()
+            tombstone_id = await append_candidate(
+                conn,
+                property_id=property_id,
+                hunt_id=hunt_id,
+                criterion_key=row["criterion_key"],
+                value=None,
+                confidence=Confidence.NOT_FOUND,
+                evidence_quote=None,
+                source_id=source_id,
+                origin_key=f"property_source:{source_id}",
+                target_scope=target_scope,
+                floor_plan_id=row["floor_plan_id"],
+                applicability=applicability,
+                claim_group_id=group_id,
+                model=refresh_model,
+                job_id=job_id,
+            )
+            if identity in observed_any or identity in resolved_identities:
+                continue
+            await append_resolution(
+                conn,
+                property_id=property_id,
+                hunt_id=hunt_id,
+                claim=SourceClaim(
+                    criterion_key=row["criterion_key"],
+                    value=None,
+                    confidence=Confidence.NOT_FOUND,
+                    source_id=source_url,
+                    model=refresh_model,
+                    prompt_version=0,
+                    target_scope=target_scope,
+                    floor_plan_id=row["floor_plan_id"],
+                    applicability=applicability,
+                    claim_group_id=group_id,
+                    resolution_rule="source_refresh_not_found",
+                    candidate_claim_group_ids=[group_id],
+                ),
+                floor_plan_id=row["floor_plan_id"],
+                model=refresh_model,
+                job_id=job_id,
+                candidate_ids={
+                    group_id: [(target_scope, row["floor_plan_id"], tombstone_id)]
+                },
+            )
 
 
 async def persist_single_source_claims(
@@ -230,7 +496,7 @@ async def load_current_extractions(
     rows = await conn.fetch(
         """
         select criterion_key, value, confidence, target_scope, floor_plan_id,
-               applicability, extracted_at
+               applicability, extracted_at, origin_key, resolution_rule
         from current_extractions
         where property_id = $1 and (hunt_id is null or hunt_id = $2)
         """,
@@ -250,6 +516,8 @@ async def load_current_extractions(
                 else None
             ),
             observed_at=row["extracted_at"],
+            origin_key=row["origin_key"],
+            resolution_rule=row["resolution_rule"],
         )
         for row in rows
     ]

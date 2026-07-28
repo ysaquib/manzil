@@ -37,3 +37,13 @@ export function SingleSourceBadge({ reason }: { reason: SingleSourceReason }) {
     </Tooltip>
   );
 }
+
+export function ProblematicBadge() {
+  return (
+    <Tooltip label="Decision-relevant Sources still disagree; review the evidence or waiting task.">
+      <Badge size="xs" variant="light" color="red">
+        Problematic
+      </Badge>
+    </Tooltip>
+  );
+}

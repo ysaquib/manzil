@@ -90,8 +90,8 @@ def _est_cost(stages: list[str], skipped: dict[str, str]) -> float:
 async def plan_stage(state: RunState, ctx: StageCtx) -> RunState:
     """Build the §10.4 manifest for an ingest job. Runner-provided `INGEST_STAGES`
     is the single source of truth for the live stage list; PLAN records those
-    names verbatim. IMAGE_FETCH is live, VISION is explicitly skipped until its
-    reference/prompt gate passes, and not-yet-landed stages are absent."""
+    names verbatim. IMAGE_FETCH and approved-profile VISION are live, and
+    not-yet-landed stages are absent."""
     from manzil_worker.runner import INGEST_STAGE_NAMES
 
     fresh = await ctx.fresh_source_lookup(state.property_id, state.url)
@@ -125,8 +125,8 @@ async def plan_stage(state: RunState, ctx: StageCtx) -> RunState:
         stages.remove("DISCOVER")
         state.single_source_reason = "trust_link"
         state.slate_urls = [state.url]
-    # P3-7 is fail-closed until the complete, versioned human reference set is
-    # present. IMAGE_FETCH still runs so assets/hashes can be prepared safely.
+    # VISION remains fail-closed if its approved, hash-validated reference
+    # profile or matching prompt is missing.
     skipped: dict[str, str] = (
         {} if vision_references_ready() else {"VISION": "missing_reference_set"}
     )

@@ -325,6 +325,10 @@ async def discover_stage(state: RunState, ctx: StageCtx) -> RunState:
     state.discovered_sources.extend(candidates)
 
     submitted_domain, submitted_tier, submitted_family = await _metadata_for(state.url, ctx)
+    submitted = next((source for source in state.sources if source.url == state.url), None)
+    if submitted is not None:
+        submitted.syndication_family = submitted_family
+        submitted.role = "submitted"
     _select_slate(
         state,
         candidates,

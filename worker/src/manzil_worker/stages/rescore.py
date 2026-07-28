@@ -15,7 +15,11 @@ from uuid import UUID
 import structlog
 from manzil_shared.catalog import BOOLEAN_PRESENCE_KEYS, SCOPED_UNIT_CLAIM_KEYS
 from manzil_shared.models import Confidence, FloorPlan, RubricCriterion
-from manzil_shared.scoped_facts import resolve_effective_value, resolve_effective_values
+from manzil_shared.scoped_facts import (
+    resolve_effective_facts,
+    resolve_effective_value,
+    scoring_values_for_policy,
+)
 from manzil_shared.scoring.engine import criterion_key, score, select_display_score
 
 from manzil_worker.enrich.utility_baselines import (
@@ -131,10 +135,12 @@ async def rescore_hunt(
     rubric: list[RubricCriterion],
     rubric_version: int,
     min_confidence: Confidence,
+    min_vision_confidence: Confidence = Confidence.LOW,
     cats: int = 0,
     dogs: int = 0,
     cost_estimate_mode: str = "conservative",
     occupants: int = 1,
+    generalized_vision_policy: str = "full_rubric",
 ) -> int:
     """Rescore every active listing on the hunt. Returns the number of score rows upserted."""
     listings = await conn.fetch(
@@ -196,14 +202,18 @@ async def rescore_hunt(
                 deposit=fp["deposit"],
                 availability_date=fp["availability_date"],
             )
-            values = resolve_effective_values(
+            facts = resolve_effective_facts(
                 criterion_keys=rubric_keys,
                 floor_plan_id=fp["id"],
                 extractions=current_extractions,
                 overrides=current_overrides,
                 min_confidence=min_confidence,
+                min_vision_confidence=min_vision_confidence,
                 presence_like_keys=SCOPED_UNIT_CLAIM_KEYS,
                 boolean_presence_keys=BOOLEAN_PRESENCE_KEYS,
+            )
+            values, gate_values = scoring_values_for_policy(
+                facts, generalized_vision_policy
             )
             heating_value = resolve_effective_value(
                 criterion_key="heating_type",
@@ -257,7 +267,14 @@ async def rescore_hunt(
                 )
                 if all_in_override is None and composition.total is not None:
                     values["all_in_monthly"] = composition.total
-            breakdown_obj = score(rubric, values, floor_plan, rubric_version=rubric_version)
+                    gate_values["all_in_monthly"] = composition.total
+            breakdown_obj = score(
+                rubric,
+                values,
+                floor_plan,
+                rubric_version=rubric_version,
+                gate_values=gate_values,
+            )
             breakdown_objs.append(breakdown_obj)
             compositions.append(_composition_json(composition, all_in_override))
             breakdown = breakdown_obj.to_contract()

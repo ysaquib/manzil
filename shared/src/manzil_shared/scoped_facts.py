@@ -32,6 +32,8 @@ class ScopedValue:
     floor_plan_id: UUID | None = None
     applicability: UnitApplicability | None = None
     observed_at: datetime | None = None
+    origin_key: str | None = None
+    resolution_rule: str | None = None
 
 
 @dataclass(frozen=True)
@@ -44,8 +46,54 @@ class ScopedOverrideValue:
     created_at: datetime | None = None
 
 
+@dataclass(frozen=True)
+class EffectiveFact:
+    """Internal resolved fact with enough provenance for scoring policy."""
+
+    value: Any
+    target_scope: TargetScope
+    applicability: UnitApplicability | None
+    origin_key: str | None
+    resolution_rule: str | None
+    confidence: Confidence = Confidence.HIGH
+    from_override: bool = False
+
+    @property
+    def vision(self) -> bool:
+        return (
+            not self.from_override
+            and (
+                bool(self.origin_key and self.origin_key.startswith("vision:"))
+                or bool(
+                    self.resolution_rule and self.resolution_rule.startswith("vision_")
+                )
+            )
+        )
+
+    @property
+    def generalized_vision(self) -> bool:
+        return (
+            self.vision
+            and self.target_scope is TargetScope.PROPERTY
+            and self.applicability is UnitApplicability.UNIT_SCOPE_UNSPECIFIED
+        )
+
+
 def meets_confidence(confidence: Confidence, minimum: Confidence) -> bool:
     return _CONFIDENCE_RANK[confidence] >= _CONFIDENCE_RANK[minimum]
+
+
+def _row_meets_confidence(
+    row: ScopedValue,
+    *,
+    minimum: Confidence,
+    vision_minimum: Confidence | None,
+) -> bool:
+    is_vision = bool(row.origin_key and row.origin_key.startswith("vision:")) or bool(
+        row.resolution_rule and row.resolution_rule.startswith("vision_")
+    )
+    threshold = vision_minimum if is_vision and vision_minimum is not None else minimum
+    return meets_confidence(row.confidence, threshold)
 
 
 def _newest(values: Iterable[ScopedValue]) -> ScopedValue | None:
@@ -97,6 +145,7 @@ def resolve_effective_value(
     extractions: Iterable[ScopedValue],
     overrides: Iterable[ScopedOverrideValue] = (),
     min_confidence: Confidence,
+    min_vision_confidence: Confidence | None = None,
     presence_like: bool = False,
     boolean_presence: bool = True,
 ) -> Any:
@@ -136,7 +185,11 @@ def resolve_effective_value(
         for row in extractions
         if row.criterion_key == criterion_key
         and row.value is not None
-        and meets_confidence(row.confidence, min_confidence)
+        and _row_meets_confidence(
+            row,
+            minimum=min_confidence,
+            vision_minimum=min_vision_confidence,
+        )
     ]
     exact = _newest(
         row
@@ -196,6 +249,7 @@ def resolve_effective_values(
     extractions: Iterable[ScopedValue],
     overrides: Iterable[ScopedOverrideValue] = (),
     min_confidence: Confidence,
+    min_vision_confidence: Confidence | None = None,
     presence_like_keys: frozenset[str] = frozenset(),
     boolean_presence_keys: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
@@ -209,9 +263,180 @@ def resolve_effective_values(
             extractions=extraction_rows,
             overrides=override_rows,
             min_confidence=min_confidence,
+            min_vision_confidence=min_vision_confidence,
             presence_like=key in presence_like_keys,
             boolean_presence=key in boolean_presence_keys,
         )
         if value is not None:
             values[key] = value
     return values
+
+
+def resolve_effective_fact(
+    *,
+    criterion_key: str,
+    floor_plan_id: UUID | None,
+    extractions: Iterable[ScopedValue],
+    overrides: Iterable[ScopedOverrideValue] = (),
+    min_confidence: Confidence,
+    min_vision_confidence: Confidence | None = None,
+    presence_like: bool = False,
+    boolean_presence: bool = True,
+) -> EffectiveFact | None:
+    """Provenance-carrying companion to the value-only compatibility wrapper."""
+    extraction_rows = list(extractions)
+    override_rows = list(overrides)
+    value = resolve_effective_value(
+        criterion_key=criterion_key,
+        floor_plan_id=floor_plan_id,
+        extractions=extraction_rows,
+        overrides=override_rows,
+        min_confidence=min_confidence,
+        min_vision_confidence=min_vision_confidence,
+        presence_like=presence_like,
+        boolean_presence=boolean_presence,
+    )
+    if value is None:
+        return None
+    relevant_overrides = [
+        row
+        for row in override_rows
+        if row.criterion_key == criterion_key and row.value is not None
+    ]
+    for candidates in (
+        [
+            row
+            for row in relevant_overrides
+            if row.target_scope is TargetScope.FLOOR_PLAN
+            and row.floor_plan_id == floor_plan_id
+        ],
+        [
+            row
+            for row in relevant_overrides
+            if row.target_scope is TargetScope.PROPERTY
+            and row.applicability is UnitApplicability.ALL_UNITS
+        ],
+        [
+            row
+            for row in relevant_overrides
+            if not presence_like
+            and row.target_scope is TargetScope.PROPERTY
+            and row.applicability is None
+        ],
+    ):
+        selected_override = _newest_override(candidates)
+        if selected_override is not None:
+            return EffectiveFact(
+                value=value,
+                target_scope=selected_override.target_scope,
+                applicability=selected_override.applicability,
+                origin_key=None,
+                resolution_rule=None,
+                confidence=Confidence.HIGH,
+                from_override=True,
+            )
+    eligible = [
+        row
+        for row in extraction_rows
+        if row.criterion_key == criterion_key
+        and row.value is not None
+        and _row_meets_confidence(
+            row,
+            minimum=min_confidence,
+            vision_minimum=min_vision_confidence,
+        )
+    ]
+    groups = [
+        [
+            row
+            for row in eligible
+            if row.target_scope is TargetScope.FLOOR_PLAN
+            and row.floor_plan_id == floor_plan_id
+        ],
+        [
+            row
+            for row in eligible
+            if not presence_like
+            and row.target_scope is TargetScope.PROPERTY
+            and row.applicability is None
+        ],
+    ]
+    groups.extend(
+        [
+            [
+                row
+                for row in eligible
+                if row.target_scope is TargetScope.PROPERTY
+                and row.applicability is applicability
+            ]
+            for applicability in (
+                UnitApplicability.ALL_UNITS,
+                UnitApplicability.SELECT_UNITS,
+                UnitApplicability.UNIT_SCOPE_UNSPECIFIED,
+            )
+        ]
+    )
+    for group in groups:
+        selected = _newest(group)
+        if selected is not None:
+            return EffectiveFact(
+                value=value,
+                target_scope=selected.target_scope,
+                applicability=selected.applicability,
+                origin_key=selected.origin_key,
+                resolution_rule=selected.resolution_rule,
+                confidence=selected.confidence,
+            )
+    return None
+
+
+def resolve_effective_facts(
+    *,
+    criterion_keys: Iterable[str],
+    floor_plan_id: UUID | None,
+    extractions: Iterable[ScopedValue],
+    overrides: Iterable[ScopedOverrideValue] = (),
+    min_confidence: Confidence,
+    min_vision_confidence: Confidence | None = None,
+    presence_like_keys: frozenset[str] = frozenset(),
+    boolean_presence_keys: frozenset[str] = frozenset(),
+) -> dict[str, EffectiveFact]:
+    extraction_rows = list(extractions)
+    override_rows = list(overrides)
+    output: dict[str, EffectiveFact] = {}
+    for key in criterion_keys:
+        fact = resolve_effective_fact(
+            criterion_key=key,
+            floor_plan_id=floor_plan_id,
+            extractions=extraction_rows,
+            overrides=override_rows,
+            min_confidence=min_confidence,
+            min_vision_confidence=min_vision_confidence,
+            presence_like=key in presence_like_keys,
+            boolean_presence=key in boolean_presence_keys,
+        )
+        if fact is not None:
+            output[key] = fact
+    return output
+
+
+def scoring_values_for_policy(
+    facts: dict[str, EffectiveFact], policy: str
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Split point/Gate inputs without changing the score-breakdown contract."""
+    if policy not in {"full_rubric", "points_only", "unknown"}:
+        raise ValueError(f"invalid generalized vision policy: {policy}")
+    point_values: dict[str, Any] = {}
+    gate_values: dict[str, Any] = {}
+    for key, fact in facts.items():
+        if not fact.generalized_vision:
+            point_values[key] = fact.value
+            if not fact.vision or fact.confidence is not Confidence.LOW:
+                gate_values[key] = fact.value
+        elif policy == "full_rubric":
+            point_values[key] = fact.value
+            if fact.confidence is not Confidence.LOW:
+                gate_values[key] = fact.value
+        elif policy == "points_only":
+            point_values[key] = fact.value
+    return point_values, gate_values
