@@ -15,7 +15,7 @@ declared at all · `implemented` = working · `no table` = table not yet in a mi
 |---|---|---|---|---|
 | `POST /v1/hunts` | `useCreateHunt` (`features/hunts/api.ts`) | generated `HuntCreate`/`HuntResponse` | P1-5 | implemented |
 | `PATCH /v1/hunts/{id}` | `usePatchHunt` (`features/hunts/api.ts`) | generated `HuntUpdate` | P1-5 | implemented |
-| `PATCH /v1/hunts/{id}/settings` | `usePatchHuntSettings` (`features/hunts/api.ts`) | generated `HuntSettingsPatch` | P1-5 | implemented |
+| `PATCH /v1/hunts/{id}/settings` | `usePatchHuntSettings` (`features/hunts/api.ts`) | generated `HuntSettingsPatch`; resolved client contract includes independent `min_confidence` (medium default) and `min_vision_confidence` (low default) | P1-5 / DESIGN v3.20 | implemented |
 | `PUT /v1/hunts/{id}/rubric` | `usePutRubric` (`features/rubric/api.ts`) | generated (shared §8.2 shape) | P1-5 | implemented |
 | `POST /v1/hunts/{id}/listings` | `useCreateListing` (`features/listings/api.ts`) | generated `ListingCreate`/`ListingResponse` | P1-7 | implemented |
 | `DELETE /v1/listings/{id}` | *(no hook — superseded in the UI by the status patch below; endpoint kept)* | generated (204) | P1-7 | implemented |
@@ -56,6 +56,7 @@ origin that appears logged out.
 | `current_overrides` for one listing | `useOverrides` (`features/listings/api.ts`) | hand-typed scoped target/applicability; newest row per concrete target, including null revert tombstones | exists (20260801000000) |
 | `fee_checklist` for one listing | `useFees` (`features/listings/api.ts`) | hand-typed | exists (0002) |
 | `current_extractions` resolved rows for a Property | `useExtractions` (`features/listings/api.ts`) | hand-typed scoped target/applicability/provenance; exact and generalized rows may coexist | exists (20260801000000) |
+| `extraction_resolution_candidates` + candidate `extractions`/`property_sources` | `useResolutionCandidates` (`features/listings/api.ts`) | P3-6 resolved-to-candidate provenance; RLS follows the resolved Extraction | exists (20260801000000) |
 | `rubric_criteria` | `useRubric` (`features/rubric/api.ts`) | hand-typed `RubricCriterion` | exists (0002) |
 | `criteria_catalog` | `useCatalog` (`features/rubric/api.ts`) | hand-typed `CatalogEntry` | table exists (0001) + seed |
 | `hunt_members` (+ `user_profiles` for display-name/color defaults) | `useMembers` (`features/collaboration/api.ts`) | hand-typed `HuntMember`, including nullable Hunt-level overrides and effective coalesced identity | exists (0002+; profile coalesce P2 + 20260729000000) |
