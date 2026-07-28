@@ -1,0 +1,225 @@
+{
+  "cache_read_tokens": 8026,
+  "cache_write_tokens": 8026,
+  "content_sha256": "06f57e8ba2ceb88fc0d082b30eaca1c12fe71536ea50aada79db95aaad0839e5",
+  "image_hashes": null,
+  "input_tokens": 0,
+  "model": "google/gemini-3-flash-preview",
+  "output": {
+    "availability_date": {
+      "confidence": "high",
+      "evidence_quote": "Available August 1, 2026.",
+      "value": "2026-08-01"
+    },
+    "baths": {
+      "confidence": "high",
+      "evidence_quote": "1.5 bathroom",
+      "value": 1.5
+    },
+    "beds": {
+      "confidence": "high",
+      "evidence_quote": "2 bedroom",
+      "value": 2
+    },
+    "clubhouse": {
+      "confidence": "not_found",
+      "evidence_quote": null,
+      "value": null
+    },
+    "cooling": [
+      {
+        "applicability": "all_units",
+        "confidence": "high",
+        "evidence_quote": "Central air conditioning \u2026 in every home",
+        "value": "central"
+      }
+    ],
+    "dishwasher": [
+      {
+        "applicability": "all_units",
+        "confidence": "high",
+        "evidence_quote": "Dishwasher \u2026 in every home",
+        "value": true
+      }
+    ],
+    "emergency_maintenance": {
+      "confidence": "high",
+      "evidence_quote": "24-hour emergency maintenance",
+      "value": "24_hour_emergency"
+    },
+    "fitness_center": {
+      "confidence": "high",
+      "evidence_quote": "on-site fitness center",
+      "value": true
+    },
+    "floor_plans": [
+      {
+        "availability_date": "2026-08-01",
+        "baths": 1.5,
+        "beds": 2,
+        "evidence_quote": "The Maple - 2 bed / 1.5 bath \u2026 950 square feet \u2026 Rent from $1,700 to $1,750 \u2026 Available August 1, 2026.",
+        "plan_name": "The Maple",
+        "rent_max": 1750,
+        "rent_min": 1700,
+        "response_key": "maple_2br",
+        "sqft_max": 950,
+        "sqft_min": 950,
+        "unit_types": [
+          "apartment"
+        ]
+      }
+    ],
+    "heating": [
+      {
+        "applicability": "all_units",
+        "confidence": "high",
+        "evidence_quote": "forced-air heating \u2026 in every home",
+        "value": "gas"
+      }
+    ],
+    "in_unit_laundry": [
+      {
+        "applicability": "all_units",
+        "confidence": "high",
+        "evidence_quote": "Full-size washer and dryer in every home",
+        "value": "in_unit"
+      }
+    ],
+    "internet_readiness": {
+      "confidence": "not_found",
+      "evidence_quote": null,
+      "value": null
+    },
+    "maintenance_on_site": {
+      "confidence": "not_found",
+      "evidence_quote": null,
+      "value": null
+    },
+    "management_on_site": {
+      "confidence": "high",
+      "evidence_quote": "professional on-site management team",
+      "value": true
+    },
+    "mandatory_fees": {
+      "evidence_quote": "Water, sewer, and trash service billed monthly",
+      "fees": []
+    },
+    "min_lease_months": {
+      "confidence": "high",
+      "evidence_quote": "Minimum lease term | 12 months",
+      "value": 12
+    },
+    "one_time_fees": {
+      "evidence_quote": "Application fee | $50 per applicant \u2026 one-time pet fee of $250.",
+      "fees": [
+        {
+          "amount": 50,
+          "basis": "per_application",
+          "name": "Application fee"
+        },
+        {
+          "amount": 250,
+          "basis": "per_pet",
+          "name": "Pet fee"
+        }
+      ]
+    },
+    "online_maintenance_requests": {
+      "confidence": "not_found",
+      "evidence_quote": null,
+      "value": null
+    },
+    "online_payments": {
+      "confidence": "not_found",
+      "evidence_quote": null,
+      "value": null
+    },
+    "package_handling": {
+      "confidence": "high",
+      "evidence_quote": "package lockers",
+      "value": "locker"
+    },
+    "parking": [
+      {
+        "applicability": "all_units",
+        "confidence": "high",
+        "evidence_quote": "Dedicated parking lot with one assigned space per apartment",
+        "value": "dedicated_lot"
+      }
+    ],
+    "patio_balcony": [
+      {
+        "applicability": "all_units",
+        "confidence": "high",
+        "evidence_quote": "Private balcony or ground-floor patio \u2026 in every home",
+        "value": true
+      }
+    ],
+    "pet_costs": {
+      "evidence_quote": "Pet rent is $30 per month per pet",
+      "pet_rent_monthly": 30
+    },
+    "pets_policy": {
+      "confidence": "high",
+      "evidence_quote": "Cats and small dogs welcome!",
+      "value": "cats_and_dogs"
+    },
+    "pool": {
+      "confidence": "high",
+      "evidence_quote": "seasonal outdoor pool",
+      "value": "outdoor"
+    },
+    "private_entry": [],
+    "property_contact": {
+      "evidence_quote": null,
+      "phone": null
+    },
+    "property_identity": {
+      "address": "120 Maple Court Dr, Detroit, MI 48187",
+      "name": "Maple Court Apartments",
+      "official_url": "https://maple-court.seed.example/floorplans"
+    },
+    "property_types": {
+      "confidence": "high",
+      "evidence_quote": "garden-style community offers spacious two bedroom apartment homes",
+      "value": [
+        "apartment"
+      ]
+    },
+    "security_deposit": {
+      "confidence": "high",
+      "evidence_quote": "Security deposit | $500",
+      "value": 500
+    },
+    "smoking_policy": {
+      "confidence": "not_found",
+      "evidence_quote": null,
+      "value": null
+    },
+    "sqft": {
+      "confidence": "high",
+      "evidence_quote": "950 square feet",
+      "value": 950
+    },
+    "unit_types": {
+      "confidence": "high",
+      "evidence_quote": "apartment homes",
+      "value": [
+        "apartment"
+      ]
+    },
+    "utilities": {
+      "evidence_quote": null,
+      "included": []
+    }
+  },
+  "output_tokens": 1167,
+  "prompt_version": 7,
+  "recorded_at": "2026-07-28T19:52:39.747052+00:00",
+  "reported_cost_usd": null,
+  "server_tool_events": null,
+  "stage": "extract",
+  "stop_reason": null,
+  "text": null,
+  "tool_calls": null
+}
