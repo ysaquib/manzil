@@ -31,7 +31,7 @@ import { resolveSettings } from "../../lib/contracts";
 import { sentenceCase } from "../../lib/text";
 import { useHunt } from "../hunts/api";
 import { usePatchListingStatus, usePatchUnitGroupState } from "./api";
-import { useListings, useUnitGroupStates } from "./api";
+import { useListings, useProblematicPropertyIds, useUnitGroupStates } from "./api";
 import { ArchivedListings } from "./ArchivedListings";
 import { COMPARE_LIMIT, rowEntry, useCompareSet } from "./compareSet";
 import { ListingDetailDrawer, type DrawerSelection } from "./ListingDetailDrawer";
@@ -125,6 +125,9 @@ export function OverviewPage() {
 
   const allRows = buildRows(listings ?? [], unitGroupStates);
   const rows = sortRows(applyOverviewFilters(allRows, filters), sort);
+  const { data: problematicPropertyIds = new Set<string>() } = useProblematicPropertyIds(
+    (listings ?? []).map((listing) => listing.property_id),
+  );
 
   // Pipeline state per row (UI Decision Log 2026-07-26): a row still being
   // fetched, or whose last run failed, says so and hands off to Tasks.
@@ -353,6 +356,7 @@ export function OverviewPage() {
             huntId={huntId}
             rows={rows}
             pipeline={pipeline}
+            problematicPropertyIds={problematicPropertyIds}
             onOpen={openDrawer}
             onArchive={archiveRow}
           />
@@ -364,6 +368,7 @@ export function OverviewPage() {
             density={density}
             columns={columns}
             pipeline={pipeline}
+            problematicPropertyIds={problematicPropertyIds}
             selectedKeys={selected}
             onToggleRow={toggleRow}
             onToggleAll={toggleAll}

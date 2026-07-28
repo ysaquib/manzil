@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Job } from "../src/features/jobs/api";
 import type { OverviewRow } from "../src/features/listings/overviewRows";
-import { jobsByListing, rowPipelineState } from "../src/features/listings/rowState";
+import { jobsByListing, rowPipelineState, formatPipelineError, pipelineFailureLabel, pipelineErrorWasTruncated } from "../src/features/listings/rowState";
 
 const job = (over: Partial<Job> & { id: string }): Job =>
   ({
@@ -99,5 +99,24 @@ describe("rowPipelineState", () => {
       jobsByListing([job({ id: "a", state: "running", hunt_listing_id: "L2" })]),
     );
     expect(result).toBeNull();
+  });
+});
+
+describe("formatPipelineError", () => {
+  it("collapses whitespace and leaves short messages intact", () => {
+    expect(formatPipelineError("site blocked us")).toBe("site blocked us");
+    expect(formatPipelineError("line one\nline two")).toBe("line one line two");
+  });
+
+  it("truncates long errors for Overview copy", () => {
+    const long = "x".repeat(60);
+    expect(formatPipelineError(long)).toHaveLength(48);
+    expect(formatPipelineError(long).endsWith("…")).toBe(true);
+    expect(pipelineErrorWasTruncated(long)).toBe(true);
+  });
+
+  it("builds the failure label", () => {
+    expect(pipelineFailureLabel(null)).toBe("Couldn't fetch");
+    expect(pipelineFailureLabel("timeout")).toBe("Couldn't fetch · timeout");
   });
 });

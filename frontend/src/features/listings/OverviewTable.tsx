@@ -45,7 +45,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 import { AllInCell } from "./AllInCost";
-import { SingleSourceBadge } from "../../components/badges/ListingBadges";
+import { ProblematicBadge, SingleSourceBadge } from "../../components/badges/ListingBadges";
 import { COMPARE_LIMIT, rowEntry, useCompareSet } from "./compareSet";
 import { CurationCell } from "./StatusChip";
 import { propertyLocationLabel } from "./locality";
@@ -54,7 +54,11 @@ import { RowMarker } from "./RowMarker";
 import { ScoreCell } from "./ScoreCell";
 import { useComments, useCurrentMember, useMembers, useRatings } from "../collaboration/api";
 import { usePatchUnitGroupState } from "./api";
-import type { RowPipeline } from "./rowState";
+import {
+  pipelineErrorWasTruncated,
+  pipelineFailureLabel,
+  type RowPipeline,
+} from "./rowState";
 import type { InterestStatus } from "./types";
 import {
   allInValue,
@@ -225,6 +229,7 @@ export interface OverviewTableProps {
   columns?: OverviewColumnKey[];
   /** Pipeline state per row key, from rowState.ts; absent when the row is idle. */
   pipeline?: Map<string, RowPipeline>;
+  problematicPropertyIds?: Set<string>;
   /** Bulk selection (m6): selected row keys; omit to hide the checkbox column. */
   selectedKeys?: Set<string>;
   onToggleRow?: (key: string) => void;
@@ -380,13 +385,25 @@ const dateLabel = (iso: string | null) =>
 /** What a working/failed row says in place of its address, plus where it goes. */
 function PipelineSubline({ huntId, pipeline }: { huntId: string; pipeline: RowPipeline }) {
   const working = pipeline.state === "working";
+  const failureDetail = !working && pipeline.detail ? pipeline.detail : null;
+  const failureLine = failureDetail ? pipelineFailureLabel(failureDetail) : null;
+  const showFullError =
+    failureDetail !== null && pipelineErrorWasTruncated(failureDetail);
   return (
-    <Group gap={6} wrap="nowrap">
-      <Text size="xs" c={working ? "dusky" : "red"} truncate>
-        {working
-          ? `Working${pipeline.detail ? ` · ${sentenceCase(pipeline.detail.toLowerCase())}` : ""}`
-          : `Couldn't fetch${pipeline.detail ? ` · ${pipeline.detail}` : ""}`}
-      </Text>
+    <Group gap={6} wrap="nowrap" style={{ minWidth: 0 }}>
+      <Tooltip
+        label={failureDetail}
+        openDelay={300}
+        multiline
+        maw={320}
+        disabled={!showFullError}
+      >
+        <Text size="xs" c={working ? "dusky" : "red"} truncate style={{ minWidth: 0 }}>
+          {working
+            ? `Working${pipeline.detail ? ` · ${sentenceCase(pipeline.detail.toLowerCase())}` : ""}`
+            : failureLine}
+        </Text>
+      </Tooltip>
       <Anchor
         component={Link}
         to={`/h/${huntId}/tasks${working ? "" : "?tab=history"}`}
@@ -413,6 +430,7 @@ export function OverviewTable({
   density = "normal",
   columns = DEFAULT_OVERVIEW_COLUMNS,
   pipeline,
+  problematicPropertyIds,
   selectedKeys,
   onToggleRow,
   onToggleAll,
@@ -587,6 +605,9 @@ export function OverviewTable({
                         </Text>
                         {row.listing.single_source_reason && !state && (
                           <SingleSourceBadge reason={row.listing.single_source_reason} />
+                        )}
+                        {problematicPropertyIds?.has(row.listing.property_id) && !state && (
+                          <ProblematicBadge />
                         )}
                       </Group>
                       {state ? (

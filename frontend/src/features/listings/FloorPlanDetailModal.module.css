@@ -1,0 +1,166 @@
+/* Floor Plan detail modal (P3-SC5, §9.4 / workbook §7.1).
+ *
+ * On desktop the overlay is scoped to the Listing Drawer's column rather than
+ * the viewport: the Overview behind stays lit, so opening a plan never costs
+ * you your place in the hunt. That re-anchoring lives in the component's
+ * `styles` prop, not here — Mantine's own `Modal-root`/`Modal-inner` rules
+ * beat a module class in the cascade, so slot positioning has to be inline.
+ * This module owns everything that doesn't fight Mantine for a slot.
+ */
+
+/* Header: the drawer-scoped overlay hides the drawer's own header, so the
+ * crumb has to say where you came from. It doubles as the "return to the Unit
+ * Group" affordance workbook §7.1 requires on mobile. */
+.crumb {
+  align-self: flex-start;
+}
+
+/* Sticky footer keeps Pin reachable without scrolling past the breakdown. */
+.footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  background-color: var(--mantine-color-body);
+  border-top: 1px solid var(--mantine-color-default-border);
+  padding: var(--mantine-spacing-sm) var(--mantine-spacing-md);
+}
+
+/* Diagram: the stored 2048px asset via a signed URL is the record; the
+ * link-out to the Source is the crisp read. Both, never one (§9.3). */
+.diagramFrame {
+  width: 168px;
+  flex: none;
+  overflow: hidden;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-sm);
+  background-color: var(--mantine-color-body);
+}
+
+.diagramFrame img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+@media (max-width: 48em) {
+  .diagramFrame {
+    width: 100%;
+  }
+}
+
+/* Amenity chip: label plus its own evidence disclosure. A nested floating
+ * layer inside an overlay is one layer too many, so the ⓘ opens an inline
+ * Collapse below the group instead of a Popover. */
+.chip {
+  display: inline-flex;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-xl);
+  background-color: var(--mantine-color-default-hover);
+}
+
+.chipLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.125rem 0.25rem 0.125rem 0.5rem;
+}
+
+.chipEvidence {
+  border: 0;
+  border-inline-start: 1px solid var(--mantine-color-default-border);
+  background: none;
+  color: var(--mantine-color-dimmed);
+  cursor: pointer;
+  padding-inline: 0.4375rem;
+  display: grid;
+  place-items: center;
+  transition:
+    background-color 140ms ease,
+    color 140ms ease;
+}
+
+.chipEvidence:hover {
+  background-color: var(--mantine-color-dusky-light);
+  color: var(--mantine-color-dusky-light-color);
+}
+
+.chipEvidence:focus-visible {
+  outline: 2px solid var(--mantine-color-dusky-filled);
+  outline-offset: -2px;
+}
+
+.chipSelected {
+  border-color: var(--mantine-color-dusky-filled);
+  box-shadow: 0 0 0 1px var(--mantine-color-dusky-filled);
+}
+
+.chip[data-state="confirmed"] {
+  border-color: color-mix(in srgb, var(--mantine-color-green-6) 45%, var(--mantine-color-default-border));
+  background-color: color-mix(in srgb, var(--mantine-color-green-6) 10%, transparent);
+}
+
+.chip[data-state="advertised"] {
+  border-color: color-mix(in srgb, var(--mantine-color-yellow-6) 50%, var(--mantine-color-default-border));
+  background-color: color-mix(in srgb, var(--mantine-color-yellow-6) 14%, transparent);
+}
+
+.chip[data-state="absent"] {
+  border-color: color-mix(in srgb, var(--mantine-color-red-6) 40%, var(--mantine-color-default-border));
+  background-color: color-mix(in srgb, var(--mantine-color-red-6) 8%, transparent);
+}
+
+/* Unknown is dashed and hollow — a missing chip and a known absence must
+ * never look alike (UI_DESIGN §1, data honesty). */
+.chip[data-state="unknown"] {
+  border-style: dashed;
+  background-color: transparent;
+  color: var(--mantine-color-dimmed);
+}
+
+.mark {
+  font-weight: 700;
+  line-height: 1;
+}
+
+.mark[data-state="confirmed"] {
+  color: var(--mantine-color-green-7);
+}
+
+.mark[data-state="advertised"] {
+  color: var(--mantine-color-yellow-7);
+}
+
+.mark[data-state="absent"] {
+  color: var(--mantine-color-red-7);
+}
+
+.mark[data-state="unknown"] {
+  color: var(--mantine-color-dimmed);
+}
+
+:global([data-mantine-color-scheme="dark"]) .mark[data-state="confirmed"] {
+  color: var(--mantine-color-green-4);
+}
+
+:global([data-mantine-color-scheme="dark"]) .mark[data-state="advertised"] {
+  color: var(--mantine-color-yellow-4);
+}
+
+:global([data-mantine-color-scheme="dark"]) .mark[data-state="absent"] {
+  color: var(--mantine-color-red-4);
+}
+
+@media (max-width: 48em) {
+  .chipEvidence {
+    min-width: 2.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chipEvidence {
+    transition: none;
+  }
+}

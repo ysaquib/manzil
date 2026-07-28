@@ -1,0 +1,29 @@
+/* Unmatched diagram thumbnails (P3-SC5). A module for the hover/focus states
+ * and the contain-fit surface — a diagram cropped to fill would lose exactly
+ * the edge labels that make it worth showing. */
+
+.thumb {
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-sm);
+  background-color: var(--mantine-color-body);
+  overflow: hidden;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+
+.thumb:hover {
+  border-color: var(--mantine-color-dusky-outline);
+  background-color: var(--mantine-color-default-hover);
+}
+
+.thumb:focus-visible {
+  outline: 2px solid var(--mantine-color-dusky-filled);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thumb {
+    transition: none;
+  }
+}
