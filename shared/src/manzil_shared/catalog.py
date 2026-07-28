@@ -169,7 +169,11 @@ CATALOG: tuple[CatalogEntry, ...] = (
         ],
         extraction_hint=(
             "in_unit = washer/dryer inside the unit; hookups = connections only; "
-            "on_site = shared laundry room/facilities; none otherwise."
+            "on_site = shared laundry room/facilities; none = the page explicitly "
+            "states that no laundry option of any kind is available. A statement "
+            "that in-unit laundry is unavailable is not `none` when hookups or "
+            "shared facilities are stated; emit the best available mode once per "
+            "concrete target."
         ),
         requires_tool=None,
         refresh_class=RefreshClass.LISTING_DETAILS,

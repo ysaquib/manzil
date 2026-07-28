@@ -63,6 +63,7 @@ def test_schema_has_one_field_per_criterion_plus_floor_plans() -> None:
         "mandatory_fees",  # §9.5 P3-9
         "heating",  # §9.5 P3-9
         "one_time_fees",  # §9.5 §20 2026-07-18
+        "property_contact",  # P3-21 §20 2026-07-27
     }
 
 
@@ -371,3 +372,30 @@ def test_scoped_claim_rejects_two_values_for_same_concrete_target() -> None:
     payload = extraction_payload(in_unit_laundry=[claim, {**claim, "value": "on_site"}])
     with pytest.raises(ValidationError, match="one value per concrete target"):
         build_extraction_schema().model_validate(payload)
+
+
+def test_laundry_positive_canonicalizes_redundant_generalized_none() -> None:
+    payload = extraction_payload(
+        in_unit_laundry=[
+            {
+                "value": "none",
+                "confidence": "high",
+                "evidence_quote": "In-unit laundry is not available.",
+                "applicability": "all_units",
+                "floor_plan_refs": [],
+            },
+            {
+                "value": "on_site",
+                "confidence": "high",
+                "evidence_quote": "laundry facility located in each building",
+                "applicability": "unit_scope_unspecified",
+                "floor_plan_refs": [],
+            },
+        ]
+    )
+
+    parsed = build_extraction_schema().model_validate(payload)
+
+    assert len(parsed.in_unit_laundry) == 1
+    assert parsed.in_unit_laundry[0].value == "on_site"
+    assert parsed.in_unit_laundry[0].applicability == "unit_scope_unspecified"
