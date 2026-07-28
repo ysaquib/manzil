@@ -60,6 +60,11 @@ export interface FloorPlan {
   availability_date: string | null;
   available_units: number | null;
   is_current?: boolean;
+  // P3-SC2 first-class identity columns (§8.2), nullable rather than buried in
+  // `raw`. The detail surface links out with `detail_url` when the Source gave
+  // one and falls back to the Source's own URL.
+  source_native_id?: string | null;
+  detail_url?: string | null;
 }
 
 // scores has a composite PK (hunt_listing_id, floor_plan_id) — no `id` column.
@@ -101,6 +106,15 @@ export interface Extraction {
   resolution_rule: string | null;
   disputed: boolean;
   extracted_at: string;
+}
+
+export interface ResolutionCandidate {
+  id: string;
+  value: unknown;
+  confidence: Confidence;
+  evidence_quote: string | null;
+  selected: boolean;
+  source: { url: string; site_domain: string } | null;
 }
 
 export interface Override {

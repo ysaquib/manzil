@@ -22,6 +22,7 @@ import { IconDroplet, IconMapPin } from "@tabler/icons-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { SectionCard } from "../../components/SectionCard";
+import { ProblematicBadge } from "../../components/badges/ListingBadges";
 import { CommentsSection } from "../collaboration/CommentsSection";
 import { RatingControl } from "../collaboration/RatingControl";
 import { useCurrentMember, useMembers } from "../collaboration/api";
@@ -33,9 +34,11 @@ import { activeOverrides, extractionForFloorPlan } from "./overrides";
 import { CriterionBreakdown } from "./CriterionBreakdown";
 import { DrawerHero } from "./DrawerHero";
 import { FeeChecklist } from "./FeeChecklist";
-import { FloorPlanPins } from "./FloorPlanPins";
+import { FloorPlanList } from "./FloorPlanList";
+import { UnmatchedDiagrams, unmatchedDiagrams } from "./UnmatchedDiagrams";
 import { ListingDetailDraftProvider, useListingDetailDraft } from "./ListingDetailDraft";
 import { propertyLocationLabel } from "./locality";
+import { PropertyContactRow } from "./PropertyContact";
 import { extractedFeeOriginals, parseOneTimeFees } from "./oneTimeFees";
 import { SourcesList } from "./SourcesList";
 import { useExtractions, useFees, useListings, useOverrides, usePropertyImages } from "./api";
@@ -63,6 +66,10 @@ const drawerStyles = {
     overflow: "hidden",
     minHeight: 0,
     padding: 0,
+    // Anchor for the drawer-scoped Floor Plan detail modal (P3-SC5): its
+    // absolute root/inner/overlay resolve against this box, so the overlay
+    // covers the drawer column and leaves the Overview behind it lit.
+    position: "relative",
   },
 } as const;
 
@@ -289,9 +296,16 @@ function DrawerShell({
           <Text className={drawerClasses.eyebrow} tt="uppercase" fw={600} c="dimmed">
             Listing
           </Text>
-          <Title order={3} className={drawerClasses.title}>
-            {listing.property.name}
-          </Title>
+          <Group gap="xs">
+            <Title order={3} className={drawerClasses.title}>
+              {listing.property.name}
+            </Title>
+            {(extractions ?? []).some(
+              (extraction) =>
+                extraction.disputed &&
+                extraction.resolution_rule === "conservative_disputed",
+            ) && <ProblematicBadge />}
+          </Group>
           <Group gap={7} wrap="nowrap" className={drawerClasses.addr}>
             <IconMapPin size={13} stroke={2} />
             <Text size="sm" component="span" c="dimmed">
@@ -312,7 +326,10 @@ function DrawerShell({
           pt="xs"
         >
           <DrawerHero
-            images={images ?? []}
+            // Property photos only. Floor Plan diagrams belong to their plan's
+            // detail surface and must never stand in for a Property photo
+            // (workbook §7.1).
+            images={(images ?? []).filter((image) => image.kind !== "floor_plan_diagram")}
             imagesLoading={imagesLoading}
             score={group?.displayScore?.total ?? null}
             allIn={composition?.total ?? null}
@@ -385,7 +402,18 @@ function DrawerShell({
 
             <SectionCard title="Floor plans" hint={`${group?.plans.length ?? 0} plans`}>
               {group ? (
-                <FloorPlanPins group={group} scores={listing.scores} />
+                <FloorPlanList
+                  group={group}
+                  scores={listing.scores}
+                  huntId={huntId}
+                  listingId={listing.id}
+                  catalog={catalog ?? []}
+                  extractions={extractions ?? []}
+                  overrides={overrides ?? []}
+                  sources={listing.property.sources}
+                  images={images ?? []}
+                  isMobile={isMobile}
+                />
               ) : (
                 <Text size="sm" c="dimmed">
                   {isUnavailable
@@ -394,6 +422,15 @@ function DrawerShell({
                 </Text>
               )}
             </SectionCard>
+
+            {unmatchedDiagrams(images ?? []).length > 0 && (
+              <SectionCard
+                title="Unmatched floor plan diagrams"
+                hint={`${unmatchedDiagrams(images ?? []).length}`}
+              >
+                <UnmatchedDiagrams images={images ?? []} />
+              </SectionCard>
+            )}
 
             <SectionCard title="Notes & ratings">
               <Stack gap="md">
@@ -424,10 +461,13 @@ function DrawerShell({
               title="Location"
               hint={propertyLocationLabel(listing.property)}
             >
-              <ListingLocationMap
-                property={listing.property}
-                score={group?.displayScore?.total ?? null}
-              />
+              <Stack gap="sm">
+                <ListingLocationMap
+                  property={listing.property}
+                  score={group?.displayScore?.total ?? null}
+                />
+                <PropertyContactRow propertyId={listing.property.id} />
+              </Stack>
             </SectionCard>
 
             <SectionCard title="Sources">

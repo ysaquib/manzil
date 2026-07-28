@@ -4,7 +4,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Listing } from "../src/features/listings/types";
 
-const data = vi.hoisted(() => ({ listings: [] as unknown[] }));
+const data = vi.hoisted(() => ({
+  listings: [] as unknown[],
+  extractions: [] as unknown[],
+}));
 
 vi.mock("../src/auth/useAuth", () => ({
   useAuth: () => ({ session: { user: { id: "u1" } } }),
@@ -15,9 +18,11 @@ vi.mock("../src/features/listings/api", () => {
   return {
     useListings: () => ({ data: data.listings, isLoading: false, error: null }),
     useFees: () => ({ data: [] }),
-    useExtractions: () => ({ data: [], isLoading: false }),
+    useExtractions: () => ({ data: data.extractions, isLoading: false }),
     useOverrides: () => ({ data: [] }),
     usePropertyImages: () => ({ data: [], isLoading: false }),
+    usePropertyContacts: () => ({ data: [] }),
+    useResolutionCandidates: () => ({ data: [] }),
     usePatchPins: mut,
     useCreateOverride: mut,
     useUpsertFee: mut,
@@ -120,6 +125,7 @@ function makeListing(): Listing {
 
 function renderDrawer() {
   data.listings = [makeListing()];
+  data.extractions = [];
   return render(
     <MantineProvider>
       <ListingDetailDrawer
@@ -131,6 +137,29 @@ function renderDrawer() {
     </MantineProvider>,
   );
 }
+
+it("shows Problematic when reconciliation used a conservative disputed fallback", () => {
+  data.listings = [makeListing()];
+  data.extractions = [
+    {
+      id: "resolved-1",
+      disputed: true,
+      resolution_rule: "conservative_disputed",
+    },
+  ];
+  render(
+    <MantineProvider>
+      <ListingDetailDrawer
+        huntId="h1"
+        selection={{ listingId: "l1", groupKey: "2-2" }}
+        opened
+        onClose={() => {}}
+      />
+    </MantineProvider>,
+  );
+
+  expect(screen.getByText("Problematic")).toBeInTheDocument();
+});
 
 describe("ListingDetailDrawer", () => {
   it("renders the hero and the six section cards for a scored listing", () => {

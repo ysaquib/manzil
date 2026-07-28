@@ -220,11 +220,23 @@ async def commute_time(
 
 
 async def _place_details_call(place_id: str, *, transport: Any = None) -> dict[str, Any] | None:
-    """Rating + review snippets for one place. ENRICH calls this as a plain
-    function (no tool loop — §10.2); None when Google has no data for the id."""
+    """Rating + review snippets + property contact for one place. ENRICH calls
+    this as a plain function (no tool loop — §10.2); None when Google has no data
+    for the id.
+
+    `formatted_phone_number` and `website` are Google's Contact Data SKU, billed
+    on top of the Basic + Atmosphere tiers this call already requests. They ride
+    on the existing once-per-property call (P3-21, rung 2) rather than a second
+    request, but they are not free — geocode-keyed caching is what bounds them.
+    """
     body = await _get_json(
         _DETAILS_URL,
-        {"place_id": place_id, "fields": "name,rating,user_ratings_total,reviews"},
+        {
+            "place_id": place_id,
+            "fields": (
+                "name,rating,user_ratings_total,reviews,formatted_phone_number,website"
+            ),
+        },
         transport=transport,
     )
     result = body.get("result") or {}
@@ -234,6 +246,8 @@ async def _place_details_call(place_id: str, *, transport: Any = None) -> dict[s
         "name": result.get("name"),
         "rating": result.get("rating"),
         "user_ratings_total": result.get("user_ratings_total"),
+        "phone": result.get("formatted_phone_number"),
+        "website": result.get("website"),
         "reviews": [
             {
                 "rating": review.get("rating"),

@@ -10,6 +10,9 @@ page-evidence audit never runs on API-derived values):
   by the DEDUPE geocode's place_id; the summary is one small-model synthesis
   over the returned snippets (skipped, zero LLM spend, when Google returns a
   rating but no review text).
+- `maps_contact` (P3-21) — the property's phone/website from that same Place
+  Details call, onto `state.maps_contact` rather than `source_claims`: contact
+  info is unscored display metadata and must never reach the scoring path.
 - `location_safety` — **nothing** (§20 2026-07-18): the criterion is an
   override-first A+..F placeholder until the P3-17 safety module lands. ENRICH
   deliberately emits no value so the criterion scores unknown rather than a
@@ -32,7 +35,7 @@ from manzil_worker.enrich.maps import MapsError
 from manzil_worker.llm.config import model_for_stage
 from manzil_worker.llm.prompt_loader import load_prompt
 from manzil_worker.stages.base import CommuteMinutes, NearbyPlaces, StageCtx
-from manzil_worker.state import RunState, SourceClaim
+from manzil_worker.state import PropertyContactIn, RunState, SourceClaim
 
 log = structlog.get_logger()
 
@@ -124,6 +127,16 @@ async def enrich_stage(state: RunState, ctx: StageCtx) -> RunState:
     except MapsError as error:
         log.warning("enrich_reviews_failed", job_id=str(state.job_id), error=str(error))
         details = None
+    # P3-21 rung 2: Places contact rides on the same call. Captured independently
+    # of the rating gate below — a property can have a listed phone and no rating.
+    # Stored raw here; normalization and the provenance guards run at persist.
+    if details is not None and (details.get("phone") or details.get("website")):
+        state.maps_contact = PropertyContactIn(
+            phone=details.get("phone"),
+            contact_url=details.get("website"),
+            evidence_quote=f"Google Places contact for place_id {geocode.place_id}",
+        )
+
     if details is not None and details.get("rating") is not None:
         summary: str | None = None
         model = MAPS_MODEL

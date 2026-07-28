@@ -20,8 +20,10 @@ from supabase import Client
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "default_source_policy": "tiers_1_2_3",
-    "cost_estimate_mode": "median",
+    "cost_estimate_mode": "conservative",
     "min_confidence": "medium",
+    "min_vision_confidence": "low",
+    "generalized_vision_policy": "full_rubric",
     "proximity_mode": "driving",
     "occupants": 1,
     "cats": 0,
@@ -33,6 +35,7 @@ _SOURCE_POLICIES = frozenset(
 )
 _COST_MODES = frozenset({"conservative", "median"})
 _CONFIDENCE_LEVELS = frozenset({"low", "medium", "high"})
+_GENERALIZED_VISION_POLICIES = frozenset({"full_rubric", "points_only", "unknown"})
 _PROXIMITY_MODES = frozenset({"walking", "driving"})
 # Household integer keys with inclusive [lo, hi] bounds (§9.5 v1).
 _HOUSEHOLD_BOUNDS: dict[str, tuple[int, int]] = {
@@ -43,7 +46,17 @@ _HOUSEHOLD_BOUNDS: dict[str, tuple[int, int]] = {
 # Keys whose change bumps rubric_version + enqueues a rescore. `occupants`
 # joined at P3-9: it scales the per-person utility estimates in the §9.5
 # composition, so a change re-scores like the other household keys.
-_SCORING_KEYS = frozenset({"cost_estimate_mode", "min_confidence", "cats", "dogs", "occupants"})
+_SCORING_KEYS = frozenset(
+    {
+        "cost_estimate_mode",
+        "min_confidence",
+        "min_vision_confidence",
+        "generalized_vision_policy",
+        "cats",
+        "dogs",
+        "occupants",
+    }
+)
 
 
 def _to_response(row: dict[str, Any]) -> HuntResponse:
@@ -61,6 +74,10 @@ def _merge_settings(current: dict[str, Any], patch: dict[str, Any]) -> dict[str,
         raise InvalidHuntSettings("Invalid cost_estimate_mode")
     if merged["min_confidence"] not in _CONFIDENCE_LEVELS:
         raise InvalidHuntSettings("Invalid min_confidence")
+    if merged["min_vision_confidence"] not in _CONFIDENCE_LEVELS:
+        raise InvalidHuntSettings("Invalid min_vision_confidence")
+    if merged["generalized_vision_policy"] not in _GENERALIZED_VISION_POLICIES:
+        raise InvalidHuntSettings("Invalid generalized_vision_policy")
     if merged["proximity_mode"] not in _PROXIMITY_MODES:
         raise InvalidHuntSettings("Invalid proximity_mode")
     for key, (lo, hi) in _HOUSEHOLD_BOUNDS.items():
