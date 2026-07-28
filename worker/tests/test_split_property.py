@@ -16,6 +16,8 @@ import asyncpg
 import pytest
 from manzil_shared.models import Confidence
 from manzil_worker.ops.split_property import SplitError, split_property
+from manzil_worker.scoped_facts import persist_reconciled_claims
+from manzil_worker.state import SourceClaim
 
 URL1 = "https://apartments.com/riverfront-towers-detroit-mi/aaa111/"
 URL2 = "https://zillow.com/autumn-ridge-detroit-mi/bbb222/"
@@ -250,6 +252,89 @@ async def test_split_by_url_repoints_and_rescores(pg_pool: asyncpg.Pool) -> None
         assert len(rescore_jobs) == 2
         for row in rescore_jobs:
             assert json.loads(row["payload"]) == {"hunt_id": str(row["hunt_id"])}
+    finally:
+        await _cleanup(pg_pool, fx)
+
+
+async def test_split_recomputes_both_sides_of_multi_source_resolution(
+    pg_pool: asyncpg.Pool,
+) -> None:
+    fx = _Fixture()
+    await _seed(pg_pool, fx)
+    first = SourceClaim(
+        criterion_key="pool",
+        value=True,
+        confidence=Confidence.HIGH,
+        evidence_quote="Pool listed",
+        source_id=URL1,
+        model="fixture",
+        prompt_version=1,
+    )
+    second = SourceClaim(
+        criterion_key="pool",
+        value=False,
+        confidence=Confidence.MEDIUM,
+        evidence_quote="No pool",
+        source_id=URL2,
+        model="fixture",
+        prompt_version=1,
+    )
+    resolution = first.model_copy(
+        update={
+            "resolution_rule": "conservative_disputed",
+            "disputed": True,
+            "candidate_claim_group_ids": [
+                first.claim_group_id,
+                second.claim_group_id,
+            ],
+        }
+    )
+    try:
+        async with pg_pool.acquire() as conn, conn.transaction():
+            await persist_reconciled_claims(
+                conn,
+                property_id=fx.property_id,
+                hunt_id=None,
+                job_id=None,
+                candidate_claims=[first, second],
+                resolved_claims=[resolution],
+                source_ids_by_url={
+                    URL1: fx.source1_id,
+                    URL2: fx.source2_id,
+                },
+                floor_plan_ids_by_source_ref={},
+            )
+        async with pg_pool.acquire() as conn:
+            result = await split_property(
+                conn, property_id=fx.property_id, source_url=URL2
+            )
+        fx.new_property_id = result.new_property_id
+
+        old = await pg_pool.fetchrow(
+            "select value, resolution_rule from current_extractions "
+            "where property_id = $1 and criterion_key = 'pool'",
+            fx.property_id,
+        )
+        new = await pg_pool.fetchrow(
+            "select value, resolution_rule from current_extractions "
+            "where property_id = $1 and criterion_key = 'pool'",
+            result.new_property_id,
+        )
+        assert json.loads(old["value"]) is True
+        assert json.loads(new["value"]) is False
+        assert old["resolution_rule"] == "split_recompute"
+        assert new["resolution_rule"] == "split_recompute"
+        assert not await pg_pool.fetchval(
+            """
+            select exists (
+                select 1
+                from extraction_resolution_candidates edge
+                join extractions resolved on resolved.id = edge.resolution_extraction_id
+                join extractions candidate on candidate.id = edge.candidate_extraction_id
+                where resolved.property_id <> candidate.property_id
+            )
+            """
+        )
     finally:
         await _cleanup(pg_pool, fx)
 

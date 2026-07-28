@@ -23,6 +23,24 @@ export interface RowPipeline {
   placeholder: boolean;
 }
 
+const PIPELINE_ERROR_MAX = 48;
+
+/** One-line, length-capped failure copy for Overview; full text stays in Tasks history. */
+export function formatPipelineError(error: string): string {
+  const compact = error.replace(/\s+/g, " ").trim();
+  if (compact.length <= PIPELINE_ERROR_MAX) return compact;
+  return `${compact.slice(0, PIPELINE_ERROR_MAX - 1).trimEnd()}…`;
+}
+
+export function pipelineFailureLabel(detail: string | null): string {
+  if (!detail) return "Couldn't fetch";
+  return `Couldn't fetch · ${formatPipelineError(detail)}`;
+}
+
+export function pipelineErrorWasTruncated(error: string): boolean {
+  return error.replace(/\s+/g, " ").trim().length > PIPELINE_ERROR_MAX;
+}
+
 const ACTIVE: ReadonlySet<string> = new Set(["queued", "running", "waiting_user"]);
 
 /** Latest job per listing, newest first by created_at. */

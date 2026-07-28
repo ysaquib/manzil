@@ -5,7 +5,7 @@
 // the all-in monthly figure. The chevron expands to the desktop columns and
 // stops there; photos, fees, the score breakdown and notes stay in the drawer,
 // which is still what tapping the row itself opens.
-import { ActionIcon, Anchor, Box, Button, Collapse, Group, Stack, Text, UnstyledButton } from "@mantine/core";
+import { ActionIcon, Anchor, Box, Button, Collapse, Group, Stack, Text, Tooltip, UnstyledButton } from "@mantine/core";
 import {
   IconArchive,
   IconArrowsLeftRight,
@@ -26,7 +26,11 @@ import { ScoreCell } from "./ScoreCell";
 import { useComments, useCurrentMember, useMembers, useRatings } from "../collaboration/api";
 import { usePatchUnitGroupState } from "./api";
 import { rowEntry, useCompareSet } from "./compareSet";
-import type { RowPipeline } from "./rowState";
+import {
+  pipelineErrorWasTruncated,
+  pipelineFailureLabel,
+  type RowPipeline,
+} from "./rowState";
 import type { InterestStatus } from "./types";
 import {
   allInValue,
@@ -37,6 +41,7 @@ import {
   type OverviewRow,
 } from "./overviewRows";
 import { sentenceCase } from "../../lib/text";
+import { ProblematicBadge } from "../../components/badges/ListingBadges";
 
 import classes from "./OverviewRowList.module.css";
 
@@ -173,12 +178,14 @@ function OverviewRowCard({
   pipeline,
   onOpen,
   onArchive,
+  problematic,
 }: {
   row: OverviewRow;
   huntId: string;
   pipeline: RowPipeline | null;
   onOpen: (row: OverviewRow) => void;
   onArchive: (row: OverviewRow) => void;
+  problematic: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const group = row.group;
@@ -202,11 +209,21 @@ function OverviewRowCard({
             <Text size="sm" fw={600} truncate>
               {row.listing.property.name}
             </Text>
-            <Text size="xs" c={working ? "dusky" : "red"} truncate>
-              {working
-                ? `Working${pipeline.detail ? ` · ${sentenceCase(pipeline.detail.toLowerCase())}` : ""}`
-                : `Couldn't fetch${pipeline.detail ? ` · ${pipeline.detail}` : ""}`}
-            </Text>
+            <Tooltip
+              label={pipeline.detail}
+              openDelay={300}
+              multiline
+              maw={320}
+              disabled={
+                !(pipeline.state === "failed" && pipeline.detail && pipelineErrorWasTruncated(pipeline.detail))
+              }
+            >
+              <Text size="xs" c={working ? "dusky" : "red"} truncate>
+                {working
+                  ? `Working${pipeline.detail ? ` · ${sentenceCase(pipeline.detail.toLowerCase())}` : ""}`
+                  : pipelineFailureLabel(pipeline.detail)}
+              </Text>
+            </Tooltip>
           </Box>
           <Anchor component="span" size="xs" fw={600} style={{ whiteSpace: "nowrap" }}>
             {working ? "View task" : "See history"} ›
@@ -243,6 +260,7 @@ function OverviewRowCard({
               <Text size="sm" fw={600} truncate>
                 {row.listing.property.name}
               </Text>
+              {problematic && <ProblematicBadge />}
             </Box>
             <Group gap={6} wrap="nowrap" mt={2}>
               <Text size="xs" c="dimmed">
@@ -279,12 +297,14 @@ export function OverviewRowList({
   huntId,
   rows,
   pipeline,
+  problematicPropertyIds,
   onOpen,
   onArchive,
 }: {
   huntId: string;
   rows: OverviewRow[];
   pipeline?: Map<string, RowPipeline>;
+  problematicPropertyIds?: Set<string>;
   onOpen: (row: OverviewRow) => void;
   onArchive: (row: OverviewRow) => void;
 }) {
@@ -296,6 +316,7 @@ export function OverviewRowList({
           row={row}
           huntId={huntId}
           pipeline={pipeline?.get(rowKey(row)) ?? null}
+          problematic={problematicPropertyIds?.has(row.listing.property_id) ?? false}
           onOpen={onOpen}
           onArchive={onArchive}
         />

@@ -1,0 +1,35 @@
+/* Amenity legend for the Floor Plan card list (P3-SC5). The cards carry a
+ * glyph + figure per state; this strip carries the words once, so the count
+ * colors never have to mean anything on their own (UI_DESIGN §4). */
+
+.legend {
+  row-gap: 0.125rem;
+}
+
+.glyph[data-state="confirmed"] {
+  color: var(--mantine-color-green-7);
+}
+
+.glyph[data-state="advertised"] {
+  color: var(--mantine-color-yellow-7);
+}
+
+.glyph[data-state="absent"] {
+  color: var(--mantine-color-red-7);
+}
+
+.glyph[data-state="unknown"] {
+  color: var(--mantine-color-dimmed);
+}
+
+:global([data-mantine-color-scheme="dark"]) .glyph[data-state="confirmed"] {
+  color: var(--mantine-color-green-4);
+}
+
+:global([data-mantine-color-scheme="dark"]) .glyph[data-state="advertised"] {
+  color: var(--mantine-color-yellow-4);
+}
+
+:global([data-mantine-color-scheme="dark"]) .glyph[data-state="absent"] {
+  color: var(--mantine-color-red-4);
+}

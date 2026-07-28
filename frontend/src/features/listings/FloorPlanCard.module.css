@@ -1,0 +1,249 @@
+/* Collapsed Floor Plan card (P3-SC5). A CSS Module earns its place here for
+ * three reasons UI_DESIGN §3 names explicitly: named grid tracks that reflow
+ * at the phone breakpoint, `min-width: 0` overflow control, and the stretched
+ * click target's absolute geometry.
+ *
+ * The whole card opens the detail modal, but the pin must stay an
+ * independently focusable control — and a <button> cannot nest inside a
+ * <button>. So the card is a plain grid with a transparent stretched
+ * UnstyledButton covering it, and the pin ActionIcon is lifted above that
+ * overlay on its own stacking context.
+ */
+
+.card {
+  position: relative;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+
+.card:hover {
+  background-color: color-mix(in srgb, var(--mantine-color-dusky-6) 6%, transparent);
+}
+
+/* Pinned: a quiet rule on the leading edge. Reads at every scroll position
+ * without spending a word-badge (UI_DESIGN §4). */
+.pinned {
+  border-inline-start: 3px solid var(--mantine-color-dusky-filled);
+}
+
+/* Open: the card whose modal is showing. The drawer-scoped overlay leaves the
+ * list edge visible, so an unmarked card would read as nothing selected. */
+.active {
+  border-color: var(--mantine-color-dusky-outline);
+  background-color: color-mix(in srgb, var(--mantine-color-dusky-6) 5%, transparent);
+}
+
+.inactive {
+  opacity: 0.62;
+}
+
+/* Stretched click target: covers the card, sits under the pin. */
+.open {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: var(--mantine-radius-md);
+}
+
+.open:focus-visible {
+  outline: 2px solid var(--mantine-color-dusky-filled);
+  outline-offset: -2px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-areas: "thumb id rent rail";
+  align-items: center;
+  gap: 0.25rem var(--mantine-spacing-sm);
+}
+
+.thumb {
+  grid-area: thumb;
+  width: 66px;
+  height: 54px;
+  overflow: hidden;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-sm);
+  background-color: var(--mantine-color-default-hover);
+}
+
+.thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* No diagram: dashed placeholder, never a substituted Property photo (§9.3). */
+.thumbEmpty {
+  display: grid;
+  place-items: center;
+  border-style: dashed;
+  background-color: transparent;
+  color: var(--mantine-color-dimmed);
+}
+
+.id {
+  grid-area: id;
+  min-width: 0;
+}
+
+.name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rent {
+  grid-area: rent;
+  text-align: end;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Score and pin sit side by side — one row, no stack in the far right. */
+.rail {
+  grid-area: rail;
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+}
+
+/* Score chip: band color, tabular figures, flat tint (UI_DESIGN §1). */
+.score {
+  flex: none;
+  font-size: var(--mantine-font-size-xs);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  padding: 0 0.375rem;
+  border-radius: 5px;
+  line-height: 1.5;
+}
+
+.highest,
+.high {
+  color: var(--mantine-color-teal-7);
+  background: color-mix(in srgb, var(--mantine-color-teal-6) 14%, transparent);
+}
+
+.good {
+  color: var(--mantine-color-lime-7);
+  background: color-mix(in srgb, var(--mantine-color-lime-6) 16%, transparent);
+}
+
+.mid {
+  color: var(--mantine-color-yellow-7);
+  background: color-mix(in srgb, var(--mantine-color-yellow-6) 18%, transparent);
+}
+
+.low {
+  color: var(--mantine-color-orange-7);
+  background: color-mix(in srgb, var(--mantine-color-orange-6) 16%, transparent);
+}
+
+.poor,
+.poorest {
+  color: var(--mantine-color-red-7);
+  background: color-mix(in srgb, var(--mantine-color-red-6) 14%, transparent);
+}
+
+/* Amenity count strip: the whole reason a plan can be ranked without opening
+ * it. Glyph + figure per state; the legend above the list carries the words,
+ * so color never has to mean anything on its own (UI_DESIGN §4). */
+.counts {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1875rem;
+  font-weight: 600;
+}
+
+.count[data-state="confirmed"] {
+  color: var(--mantine-color-green-7);
+}
+
+.count[data-state="advertised"] {
+  color: var(--mantine-color-yellow-7);
+}
+
+.count[data-state="absent"] {
+  color: var(--mantine-color-red-7);
+}
+
+.count[data-state="unknown"] {
+  color: var(--mantine-color-dimmed);
+  font-weight: 400;
+}
+
+:global([data-mantine-color-scheme="dark"]) .highest,
+:global([data-mantine-color-scheme="dark"]) .high {
+  color: var(--mantine-color-teal-4);
+}
+
+:global([data-mantine-color-scheme="dark"]) .good {
+  color: var(--mantine-color-lime-4);
+}
+
+:global([data-mantine-color-scheme="dark"]) .mid {
+  color: var(--mantine-color-yellow-4);
+}
+
+:global([data-mantine-color-scheme="dark"]) .low {
+  color: var(--mantine-color-orange-4);
+}
+
+:global([data-mantine-color-scheme="dark"]) .poor,
+:global([data-mantine-color-scheme="dark"]) .poorest {
+  color: var(--mantine-color-red-4);
+}
+
+:global([data-mantine-color-scheme="dark"]) .count[data-state="confirmed"] {
+  color: var(--mantine-color-green-4);
+}
+
+:global([data-mantine-color-scheme="dark"]) .count[data-state="advertised"] {
+  color: var(--mantine-color-yellow-4);
+}
+
+:global([data-mantine-color-scheme="dark"]) .count[data-state="absent"] {
+  color: var(--mantine-color-red-4);
+}
+
+/* Phone: rent drops to its own full-width row so the plan name never crushes,
+ * and the pin grows to a comfortable touch target (UI_DESIGN §5). */
+@media (max-width: 48em) {
+  .grid {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "thumb id rail"
+      "rent rent rent";
+  }
+
+  .rent {
+    text-align: start;
+    display: flex;
+    align-items: baseline;
+    gap: var(--mantine-spacing-xs);
+  }
+
+  .rail button {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    transition: none;
+  }
+}
