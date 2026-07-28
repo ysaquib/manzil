@@ -74,6 +74,11 @@ class PostgresPersistence:
         return None
 
     async def save(self, state: RunState) -> None:
+        # P3-6 RECONCILE may insert a bounded escalation round immediately after
+        # its current cursor. Follow the persisted manifest so current_stage and
+        # completion events remain aligned with the runner's dynamic walk.
+        if state.plan is not None:
+            self._stage_names = list(state.plan.stages)
         cursor = state.cursor
         if self._last_completed is None:
             self._last_completed = cursor

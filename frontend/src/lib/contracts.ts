@@ -94,6 +94,8 @@ export interface HuntSettings {
   default_source_policy: SourcePolicy;
   cost_estimate_mode: "conservative" | "median";
   min_confidence: "low" | "medium" | "high";
+  min_vision_confidence: "low" | "medium" | "high";
+  generalized_vision_policy: "full_rubric" | "points_only" | "unknown";
   proximity_mode: "walking" | "driving";
   // Household (§9.5 v1): pet counts feed scoring; occupants is reserved for
   // future utility scaling. All integers, defaulted so {} stays valid.
@@ -108,6 +110,10 @@ export function resolveSettings(raw: Record<string, unknown> | null | undefined)
     default_source_policy: (s.default_source_policy as SourcePolicy) ?? "tiers_1_2_3",
     cost_estimate_mode: (s.cost_estimate_mode as HuntSettings["cost_estimate_mode"]) ?? "conservative",
     min_confidence: (s.min_confidence as HuntSettings["min_confidence"]) ?? "medium",
+    min_vision_confidence:
+      (s.min_vision_confidence as HuntSettings["min_vision_confidence"]) ?? "low",
+    generalized_vision_policy:
+      (s.generalized_vision_policy as HuntSettings["generalized_vision_policy"]) ?? "full_rubric",
     proximity_mode: (s.proximity_mode as HuntSettings["proximity_mode"]) ?? "driving",
     occupants: (s.occupants as number) ?? 1,
     cats: (s.cats as number) ?? 0,

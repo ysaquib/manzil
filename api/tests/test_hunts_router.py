@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from api_helpers import FAKE_USER
@@ -62,6 +62,43 @@ async def test_settings_min_confidence_bumps_version_and_rescore(
         assert rescore == 1
     finally:
         await db_pool.execute("delete from hunts where id = $1", hunt_id)
+
+
+@pytest.mark.asyncio
+async def test_settings_min_vision_confidence_defaults_low_and_rescores(
+    client: AsyncClient, db_pool
+) -> None:
+    hunt_id = await _seed_hunt(db_pool, {"min_confidence": "medium"})
+    try:
+        response = await client.patch(
+            f"/v1/hunts/{hunt_id}/settings",
+            json={"settings": {"min_vision_confidence": "medium"}},
+        )
+        assert response.status_code == 200
+        assert response.json()["settings"]["min_vision_confidence"] == "medium"
+        assert response.json()["rubric_version"] == 1
+        jobs = await db_pool.fetchval(
+            "select count(*) from jobs where type = 'rescore' and payload->>'hunt_id' = $1",
+            hunt_id,
+        )
+        assert jobs == 1
+    finally:
+        await db_pool.execute("delete from hunts where id = $1", UUID(hunt_id))
+
+
+@pytest.mark.asyncio
+async def test_settings_min_vision_confidence_rejects_unknown_value(
+    client: AsyncClient, db_pool
+) -> None:
+    hunt_id = await _seed_hunt(db_pool, _FULL_SETTINGS)
+    try:
+        response = await client.patch(
+            f"/v1/hunts/{hunt_id}/settings",
+            json={"settings": {"min_vision_confidence": "uncertain"}},
+        )
+        assert response.status_code == 422
+    finally:
+        await db_pool.execute("delete from hunts where id = $1", UUID(hunt_id))
 
 
 @pytest.mark.asyncio
@@ -158,11 +195,52 @@ _FULL_SETTINGS = {
     "default_source_policy": "tiers_1_2_3",
     "cost_estimate_mode": "conservative",
     "min_confidence": "medium",
+    "min_vision_confidence": "low",
+    "generalized_vision_policy": "full_rubric",
     "proximity_mode": "driving",
     "occupants": 1,
     "cats": 0,
     "dogs": 0,
 }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("policy", ["full_rubric", "points_only", "unknown"])
+async def test_generalized_vision_policy_bumps_version_and_rescores(
+    client: AsyncClient, db_pool, policy: str
+) -> None:
+    settings = {**_FULL_SETTINGS, "generalized_vision_policy": "points_only"}
+    hunt_id = await _seed_hunt(db_pool, settings)
+    try:
+        response = await client.patch(
+            f"/v1/hunts/{hunt_id}/settings",
+            json={"settings": {"generalized_vision_policy": policy}},
+        )
+        assert response.status_code == 200
+        expected_version = 0 if policy == "points_only" else 1
+        assert response.json()["rubric_version"] == expected_version
+        jobs = await db_pool.fetchval(
+            "select count(*) from jobs where type = 'rescore' and payload->>'hunt_id' = $1",
+            hunt_id,
+        )
+        assert jobs == expected_version
+    finally:
+        await db_pool.execute("delete from hunts where id = $1", UUID(hunt_id))
+
+
+@pytest.mark.asyncio
+async def test_generalized_vision_policy_rejects_unknown_value(
+    client: AsyncClient, db_pool
+) -> None:
+    hunt_id = await _seed_hunt(db_pool, _FULL_SETTINGS)
+    try:
+        response = await client.patch(
+            f"/v1/hunts/{hunt_id}/settings",
+            json={"settings": {"generalized_vision_policy": "unsafe"}},
+        )
+        assert response.status_code == 422
+    finally:
+        await db_pool.execute("delete from hunts where id = $1", UUID(hunt_id))
 
 
 async def _seed_hunt(db_pool, settings: dict) -> str:  # type: ignore[no-untyped-def]

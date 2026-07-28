@@ -173,3 +173,54 @@ async def test_hard_status_raises(monkeypatch: pytest.MonkeyPatch) -> None:
 
     with pytest.raises(maps.MapsError, match="REQUEST_DENIED"):
         await maps._geocode_call("120 Maple", transport=_transport(handler))
+
+
+# ── place details: contact fields (P3-21) ─────────────────────────────────────
+
+DETAILS_BODY = {
+    "status": "OK",
+    "result": {
+        "name": "Maple Court Apartments",
+        "rating": 4.2,
+        "user_ratings_total": 87,
+        "reviews": [
+            {"rating": 5, "text": "Great staff.", "relative_time_description": "a month ago"}
+        ],
+        "formatted_phone_number": "(313) 555-0142",
+        "website": "https://maplecourt.test/",
+    },
+}
+
+
+async def test_place_details_requests_contact_fields_and_surfaces_them() -> None:
+    """P3-21 rung 2: phone + website ride on the existing once-per-property
+    Place Details call. The field mask must actually ask for them — Google
+    silently omits unrequested fields, so a missing mask entry would look
+    identical to a property with no listed phone."""
+    seen: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "place/details" in str(request.url)
+        seen["fields"] = request.url.params["fields"]
+        return httpx.Response(200, json=DETAILS_BODY)
+
+    out = await maps._place_details_call("PLACE_ABC", transport=_transport(handler))
+    assert "formatted_phone_number" in seen["fields"]
+    assert "website" in seen["fields"]
+    assert out is not None
+    assert out["phone"] == "(313) 555-0142"
+    assert out["website"] == "https://maplecourt.test/"
+    # The ratings half (§10.12 stage 1) keeps working unchanged.
+    assert out["rating"] == 4.2
+
+
+async def test_place_details_contact_is_none_when_google_omits_it() -> None:
+    body = {"status": "OK", "result": {"name": "Maple Court", "rating": 4.2}}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=body)
+
+    out = await maps._place_details_call("PLACE_ABC", transport=_transport(handler))
+    assert out is not None
+    assert out["phone"] is None
+    assert out["website"] is None

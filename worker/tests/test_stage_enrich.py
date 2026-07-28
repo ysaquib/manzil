@@ -161,3 +161,47 @@ def test_no_route_records_no_grocery_value() -> None:
     seams = SeamLog(minutes=None)
     out = asyncio.run(enrich_stage(_state(), seams.ctx()))
     assert "grocery_proximity" not in _claims(out)
+
+
+# ── P3-21: Places contact (rung 2) ────────────────────────────────────────────
+
+CONTACT_DETAILS = {**DETAILS, "phone": "(313) 555-0142", "website": "https://maplecourt.test/"}
+
+
+def test_places_contact_lands_on_state_not_source_claims() -> None:
+    """Contact info is unscored display metadata (§16, §8.2). It must never enter
+    `source_claims`, which is the path into scoring."""
+    seams = SeamLog(details=CONTACT_DETAILS)
+    out = asyncio.run(enrich_stage(_state(), seams.ctx()))
+
+    assert out.maps_contact is not None
+    assert out.maps_contact.phone == "(313) 555-0142"
+    assert out.maps_contact.contact_url == "https://maplecourt.test/"
+    assert "property_contact" not in _claims(out)
+    assert "maps_contact" not in _claims(out)
+
+
+def test_places_contact_captured_even_when_google_has_no_rating() -> None:
+    """A property can have a listed phone and no rating — the contact capture must
+    not sit behind the ratings gate."""
+    seams = SeamLog(
+        details={"name": "Maple Court", "phone": "(313) 555-0142", "website": None, "reviews": []}
+    )
+    out = asyncio.run(enrich_stage(_state(), seams.ctx()))
+
+    assert "management_reviews" not in _claims(out)
+    assert out.maps_contact is not None
+    assert out.maps_contact.phone == "(313) 555-0142"
+
+
+def test_no_contact_fields_leaves_maps_contact_unset() -> None:
+    seams = SeamLog(details=DETAILS)  # no phone/website keys
+    out = asyncio.run(enrich_stage(_state(), seams.ctx()))
+    assert out.maps_contact is None
+
+
+def test_place_details_failure_leaves_contact_unset_without_failing_the_job() -> None:
+    seams = SeamLog(details=MapsError("denied"))
+    out = asyncio.run(enrich_stage(_state(), seams.ctx()))
+    assert out.maps_contact is None
+    assert _claims(out)["grocery_proximity"].value == 7.5  # other slices survive

@@ -7,7 +7,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/apiClient";
 import type { components } from "../../lib/generated/api";
 import { supabase } from "../../lib/supabase";
-import type { Extraction, FeeEntry, Listing, Override, UnitGroupState } from "./types";
+import type {
+  Extraction,
+  FeeEntry,
+  Listing,
+  Override,
+  ResolutionCandidate,
+  UnitGroupState,
+} from "./types";
 
 type ListingResponse = components["schemas"]["ListingResponse"];
 type ListingCreate = components["schemas"]["ListingCreate"];
@@ -123,6 +130,60 @@ export function useExtractions(propertyId: string, huntId: string) {
       return (data ?? []) as Extraction[];
     },
     enabled: Boolean(propertyId),
+  });
+}
+
+export function useProblematicPropertyIds(propertyIds: string[]) {
+  const stableIds = [...new Set(propertyIds)].sort();
+  return useQuery({
+    queryKey: ["problematic-properties", stableIds],
+    queryFn: async (): Promise<Set<string>> => {
+      const { data, error } = await supabase
+        .from("current_extractions")
+        .select("property_id")
+        .in("property_id", stableIds)
+        .eq("disputed", true)
+        .eq("resolution_rule", "conservative_disputed");
+      if (error) throw error;
+      return new Set((data ?? []).map((row) => row.property_id as string));
+    },
+    enabled: stableIds.length > 0,
+  });
+}
+
+export function useResolutionCandidates(extractionId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["resolution-candidates", extractionId],
+    queryFn: async (): Promise<ResolutionCandidate[]> => {
+      const { data, error } = await supabase
+        .from("extraction_resolution_candidates")
+        .select(
+          "selected,candidate:extractions!candidate_extraction_id(id,value,confidence,evidence_quote,source:property_sources(url,site_domain))",
+        )
+        .eq("resolution_extraction_id", extractionId);
+      if (error) throw error;
+      return (data ?? []).flatMap((edge) => {
+        const candidate = Array.isArray(edge.candidate) ? edge.candidate[0] : edge.candidate;
+        if (!candidate) return [];
+        const source = Array.isArray(candidate.source) ? candidate.source[0] : candidate.source;
+        return [
+          {
+            id: candidate.id as string,
+            value: candidate.value,
+            confidence: candidate.confidence as ResolutionCandidate["confidence"],
+            evidence_quote: (candidate.evidence_quote as string | null) ?? null,
+            selected: Boolean(edge.selected),
+            source: source
+              ? {
+                  url: source.url as string,
+                  site_domain: source.site_domain as string,
+                }
+              : null,
+          },
+        ];
+      });
+    },
+    enabled: enabled && Boolean(extractionId),
   });
 }
 
@@ -244,6 +305,30 @@ export function useUpsertFee(huntId: string, listingId: string) {
   });
 }
 
+// P3-21 contact: the precedence-resolved winner per kind. The view already
+// picked official site over Places over listing, so this reads at most two rows
+// and never has to rank anything client-side.
+export interface PropertyContact {
+  kind: "phone" | "contact_url";
+  value: string;
+  provenance: "official_site" | "google_places" | "listing";
+}
+
+export function usePropertyContacts(propertyId: string) {
+  return useQuery({
+    queryKey: ["property_contacts", propertyId],
+    queryFn: async (): Promise<PropertyContact[]> => {
+      const { data, error } = await supabase
+        .from("property_contacts_current")
+        .select("kind, value, provenance")
+        .eq("property_id", propertyId);
+      if (error) throw error;
+      return (data ?? []) as PropertyContact[];
+    },
+    enabled: Boolean(propertyId),
+  });
+}
+
 // P3-7a gallery: property_images rows + short-lived signed URLs from the
 // private `property-images` bucket (table RLS decides which paths we learn;
 // the storage select policy lets authenticated users sign them).
@@ -252,6 +337,9 @@ export interface PropertyImage {
   url: string;
   width: number | null;
   height: number | null;
+  kind?: "listing_photo" | "floor_plan_diagram" | "other";
+  visionAssessment?: Record<string, unknown> | null;
+  floorPlanAssociations?: string[];
 }
 
 export function usePropertyImages(propertyId: string) {
@@ -260,12 +348,24 @@ export function usePropertyImages(propertyId: string) {
     queryFn: async (): Promise<PropertyImage[]> => {
       const { data, error } = await supabase
         .from("property_images")
-        .select("id, storage_path, width, height")
+        .select("id, storage_path, width, height, kind, vision_assessment")
         .eq("property_id", propertyId)
+        .eq("is_current", true)
         .order("created_at", { ascending: true });
       if (error) throw error;
       const rows = data ?? [];
       if (rows.length === 0) return [];
+      const { data: associations, error: associationError } = await supabase
+        .from("current_floor_plan_images")
+        .select("property_image_id, floor_plan_id")
+        .in("property_image_id", rows.map((r) => r.id));
+      if (associationError) throw associationError;
+      const plansByImage = new Map<string, string[]>();
+      for (const association of associations ?? []) {
+        const plans = plansByImage.get(association.property_image_id) ?? [];
+        plans.push(association.floor_plan_id);
+        plansByImage.set(association.property_image_id, plans);
+      }
       const { data: signed, error: signError } = await supabase.storage
         .from("property-images")
         .createSignedUrls(rows.map((r) => r.storage_path), 3600);
@@ -273,7 +373,17 @@ export function usePropertyImages(propertyId: string) {
       const urlByPath = new Map((signed ?? []).map((s) => [s.path, s.signedUrl]));
       return rows.flatMap((row) => {
         const url = urlByPath.get(row.storage_path);
-        return url ? [{ id: row.id, url, width: row.width, height: row.height }] : [];
+        return url
+          ? [{
+              id: row.id,
+              url,
+              width: row.width,
+              height: row.height,
+              kind: row.kind,
+              visionAssessment: row.vision_assessment,
+              floorPlanAssociations: plansByImage.get(row.id) ?? [],
+            }]
+          : [];
       });
     },
     enabled: Boolean(propertyId),
