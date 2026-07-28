@@ -1,0 +1,251 @@
+{
+  "version": 1,
+  "profiles": {
+    "kitchen_quality": {
+      "version": 1,
+      "prompt_version": 1,
+      "status": "approved",
+      "quality_status": "approved",
+      "quality_benchmark_status": "deferred_owner_override",
+      "quality_enabled_by": "Yusuf",
+      "quality_enabled_at": "2026-07-28",
+      "quality_model": "anthropic/claude-sonnet-4.6",
+      "approved_by": "Yusuf",
+      "approved_at": "2026-07-27",
+      "anchors": [
+        {
+          "file": "1_star_kitchen_1.webp",
+          "sha256": "2ee465089ab77eaaab530facb63c11f21f9e0f5b9bfd3a38e9952b6d29b9f5c1",
+          "rating": 1,
+          "source_url": null,
+          "note": "Kitchen-quality anchor (1/5); source provenance pending."
+        },
+        {
+          "file": "1_star_kitchen_2.webp",
+          "sha256": "c3b8786fd40c44b8809c898b1b3e586c6a5d4b5bca47bc99d4c1e0d922ed10d5",
+          "rating": 1,
+          "source_url": null,
+          "note": "Kitchen-quality anchor (1/5); source provenance pending."
+        },
+        {
+          "file": "1_star_kitchen_3.webp",
+          "sha256": "7153c5e46071afdae48bf4c98df5b32236a7c52673e527008ed6e5e0d4b439b2",
+          "rating": 1,
+          "source_url": null,
+          "note": "Kitchen-quality anchor (1/5); source provenance pending."
+        },
+        {
+          "file": "1_star_kitchen_4.webp",
+          "sha256": "ffb4f9b097847e556299a3875aef7b2e29892a2a8e7006cfbfcec3ac96ca137b",
+          "rating": 1,
+          "source_url": null,
+          "note": "Kitchen-quality anchor (1/5); source provenance pending."
+        },
+        {
+          "file": "1_star_kitchen_5.webp",
+          "sha256": "8fcee92646d4a6f40d5f5f6ca15bbef34edc4e42cd18c0e2ccd0c817a809f9ed",
+          "rating": 1,
+          "source_url": null,
+          "note": "Kitchen-quality anchor (1/5); source provenance pending."
+        },
+        {
+          "file": "2_star_kitchen_1.webp",
+          "sha256": "d29fa027152a4cf54e4ba91519430f29154f0d20b3dcb5e04cc556c0c767865e",
+          "rating": 2,
+          "source_url": null,
+          "note": "Kitchen-quality anchor (2/5); source provenance pending."
+        },
+        {
+          "file": "2_star_kitchen_2.webp",
+          "sha256": "193340ee2b716245ce2b8ab982be340142ab694adf4346b822a46def8815faf4",
+          "rating": 2,
+          "source_url": null,
+          "note": "Kitchen-quality anchor (2/5); source provenance pending."
+        },
+        {
+          "file": "2_star_kitchen_3.webp",
+          "sha256": "6536f85ba9defe65cb35acefa9602aedd6ba5a0e152d7d7c59234284f6a3612b",
+          "rating": 2,
+          "source_url": null,
+          "note": "Kitchen-quality anchor (2/5); source provenance pending."
+        },
+        {
+          "file": "2_star_kitchen_4.webp",
+          "sha256": "6747c2a0f39805091b79e99179591a4b977b5b7b9f688115bf8191dc1ff8b7bf",
+          "rating": 2,
+          "source_url": null,
+          "note": "Kitchen-quality anchor (2/5); source provenance pending."
+        },
+        {
+          "file": "2_star_kitchen_5.webp",
+          "sha256": "caa641ffdb4341aba3203bc40e4725c25ddf2e16e96ba182b7dbfaedce97830e",
+          "rating": 2,
+          "source_url": null,
+          "note": "Kitchen-quality anchor (2/5); source provenance pending."
+        },
+        {
+          "file": "3_star_kitchen_1.webp",
+          "sha256": "2fec62cfcc9fca7aa3834238c019e07197f8b37795f6dbcf18063665b581b7be",
+          "rating": 3,
+          "source_url": null,
+          "note": "Kitchen-quality anchor (3/5); source provenance pending."
+        },
+        {
+          "file": "3_star_kitchen_2.webp",
+          "sha256": "7f136357132408aa34e2b25f589749eec9bc69174e6a90ead3c3e8c998b6fae5",
+          "rating": 3,
+          "source_url": null,
+          "note": "Kitchen-quality anchor (3/5); source provenance pending."
+        },
+        {
+          "file": "3_star_kitchen_3.webp",
+          "sha256": "e0454ce8002bf99dbb5eec9cb3ecda59345d599b8c8df02e643dffe055030be1",
+          "rating": 3,
+          "source_url": null,
+          "note": "Kitchen-quality anchor (3/5); source provenance pending."
+        },
+        {
+          "file": "3_star_kitchen_4.webp",
+          "sha256": "4917938e940fd1c3b5d0697ffb5f230492b1892bce78dbe3bc7b05a3111944bf",
+          "rating": 3,
+          "source_url": null,
+          "note": "Kitchen-quality anchor (3/5); source provenance pending."
+        },
+        {
+          "file": "3_star_kitchen_5.webp",
+          "sha256": "e39fae260c8b5a2840d92b36c678194d1d57fed73bbb5a4b89deb66be642d7ea",
+          "rating": 3,
+          "source_url": null,
+          "note": "Kitchen-quality anchor (3/5); source provenance pending."
+        },
+        {
+          "file": "4_star_kitchen_1.webp",
+          "sha256": "16f3c635b36770170d77b10fc3b0d4d38db29780cdcf4a94737a09d211b5a3e1",
+          "rating": 4,
+          "source_url": null,
+          "note": "Kitchen-quality anchor (4/5); source provenance pending."
+        },
+        {
+          "file": "4_star_kitchen_2.webp",
+          "sha256": "c08c60b2787b66d98473afc679b84f81835552b95c9efc618e8cbf2fb84c46e9",
+          "rating": 4,
+          "source_url": null,
+          "note": "Kitchen-quality anchor (4/5); source provenance pending."
+        },
+        {
+          "file": "4_star_kitchen_3.webp",
+          "sha256": "b6ead0b375b8195983a5218adc1822376bb58dba7331bd6afc2689090b28c7aa",
+          "rating": 4,
+          "source_url": null,
+          "note": "Kitchen-quality anchor (4/5); source provenance pending."
+        },
+        {
+          "file": "4_star_kitchen_4.webp",
+          "sha256": "ae820f6ea27e9d96c6aab2e594993ab7fec2fdbaa70545fcc8eda26640410190",
+          "rating": 4,
+          "source_url": null,
+          "note": "Kitchen-quality anchor (4/5); source provenance pending."
+        },
+        {
+          "file": "4_star_kitchen_5.webp",
+          "sha256": "463ae58112be4696e77ded7f8a9bff35501d9cdd74f2b17981f1ecba6617a2ef",
+          "rating": 4,
+          "source_url": null,
+          "note": "Kitchen-quality anchor (4/5); source provenance pending."
+        },
+        {
+          "file": "5_star_kitchen_1.webp",
+          "sha256": "e8f7ffd18db55e26d59bb34663bcd10a9f60581ee1ec6b49370653c830c6b97f",
+          "rating": 5,
+          "source_url": null,
+          "note": "Kitchen-quality anchor (5/5); source provenance pending."
+        },
+        {
+          "file": "5_star_kitchen_2.webp",
+          "sha256": "a058cef6324e517b7a562a602a1dc6ff26344632741737d86c323ff2c01edc9a",
+          "rating": 5,
+          "source_url": null,
+          "note": "Kitchen-quality anchor (5/5); source provenance pending."
+        },
+        {
+          "file": "5_star_kitchen_3.webp",
+          "sha256": "8e61e0a88d976eb2cb167b2ab6a7d4265a6ded72c8b84f9a8dd0332a43dc44ec",
+          "rating": 5,
+          "source_url": null,
+          "note": "Kitchen-quality anchor (5/5); source provenance pending."
+        },
+        {
+          "file": "5_star_kitchen_4.webp",
+          "sha256": "bbda3dc0c3dc6bed3627ed2e20f5bd19970ba85feaee5d4b24585d61a0d019bd",
+          "rating": 5,
+          "source_url": null,
+          "note": "Kitchen-quality anchor (5/5); source provenance pending."
+        },
+        {
+          "file": "5_star_kitchen_5.webp",
+          "sha256": "5c00e9b3c953b8264b5d4c3d05608e97807c6eeb7b95d77336a3cee8276c3b4d",
+          "rating": 5,
+          "source_url": null,
+          "note": "Kitchen-quality anchor (5/5); source provenance pending."
+        }
+      ],
+      "sheets": {
+        "1": {
+          "file": "kitchen_quality-rating-1.webp",
+          "sha256": "1aed2beee2477bc7895fe33b5a37b18a8163be180687b2f284f32ff9c762141c",
+          "members": [
+            "1_star_kitchen_1.webp",
+            "1_star_kitchen_2.webp",
+            "1_star_kitchen_3.webp",
+            "1_star_kitchen_4.webp",
+            "1_star_kitchen_5.webp"
+          ]
+        },
+        "2": {
+          "file": "kitchen_quality-rating-2.webp",
+          "sha256": "b3c5fbbfe0240c8ac7b3bfdda2dd45968fc45e1e2447b360d1cc5e0be4867d5f",
+          "members": [
+            "2_star_kitchen_1.webp",
+            "2_star_kitchen_2.webp",
+            "2_star_kitchen_3.webp",
+            "2_star_kitchen_4.webp",
+            "2_star_kitchen_5.webp"
+          ]
+        },
+        "3": {
+          "file": "kitchen_quality-rating-3.webp",
+          "sha256": "12b4e98b9b5b034ab2ef3cb191c53abcf16e490fd5e1a2e1361475fcbb53a2bb",
+          "members": [
+            "3_star_kitchen_1.webp",
+            "3_star_kitchen_2.webp",
+            "3_star_kitchen_3.webp",
+            "3_star_kitchen_4.webp",
+            "3_star_kitchen_5.webp"
+          ]
+        },
+        "4": {
+          "file": "kitchen_quality-rating-4.webp",
+          "sha256": "31bd88bfc83763aa1b5fd46e9dc7562915d2746364771231b5e8a5d37e1e9c6b",
+          "members": [
+            "4_star_kitchen_1.webp",
+            "4_star_kitchen_2.webp",
+            "4_star_kitchen_3.webp",
+            "4_star_kitchen_4.webp",
+            "4_star_kitchen_5.webp"
+          ]
+        },
+        "5": {
+          "file": "kitchen_quality-rating-5.webp",
+          "sha256": "f3c96903af5fee6ac8c80c1681afcad8389ebfe0b72f9fe7f6d98d94b8ea3920",
+          "members": [
+            "5_star_kitchen_1.webp",
+            "5_star_kitchen_2.webp",
+            "5_star_kitchen_3.webp",
+            "5_star_kitchen_4.webp",
+            "5_star_kitchen_5.webp"
+          ]
+        }
+      }
+    }
+  }
+}

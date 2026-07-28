@@ -72,6 +72,10 @@ worker/tests/fixtures/recorded/*
 # Bench reports are keyed to the gitignored local eval kit (corpus + labels)
 # and carry page evidence quotes — local artifacts, never repo content.
 worker/evals/reports/
+# P3-7 local originals and human image-label kit. Normalized approved anchors,
+# generated reference sheets, and their manifest are the only committed assets.
+worker/prompts/vision_refs/originals/
+worker/tests/fixtures/vision_labels/
 .pnpm-store/**
 worker/tests/fixtures/bench/labels.md
 

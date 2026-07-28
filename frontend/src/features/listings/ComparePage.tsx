@@ -31,10 +31,11 @@ import { Link, useParams } from "react-router-dom";
 import { PageHeader } from "../../components/PageHeader";
 import { sentenceCase } from "../../lib/text";
 import { useCatalog, useRubric } from "../rubric/api";
-import { useListings, usePropertyImages, useUnitGroupStates } from "./api";
+import { useExtractions, useListings, usePropertyImages, useUnitGroupStates } from "./api";
 import { AllInCell } from "./AllInCost";
 import { COMPARE_LIMIT, entryKey, useCompareSet, type CompareEntry } from "./compareSet";
 import { displayValue } from "./displayValue";
+import { extractionForFloorPlan } from "./overrides";
 import {
   buildRows,
   earliestAvailability,
@@ -68,6 +69,42 @@ function deltaBadge(delta: number) {
 function PhotosCell({ propertyId }: { propertyId: string }) {
   const { data: images = [], isLoading } = usePropertyImages(propertyId);
   return <PropertyImageCarousel images={images} loading={isLoading} />;
+}
+
+function CriterionCell({
+  column,
+  criterionKey,
+  huntId,
+}: {
+  column: CompareColumn;
+  criterionKey: string;
+  huntId: string;
+}) {
+  const criterion = column.row.group?.displayScore?.breakdown.criteria.find(
+    (candidate) => candidate.key === criterionKey,
+  );
+  const { data: extractions = [] } = useExtractions(column.row.listing.property_id, huntId);
+  const extraction = extractionForFloorPlan(
+    extractions,
+    criterionKey,
+    column.row.group?.displayPlan.id ?? null,
+  );
+  if (!criterion) {
+    return <Text size="sm" c="dimmed">—</Text>;
+  }
+  return (
+    <Stack gap={2}>
+      <Group gap="xs" wrap="nowrap" justify="space-between">
+        <Text size="sm">{displayValue(criterion.value, criterionKey)}</Text>
+        {deltaBadge(criterion.delta)}
+      </Group>
+      {extraction?.resolution_rule === "vision_weighted_median_gallery" && (
+        <Tooltip label="This kitchen may not represent this Floor Plan.">
+          <Text size="xs" c="dimmed">Property-gallery estimate</Text>
+        </Tooltip>
+      )}
+    </Stack>
+  );
 }
 
 /** One compared column: a resolved Overview row (its entry still valid). */
@@ -158,9 +195,6 @@ export function ComparePage() {
   }
 
   const span = columns.length;
-  const criterionOf = (column: CompareColumn, key: string) =>
-    column.row.group?.displayScore?.breakdown.criteria.find((c) => c.key === key);
-
   // Column drag reordering (m12): native HTML5 drag on the header cells —
   // three columns don't justify a dnd dependency. Indexes translate through
   // entryKey because `columns` can lag `compare.entries` by unpruned rows.
@@ -480,19 +514,9 @@ export function ComparePage() {
                 <Table.Tr key={`criterion:${key}`}>
                   <LabelCell>{labelByKey.get(key) ?? sentenceCase(key)}</LabelCell>
                   {columns.map((column) => {
-                    const criterion = criterionOf(column, key);
                     return (
                       <Table.Td key={entryKey(column.entry)}>
-                        {criterion ? (
-                          <Group gap="xs" wrap="nowrap" justify="space-between">
-                            <Text size="sm">{displayValue(criterion.value, key)}</Text>
-                            {deltaBadge(criterion.delta)}
-                          </Group>
-                        ) : (
-                          <Text size="sm" c="dimmed">
-                            —
-                          </Text>
-                        )}
+                        <CriterionCell column={column} criterionKey={key} huntId={huntId} />
                       </Table.Td>
                     );
                   })}

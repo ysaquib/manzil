@@ -75,7 +75,8 @@ async def test_image_projection_upserts_and_prunes_complete_set(pg_pool: asyncpg
         )
 
         # A complete second set contains only hash a. Row a is updated in place,
-        # its prior assessment survives a null pre-VISION projection, and b prunes.
+        # its prior assessment survives a null pre-VISION projection, and b
+        # becomes non-current without destroying visual provenance.
         state.property_images = [
             state.property_images[0].model_copy(update={"vision_assessment": None})
         ]
@@ -88,11 +89,19 @@ async def test_image_projection_upserts_and_prunes_complete_set(pg_pool: asyncpg
                 state=state,
             )
         rows = await pg_pool.fetch(
-            "select content_hash, vision_assessment from property_images where property_id = $1",
+            """
+            select content_hash, vision_assessment, is_current
+            from property_images where property_id = $1
+            order by content_hash
+            """,
             property_id,
         )
-        assert [(row["content_hash"], row["vision_assessment"]) for row in rows] == [
-            ("a", '{"kind": "kitchen"}')
+        assert [
+            (row["content_hash"], row["vision_assessment"], row["is_current"])
+            for row in rows
+        ] == [
+            ("a", '{"kind": "kitchen"}', True),
+            ("b", None, False),
         ]
     finally:
         await pg_pool.execute("delete from hunts where id = $1", hunt_id)

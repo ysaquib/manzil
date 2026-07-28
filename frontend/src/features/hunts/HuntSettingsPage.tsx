@@ -219,7 +219,7 @@ function SettingsForm({ hunt }: { hunt: Hunt }) {
           />
           <Select
             label="Minimum extraction confidence"
-            description="Extractions below this score as unknown — low-confidence data can't pass a gate."
+            description="Non-VISION Extractions below this score as unknown."
             data={[
               { value: "low", label: "Low" },
               { value: "medium", label: "Medium" },
@@ -227,6 +227,51 @@ function SettingsForm({ hunt }: { hunt: Hunt }) {
             ]}
             value={settings.min_confidence}
             onChange={(v) => v && set("min_confidence", v as HuntSettings["min_confidence"])}
+            allowDeselect={false}
+          />
+          <Select
+            label="Minimum VISION confidence"
+            description="Visual estimates below this score as unknown. Low keeps uncertain image evidence for points and display, but it can never pass a Gate."
+            data={[
+              { value: "low", label: "Low (default)" },
+              { value: "medium", label: "Medium" },
+              { value: "high", label: "High" },
+            ]}
+            value={settings.min_vision_confidence}
+            onChange={(v) =>
+              v &&
+              set(
+                "min_vision_confidence",
+                v as HuntSettings["min_vision_confidence"],
+              )
+            }
+            allowDeselect={false}
+          />
+          <Select
+            label="Property-gallery visual estimates"
+            description="Exact Floor Plan assessments always use the full rubric. Gallery estimates may represent a different unit."
+            data={[
+              {
+                value: "full_rubric",
+                label: "Full rubric (default) — points and Gates",
+              },
+              {
+                value: "points_only",
+                label: "Points only — Gates treat the estimate as unknown",
+              },
+              {
+                value: "unknown",
+                label: "Display only — exclude from scoring",
+              },
+            ]}
+            value={settings.generalized_vision_policy}
+            onChange={(v) =>
+              v &&
+              set(
+                "generalized_vision_policy",
+                v as HuntSettings["generalized_vision_policy"],
+              )
+            }
             allowDeselect={false}
           />
           <Select

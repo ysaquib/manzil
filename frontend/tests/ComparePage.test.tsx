@@ -11,6 +11,7 @@ vi.mock("../src/features/listings/api", () => ({
   useListings: () => ({ data: data.listings, isLoading: false, error: null }),
   useUnitGroupStates: () => ({ data: [] }),
   usePropertyImages: () => ({ data: [], isLoading: false }),
+  useExtractions: () => ({ data: [], isLoading: false }),
 }));
 
 vi.mock("../src/features/rubric/api", () => ({

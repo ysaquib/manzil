@@ -1,4 +1,4 @@
-import { AspectRatio, Box, Image, Skeleton, Text, UnstyledButton } from "@mantine/core";
+import { AspectRatio, Badge, Box, Group, Image, Skeleton, Stack, Text, UnstyledButton } from "@mantine/core";
 import { Carousel } from "@mantine/carousel";
 import type { EmblaCarouselType } from "embla-carousel";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -63,6 +63,14 @@ export function DrawerImageGallery({ images, loading }: { images: PropertyImage[
   }
 
   const many = images.length > 1;
+  const assessmentOf = (image: PropertyImage) => {
+    const classification = image.visionAssessment?.classification;
+    if (!classification || typeof classification !== "object") return null;
+    const assessment = (classification as Record<string, unknown>).assessment;
+    return assessment && typeof assessment === "object"
+      ? (assessment as Record<string, unknown>)
+      : null;
+  };
   return (
     <div className={classes.gallery}>
       <div className={classes.primaryWrap}>
@@ -88,6 +96,21 @@ export function DrawerImageGallery({ images, loading }: { images: PropertyImage[
                   loading="lazy"
                   className={classes.primary}
                 />
+                {assessmentOf(img) && (
+                  <Stack gap={4} className={classes.assessment}>
+                    <Group gap={4}>
+                      <Badge size="xs" variant="filled">
+                        {String(assessmentOf(img)?.primary_scene ?? "photo")}
+                      </Badge>
+                      {(img.floorPlanAssociations?.length ?? 0) > 0 && (
+                        <Badge size="xs" color="teal">Exact Floor Plan</Badge>
+                      )}
+                    </Group>
+                    {assessmentOf(img)?.kitchen_visibility === "assessable" && (
+                      <Text size="xs" c="white">Kitchen assessable</Text>
+                    )}
+                  </Stack>
+                )}
               </UnstyledButton>
             </Carousel.Slide>
           ))}
