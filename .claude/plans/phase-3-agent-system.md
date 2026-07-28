@@ -33,8 +33,14 @@ IMPLEMENTATION 2.0.72 / DESIGN v3.10). **P3-SC4 engineering landed
 2026-07-27** (sparse exact/all/select/unspecified unit claims, effective
 presence/Gate semantics, scoped bench label/harness/audit tooling;
 IMPLEMENTATION 2.0.78 / DESIGN v3.15). Its human canonical-ten labels and
-current-pin zero-wrong-exact baseline remain; P3-6 is blocked on that acceptance
-tail even though both implementation branches have otherwise joined.
+current-pin zero-wrong-exact baseline remain as technical debt. The Owner
+waived that acceptance tail as a P3-6 prerequisite on 2026-07-28
+(DESIGN v3.21); the missing evidence is not represented as passed.
+**P3-6 landed 2026-07-28** (IMPLEMENTATION 2.0.83): isolated slate fan-out,
+family-deduped scoped reconciliation, bounded manifest escalation, candidate
+lineage, authoritative Source-local retirement, multi-Source split
+recomputation, dispute checkpoint, and disagreement UI. The v3.21 model/label
+waivers remain technical debt.
 
 **Security note for execution:** Phase 3 feeds untrusted page content into more
 machinery (tool loops, web search, image pipelines) and adds external API

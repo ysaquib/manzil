@@ -2,14 +2,14 @@
 
 | | |
 |---|---|
-| **Version** | 2.0.78 |
+| **Version** | 2.0.84 |
 | **Status** | Living — churns freely, no ceremony required. **v2.0 is the implementation-start baseline**: further changes should come from code reality, not further pre-code polishing |
 | **Sibling** | `DESIGN.md` (intent + contracts; wins all conflicts about *what* and *why*) |
 | **Repo location** | `/IMPLEMENTATION.md` |
 
 **Division of authority:** DESIGN.md owns intent, requirements, and cross-component contracts. This document owns *current mechanics* — how things are actually built right now. Code and docstrings win on exact interfaces; this doc points at modules rather than duplicating signatures once they exist. If this doc and DESIGN.md disagree, stop and flag it (CLAUDE.md rule) — do not silently pick a side. Update protocol here is deliberately lightweight: edit in place, add a line to the [Changelog](#9-changelog). No decision-log ceremony; that lives in DESIGN.md §20 for *design* changes only.
 
-`docs/scoped-criteria-and-amenities.md` is the supplementary decision workbook for the P3-SC series. DESIGN (currently v3.15) and this document supersede it wherever wording or mechanics differ.
+`docs/scoped-criteria-and-amenities.md` is the supplementary decision workbook for the P3-SC series. DESIGN (currently v3.21) and this document supersede it wherever wording or mechanics differ.
 
 **Status labels.** Every section below carries one, so nobody — human or agent — has to guess how binding a given detail is:
 
@@ -202,8 +202,9 @@ are adapted only at their test helper seams with explicit `not_found` values.
 
 ### P3-SC4 scoped unit-claim contract
 
-*Status: implementation landed 2026-07-27; human canonical-ten acceptance
-tail pending, so P3-SC4 remains partial and P3-6 remains blocked.*
+*Status: implementation landed 2026-07-27. The Owner waived the human
+canonical-ten/current-pin acceptance tail as a P3-6 prerequisite on 2026-07-28.
+The missing evidence remains technical debt; it is not recorded as passed.*
 
 The dynamic zero-tool EXTRACT schema emits required sparse arrays for
 `patio_balcony`, `private_entry`, `in_unit_laundry`, `parking`, `cooling`,
@@ -213,6 +214,15 @@ response-local Floor Plan refs only for `specific_floor_plans`. Response keys
 must be unique; exact refs must exist in that response; a Criterion may emit
 only one value per concrete target. One claim may name several Floor Plans;
 EXTRACT expands it to candidates sharing one `claim_group_id`.
+The EXTRACT v7 prompt and generated schema clarify that applicability is claim
+data, not a second target, so competing statements about one generalized
+target must be reconciled before emission. Laundry's `none` means no laundry
+option of any kind: a page that denies in-unit laundry while advertising a
+shared facility emits one `on_site` claim. The schema boundary deterministically
+drops only a redundant generalized `none` when exactly one generalized positive
+laundry mode is present; competing positive modes and exact claims still fail
+closed. If a model repeats another conflict, the corrective retry receives the
+field-specific rule in its validation error.
 
 Catalog `claim_value_schema` validates the raw Source value while
 `value_schema` remains the Rubric/effective-score contract. Boolean exact/all
@@ -236,12 +246,173 @@ labels, so every new coverage case is missing. Those labels are human-only:
 finish/review them, rerun the current model pin, and record zero wrong exact
 associations plus the Gate regression report before marking P3-SC4 complete.
 
+### P3-SC5 Floor Plan detail surface contract
+
+*Status: item 7 (the detail surface) landed 2026-07-28; items 1–6 and 8–9 (the
+diagram substrate) landed 2026-07-28 in three slices. P3-SC5 is functionally
+complete; see "Outstanding" at the end of this section for what is not yet
+evidenced.*
+
+The detail surface is presentation-only: no contract, scoring, schema, or API
+change. The substrate work adds config, a pure module, one CLI op, and a
+Storage `delete`; the `floor_plan_images` schema itself already shipped with
+P3-7a2, so no migration was required.
+
+**Composition.** `FloorPlanList` replaces `FloorPlanPins` inside the drawer's
+Floor plans card and owns the open-plan state. It renders one `FloorPlanCard`
+per plan and one `FloorPlanDetailModal`. `floorPlanAmenities.ts` is the pure,
+unit-tested seam between them: Catalog + resolved Extractions + active
+Overrides in, four presence buckets out. Tranche membership is derived from the
+Catalog — an entry participates when its effective `value_schema.enum` carries
+`advertised_unconfirmed` — so the P3-SC6/SC7 tranches appear with no frontend
+change. Resolution goes through the existing `activeOverrides` /
+`extractionForFloorPlan` seam, so the modal cannot disagree with the score.
+
+**Modal placement.** Desktop scopes the overlay to the drawer column by setting
+`position: absolute; inset: 0` on the Modal `root`, `inner`, and `overlay`
+slots against `Drawer.Body`, which now owns `position: relative`; the modal is
+rendered with `withinPortal={false}` inside that body. Below `sm` the overrides
+are dropped and `fullScreen` applies. This is consistent with DESIGN §9.4's
+“nested modal above the Listing Drawer”, so it needed no §20 entry — but it is
+a real branch, and both halves are pinned by tests.
+
+**Reads.** `floor_plans.detail_url` / `source_native_id` (P3-SC2 columns) are
+now surfaced and were added to the frontend `FloorPlan` type. Diagrams read the
+already-shipped `current_floor_plan_images` associations exposed by
+`usePropertyImages`, filtered to `kind = 'floor_plan_diagram'`. Until P3-SC5's
+worker half populates those associations, every plan renders the explicit
+“No floor plan diagram found” state — fail-open to a link-out, never a
+substituted Property photo. The same rule removed diagrams from the drawer's
+Property photo gallery.
+
+**Rider fix.** `heating` was absent from the frontend's `SCOPED_UNIT_CRITERIA`
+set, so its legacy Property/no-applicability rows still participated in
+display resolution against this section's rule. Added.
+
+#### Diagram substrate (items 1–6, 8–9)
+
+**Discovery (item 1).** `discover_images` already carried alt/title/caption,
+the containing Floor Plan card, `data-plan-id`, nearby labels, srcset (largest
+variant only), and JSON-LD. Added: the enclosing `<a href>` when it points at
+an image asset (`full_size_url`), suffix-checked so a *plan detail page* link
+is not mistaken for a bigger copy of the image.
+
+**Profile (item 2).** `normalize_image` and the new `normalize_diagram` share
+one `_normalize` body; byte and decompression-bomb limits are
+profile-independent — a diagram gets more pixels, never more trust. Diagrams
+also get their own budget: `MAX_FLOOR_PLAN_DIAGRAMS_PER_PROPERTY` (30) and
+`_PER_PLAN` (3), applied separately from `MAX_STORED_IMAGES` so photo ordering
+cannot evict a diagram found late in a gallery. The IMAGE_FETCH round-robin
+admits `MAX_STORED_IMAGES + MAX_FLOOR_PLAN_DIAGRAMS_PER_PROPERTY` candidates so
+both budgets can actually fill.
+
+**Deterministic classification (item 3).** `enrich/diagram_signals.py` is a
+pure predicate over structural evidence (containing card, native plan ID) and
+the image's own accessible text. Filename resemblance is explicitly
+insufficient. IMAGE_CLASSIFY remains the visual fallback; when it finds a
+diagram the deterministic pass missed, `_renormalize_late_diagrams` re-fetches
+and re-stores at the diagram profile — and on failure keeps the photo-profile
+copy rather than losing the image.
+
+**Association (items 4–5).** The schema shipped with P3-7a2. Three fixes: refs
+now resolve through `floor_plan_ids_by_source_ref` keyed by the image's own
+page (an image from Source B could previously link to Source A's plan);
+`producer_job_id` resolves defensively like the Extraction writes; and a third
+association rule was added after the corpus smoke showed real pages name the
+plan in the **diagram's own `alt`** ("Floor plan Studio", "Savoy diagram")
+rather than in a sibling label. That rule is diagram-only, requires the plan
+name to appear in the text, ignores names under three characters, and resolves
+overlaps by most-specific-wins; an exact tie stays unmatched.
+
+**VISION exclusion (item 6).** Moved out of `select_kitchen_targets` into a
+shared `eligible_quality_images` gate honouring both `kind` and the visual
+`diagram` flag, so `flooring_quality` inherits it instead of re-deriving it.
+
+**Lifecycle (item 8).** Image retirement is now **Source-local for all image
+kinds** — the previous Property-wide sweep let a run over one Source retire
+every other Source's images, a live bug for photos as well as diagrams.
+Associations gain `unlink` rows on a complete Source refresh (partial or failed
+discovery retires nothing). `_merge_into_canonical` re-points associations onto
+the surviving canonical image before deleting placeholder duplicates, which the
+FK cascade would otherwise strip. `split_property` carries associated images
+across with their plans: the `floor_plan_images` trigger fires on UPDATE as
+well as INSERT, so a cross-Property straddle cannot even be recorded and has to
+be prevented. `manzil purge-images [--property] [--dry-run]` is the explicit
+purge path; it removes only images that are non-current AND unassociated AND
+uncited, and never deletes a Storage object another row still names.
+
+**Legibility (item 9), profile now fixed.** The §7.5 comparison rendered a
+2400 px sheet with 11 pt room labels and 8 pt dimension strings, softened and
+noised to resemble a real scan, then encoded at five profiles:
+
+| profile | stored | bytes | 8 pt text in asset | mean err vs lossless |
+|---|---|---|---|---|
+| photo 1024/q82 | 1024 | 5 KB | 10.2 px | 1.87 |
+| 2048/q82 | 2048 | 14 KB | 20.5 px | 0.91 |
+| 2048/q90 | 2048 | 34 KB | 20.5 px | 0.84 |
+| 2048/q95 | 2048 | 106 KB | 20.5 px | 0.79 |
+| 2048/lossless | 2048 | 412 KB | 20.5 px | 0 |
+
+The **dimension** carries legibility (10.2 px → 20.5 px glyphs); the **quality**
+axis does not — q82→q95 cut mean error 13% for 7.5× the bytes, and lossless
+cost 29× for a difference invisible at these glyph sizes. Profile fixed at
+`webp-2048-q82-v1`, correcting the provisional q95 the plan assumed. Storage
+against the free-tier ceiling (§17 R9) decided the tie.
+
+**Outstanding.** Two things are not evidenced and should not be treated as
+passed:
+
+1. *The item-7 visual pass is still partial.* The collapsed card and the
+   modal's content were confirmed against seeded data at desktop width in dark
+   mode; the modal's geometry after the `styles` fix, light mode, and the
+   ~375px layout were never inspected — browser automation could not reliably
+   reopen the drawer. Two tests pin the slot overrides and the mobile fork, but
+   a test is not a look.
+2. *`full_size_url` is unexercised on real pages.* No page in the local corpus
+   wraps a diagram thumbnail in an anchor to an image asset, so that preference
+   has synthetic coverage only. It is harmless when absent, but its real-world
+   value is unproven.
+
 Validation also exposed unrelated pre-existing Catalog drift: the authoritative
 DESIGN §8.2 and pinned test/seed say studio `beds` delta `-0.5`, while the
 committed Python Catalog says `-1.0`; several other committed Catalog defaults
 also differ from the generated seed. P3-SC4 deliberately did not bury that
 separate decision inside its six-key migration. Resolve the Catalog drift
 explicitly before requiring the global Catalog generator guard to be green.
+
+### P3-6 multi-Source reconciliation
+
+*Status: landed 2026-07-28. The Owner-waived human scoped labels and the
+stage-specific Gemini comparison remain technical debt, not passed evidence.*
+
+New ingest manifests fan out the DISCOVER slate through a second idempotent
+FETCH/EXTRACT pass, VERIFY each Source in isolation, then RECONCILE Property
+and Source-local exact Floor Plan targets independently. `SourceResult` keeps
+each Source's claims and Floor Plans isolated. Family-deduped voting follows
+the §10.6 ladder: numeric tolerance, semantic equivalence, supermajority,
+official arbiter, one tier/family-distinct sibling round, majority, then
+conservative low-confidence fallback. Escalation inserts
+`FETCH → EXTRACT → VERIFY → RECONCILE` after the current cursor and records
+rounds in `plan.escalation`; the runner re-reads the manifest on every step, so
+inserted stages are resumable and old manifests keep their original ordering.
+Settled target identities never reopen.
+
+Every Source candidate is appended independently, followed by one resolved
+Extraction and explicit selected/unselected provenance edges. Shared claim
+groups are resolved per concrete Floor Plan. A complete successful Source
+refresh can append not-found replacements only for that Source's omitted
+candidates; another Source's evidence remains current. `split_property`
+detaches mixed provenance edges and appends a fresh resolution on both
+Properties, so reversal cannot leave a cross-Property graph.
+
+Gate-bearing disputes raise `resolve_dispute` after bounded escalation; the
+default is **Leave unknown** and remains parked until P3-11 adds its timeout
+sweep. Conservative fallback derives the Property-level **Problematic** badge;
+candidate values, Source domains, confidence, and the resolution rule are
+inspectable in Criterion evidence. Tasks History summarizes escalation and
+retains the full manifest. P3-6 model-assisted calls use
+`google/gemini-3-flash-preview`; DISCOVER stays on Haiku and VISION retains its
+independent pin.
 
 ### Stage protocol and runner (`runner.py`)
 ```python
@@ -271,7 +442,9 @@ The single-home rule itself is **settled**; every *value* in this table is a sta
 | `JOB_ORPHAN_AFTER` | 5 min without heartbeat | queue reclaim |
 | `AGENT_MAX_TURNS` | 8 | P3 loops |
 | `CHECKPOINT_TIMEOUT` | 24 h | scheduler sweep |
-| `MAX_STORED_IMAGES` / `MAX_VISION_IMAGES` | 20 / 8 | IMAGE_FETCH cap / VISION input cap (§15 lever 3) |
+| `MAX_STORED_IMAGES` / `MAX_IMAGE_CLASSIFY_IMAGES` / `MAX_VISION_TARGET_IMAGES` | 30 / 30 / 8 | stored gallery / cheap ≤384 px classification / total quality-target cap |
+| `VISION_TARGET_QUOTAS` | `{"kitchen_quality": 3}` | deterministic per-profile quality selection; future intended split 3 kitchen / 3 flooring / 2 bathroom |
+| `IMAGE_CLASSIFY_MAX_DIM` / `IMAGE_PERCEPTUAL_HASH_DISTANCE` | 384 px / 5 bits | in-memory classifier thumbnails / near-duplicate clustering |
 | `MAX_FLOOR_PLAN_DIAGRAMS_PER_PLAN` / `MAX_FLOOR_PLAN_DIAGRAMS_PER_PROPERTY` | 3 / 30 | P3-SC5 diagram association/property caps; separate from ordinary photo/VISION caps |
 | `IMAGE_MAX_DIM` | 1024 px | IMAGE_FETCH normalization |
 | `IMAGE_MAX_DOWNLOAD_BYTES` / `IMAGE_MAX_PIXELS` | 20 MiB / 40 Mpx | IMAGE_FETCH rejection bounds |
@@ -440,9 +613,11 @@ stages ride the existing Haiku/Sonnet pins until the P0-14 model-pin verdict
 `openrouter:web_search`; P3-SC2 and P3-SC3 are also complete. The 2026-07-21
 scoped-Criteria decision adds a second branch: P3-SC2 → P3-SC3 → P3-SC4 may
 run alongside P3-5 after P3-SC1, and both branches join at P3-6. P3-5 is now
-complete. P3-SC4's engineering tranche landed 2026-07-27; its human label and
-current-pin baseline tail is next. P3-6 still must not start until that tail
-records zero wrong exact associations.*
+complete. P3-SC4's engineering tranche landed 2026-07-27. On 2026-07-28 the
+Owner waived its human label/current-pin acceptance tail as a P3-6 prerequisite;
+that baseline remains explicit technical debt rather than passed evidence.
+P3-6 landed 2026-07-28 with deterministic fan-out/reconciliation, bounded
+escalation, provenance, split safety, and disagreement UI.*
 
 #### Entry readiness
 
@@ -454,7 +629,7 @@ records zero wrong exact associations.*
 | Optional worker isolation trigger | P3-1 ⚠ | Not observed; Tier-2 Playwright already runs in-process successfully | Start only after a DESIGN §5 trigger is demonstrated; follow §8's migration runbook |
 | Google Maps project/key + billing | P3-3, P3-4, P3-8, metro input for P3-9 | **Configured 2026-07-17** — key present in local env | Gate cleared; confirm key restrictions + hosted env at deploy time |
 | DISCOVER web-search provider | P3-5 | **Cleared 2026-07-21:** OpenRouter native `openrouter:web_search` on the pinned Anthropic route; three-search cap, $0.01/search; deprecated `web` plugin not used | Live passthrough and canonical ten-listing discovery bench passed; DESIGN §20 records cost, opaque-event fallback, and untrusted-snippet posture |
-| Versioned Vision reference set | P3-7b quality gate | **P3-7a substrate landed; human asset absent, so PLAN fail-closes VISION.** | Follow `docs/p3-7-vision-guide.md`: assemble/approve hashed anchors, add version-matched prompt, bench, then enable ratings |
+| Versioned Vision reference set | P3-7b quality gate | **Kitchen profile v1 released by Owner override with prompt v1 + Sonnet 4.6; PLAN includes VISION. External quality benchmark remains owed.** | Run and record the external quality bench when time permits; do not describe the current release as bench-validated |
 | Fetcher-layer SSRF guard | ~~First live tool loop~~ — **HTTP path landed 2026-07-12** (2.0.40); **both pre-live smoke checks passed 2026-07-17** (2.0.53) | **Gate cleared.** Tier-1 live-HTTPS pin cert path confirmed (real fetch through the pin succeeds; a hostname-mismatched cert is correctly rejected — `check_hostname` still validates against the hostname, not the IP). Tier-2 route-guard/backstop confirmed, and the smoke test surfaced that Playwright does **not** re-invoke the route handler on server 3xx redirects — so a `public → private → public` chain transited a private host while the final-URL backstop passed; **hardened** to screen the whole redirect chain (`redirected_from` walk), proven end-to-end. Residual DNS-rebinding window at tier 2 remains inherent (DESIGN §20 2026-07-12) | Cleared for P3-5/P3-10 |
 
 #### Dependency waves
@@ -463,8 +638,8 @@ records zero wrong exact associations.*
 |---|---|---|---|
 | A — foundations | P3-2 ingest Planner · P3-3 Maps/cache; P3-1 ⚠ only if triggered | Phase 2 exits; each task's external gate above is satisfied | P3-2/P3-3 are independent; worker isolation is not on the critical path |
 | B — identity and sources | P3-4 DEDUPE → P3-5 DISCOVER | P3-2 + P3-3 for DEDUPE; provider chosen for DISCOVER | Canonical identity precedes sibling discovery. P3-5 is one prerequisite branch for P3-6 |
-| SC foundation | P3-SC1 ✅ → P3-SC2 ✅ → P3-SC3 ✅ → P3-SC4 ◐ | P3-SC4 engineering landed; human canonical-ten labels/current-pin baseline remain | P3-SC4 acceptance and landed P3-5 join at P3-6; never reconcile against the old identity |
-| B/SC join | P3-6 scoped multi-source/RECONCILE | P3-5 + P3-SC4 | Reconcile Property and exact Floor Plan candidates independently; generalized applicability never becomes exact by voting |
+| SC foundation | P3-SC1 ✅ → P3-SC2 ✅ → P3-SC3 ✅ → P3-SC4 ✅⚠ | P3-SC4 engineering landed; Owner waived the human acceptance tail, which remains technical debt | Landed P3-5 and the engineered P3-SC4 substrate join at P3-6; never reconcile against the old identity |
+| B/SC join | P3-6 scoped multi-source/RECONCILE ✅ | P3-5 + engineered P3-SC4; Owner waiver recorded | Landed 2026-07-28; generalized applicability never becomes exact by voting |
 | C — evidence/enrichment | P3-7 VISION · P3-8 ENRICH/Places · P3-9 utilities · P3-10 custom criteria · P3-SC5 detail/diagrams · P3-SC6/7 unit tranches · P3-SC8 move-in cost | Relevant truth layers exist; see each row | P3-SC5 may run after P3-SC2 + P3-7a and does not block P3-6. SC6/7 follow P3-6; SC8 follows stable scoped-cost inputs |
 | D — lifecycle and UX | P3-11 checkpoints · P3-12 refresh Planner · P3-13 compare/mobile · P3-16 Account Settings | Producing stages and persistence shapes are stable | P3-12 follows the stages whose TTL/hash inputs it plans; P3-16 builds on the landed profile contract |
 | E — conditional sources | P3-14 Tier 3 · P3-15 apartmentratings.com · P3-17 safety module | Named gates and dependencies satisfied | P3-14 retained per the 2026-07-17 census verdict (scope in its row); P3-15 follows P3-6 reconciliation and P3-8 Places; P3-17 gated on its own scoping decision (DESIGN §20 2026-07-18), never blocks P3-8 |
@@ -476,8 +651,8 @@ records zero wrong exact associations.*
 | P3-3 ✅ | **Landed 2026-07-12** (2.0.36/2.0.37): Maps tools + forever-cache: geocode, Places, Routes (pulled ahead of its consumers — DEDUPE and ENRICH both read geocode); tool registry + seam-enforced per-stage allow-lists + `call_agent` loop + `fetch_page` | §10.9, §12 | cached second geocode is $0 and instant — verified at landing |
 | P3-4 ✅ | **Landed 2026-07-12** (2.0.41, verifier CONFIRMED): DEDUPE full: geocode + name similarity, gray-zone `resolve_dedupe` checkpoint, `split_property` admin op | §8.2, §10.3 | seeded near-duplicate pair → checkpoint; split restores cleanly |
 | P3-5 ✅ | **Landed 2026-07-21 (2.0.70):** bounded DISCOVER over native OpenRouter search + SSRF-guarded `fetch_page`; exact same-Property filtering; official link stored/displayed but not fetched; ranked candidate pool and policy-capped, tier-diverse/family-distinct slate; census family metadata; `trust_link` plan skip; `trust_link | discover_exhausted | discover_failed` quiet badges; Owner/submitter Source Policy edit with atomic DISCOVER-only refresh on widening | §10.2 P3, §10.3, §10.6, §10.7, §15 | canonical ten-listing live search-seam bench found the correct official URL 10/10 and siblings 10/10 with zero official fetches; synthetic and DB tests pin caps, substitution, failure distinctions, persistence, permissions, and refresh behavior |
-| P3-6 | **Depends on P3-5 + P3-SC4.** Multi-Source fan-out: FETCH/EXTRACT/VERIFY per slate Source; scoped RECONCILE ladder v2 over centralized current candidates — Property and exact Floor Plan targets independently, family-deduped votes, Catalog escalation/conflict policies, Gate upgrade, conservative-in-band collapse, supermajority, bounded escalation (official arbiter → one sibling round), majority/fallback, provenance join, `resolution_rule`, `disputed`, quiet Sources-disagree vs Problematic presentations | §8.2, §9.3, §10.6 | conflicting Property and exact-plan fixtures resolve per policy with lineage/rule recorded; generalized claims never manufacture an exact association; available-sources-only causes zero Criterion-only fetches; Gate restores normal escalation; settled targets stay closed; worst-case decision-relevant run ≤7 extractions |
-| P3-7 ◐ | **P3-7a landed:** IMAGE_FETCH discovery/download/normalized WebP/Storage metadata + complete-hash skip; manifest-aware runner skip; hash-only `call_vision` record/replay. **P3-7b gated:** approved references/prompt, ratings/aggregation/Extractions, gallery, retention | §10.8, §14; `docs/p3-7-vision-guide.md` | two runs, no image change → zero vision spend; anchored bench within ±1; gallery + cleanup live |
+| P3-6 ✅ | **Landed 2026-07-28 (2.0.83):** per-slate-Source FETCH/EXTRACT/VERIFY isolation; scoped family-deduped RECONCILE ladder; exact/property separation; Catalog escalation/conflict policies; bounded official + sibling manifest insertion; conservative disputed fallback and `resolve_dispute`; append-only candidate/resolution lineage; Source-local authoritative retirement; multi-Source split recomputation; Problematic/candidate-provenance UI. Gemini 3 Flash Preview is Owner-pinned for EXTRACT/VERIFY/plan-assist/equivalence under the v3.21 waiver | §8.2, §9.3, §10.6 | automated fixtures cover tolerance, family freshness, applicability, bounded insertion, Leave unknown, fan-out, dynamic resume, concrete-target provenance, authoritative retirement, and split safety; waived human scoped/model benches remain debt |
+| P3-7 ◐ | **Kitchen scoring enabled by Owner override:** contextual/source-balanced 30-image acquisition, Source-local ordinary-photo/diagram associations, Gemini 3 Flash Preview IMAGE_CLASSIFY, deterministic dHash/target selection, approved profile v1 sheets, Sonnet 4.6 anchored quality, weighted aggregation/provenance, generalized-VISION policy, and UI are live. Strict malformed-batch behavior remains. **Owed evidence:** external kitchen quality benchmark; no current accuracy claim. Flooring/bathroom disabled. | §10.8, §14; `docs/p3-7-vision-guide.md` | external kitchen bench reports within-one accuracy/unknown rate/cost/latency; unchanged inputs make zero calls; gallery provenance live |
 | P3-8 ◐ | **Landed 2026-07-18 (2.0.58)** — ENRICH remainder: grocery + commute criteria live (honoring `settings.proximity_mode`; edit → ENRICH location re-run — full field-scoping arrives with P3-12); **ratings stage 1 — Places rating + review synthesis (§10.12, the priority slice, built first)**; `location_safety` as an **override-first A+–F placeholder** (DESIGN §20 2026-07-18): ENRICH emits no value, the grade dropdown is the input path, the assessor is P3-17's module | §8.2, §10.3, §10.9, §10.12, §18, R8 | Places rating populates `management_reviews` with provenance ✅ (fixture-verified); safety renders as unknown-until-overridden with explicit placeholder framing ✅; proximity-mode flip re-enriches with zero LLM spend ✅ (DB-backed test) — ◐ until a real Detroit-metro property runs ENRICH end-to-end on the live hunt |
 | P3-9 ◐ | **Landed 2026-07-18 (2.0.59)** — Utility baselines job on the new scheduler-tick scaffold (advisory-lock-guarded, NOT a jobs row — DESIGN §20 2026-07-18; still intentionally search-less after P3-5 pending its own output-affecting follow-up) + full §9.5 composition: mandatory-fees/heating EXTRACT blocks, graduated unknown rule, fee-suppresses-estimate guard, `occupants` scaling (now a scoring key), conservative default via `settings.cost_estimate_mode`, tagged components + badges on `hunt_listings.all_in_components` | §8.2, §9.5, §13.2, §14 | winter-weighted estimate visible and overrideable ✅ (composer goldens + DB tests); mode flip to median rescores without refetch ✅ (DB test); fully-unknown utility → `unknown_delta` + badge, never a number ✅ — ◐ — first live baselines pass done 2026-07-18 (Detroit, 24 rows, live rescore composed $1,594 all-in; 2.0.60 adds the baselines-write → metro rescore trigger the race exposed); remaining: the owed bench re-run (EXTRACT schema grew) |
 | P3-10 | Custom criteria: authoring flow w/ routing classification + confirm, CUSTOM_MATCH dispatch | §9.2, §10.9 | commute-to-address criterion authored → scored end-to-end |
@@ -490,11 +665,12 @@ records zero wrong exact associations.*
 | P3-17 | Location-safety module (DESIGN §18, §20 2026-07-18) — the producer behind the `location_safety` placeholder: A+–F grading from ARCGIS/open-data crime layers + police/FBI UCR-NIBRS reports, **SE Michigan first**, metro expansion later; may be scoped out as a **standalone project** this pipeline consumes (commercial safety APIs rejected on cost — hundreds of $/month). **Gated on its own scoping decision; never blocks P3-8.** When it lands, ENRICH swaps the placeholder for module output; override + A+–F vocabulary unchanged | §8.2, §10.3, §17 R8, §18 | a SE-Michigan bench property gets a sourced A+–F grade from the module through ENRICH; overrides still win; non-covered metros still score unknown |
 | P3-18 | **Landed 2026-07-19 (2.0.65, DESIGN §20)** — Hunt-wide filters: `hunt_shared_filters` migration + RLS (member read, Owner/Curator write), `PUT /v1/hunts/{id}/shared-filters`, seed-on-open + badge + Apply/Reset UI; filter registry grows laundry/parking/pets/cooling/dishwasher/max-all-in/available-by predicates | §8.2, §13.2 | publish as Curator seeds a second browser's Overview on open; member sees badge but no publish control; unknown values pass every new filter |
 | P3-19 ✅ | **Landed 2026-07-26 (2.0.77, DESIGN v3.14, Yusuf-directed)** — map surfaces: drawer **Location** card + hunt **Map** view at `/h/:huntId/map`, both on the Maps JavaScript API behind a separate referrer-restricted `VITE_GOOGLE_MAPS_API_KEY`; one pin per Listing, band-sliced when its Unit Groups disagree, multi-group pins prompt for the Unit Group; Overview filter state lifted to a hunt-scoped provider so both views filter identically. Reads the existing §12 `properties.lat/lng` cache — no geocoding, no new columns | §7, §12, §13.1, §13.2 | a hunt's scored groups plot with band colors; a split-band property shows both; clicking a multi-group pin selects a group then opens its drawer; a geocode-less property is counted in the footnote, not dropped; with the key unset both surfaces degrade to a placeholder |
+| P3-21 ✅ | **Landed 2026-07-27 (2.0.79, DESIGN v3.17, Yusuf-directed)** — property contact retrieval: migration `20260807000000_property_contacts.sql` (append-only `property_contacts` + security-invoker `property_contacts_current` view + read-only RLS), `enrich/contacts.py` (US phone normalization, http(s) + registrable-domain guard on contact URLs, `PROVENANCE_RANK` mirroring the view's CASE), optional `property_contact` EXTRACT block (`schema_gen.py`, `extract.py`, `PropertyContactIn`), `formatted_phone_number` + `website` added to the ENRICH Place Details mask with capture independent of the ratings gate, `_persist_property_contacts` in `queue.py` ranking the page block by the Source's persisted `is_official`, and the drawer **Contact** row inside the Location card (`PropertyContact.tsx`, `usePropertyContacts`). Contact values never reach `source_claims`, so SCORE is untouched. **Follow-up:** the EXTRACT schema gained a field, so the Phase 0 bench set must be re-run before the extraction-quality claim is considered validated (existing replay recordings still validate — the block is optional with `default=None`). Email deferred by ruling. |
 | P3-SC1 ✅ | **Landed 2026-07-21 (docs/contracts only):** promote approved scoped-Criteria intent into DESIGN v3.7 + §20; inventory every current Extraction consumer; select and record the clean-reset schema, current-value views, persistence order, RLS, and task dependencies. Supplementary workbook retained at `docs/scoped-criteria-and-amenities.md` | §3, §8–§10, §13–§14, §18–§20 | DESIGN/IMPLEMENTATION are authoritative; audit below covers writes, reads, lifecycle, RLS, UI, tests; no production schema/code changed |
 | P3-SC2 ✅ | **Landed 2026-07-21 (2.0.71, DESIGN v3.9):** unified append-only scoped Extraction foundation: destructive pre-live reset migration, domain models, sparse claims, Source-local Floor Plan identity, candidate/resolution provenance, centralized current views, effective-value resolver, scoped Overrides, authoritative-success refresh, split/merge and RLS updates | §3, §8.1–§8.3, §9.3, §9.6, §14 | clean reset and exact/all/select/unspecified persistence/resolution fixtures pass; same-Property database/API/RLS guards hold; audited production consumers use the centralized seam; partial refresh retires nothing |
 | P3-SC3 ✅ | **Landed 2026-07-22 (2.0.72, DESIGN v3.10):** `property` Catalog category; generated 13-Criterion Property tranche and sync migration; strict array/set schema, API, engine, OpenAPI and frontend support; controlled persisted Floor Plan `unit_types`; grouped Property/Floor Plan presentation; versioned Gate-free dev Rubric with guarded idempotent installer | §8.2, §9.2–§9.4 | clean reset and Catalog round-trip pass; `contains_any/all` strict goldens/widgets/API validation pass; dev seed no-ops/refuses drift/forces explicitly; Property facts render once and separately from Floor Plan facts |
-| P3-SC4 ◐ | **Engineering landed 2026-07-27 (2.0.78, DESIGN v3.15):** sparse exact/all/select/unspecified claims for patio/balcony, private entry, laundry, dishwasher, parking, cooling, and heating; raw-claim/effective-value schema split; deterministic per-plan presence composition; Gate-insufficient advertised-unconfirmed state; Source-local multi-plan expansion; legacy Property-bool guard; UI/filter and scoped bench/harness/audit support. **Pending:** human-finalize the canonical ten, run current pin, record zero wrong exact associations + Gate regressions | §8.2, §9.3, §10.5, §19 | implementation fixtures and clean reset pass; human acceptance tail is the only P3-SC4 remainder; P3-6 remains blocked |
-| P3-SC5 | Floor Plan detail modal + diagram discovery, normalized private Storage, many-to-many Source-local association/provenance/lifecycle, unmatched gallery and explicit purge path | §8.2, §9.4, §13.2, §14 | each plan opens without losing Listing draft; associated diagrams are legible and sourced; ambiguous images stay unmatched; partial refresh retires nothing; 3-per-plan/30-per-Property caps hold |
+| P3-SC4 ✅⚠ | **Engineering landed 2026-07-27 (2.0.78, DESIGN v3.15); prerequisite waiver recorded 2026-07-28 (DESIGN v3.21):** sparse exact/all/select/unspecified claims for patio/balcony, private entry, laundry, dishwasher, parking, cooling, and heating; raw-claim/effective-value schema split; deterministic per-plan presence composition; Gate-insufficient advertised-unconfirmed state; Source-local multi-plan expansion; legacy Property-bool guard; UI/filter and scoped bench/harness/audit support. **Technical debt:** human-finalize the canonical ten, run current pin, record zero wrong exact associations + Gate regressions | §8.2, §9.3, §10.5, §19 | automated implementation checks remain mandatory; the Owner waiver unblocks P3-6 without claiming human acceptance evidence |
+| P3-SC5 ✅ | **Landed 2026-07-28** — Floor Plan detail modal (drawer-scoped desktop / full-screen mobile), deterministic diagram classification, `webp-2048-q82-v1` profile fixed by the §7.5 legibility comparison, separate 3-per-plan/30-per-Property budgets, alt-text association rule, Source-local retirement + `unlink` lifecycle, merge/split association preservation, `manzil purge-images`, unmatched gallery. See the contract note below, incl. two unevidenced items | §8.2, §9.4, §13.2, §14 | each plan opens without losing Listing draft ✅; associated diagrams legible and sourced ✅ (real-listing smoke links 4/4); ambiguous images stay unmatched ✅; partial refresh retires nothing ✅; 3-per-plan/30-per-Property caps hold ✅ |
 | P3-SC6 | First new objective unit-feature tranche: `walk_in_closets`, `pantry`, `disposal`, `fireplace`, `ceiling_fans`, and `stainless_steel_appliances` | §8.2, §9.2–§9.3 | scoped extraction/reconciliation/score/UI path passes fixtures and measured bench thresholds; no new Criterion bypasses P3-6 truth |
 | P3-SC7 | Flooring-material mixed-scope tranche with array/set matching and overlap warning | §8.2, §9.2–§9.3 | exact/generalized material claims remain distinguishable; overlap warnings catch ambiguous Rubric options; storage/basement/granular internet remain absent |
 | P3-SC8 | Estimated move-in-cost composition for selected Floor Plan: first-month all-in + refundable/non-refundable required deposits/fees/prepaids, with no double counting and incomplete-subtotal semantics | §8.2, §9.5 | component goldens cover household multipliers, credited deposits, refundability, unknown major inputs and full-month fallback; incomplete totals cannot score as known |
@@ -579,6 +755,12 @@ history. Version and date, rather than row position, define chronology.
 
 | Version | Date | Change |
 |---|---|---|
+| 2.0.84 | 2026-07-28 | **Scoped laundry Extraction conflict corrected.** A live aggregator's listing page page exposed contradictory EXTRACT/schema wording: Gemini emitted `none/all_units` from “In-unit laundry is not available” and `on_site/unit_scope_unspecified` from the advertised building laundry room, while the persistence contract permits one value per Source/concrete target. Catalog guidance and EXTRACT prompt v7 now define laundry `none` as no laundry option of any kind and require all statements about one target to reconcile into one claim. A live bench showed Gemini could repeat the conflict after the corrective retry, so the schema boundary now drops only a logically redundant generalized `none` when exactly one generalized positive mode exists; competing positive modes and exact claims still fail closed. Duplicate-target validation names the Criterion and gives retries an actionable correction. The saved-page regression converges to one generalized `on_site` claim without weakening scoped-target uniqueness. Record-mode Phase 0 bench: 10 finished labels, 0 failures, Gate accuracy 1.0, Criterion accuracy 0.8617, plan-field accuracy 0.9504, 0 wrong exact associations; 11 unfinished scoped-label skeletons remain the already-recorded Owner-waived debt. |
+| 2.0.83 | 2026-07-28 | **P3-6 multi-Source reconciliation landed under the DESIGN v3.21 Owner waiver.** Ingest manifests now fan the DISCOVER slate through idempotent per-Source FETCH/EXTRACT/VERIFY, then reconcile Property and Source-local exact Floor Plan targets with family freshness deduplication, deterministic numeric tolerances, one batched Gemini semantic-equivalence call (prompt v2) when necessary, ≥2/3 supermajority, official arbitration, one bounded tier/family-distinct sibling round, majority, and conservative low-confidence fallback. Dynamic escalation stages are inserted after the current cursor and persist in `plan.escalation`; the runner and Postgres stage history re-read that evolving manifest without changing old jobs. Every Source candidate and one resolved Extraction persist with selected/unselected lineage edges; shared claim groups link per concrete Floor Plan, authoritative refresh retires only the successful Source's omitted evidence, and `split_property` recomputes both sides of mixed graphs. Gate disputes park at `resolve_dispute` with **Leave unknown** as default; Overview/drawer show **Problematic**, Criterion evidence exposes the rule and Source candidates, and Tasks History summarizes escalation. Gemini 3 Flash Preview is pinned for EXTRACT/VERIFY/plan-assist/equivalence by explicit Owner decision; DISCOVER and VISION keep independent pins. Verification: clean Supabase reset; worker 576 (excluding two unrelated seed-isolation locality tests), API 118, and frontend 331 outside the two pre-existing decimal-format assertions; changed-file Ruff/ESLint, relaxed-unused TypeScript, and diff checks pass. **Technical debt, not acceptance:** finish the canonical scoped labels/current-pin zero-wrong-exact + Gate report and run a reconciliation-specific model comparison. |
+| 2.0.82 | 2026-07-28 | **Separate VISION confidence setting (DESIGN v3.20).** Hunt settings add scoring key `min_vision_confidence` (`low` default), independently validated/defaulted by API and frontend and carried through ingest, refresh, and zero-LLM rescore. Scoped resolution applies it only to `vision:*` origins/rules; ordinary Extractions retain `min_confidence = medium`. Effective facts now carry confidence and producer identity into the existing point/Gate split: admitted low-confidence exact or generalized VISION may affect points/display but is always absent from Gate values; medium/high generalized values still obey `generalized_vision_policy`, exact values otherwise keep full behavior, and Overrides remain unaffected. Existing Hunts inherit low without a data migration because settings are JSON with read-time defaults. Settings UI exposes both thresholds and explains the Gate rule. |
+| 2.0.81 | 2026-07-28 | **Kitchen-quality scoring enabled by Owner benchmark override (DESIGN v3.19).** The hash-validated approved 25-anchor profile now has `quality_status = approved`, releasing PLAN/VISION with reference profile v1, prompt v1, and `anthropic/claude-sonnet-4.6`. The manifest separately records `quality_benchmark_status = deferred_owner_override`, so the external human-rated quality bench remains visible debt and the release makes no bench-backed accuracy claim. Existing schema/hash/visibility/aggregation fail-closed controls remain; flooring and bathroom stay disabled. Planner goldens now include the $0.03 VISION estimate. |
+| 2.0.80 | 2026-07-28 | **IMAGE_CLASSIFY Owner pin recorded (DESIGN v3.18).** `google/gemini-3-flash-preview` replaces the provisional Gemini 2.5 Flash Lite classifier pin. This is an explicit override of the classifier selection gate after every live 30-image candidate violated exact response completeness; the chosen model returned 29/30 requested hashes. Exact hash validation remains strict, malformed batches fail closed, and classification stays shadow-only. Kitchen-quality scoring remains disabled pending its independent external bench; no reference status or quality model was approved by this decision. |
+| 2.0.79 | 2026-07-27 | **P3-7a2 + kitchen-first P3-7b engineering landed behind human gates (DESIGN v3.16).** New manifests place IMAGE_CLASSIFY after IMAGE_FETCH: up to 30 source-balanced normalized images retain DOM discovery context, 64-bit dHash and evidence-led Source-local Floor Plan associations; one provisional Gemini 2.5 Flash Lite shadow call classifies ≤384 px in-memory thumbnails, caches by hash/model/prompt, validates exact hash coverage, and deterministically selects at most three high-confidence diverse kitchens. The quality path validates criterion-specific 3–5-anchor manifests, generates hashed five-level 1024 px sheets, runs one anchored kitchen call, applies the ruled weighted median, and emits exact plus generalized visual Extractions with `extraction_images` provenance. Scoring now accepts internal point/Gate maps so Owner-controlled `generalized_vision_policy` (`full_rubric` default / `points_only` / `unknown`) changes gallery behavior without reshaping the pinned breakdown; exact VISION always has full behavior. Migration adds current image lifecycle, contextual metadata, generalized `floor_plan_images`, and same-Property-guarded `extraction_images`. API conservative cost default restored. Live kitchen quality remains fail-closed until Yusuf approves the external bench/model/reference versions; flooring/bathroom stay disabled. |
 | 2.0.78 | 2026-07-27 | **P3-SC4 engineering tranche landed; human scoped-bench acceptance remains (DESIGN v3.15 / §20 2026-07-27).** Six unit-feature Criteria split raw `claim_value_schema` from effective per-Floor-Plan `value_schema`; EXTRACT prompt v6 and its zero-tool schema use sparse applicability-bearing arrays for those six plus heating. Exact refs are response-local, shared-plan claims expand under one `claim_group_id`, select/unspecified claims compose to Gate-insufficient `advertised_unconfirmed`, and legacy Property/no-app rows cannot become confirmed unit truth. SCORE/rescore, filters, synthetic fixtures, and clean-database persistence checks cover the contract. The label/harness schema grades value + applicability + exact target and diagram associations; `manzil bench-audit-scoped` enforces the canonical-ten coverage matrix. **Not complete:** the local kit has 10 gradeable legacy labels plus 11 unfinished skeletons and no new scoped/diagram coverage, so P3-6 stays blocked pending human labeling and the current-pin zero-wrong-exact/Gate report. **Unrelated conflict surfaced and left explicit:** DESIGN/pinned seed use studio beds `-0.5`, while the committed Python Catalog uses `-1.0` and has other seed drift; the global Catalog generator guard remains red until that separate decision is resolved. |
 | 1.0 | 2026-07-03 | Created at Phase 0 kickoff: environment, conventions, interface proposals, prompt/fixture/observability mechanics, Phase 0 work plan (14 tasks), runbooks. |
 | 1.1 | 2026-07-03 | Phases 1–3 broken into task tables (14/9/14) with ⚠ marks on outcome-dependent items; "expand on entry" → "revise on entry". Critique fixes: DB-access strategy (asyncpg worker / supabase-py API / `privileged.py` exception), CI + branching defined, Langfuse removed from API env, record/replay hash keying specified, `manzil` script entry noted, catalog-sync migration + deploy runbooks added, frontend test convention added, P1-13 polling interim made explicit. |
@@ -655,6 +837,7 @@ history. Version and date, rather than row position, define chronology.
 | 2.0.74 | 2026-07-24 | **Listing Detail Drawer CSS + Mantine refactor (frontend).** Shared drawer primitives consolidated into `ListingDetailDrawer.module.css` (header type, 7px state dots, band text colors, tabular nums, exceptional marker); child modules keep unique grids/tints. Drawer sections migrated to Mantine `Text`/`Box`/`Group` with valid DOM nesting; `DrawerHero` tests split from drawer header identity. `UI_DESIGN.md` §3 documents the surface-owned shared-module exception. | Reduce duplicated drawer styling and raw text nodes without changing scoring/data contracts. |
 | 2.0.75 | 2026-07-25 | **Rubric cards redesign + Catalog re-categorization (DESIGN v3.13 / §20 2026-07-25).** Frontend: category-hued `ThemeIcon` identity tile and group rule (`criterionCategory.ts`, pure name→palette map), points ledger with a diverging magnitude bar scaled per criterion (`deltaBar.ts`), bonus/gate word-badges → tinted glyphs with hover text, unscored criteria collapsed from one empty card each into a dashed add-pill strip per category (`CriterionPicker`), serif `Title order={4}` group headings, content-height cards, four view columns at `xl`; all 32 catalog keys given distinct icons (twelve Property criteria had shared the category fallback) and `@fontsource/jetbrains-mono` actually installed against the `theme.ts` monospace family. Shared/DB: `CriterionCategory` goes 8 → 7 values (`unit, cost, tenancy, location, fittings, amenities, management`) with all 32 entries re-assigned, no group below two criteria; regenerated `supabase/seed.sql` plus full-Catalog sync migration `20260805000000_catalog_recategorize.sql`; the generator guard test now pins the newest full sync instead of the frozen P3-SC3 tranche migration. Presentation-only — no scoring, contract, or API change; `category` has no functional readers (swept) and `rubric_criteria` keys off `catalog_key`, so no backfill. Verification: shared 27, frontend 258 (one pre-existing `DrawerImageGallery` failure), frontend lint/typecheck/build green; worker 490 and API 110 with the same 4 + 2 replay/locality failures present at `HEAD`. |
 | 2.0.76 | 2026-07-26 | **Overview table + row list redesign (§20 2026-07-26).** Fixes a real UI_DESIGN §5 violation: `document.scrollWidth` measured 701px against a 390px mobile viewport because the `<table>` element has an unavoidable minimum width. Frontend only, presentation layer over the unchanged `overviewRows.ts` pure logic. **Desktop** (`OverviewTable`): grouped columns (Fit · Identity · Unit · Money · Timing · Place · Curation · People) with a header band and hairline group rules; selection/score/property pinned (`position: sticky`, stripe/hover repainted in `OverviewTable.module.css` since Mantine's `striped`/`highlightOnHover` target `<tr>` with zero-specificity selectors a sticky `<td>` can't inherit); the scroll edge shadow only renders once a column is actually scrolled underneath (`data-scrolled`, `scrollLeft > 0`). **Pipeline hand-off** (`rowState.ts`, `jobsByListing`/`rowPipelineState` joining `JobResponse.hunt_listing_id`): a row still fetching or whose last run failed shows a spinner/warning marker, states its stage/error inline, and links to `/h/:id/tasks` or `?tab=history` (`TasksPage` tab is now URL-driven) instead of opening an empty drawer; a scored group merely refreshing keeps its values and only swaps the marker. **Status** (`StatusChip.tsx`, `interestStatus.ts`): the 140px `Select` + `Checkbox` becomes a badge-menu + labelled `Visited` toggle; all ten statuses map to a Mantine colour name (cyan/indigo/ochre/sage/brick/stone) and a Title Case label, and the same tone drives a pinned `RowMarker` dot in the identity cell (one slot — pipeline state outranks interest state) so status reads at every scroll position. **Ratings** (`RatingSummary.tsx`): mono average + one member-coloured dot each + a comment count (hidden at zero) replaces five overlapping `Rating` widgets crushed at `maw={16}`; old `RatingDots` removed. **Filters** (`OverviewFilterBar.tsx`): search and Filters share one edge instead of a floating pill; 22 fields regroup into labelled `SimpleGrid` sections, paired bounds share a row with a dash, and the eight controlled vocabularies become Title Case `Chip.Group` toggles (`titleCase` added to `lib/text.ts`); the closed panel unmounts so its footer count can't linger in the accessibility tree. **Mobile** (`OverviewRowList.tsx`, `useMediaQuery` at `48em`): the table is replaced below that breakpoint — collapsed rows show only score, property, unit, and all-in monthly; a borderless chevron expands to stat tiles then a full-width Status/People row then Listing/Compare/Archive actions; tapping the row still opens the drawer. Header renamed "All-In Monthly" (was "All-in / mo"). Stored column-picker localStorage key bumped to `-v2` (a v1 array has no entry for the new `rent` column). Verification: 55 files / 296 frontend tests (1 pre-existing `DrawerImageGallery` failure, confirmed present at `HEAD`), lint/typecheck/build green; measured page width 390px at 390px viewport post-fix; manual pass in both color schemes exercised the status menu (live mutation against the real API), row expand/collapse, and the Tasks hand-off links. |
+| 2.0.79 | 2026-07-27 | **Property contact retrieval — P3-21 (DESIGN v3.17 / §20 2026-07-27, Yusuf-directed).** One new global table + view; no change to scoring, the Catalog, or `shared/`'s engine. Three provenance rungs (official site → Google Places → listing) resolved by precedence rather than the §10.6 ladder — no votes, no `resolve_dispute`, and no new fetch: rung 1 fires only when the official site is already a fetched Source. Rungs 1 and 3 share one optional EXTRACT block ranked at persist time by `property_sources.is_official`; rung 2 adds Contact Data fields to the Place Details call ENRICH already makes once per Property. §16's PII rule narrowed to permit property-level business contact only, enforced structurally (no person column anywhere in the path). New tests: `test_property_contacts.py` (normalization, guards, precedence, PII shape), `test_queue_contact_projection.py` (6 Postgres tests covering all three rungs, the domain guard, re-ingest dedupe, and the empty give-up state), plus Maps/ENRICH/EXTRACT coverage. |
 | 2.0.77 | 2026-07-26 | **Map surfaces — P3-19 (DESIGN v3.14 / §20 2026-07-26, Yusuf-directed).** Frontend only; no schema, API, scoring, or worker change. **Loader** (`lib/googleMaps.ts`): one promise-cached `<script>` for the Maps JavaScript API, `mapsConfigured()` guard, `googleMapsLink()` deep link; a failed load clears the cached promise **and removes the script** so a later mount retries. The promise resolves on `Promise.all(importLibrary("maps" | "marker" | "core"))`, **not** on the script's load event — see the fix note below. Deliberately **no cloud Map ID** — that keeps the classic `styles` array (dark basemap themed from `theme.ts` tokens in `features/map/mapTheme.ts`, read at paint time via `--mantine-color-*` custom properties) and keeps `google.maps.Marker`, whose data-URI SVG icons carry the score palette. `@types/google.maps` added as a devDependency + `tsconfig` `types`. **Shell** (`features/map/MapFrame.tsx`): owns unconfigured / loading / error / empty states for both surfaces, restyles rather than rebuilds the map on a color-scheme flip. **Pure layer** (`features/map/mapPoints.ts`, 13 tests): `buildMapPoints` collapses Overview rows into one pin per Listing carrying its scored Unit Groups best-first, counting the rest as `unmapped` (no `properties.lat/lng`) vs `unscored` rather than dropping them; `pinColorTokens` de-duplicates same-band groups; `markerArt` draws a **single teardrop path** — head and point share one continuous outline — with equal sectors (best at 12 o'clock, hairline radial dividers) oversized to `SLICE_R` and clipped to that silhouette so the point is coloured too, anchored at the tip via a derived `TIP_FRACTION`. Solid and sliced pins are identical in silhouette, size, and anchor. **Drawer**: new `Location` `SectionCard` between Notes & ratings and Sources (`ListingLocationMap`) — small interactive map at zoom 15, pin in the displayed group's band color, address-only fallback + "Open in Maps" when the property has no geocode; the address itself is not repeated (it is already in the drawer header). **Map view**: `HuntMapPage` at `/h/:huntId/map`, nav entry between Overview and Compare; filter bar on top, fit-to-bounds only when the plotted set changes (a repaint must not yank the user's pan), single-pin zoom clamped to 15, band legend, omission footnote, and a `Modal` unit-group picker for multi-group pins that hands `{listingId, groupKey}` to the existing `ListingDetailDrawer`. **Filter lift**: `features/listings/filterState.tsx` moves Overview filter state + hunt-wide seed/publish out of `OverviewPage` into a hunt-keyed provider mounted above `AppLayout`'s `Outlet`; `OverviewPage` behavior is unchanged, and the Map consumes the same state so the two views cannot disagree. `Property` gains `lat`/`lng` (already selected by `properties(*)` — no query change); `unitGroupLabel` added to `unitGroups.ts`. Env: `VITE_GOOGLE_MAPS_API_KEY` (browser key, referrer-restricted, **never** the worker's `GOOGLE_MAPS_API_KEY`) in §1 + `frontend/.env.example`; unset degrades both surfaces to a placeholder. **Marker geometry fixed on first live render** (same day): the `viewBox` was sized `R + STROKE + STEM` tall while the tip was drawn at `R + STEM`, so the point fell outside the canvas and every pin rendered decapitated — and `anchorY` pointed at that clipped bottom edge rather than the tip. Every dimension and the anchor now derive from named `TIP_Y`/`MIN_Y`/`VIEW_H` constants, with `it.each` regression tests asserting the tip stays inside the box at 1–4 colours. Dropped in the same pass: the hub dot drawn only on split pins (filled `--mantine-color-body`, so a near-black dot in dark mode), which made sliced pins look like a different marker; slice dividers are radii instead. `markerOutline` then **inverted** (Yusuf-directed): black in light, white in dark, from `--mantine-color-black`/`-white` rather than the page body it originally tracked — the pin contrasts with the *basemap*, which runs opposite to the surrounding chrome. Pinned by `tests/mapTheme.test.ts`. **Loader contract fixed after the first live reload** (the map hung on its spinner on a cold load, but worked after navigating away and back): the bootstrap URL carries `loading=async`, under which — per Google's dynamic-loading docs — the script's load event is explicitly *not* the ready signal (it "prevents JavaScript execution triggered by the script's load event") and the bootstrap installs only `google.maps.importLibrary`; no constructor exists until a library is imported. Resolving on `load` therefore handed `MapFrame` a namespace whose `Map` was undefined, and `new maps.Map(...)` threw. The throw was invisible because the effect used `.then(onFulfilled, onRejected)`, whose second argument does **not** catch what the first throws — so neither `ready` nor `error` was ever set. Two fixes: `loadGoogleMaps` now awaits `importLibrary` for `maps`/`marker`/`core` (libraries also register on the global namespace, so `new google.maps.Marker(...)` call sites are unchanged), and `MapFrame` uses `.catch`, logging and falling back to the error card only when no map was built (so an `onReady` marker bug can't blank a working map). Warm navigation worked because the API had finished populating itself in the background by then. Regression-tested in `tests/googleMaps.test.ts` (10 tests, verified to fail against the old resolve-on-load behaviour). Also added: a `HTMLElement.prototype.scrollTo` stub in `tests/setup.ts` beside the existing `scrollIntoView` one — jsdom implements neither, and the drawer scrolls its body to the top on selection change. Verification: 330 frontend tests — 20 `mapPoints` (7 added for the geometry fixes), 10 `googleMaps`, 3 `mapTheme`, +1 drawer location-fallback test, `ListingDetailDrawer` "five section cards" → six; typecheck, lint, and `vite build` clean over the new code; marker artwork rendered to PNG and inspected in both schemes at 1/2/3 bands. **Pre-existing failures left untouched** (all confirmed present before this work): `CriterionBreakdown` ×2 and `DrawerImageGallery` ×1, plus 4 unused-import lint/tsc errors in `TeamRatings.tsx` and `StatusChip.tsx` — all from other uncommitted working-tree edits. **Rule for this seam:** with `loading=async`, treat `importLibrary` as the only readiness signal, and never let a map surface's async path end without reaching `ready` or `error` — an infinite spinner is the failure mode this loader produces when an error escapes. |
 | 2.0.73 | 2026-07-23 | **State-qualified locality + utility baseline regions (DESIGN v3.11 / §20 2026-07-23).** Migration `20260803000000_locality_and_baseline_regions.sql` adds `properties.state/county`, truncates the regenerable `utility_baselines` cache, and re-keys it to `(geo_level, state, region_name, beds_bucket, utility)`. Worker: new pure `enrich/locality.py` (Google `locality` → strict original-address postal city → null; never `administrative_area_level_3`; state/county from Google with USPS normalization); `GeocodeIn` + `_geocode_call` return `state/county`; DEDUPE projection coalesces all three locality columns; `utility_baselines.py` gains `BaselineRegion`/`BaselineSet`, `select_baseline_region`, `due_baseline_regions` (fresh only when all 24 rows are within TTL), `refresh_region_baselines`, and scope-matched rescore fan-out; SCORE/rescore/composition thread locality through the baselines seam and append county/state regional notes; `manzil backfill-locality [--property-id]` admin command; utility-baselines prompt v2. Frontend: `Property.state/county`, `locality.ts` helpers, Overview city filter/display as `City, ST` with legacy bare-city token compatibility, All-in copy "location" not "metro". Tests: +7 locality, +2 backfill, extended utility-baselines/queue/projection/rescore/composition/maps coverage; frontend +2 locality. **Owed:** prompt v2 bench re-run (`manzil bench-run --name locality-baselines-v2`) before treating the LLM pass as pinned. |
 | 2.0.72 | 2026-07-22 | **P3-SC3 landed (DESIGN v3.10 / §20 2026-07-22).** Catalog expands 19 → 32 entries with a first-class `property` category and the approved 13-Criterion Property tranche; `catalog.py` now generates both seed and catalog-sync SQL, and migration 20260802 round-trips exactly on a clean reset. Shared/API/worker/frontend gain strict controlled-array support and `contains_any`/`contains_all`: non-empty duplicate-free set values, strict shape checking, first-match scoring, backend JSON-Schema validation, generated OpenAPI, multi-select widgets, and quiet overlap warnings. Dynamic zero-tool EXTRACT includes every new Property field; `FloorPlanIn.unit_types` persists to `floor_plans.unit_types`, feeds SCORE/rescore, and appears only as a labeled Unit Group union or exact plan fact. Rubric/listing UI groups Catalog categories and renders Property facts once, separately from Floor Plan facts. `worker/fixtures/dev_rubric.v1.json` plus `manzil seed-dev-rubric [--force]` install a deterministic Gate-free development Hunt, verify stable score goldens, no-op on identical state, and refuse drift without force. Pre-SC3 synthetic EXTRACT/VERIFY recordings are adapted only at test seams with explicit unknowns; P3-SC4 retains the canonical human-label/recording refresh. Verification: clean Supabase reset; shared 27, worker 481, API 112, frontend 182; frontend lint/build, configured strict mypy, changed-file Ruff, and diff checks pass; the real CLI smoke installed v1 then reported `unchanged` on the second run. Next: P3-SC4. |
