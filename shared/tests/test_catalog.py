@@ -129,6 +129,14 @@ def test_catalog_contains_the_approved_p3_sc3_tranche() -> None:
 
 SCOPED_UNIT_HEADER = """-- P3-SC4 separates raw Source claim schemas from scoreable per-Floor-Plan
 -- values for the migrated unit-feature tranche. Idempotent on hosted/local DBs."""
+LEGACY_LAUNDRY_HINT = (
+    "in_unit = washer/dryer inside the unit; hookups = connections only; "
+    "on_site = shared laundry room/facilities; none otherwise."
+)
+LAUNDRY_GUIDANCE_HEADER = (
+    "-- Clarify mutually exclusive laundry extraction semantics after the "
+    " regression. Idempotent on hosted/local DBs."
+)
 
 
 def test_seed_sql_round_trips() -> None:
@@ -160,15 +168,27 @@ def test_scoped_unit_catalog_migration_is_generated_from_catalog() -> None:
         "dishwasher",
     ]
     migration = (
-        REPO_ROOT
-        / "supabase"
-        / "migrations"
-        / "20260806000000_scoped_unit_claim_values.sql"
+        REPO_ROOT / "supabase" / "migrations" / "20260806000000_scoped_unit_claim_values.sql"
     ).read_text()
+    current_laundry_hint = next(
+        entry.extraction_hint for entry in CATALOG if entry.key == "in_unit_laundry"
+    )
     assert migration == generate_catalog_sync_sql(*keys).replace(
-        "-- P3-SC3 first Property/Unit type tranche; "
-        "idempotent on hosted and local databases.",
+        current_laundry_hint,
+        LEGACY_LAUNDRY_HINT,
+    ).replace(
+        "-- P3-SC3 first Property/Unit type tranche; idempotent on hosted and local databases.",
         SCOPED_UNIT_HEADER,
+    )
+
+
+def test_laundry_guidance_migration_is_generated_from_catalog() -> None:
+    migration = (
+        REPO_ROOT / "supabase" / "migrations" / "20260809000000_laundry_extraction_guidance.sql"
+    ).read_text()
+    assert migration == generate_catalog_sync_sql("in_unit_laundry").replace(
+        "-- P3-SC3 first Property/Unit type tranche; idempotent on hosted and local databases.",
+        LAUNDRY_GUIDANCE_HEADER,
     )
 
 

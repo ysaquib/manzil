@@ -37,6 +37,7 @@ from manzil_worker.state import (
     MandatoryFeesIn,
     OneTimeFeesIn,
     PetCostsIn,
+    PropertyContactIn,
     PropertyIdentityIn,
     UtilitiesIn,
 )
@@ -67,6 +68,43 @@ def _parse_stringified_field(cls: type[BaseModel], data: Any) -> Any:
     return _maybe_decode_container(data)
 
 
+def _drop_redundant_generalized_laundry_none(claims: Any) -> Any:
+    """Canonicalize one logically impossible Gemini combination.
+
+    Laundry's controlled values are mutually exclusive for one concrete target:
+    a positive mode proves that `none` is false. When there is exactly one
+    generalized positive mode, retain its evidence/applicability and discard
+    generalized `none` claims. Competing positive modes and exact Floor Plan
+    claims remain untouched so the normal duplicate-target validator fails
+    closed instead of guessing.
+    """
+    if not isinstance(claims, list):
+        return claims
+
+    generalized_positive_values = {
+        claim.get("value")
+        for claim in claims
+        if isinstance(claim, dict)
+        and claim.get("applicability") in {"all_units", "select_units", "unit_scope_unspecified"}
+        and not claim.get("floor_plan_refs")
+        and claim.get("value") not in {None, "none"}
+    }
+    if len(generalized_positive_values) != 1:
+        return claims
+
+    return [
+        claim
+        for claim in claims
+        if not (
+            isinstance(claim, dict)
+            and claim.get("applicability")
+            in {"all_units", "select_units", "unit_scope_unspecified"}
+            and not claim.get("floor_plan_refs")
+            and claim.get("value") == "none"
+        )
+    ]
+
+
 def _normalize_top_level(cls: type[BaseModel], data: Any) -> Any:
     """Normalize provider-shaped equivalents of the pinned extraction contract.
 
@@ -91,6 +129,10 @@ def _normalize_top_level(cls: type[BaseModel], data: Any) -> Any:
                         "evidence_quote": None,
                     }
                 )
+        if "in_unit_laundry" in normalized:
+            normalized["in_unit_laundry"] = _drop_redundant_generalized_laundry_none(
+                normalized["in_unit_laundry"]
+            )
         if isinstance(normalized.get("floor_plans"), list):
             normalized["floor_plans"] = [
                 plan for plan in normalized["floor_plans"] if plan is not None
@@ -106,10 +148,10 @@ def _validate_scoped_refs(self: BaseModel) -> BaseModel:
     if len(refs) != len(set(refs)):
         raise ValueError("floor_plans response_key values must be unique")
     known_refs = set(refs)
-    claim_lists = [
-        getattr(self, key, []) for key in SCOPED_UNIT_CLAIM_KEYS
-    ] + [getattr(self, "heating", [])]
-    for claims in claim_lists:
+    claim_lists = [(key, getattr(self, key, [])) for key in SCOPED_UNIT_CLAIM_KEYS] + [
+        ("heating", getattr(self, "heating", []))
+    ]
+    for criterion_key, claims in claim_lists:
         seen_targets: set[str | None] = set()
         for claim in claims:
             exact = claim.applicability is UnitApplicability.SPECIFIC_FLOOR_PLANS
@@ -127,9 +169,18 @@ def _validate_scoped_refs(self: BaseModel) -> BaseModel:
             duplicates = seen_targets.intersection(targets)
             if duplicates:
                 rendered = ", ".join("<generalized>" if ref is None else ref for ref in duplicates)
-                raise ValueError(
-                    "scoped claims may emit only one value per concrete target: " + rendered
+                correction = (
+                    f"{criterion_key} may emit only one value per concrete target: "
+                    f"{rendered}. Reconcile all page statements about that target "
+                    "into one value/applicability claim."
                 )
+                if criterion_key == "in_unit_laundry":
+                    correction += (
+                        " For in_unit_laundry, `none` means no laundry option of "
+                        "any kind; when in-unit laundry is unavailable but shared "
+                        "laundry exists, emit only `on_site`."
+                    )
+                raise ValueError(correction)
             seen_targets.update(targets)
     return self
 
@@ -271,9 +322,7 @@ def scoped_claim_model(entry: CatalogEntry) -> type[BaseModel]:
         ),
         evidence_quote=(
             str,
-            Field(
-                description="Verbatim page evidence supporting both value and applicability."
-            ),
+            Field(description="Verbatim page evidence supporting both value and applicability."),
         ),
         applicability=(UnitApplicability, ...),
         floor_plan_refs=(
@@ -375,6 +424,20 @@ def build_extraction_schema(
             "EXCLUDE security deposits (floor-plan field), recurring monthly fees (their "
             "own block), and optional add-ons. Null the whole block if the page states no "
             "such fees. Never invent.",
+        ),
+    )
+    fields["property_contact"] = (
+        PropertyContactIn | None,
+        Field(
+            default=None,
+            description="How to reach the property's LEASING OFFICE, as published on the "
+            "page: `phone` for the office's own phone number and `contact_url` for its "
+            "contact/inquiry page. Emit ONLY contact details the page presents as the "
+            "property's own. Null a field when the page attributes it to a named "
+            "individual (an agent, broker, or manager by name) rather than to the "
+            "office itself — never record a person's direct line as the property's. "
+            "Never record a person's name anywhere. Null the whole block if the page "
+            "publishes no property-level contact details. Never invent.",
         ),
     )
     fields["heating"] = (

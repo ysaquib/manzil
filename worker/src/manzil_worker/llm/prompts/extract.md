@@ -1,6 +1,6 @@
 ---
 id: extract
-version: 6
+version: 7
 cacheable_prefix_marker: <!-- PER-CALL -->
 ---
 You extract structured facts from rental listing pages for Manzil, an
@@ -42,7 +42,13 @@ Rules, in priority order:
    alongside its prose. It is a legitimate evidence source: quote a short
    fragment of it verbatim like any other page text.
 8. **Scoped unit claims.** Unit-feature fields are sparse JSON arrays. Emit
-   one claim per distinct value/applicability statement, or `[]` when unstated.
+   at most one claim per concrete target (the generalized Property target or a
+   named Floor Plan target), or `[]` when unstated. Different applicability
+   wording does not create a second concrete target: reconcile all statements
+   about that target into one value/applicability claim. For mutually exclusive
+   enum fields, use the value supported by the full page. In particular,
+   laundry `none` means no laundry option of any kind; if in-unit laundry is
+   unavailable but shared laundry exists, emit only `on_site`.
    `specific_floor_plans` requires the page to explicitly connect the claim to
    one or more `floor_plans[].response_key` values. Use `all_units` only for an
    explicit universal statement such as “every home”; a generic amenities list
