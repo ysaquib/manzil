@@ -4,7 +4,7 @@ import { createBrowserRouter, Navigate } from "react-router-dom";
 import { LoginPage } from "../auth/LoginPage";
 import { AuthCallbackPage } from "../auth/AuthCallbackPage";
 import { OnboardingPage } from "../auth/OnboardingPage";
-import { ProfilePage } from "../auth/ProfilePage";
+import { AccountPage } from "../auth/AccountPage";
 import { RequireAuth } from "../auth/RequireAuth";
 import { RequireProfile } from "../auth/RequireProfile";
 import { ResetPasswordPage } from "../auth/ResetPasswordPage";
@@ -36,7 +36,11 @@ export const router = createBrowserRouter([
   { path: "/auth/callback", element: <AuthCallbackPage /> },
   { path: "/auth/reset-password", element: authenticatedRoute(<ResetPasswordPage />) },
   { path: "/onboarding", element: authenticatedRoute(<OnboardingPage />) },
-  { path: "/profile", element: protectedRoute(<ProfilePage />) },
+  // /profile was the pre-P3-16 account surface; keep it as a redirect so the
+  // old menu item, bookmarks, and any shared link still land somewhere.
+  { path: "/profile", element: <Navigate to="/account/profile" replace /> },
+  { path: "/account", element: protectedRoute(<AccountPage />) },
+  { path: "/account/:tab", element: protectedRoute(<AccountPage />) },
   { path: "/invite/:token", element: protectedRoute(<InviteAcceptPage />) },
   { path: "/join/:token", element: protectedRoute(<InvitationLinkJoinPage />) },
   {
@@ -53,6 +57,7 @@ export const router = createBrowserRouter([
       { path: "rubric", element: <RubricPage /> },
       { path: "tasks", element: <TasksPage /> },
       { path: "settings", element: <HuntSettingsPage /> },
+      { path: "settings/:tab", element: <HuntSettingsPage /> },
     ],
   },
   { path: "*", element: <Navigate to="/" replace /> },

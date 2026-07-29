@@ -34,7 +34,8 @@ import { usePatchListingStatus, usePatchUnitGroupState } from "./api";
 import { useListings, useProblematicPropertyIds, useUnitGroupStates } from "./api";
 import { ArchivedListings } from "./ArchivedListings";
 import { COMPARE_LIMIT, rowEntry, useCompareSet } from "./compareSet";
-import { ListingDetailDrawer, type DrawerSelection } from "./ListingDetailDrawer";
+import { ListingDetailDrawer } from "./ListingDetailDrawer";
+import { useDrawerRoute } from "./drawerRoute";
 import { OverviewFilterBar } from "./OverviewFilterBar";
 import {
   DEFAULT_OVERVIEW_COLUMNS,
@@ -46,7 +47,7 @@ import {
   type TableDensity,
 } from "./OverviewTable";
 import {
-  applyOverviewFilters,
+  analyzeOverviewFilters,
   buildRows,
   hasActiveFilters,
   sortRows,
@@ -100,18 +101,17 @@ export function OverviewPage() {
     key: "manzil:overview-columns-v2",
     defaultValue: DEFAULT_OVERVIEW_COLUMNS,
   });
-  const [selectedRow, setSelectedRow] = useState<DrawerSelection | null>(null);
-  const [drawerOpened, setDrawerOpened] = useState(false);
+  // Drawer state is URL state (P3-16): refreshing reopens it, and the link is
+  // shareable with anyone who can read the hunt.
+  const drawer = useDrawerRoute();
   const [archiveTarget, setArchiveTarget] = useState<ArchiveTarget | null>(null);
 
   // Below `sm` the table becomes a row list: a <table> has a minimum width the
   // page cannot escape, and UI_DESIGN §5 forbids horizontal page scroll.
   const isCompact = useMediaQuery("(max-width: 48em)") ?? false;
 
-  const openDrawer = (row: OverviewRow) => {
-    setSelectedRow({ listingId: row.listing.id, groupKey: row.group?.key ?? null });
-    setDrawerOpened(true);
-  };
+  const openDrawer = (row: OverviewRow) =>
+    drawer.open(row.listing.id, row.group?.key ?? null);
   const archiveRow = (row: OverviewRow) =>
     setArchiveTarget({ listingIds: [row.listing.id], label: row.listing.property.name });
 
@@ -124,7 +124,8 @@ export function OverviewPage() {
   };
 
   const allRows = buildRows(listings ?? [], unitGroupStates);
-  const rows = sortRows(applyOverviewFilters(allRows, filters), sort);
+  const filterResult = analyzeOverviewFilters(allRows, filters);
+  const rows = sortRows(filterResult.rows, sort);
   const { data: problematicPropertyIds = new Set<string>() } = useProblematicPropertyIds(
     (listings ?? []).map((listing) => listing.property_id),
   );
@@ -240,6 +241,7 @@ export function OverviewPage() {
               cities={cities}
               visibleCount={rows.length}
               totalCount={allRows.length}
+              manualPinAlternateMatchCount={filterResult.manualPinAlternateMatchCount}
               sharedFilters={sharedFilters}
               canPublish={canPublish}
               onPublish={onPublish}
@@ -380,10 +382,11 @@ export function OverviewPage() {
 
       <ListingDetailDrawer
         huntId={huntId}
-        selection={selectedRow}
-        opened={drawerOpened}
-        onClose={() => setDrawerOpened(false)}
-        onExited={() => setSelectedRow(null)}
+        selection={drawer.renderSelection}
+        opened={drawer.opened}
+        onClose={drawer.close}
+        onExited={drawer.onExited}
+        filters={filters}
       />
 
       <Modal
