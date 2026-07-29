@@ -1,16 +1,17 @@
 # Criterion Scope, Property Amenities, and Floor Plan Details — Finalized Design Plan
 
-Status: **supplementary finalized decision workbook; P3-SC4 engineering landed
-2026-07-27 with its human bench acceptance tail pending**. Product and
-architecture choices are approved or explicitly deferred. P3-SC1 promoted them
-into `DESIGN.md` v3.7 and its §20 Decision Log, recorded selected mechanics and
-the Extraction-consumer audit in `IMPLEMENTATION.md` v2.0.68, and sequenced the
-P3-SC task series. P3-SC2 and P3-SC3 subsequently landed the scoped substrate
-and first Property/set-valued Catalog tranche. P3-SC4 then landed its sparse
-claim/presence implementation and bench tooling. `DESIGN.md` v3.15 and
-`IMPLEMENTATION.md` v2.0.78 are authoritative; this file keeps the fuller
-rationale. Human finalization of the canonical ten and its current-pin baseline
-remain the P3-SC4 acceptance gate, not an unresolved design decision.
+Status: **supplementary finalized decision workbook**. **Landed:** P3-SC1–SC3 ✅,
+P3-SC4 engineering ✅ (human bench ◐, Owner-waived as P3-6 blocker 2026-07-28),
+**P3-6 ✅** (2026-07-28), **P3-SC5 ◐** (2026-07-28 — functionally complete; two
+evidence items outstanding), **P3-SC6/SC7 engineering ✅⚠** (2026-07-29 —
+human per-Criterion bench coverage remains), **P3-SC8 ✅** (2026-07-28). Product
+and architecture choices are approved or explicitly deferred. P3-SC1 promoted them into `DESIGN.md`
+v3.7+ and its §20 Decision Log, recorded selected mechanics and the
+Extraction-consumer audit in `IMPLEMENTATION.md`, and sequenced the P3-SC task
+series. `DESIGN.md` (v3.26+) and `IMPLEMENTATION.md` (2.0.88+) are authoritative;
+this file keeps the fuller rationale. Human finalization of the canonical ten and
+its current-pin baseline remain **P3-SC4 ◐** acceptance debt, not an unresolved
+design decision.
 
 Written 2026-07-20 against `DESIGN.md` v3.6 and promoted 2026-07-21 into v3.7,
 `docs/catalog-and-rubric-review.md`, and the current implementation. This work
@@ -191,9 +192,10 @@ perfect cross-site Floor Plan reconciliation.
   without changing every Floor Plan in the Listing.
 - The fixed `phase0_rubric.py` is an eval/CLI Rubric, not a saved development
   Hunt Rubric exercised through the real API and frontend.
-- Multi-source RECONCILE is planned under P3-6 but has not landed. This is the
-  best point to settle per-Criterion escalation, conflict, and scoped-claim
-  behavior before its storage and resolution rules become established.
+- Multi-source RECONCILE **landed under P3-6 (2026-07-28)** on the scoped
+  substrate. Per-Criterion escalation, conflict, and scoped-claim behavior are
+  now established in production code; this section records the pre-landed gap
+  that motivated the P3-SC series.
 
 ### 1.2 Consequences
 
@@ -1013,10 +1015,13 @@ have no unchecked item before scoped-fact implementation starts.
 
 ### 9.3 Floor Plan detail and image decisions
 
+*Implementation: **P3-SC5 ◐** landed 2026-07-28 (see IMPLEMENTATION §P3-SC5).*
+
 - [x] Clickable Floor Plan detail uses a nested modal on desktop and full-screen
   modal on mobile while the Listing draft remains mounted.
 - [-] Floor Plan deep links are deferred until the modal experience has shipped
-  and a concrete navigation or sharing need is demonstrated.
+  and a concrete navigation or sharing need is demonstrated. *(Modal shipped
+  P3-SC5 ◐ 2026-07-28; deep links still deferred pending product need.)*
 - [x] Approve `property_images` plus a many-to-many `floor_plan_images`
   association table rather than a single `floor_plan_id` column.
 - [x] Automatic associations require explicit structured/card/native-ID/label
@@ -1070,6 +1075,8 @@ have no unchecked item before scoped-fact implementation starts.
 
 ### 9.4 Move-in-cost decisions
 
+*Implementation: **P3-SC8 ✅** landed 2026-07-28 (IMPLEMENTATION 2.0.84).*
+
 - [x] Time window: required cash from application through occupancy.
 - [x] Reuse `first_month_all_in` to avoid double counting monthly components.
 - [x] Use one full realistic first month when no exact/prorated payment schedule
@@ -1084,15 +1091,13 @@ have no unchecked item before scoped-fact implementation starts.
 - [x] Show refundable and non-refundable subtotals separately while both count
   toward cash required.
 
-Estimated move-in cost remains a separate later workstream and does not block
-scoped amenities or Floor Plan diagrams.
-
 ### 9.5 Operational decisions
 
 - [x] **P3-6 boundary:** promote the design, land the unified scoped Extraction
   foundation, add the first Property tranche/dev Rubric, and migrate existing
   unit Criteria before P3-6 RECONCILE. P3-6 then reconciles the final scoped
-  identity rather than a temporary Property-only contract.
+  identity rather than a temporary Property-only contract. *(P3-6 ✅ landed
+  2026-07-28.)*
 - [-] **Temporary honesty guard:** omit it while the database remains resettable
   and no real Hunt data uses the old Property-only pipeline. Trigger and ship it
   immediately if real ingestion must resume before the scoped substrate lands.
@@ -1258,18 +1263,18 @@ workstream visible while the dependency column supplies its actual order.
 | `P3-SC1` ✅ | Promoted this plan into DESIGN + §20; audited all Extraction queries; recorded exact schema/current-value/reset contracts in IMPLEMENTATION (completed 2026-07-21) | Complete; prerequisite cleared |
 | **`P3-SC2` ✅** | Unified append-only scoped Extraction foundation: schema/domain models, sparse claims, Floor Plan identity resolution, effective values, Overrides, refresh/split/RLS | Landed 2026-07-21; prerequisite cleared |
 | **`P3-SC3` ✅** | Landed 2026-07-22: `property` category, array/set plumbing, Property/Unit types, first Property tranche including general internet readiness, and guarded saved dev Rubric | Complete; prerequisite cleared |
-| **`P3-SC4` ◐** | Engineering landed 2026-07-27: existing unit Criteria use exact/all/select/unspecified semantics and the canonical bench contract/tooling is extended. Human label finalization and current-pin baseline remain | Acceptance tail is the hard prerequisite for P3-6 |
-| **`P3-5` ✅** | Existing DISCOVER branch: native search, official/candidate Source links, tier/family slate, Source Policy enforcement | Landed 2026-07-21; its half of the P3-6 join is cleared |
-| **`P3-6`** | Existing multi-Source fan-out and RECONCILE ladder, now operating on Property and scoped Floor Plan candidates | After `P3-SC4`; `P3-5` is complete; retain the established task ID |
-| `P3-SC5` | Floor Plan detail UI and diagram discovery/association/storage/lifecycle | After `P3-SC2` and P3-7a; not a P3-6 prerequisite, so schedule after P3-6 on the critical path or in parallel once dependencies are met |
-| `P3-SC6` | First new objective unit-feature tranche | After P3-6 so new Criteria enter the reconciled path rather than a temporary single-Source path |
-| `P3-SC7` | Flooring materials and overlap warning; storage, basement, and granular internet remain deferred | After `P3-SC6` and the array plumbing established in `P3-SC3` |
-| `P3-SC8` | Estimated move-in-cost composition | Separate later workstream after the selected Floor Plan/scoped-cost inputs are stable |
+| **`P3-SC4` ◐** | Engineering landed 2026-07-27: existing unit Criteria use exact/all/select/unspecified semantics and the canonical bench contract/tooling is extended. Human label finalization and current-pin baseline remain | Owner waiver (2026-07-28) unblocked P3-6; acceptance evidence is still ◐ debt |
+| **`P3-5` ✅** | Existing DISCOVER branch: native search, official/candidate Source links, tier/family slate, Source Policy enforcement | Landed 2026-07-21 |
+| **`P3-6` ✅** | Multi-Source fan-out and scoped RECONCILE ladder on Property and Floor Plan candidates | Landed 2026-07-28 (IMPLEMENTATION 2.0.83) |
+| **`P3-SC5` ◐** | Floor Plan detail UI and diagram discovery/association/storage/lifecycle | Landed 2026-07-28; item-7 visual pass and real-page `full_size_url` unevidenced |
+| **`P3-SC6` ✅⚠** | Six objective unit-feature Criteria use the scoped Extraction, reconciliation, resolver, score, and UI path; human per-Criterion bench coverage remains | Engineering landed 2026-07-29 (IMPLEMENTATION 2.0.88, DESIGN v3.26) |
+| **`P3-SC7` ✅⚠** | Flooring materials and overlap warning landed; storage, basement, and granular internet remain deferred; human per-Criterion bench coverage remains | Engineering landed 2026-07-29 (IMPLEMENTATION 2.0.88, DESIGN v3.26) |
+| **`P3-SC8` ✅** | Estimated move-in-cost composition + Cost & fees consolidation | Landed 2026-07-28 (IMPLEMENTATION 2.0.84, DESIGN v3.25) |
 
 Run the relevant synthetic fixtures and local canonical bench after each
-output-affecting tranche; do not postpone all evaluation until `P3-SC8`.
-The next work is P3-SC4's human canonical-ten labeling/baseline tail. P3-6
-remains blocked until it records zero wrong exact associations.
+output-affecting tranche. P3-SC4's human canonical-ten labeling/baseline tail
+and P3-SC6/SC7's per-Criterion human coverage/current-pin run remain evidence
+debt; no accuracy claim is made for those tranches.
 
 ### P3-SC1 — finish and promote the design
 
@@ -1374,6 +1379,9 @@ task before declaring the current-pin baseline acceptable.
 
 ### P3-6 — scoped multi-Source integration
 
+**Completed 2026-07-28.** Authoritative mechanics: IMPLEMENTATION 2.0.83,
+DESIGN v3.21. Waived human scoped/model benches remain ◐ debt.
+
 1. Add independent Criterion escalation and conflict policies to RECONCILE.
 2. Reconcile Property claims separately from exact Floor Plan claims.
 3. Do not reopen settled fields with escalation-round Sources.
@@ -1383,6 +1391,10 @@ task before declaring the current-pin baseline acceptable.
 7. Verify the P3-6 worst-case run remains within its Source/extraction budget.
 
 ### P3-SC5 — Floor Plan detail and image substrate
+
+**Landed 2026-07-28 ◐** — IMPLEMENTATION §P3-SC5 contract. Authoritative
+mechanics cover items 1–9; **Outstanding (unevidenced):** item-7 visual pass
+(light/mobile) and real-page `full_size_url` preference.
 
 1. Extend image candidate discovery with structural/label context and the
    full-size candidate URL.
@@ -1404,24 +1416,38 @@ task before declaring the current-pin baseline acceptable.
 9. Run the §7.5 fixtures, diagram-legibility comparison, and one real-listing
    smoke test containing an explicitly labeled Floor Plan diagram.
 
-P3-SC5 is not a prerequisite for P3-6. It may begin in parallel after P3-SC2
-and P3-7a, but remains after P3-6 in the default critical-path order.
+P3-SC5 is not a prerequisite for P3-6. It landed after P3-SC2 and P3-7a and
+may proceed independently of SC6/SC7.
 
 ### P3-SC6 — objective unit tranche
 
-Add walk-in closets, pantry, disposal, fireplace, ceiling fans, and stainless
-steel appliances. Each must have positive, negative, select-unit,
-unqualified, and missing bench examples before an accuracy claim is made.
+**Engineering completed 2026-07-29 ✅⚠.** Walk-in closets, pantry, disposal,
+fireplace, ceiling fans, and stainless steel appliances are `fittings`
+Criteria. Boolean claims resolve to `confirmed | advertised_unconfirmed | none`;
+their default deltas are `+0.25 / 0 / 0`, with
+`available_sources_only + verified_positive_preferred`. Each rides the sparse
+scoped EXTRACT → VERIFY → P3-6 RECONCILE → effective resolver → SCORE/UI path.
+Per-Criterion positive, negative, select-unit, unqualified, and missing human
+bench examples are still required before an accuracy claim is made.
 
 ### P3-SC7 — flooring-material tranche
 
-1. Add flooring materials using the array/set and `contains_any`/`contains_all`
-   support established in P3-SC3.
-2. Add the approved objective/subjective overlap
-   warning. Storage and basement remain deferred under their §9.2 triggers;
-   granular internet readiness remains deferred.
+**Engineering completed 2026-07-29 ✅⚠.** `flooring_materials` uses the
+controlled set `carpet | hardwood | engineered_wood | laminate | vinyl | tile |
+concrete | other`. Exact and explicit `all_units` arrays score through
+`contains_any`/`contains_all`; `select_units` and `unit_scope_unspecified`
+remain advertised evidence but score unknown for a concrete Floor Plan. Rubric
+editing warns whenever both `flooring_materials` and `flooring_quality` are
+enabled. Per-Criterion positive/exact/all/select/unqualified/missing human bench
+coverage and a current-pin run remain before an accuracy claim. Storage and
+basement remain deferred under their §9.2 triggers; granular internet readiness
+remains deferred.
 
 ### P3-SC8 — estimated move-in cost
+
+**Completed 2026-07-28 ✅.** IMPLEMENTATION 2.0.84, DESIGN v3.25 — worker
+`move_in.py` composer, `move_in_components` persistence, `estimated_move_in_cost`
+Criterion, and Cost & fees drawer consolidation.
 
 1. Implement a deterministic composer reusing the selected Floor Plan's
    `all_in_monthly`, deposit, fee checklist, one-time fee evidence, and Hunt

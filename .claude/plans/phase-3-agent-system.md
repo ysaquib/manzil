@@ -42,6 +42,14 @@ lineage, authoritative Source-local retirement, multi-Source split
 recomputation, dispute checkpoint, and disagreement UI. The v3.21 model/label
 waivers remain technical debt.
 
+**P3-SC5 ◐ landed 2026-07-28** (IMPLEMENTATION §P3-SC5 contract): Floor Plan
+detail modal, diagram discovery/classification/storage/association, separate
+diagram budgets, Source-local lifecycle, and unmatched gallery — functionally
+complete; the item-7 visual pass (light/mobile) and real-page `full_size_url`
+remain unevidenced. **P3-SC8 ✅ landed 2026-07-28** (IMPLEMENTATION 2.0.84,
+DESIGN v3.25): estimated move-in cost composer, `move_in_components`
+persistence, and Cost & fees drawer consolidation.
+
 **Security note for execution:** Phase 3 feeds untrusted page content into more
 machinery (tool loops, web search, image pipelines) and adds external API
 credentials. P3-5 (DISCOVER tool loop), the `fetch_page` tool, and every new
@@ -63,7 +71,10 @@ demands**; apartmentratings.com as ratings stage 2.
 - Everything in DESIGN §18: Apify structured actors, automated discovery/alerts,
   off-market detection, zip-level baselines, traffic-window commutes, weighted /
   multiple rubrics, export/sharing, screenshot-based extraction, general ratings
-  sites (Yelp et al. — ratings stage 3), notifications, buy-domain activation.
+  sites (Yelp et al. — ratings stage 3), **notifications** (specified as P3-22 on
+  2026-07-29 — a defined task is still a deferred one; it needs an explicit
+  ruling to start, exactly like P3-17), **account deletion** (specified as P3-23
+  the same day, same posture), buy-domain activation.
 - Worker process isolation **unless a §5 trigger is observed** (DESIGN v2.9):
   P3-1 stays parked until repeated API memory/restart/502 impact, material
   latency impact, a concurrency requirement, or an always-on scheduling
@@ -234,26 +245,38 @@ were built as sockets; Phase 3 tasks fill them rather than adding new cells.
 ## 3. Task table (revises IMPLEMENTATION §7's prep draft at entry)
 
 Waves per the prep draft: **A** foundations → **B** identity/sources →
-**C** evidence/enrichment → **D** lifecycle/UX → **E** conditional sources.
+**C** evidence/enrichment → **D** lifecycle/UX → **E** conditional sources →
+**SC** scoped Criteria (see IMPLEMENTATION §7 for live status).
 Full task detail in §4–§13; every task below carries its what/why.
 
 | # | Wave | Task | Why |
 |---|---|---|---|
 | P3-1 ⚠ | — | Optional worker isolation | parked; §5 trigger only (DESIGN v2.9) |
-| P3-2 | A | Planner v1 (ingest manifests) + manifest-driven runner + cost persistence | resumable multi-stage runs need a stage list that travels with the job; debugging and NFR1 need the plan and the bill visible |
-| P3-3 | A | Maps tools + tool registry + forever-cache | geocode is the substrate for DEDUPE, ENRICH, and Places ratings; the tool registry is the §10.2 mechanics everything P3 shares |
-| P3-4 | B | DEDUPE + `resolve_dedupe` + `split_property` | shared global facts are only safe if two URLs for one building become one property — and a wrong merge must be reversible (R5) |
+| P3-2 ✅ | A | **Landed 2026-07-12:** Planner v1 (ingest manifests) + manifest-driven runner + cost persistence | resumable multi-stage runs need a stage list that travels with the job; debugging and NFR1 need the plan and the bill visible |
+| P3-3 ✅ | A | **Landed 2026-07-12:** Maps tools + tool registry + forever-cache | geocode is the substrate for DEDUPE, ENRICH, and Places ratings; the tool registry is the §10.2 mechanics everything P3 shares |
+| P3-4 ✅ | B | **Landed 2026-07-12:** DEDUPE + `resolve_dedupe` + `split_property` | shared global facts are only safe if two URLs for one building become one property — and a wrong merge must be reversible (R5) |
 | P3-5 ✅ | B | **Landed 2026-07-21:** DISCOVER official-link capture + tier-diverse slate + candidate pool + Source Policy enforcement + reasoned single-source badge | cross-source outvoting is the core trust mechanism (R3/R4); tier/family diversity is what makes the votes independent; policy caps keep the user in control of the cost/assurance trade |
-| P3-6 | B | Multi-source fan-out + RECONCILE ladder v2 + bounded escalation | conflicting sources need a deterministic, recorded resolution — this is where `resolution_rule`, `disputed`, and the escalation ladder become real |
-| P3-7 | C | Images + VISION with versioned reference set | kitchen/flooring quality are rubric criteria only vision can score; reference anchoring is the consistency control (R6) |
-| P3-8 | C | ENRICH: proximity, commute, Places ratings (priority slice), safety | location and reputation criteria are the remaining unscoreable catalog rows; Places is near-free and covers almost every complex |
-| P3-9 | C | Utility baselines job + full all-in composition | the all-in number is the tool's core promise; winter-weighted estimates make unlisted utilities honest instead of invisible |
+| P3-6 ✅ | B | **Landed 2026-07-28:** Multi-source fan-out + RECONCILE ladder v2 + bounded escalation | conflicting sources need a deterministic, recorded resolution — this is where `resolution_rule`, `disputed`, and the escalation ladder become real |
+| P3-7 ◐ | C | **Kitchen VISION live by Owner override;** flooring/bathroom disabled — owed external quality bench (`docs/p3-7-vision-guide.md`) | kitchen/flooring quality are rubric criteria only vision can score; reference anchoring is the consistency control (R6) |
+| P3-8 ◐ | C | **Landed 2026-07-18** — ENRICH proximity/commute/Places ratings; safety placeholder — ◐ pending one live Detroit-metro ENRICH run | location and reputation criteria are the remaining unscoreable catalog rows; Places is near-free and covers almost every complex |
+| P3-9 ◐ | C | **Landed 2026-07-18** — utility baselines tick + §9.5 all-in composition; first live baselines pass done — ◐ owed bench re-run after schema growth | the all-in number is the tool's core promise; winter-weighted estimates make unlisted utilities honest instead of invisible |
 | P3-10 | C | Custom criteria authoring + CUSTOM_MATCH dispatch | the catalog can't anticipate every hunt's dealbreaker; authoring-time routing keeps run-time dumb and cheap |
 | P3-11 | D | Checkpoints complete: screenshot UI, 24 h sweep, reopen/re-score | checkpoints only work if ignoring them costs nothing — auto-resume with a visible badge means nothing strands and nothing hides |
 | P3-12 | D | Refresh: TTLs, hash gating, field-scoped partial, planner refresh mode | fresh data without re-paying extraction; hash gating is the single biggest cost lever after caching (§15) |
-| P3-13 | D | Compare view + mobile polish | FR9 — the decision endgame is comparing finalists, and it happens on phones |
+| P3-13 ◐ | D | **Compare landed 2026-07-19** — remaining mobile bottom-sheet polish | FR9 — the decision endgame is comparing finalists, and it happens on phones |
 | P3-14 ⚠ | E | Tier-3 adapters per census verdict | spend on hostile domains only where the census proves inventory lives behind them |
 | P3-15 | E | Ratings stage 2: apartmentratings.com | renter-specific signal Places lacks; lands as a second provenance-carrying extraction, RECONCILE owns disagreement |
+| P3-SC1 ✅ | SC | Promoted scoped-Criteria design + Extraction-consumer audit (docs/contracts only, 2026-07-21) | prerequisite for P3-SC2 substrate |
+| P3-SC2 ✅ | SC | Unified append-only scoped Extraction foundation (2026-07-21) | Source-local Floor Plan identity and effective resolver |
+| P3-SC3 ✅ | SC | Property Catalog tranche + set-valued Rubric plumbing (2026-07-22) | first Property-scoped Criteria and dev Rubric |
+| P3-SC4 ◐ | SC | **Engineering landed 2026-07-27;** Owner waived human label/current-pin tail as P3-6 prerequisite (2026-07-28) — acceptance evidence remains debt | existing unit Criteria on exact/all/select/unspecified path |
+| P3-SC5 ◐ | SC | **Landed 2026-07-28** — detail modal + diagram substrate; two evidence items outstanding (visual pass, real `full_size_url`) | Floor Plan detail and diagram lifecycle |
+| P3-SC6 ✅⚠ | SC | **Engineering landed 2026-07-29** — six objective unit-feature Criteria on the scoped/reconciled path; human per-Criterion bench remains | after P3-6 reconciled path |
+| P3-SC7 ✅⚠ | SC | **Engineering landed 2026-07-29** — controlled flooring set + objective/subjective overlap warning; human per-Criterion bench remains | after P3-SC6 |
+| P3-SC8 ✅ | SC | **Landed 2026-07-28** — move-in composer + Cost & fees consolidation | estimated cash at move-in Criterion |
+| P3-16 | D | **Rescoped 2026-07-29** (DESIGN v3.27) — settings/account/chrome rework: one settings shell used twice, navbar-foot account cluster, feedback modal + admin-only table, Drawer deep links | the settings page had become a scroll with three save buttons and no unsaved state; the account surface lived outside the app's own navigation |
+| P3-22 ⚠ | — | **Deferred, specified 2026-07-29** (DESIGN §18, §20 v3.27) — notification system + attention indicators; §13.1 below | preferences without delivery are a promise the app can't keep, so the surface is designed and parked rather than shipped |
+| P3-23 ⚠ | — | **Deferred, specified 2026-07-29** (DESIGN §18) — self-service account deletion, gated on transferring owned Hunts; email change declined outright | a Hunt always needs an Owner, so deletion is an ownership problem before it is a data problem |
 
 ---
 
@@ -401,6 +424,11 @@ forbidden.
 
 ## 8. P3-6 — Multi-source fan-out + RECONCILE ladder v2 (Wave B)
 
+> **Landed 2026-07-28 ✅** (IMPLEMENTATION 2.0.83, DESIGN v3.21). Automated
+> fixtures cover fan-out, scoped reconciliation, bounded escalation, dispute
+> checkpoints, and Source-local retirement; waived human scoped/model benches
+> remain technical debt.
+
 **What/why (rescoped 2026-07-13, DESIGN §20 v3.2):** FETCH/EXTRACT/VERIFY run
 per slate source; RECONCILE merges via the rewritten §10.6 ladder (LLM only
 for semantic equivalence), stamping `resolution_rule` on every reconciled
@@ -448,9 +476,10 @@ winning rule in provenance.
 
 ## 9. P3-7 — Images + VISION (Wave C)
 
-**Status 2026-07-13:** P3-7a deterministic substrate landed; P3-7b remains
-fail-closed on the human reference asset. See
-`docs/p3-7-vision-guide.md` for the exact completion and rollout gates.
+**Status ◐:** P3-7a/7a2 substrate and kitchen VISION are live by Owner override
+(Sonnet 4.6 + profile v1); flooring/bathroom remain disabled. **Owed:** external
+kitchen quality benchmark — no accuracy claim until it runs. See
+`docs/p3-7-vision-guide.md` for rollout gates.
 
 **What/why:** download listing images (≤10, WebP, ~1024 px) into Storage,
 wire `property_images` + screenshot capture/retention (§2.9), and run the P4
@@ -523,7 +552,8 @@ bench property scores its location criteria end-to-end.
 > unknown rule (no-baselines metro → v1 slice + badge; partial coverage →
 > withheld total); billed fee suppresses the matching estimate; metro =
 > `properties.city`; composition detail on `hunt_listings.all_in_components`.
-> ◐ pending the first live baselines pass + the owed bench re-run.
+> ◐ first live baselines pass done 2026-07-18; remaining: owed bench re-run
+> after EXTRACT/schema growth.
 
 **What/why:** the scheduled metro-level baselines job (one LLM+search pass per
 metro over utility-rate sources, 120 d TTL, winter-weighted `monthly_high`)
@@ -624,6 +654,10 @@ pricing TTL lapses and clears on refresh.
 
 ### P3-13 — Compare view + mobile polish
 
+> **Landed 2026-07-19 ◐** (IMPLEMENTATION 2.0.65): `/h/:huntId/compare`,
+> Send-to-Compare, and transposed criterion table are live. **Remaining:** mobile
+> bottom-sheet polish (the sheet itself already shipped in Phase 2 prep).
+
 **What/why:** FR9 — 2–4 listings side-by-side at criterion granularity,
 reachable from Overview selection state; plus the mobile pass (bottom-sheet
 already ships; this is ergonomics: filter bar collapse, compare on small
@@ -660,6 +694,123 @@ no blending formula gets invented.
 Starts only after P3-8's Places slice is live (the ladder's own rule).
 **Done when:** a bench property with both sources shows two provenance-carrying
 rating extractions and one reconciled value with its rule.
+
+### P3-16 — Settings, account, and navigation chrome (rescoped 2026-07-29)
+
+**What/why:** the settings page grew into a 520 px scroll of eight sections with
+three independent save buttons and no way to see what is unsaved, and the
+account surface (`/profile`) is a lone card floating on the public shell outside
+the app's own navigation. One **settings shell** — tab rail plus bounded-card
+column plus a dirty-only save bar — is built once and used twice: hunt-scoped at
+`/h/:huntId/settings` (**Hunt** · **Your profile**) and account-scoped at a new
+`/account` (**Profile** · **Account**). Members, invites, and invitation links
+merge into one **People** card under Hunt; three sections there was persistence
+structure leaking into the UI. The per-hunt **Your role and permissions** card
+renders for every role, Owner included, and is the standing answer to "why can't
+I do that?" — the surface P2-12's disabled controls will hang from when it
+lands. The account cluster moves out of the header to the **navbar foot**, where
+there is room for the email address, and expands in place rather than as a
+floating dropdown; the header `UserMenu` survives below `sm` (navbar behind the
+Burger) and on the hunt-less routes. The hunt name moves to the header centre as
+a switcher. **Submit feedback** sits directly above the account cluster, opening
+a modal whose context strip (route incl. Drawer params, hunt, build, account) is
+what makes a two-line report actionable. **Drawer state becomes URL state** so a
+Drawer can be refreshed into and shared.
+
+**Files:** `frontend/src/components/` — new `SettingsShell` (rail + column +
+save bar) consumed by both surfaces, `AppLayout` (navbar foot, centred hunt
+switcher, `sm` fallback), `UserMenu` (retained, hunt-less routes),
+`FeedbackModal` (new); `features/hunts/HuntSettingsPage.tsx` split into the two
+panels; `auth/ProfilePage.tsx` becomes `/account` with its tabs and a redirect
+from `/profile`; `features/listings/ListingDetailDrawer.tsx` +
+`OverviewPage`/`HuntMapPage` read Drawer state from `useSearchParams` rather
+than local state — **one reader**, or the URL and the open Drawer drift.
+API + DB: one migration for `feedback` (admin-only) and a `POST /v1/feedback`
+endpoint with a per-user rate limit. `frontend/API_ASSUMPTIONS.md` updated in
+the same commit (the standing rule for any new data hook).
+
+**Security:** `feedback` RLS is **insert-only for everyone** — authenticated
+`INSERT` with `user_id = auth.uid()`, and **no `SELECT` policy at all**, not
+even for the author's own rows; reads are admin-only through a `service_role`
+path. `user_id`, `route`, `hunt_id`, and build metadata are set server-side or
+validated against the caller, never trusted from the client. Body length is
+capped and the insert rate-limited so an authenticated account cannot flood the
+table. The Drawer deep link grants nothing: RLS decides what a recipient can
+read, and a non-member lands on the hunt switcher rather than a wall.
+
+**Done when:** a panel with no edits shows no save bar and a dirty one names
+what changed; the role card renders correctly for Owner, Curator and Viewer; a
+copied Drawer URL opens the same Listing, plan and tab for another member after
+a cold load, a deleted target shows the gone-state and clears the param, and
+Back closes the Drawer rather than leaving the hunt; the RLS matrix gains a case
+proving a second signed-in user cannot read any `feedback` row; every surface
+works at 375 px with the header `UserMenu` fallback.
+
+### P3-22 ⚠ — Notification system + attention indicators (deferred, specified)
+
+**Status:** deferred (DESIGN §18). Specified 2026-07-29 so the parked design is
+recorded rather than re-derived; **needs an explicit ruling to start**, exactly
+like P3-17. Nothing here is on the Phase 3 critical path and none of it is an
+exit condition.
+
+**What/why:** four pieces, designed as one so they cannot contradict each other.
+(a) **Delivery** — email through the Supabase Auth mail path already in the
+stack; push is a later option and never a prerequisite. Events: checkpoint
+waiting on you, Listing score changed, run failed, comment or rating added, and
+invited to a Hunt (that mail always sends — it is how the invite arrives).
+(b) The account **Alerts** tab in P3-16's `/account` shell, per-event ×
+per-channel, on a new member-owned `user_notification_prefs` row.
+(c) **Per-hunt overrides** in that Hunt's **Your profile** tab, falling back to
+the account default per event. (d) The **attention-indicator addendum** — the
+in-app half: a count badge on a navigation item when the count is known
+(checkpoints waiting on the viewer), a bare dot when only the existence of
+something is known, drawn in **clay**, the hue checkpoints already own for
+"waiting on the user", never the primary; fed by the Realtime subscription the
+Tasks tab already holds.
+
+**Sequencing note:** (d) needs neither delivery nor preference storage and
+**may ship ahead of (a)–(c)** if the system slips again — it is scoped here so
+the badge is designed once rather than invented twice by whoever gets there
+first. (b) and (c) must not ship before (a): an alerts screen whose toggles
+deliver nothing is worse than no screen, which is the whole reason this task
+exists rather than the preference tabs simply being built with P3-16.
+
+**Done when:** a checkpoint raised in a second browser badges that member's
+Tasks nav item within the Realtime round trip and clears on answer; turning an
+event off for one Hunt leaves the account default intact elsewhere; an email
+fires once per event per member and never for a disabled event; a member who
+never opened preferences gets the documented defaults rather than silence.
+
+### P3-23 ⚠ — Account deletion (deferred, specified)
+
+**Status:** deferred (DESIGN §18). Specified 2026-07-29 alongside P3-16's
+Account surface; **needs an explicit ruling to start**. Not an exit condition
+and not on any critical path.
+
+**What/why:** self-service removal of an account. The hard part is not the
+delete — it is that a departing user may **own** Hunts, and a Hunt always needs
+an Owner, so deletion is an ownership problem before it is a data problem. The
+flow blocks while any owned Hunt remains, naming each one and pointing at
+transfer-or-archive, both of which already exist (P1-5 archive, P2-8 transfer).
+
+**Disposition, in order:** refuse while owned Hunts remain → delete
+`user_profiles` and `hunt_members` rows → **tombstone** comments and ratings
+rather than erase them → keep `feedback` rows with `user_id` detached → delete
+`auth.users` last, so the cascade order is observable if it fails midway.
+Tombstoning is the load-bearing choice: a rating that silently vanishes changes
+a Hunt's scored history for everyone still in it, and that record belongs to the
+remaining members as much as to the person leaving. The confirm modal must name
+what survives, in those words.
+
+**Companion decision (already applied):** changing an account's email address is
+**declined outright**, not deferred — an account is tied to the address it was
+created with, and `/account` states that as a fact rather than showing a control
+nobody intends to build.
+
+**Done when:** an Owner with an un-transferred Hunt is refused with that Hunt
+named; after transfer, deletion removes profile and memberships, leaves
+tombstoned comments and ratings legible to remaining members, and the account
+can no longer sign in.
 
 ### P3-1 ⚠ — Optional worker isolation (parked)
 
