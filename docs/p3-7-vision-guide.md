@@ -22,13 +22,34 @@ retire prior images. A complete refresh marks missing assets non-current.
 
 IMAGE_CLASSIFY makes one structured call with up to 30 separately labeled,
 unstored ≤384 px WebP thumbnails. Its result is cached per normalized image hash
-plus classifier model/prompt version. It must return every requested original
-hash exactly once and no unknown hash. The Owner-selected shadow pin is
-`google/gemini-3-flash-preview` (DESIGN §20, 2026-07-28). Its live 30-image
-smoke returned 29/30 requested hashes, and every other candidate also failed
-the strict completeness contract. This is an explicit selection-gate override:
-malformed batches still fail closed, and the pin does not approve live kitchen
-quality.
+plus classifier model/prompt version. It asks for every requested original hash
+exactly once and no unknown hash, and it tolerates a small shortfall rather
+than throwing the batch away (DESIGN §20, 2026-07-28 v3.22): at most
+`IMAGE_CLASSIFY_ANOMALY_TOLERANCE = 2` unanswered hashes and at most two
+surplus records (unknown hashes + repeats). Anything past either bound still
+fails closed.
+
+Tolerated anomalies are recorded, never smoothed over:
+
+- **Unanswered** → `vision_assessment.classification.status = "missing"`.
+- **Irreconcilable repeats** → `status = "disputed"`.
+- **Surplus unknown hashes** → dropped.
+
+Neither marker carries a `cache_key`, so the next run asks about the image
+again, and neither has an `assessment`, so no quality target can select it.
+Repeated records for one hash resolve by higher confidence; on a tie the
+sharper reading of the same picture wins (`other` loses to any real scene,
+`living` loses to a specific interior room) and everything else — kitchen vs
+exterior, or a disagreement about `diagram`/`irrelevant` — is disputed.
+Every anomaly becomes a `jobs.warnings` entry on the task card; a warning
+never halts, parks, retries, or fails the run.
+
+The Owner-selected shadow pin is `google/gemini-3-flash-preview` (DESIGN §20,
+2026-07-28). Its live 30-image smoke returned 29/30 requested hashes, and every
+other candidate also failed the strict completeness contract — which is what
+the tolerance above exists to survive. The pin does not approve live kitchen
+quality. `manzil bench-classifier` deliberately keeps the **strict** check: it
+measures model behavior for selection, not the pipeline's operating contract.
 
 Quality selection is deterministic: high-confidence assessable kitchens only;
 no irrelevant images or diagrams; one representative per dHash cluster
