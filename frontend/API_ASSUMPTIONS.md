@@ -39,7 +39,8 @@ comma-separated value (`state=queued,running,waiting_user`) — the form the Tas
 | `POST/GET /v1/hunts/{id}/invitation-links` | `useCreateInvitationLink` / `useInvitationLinks` (`features/invites/api.ts`) | generated Invitation Link shapes (`name` optional on create/response) | P2-11 | implemented |
 | `PATCH/DELETE /v1/invitation-links/{id}` | `usePatchInvitationLink` / `useDeleteInvitationLink` (`features/invites/api.ts`) | generated Invitation Link shapes (`name` optional on patch) | P2-11 | implemented |
 | `POST /v1/invitation-links/{token}/join` | `useJoinInvitationLink` (`features/invites/api.ts`) | generated `InvitationLinkJoined` | P2-11 | implemented |
-| `PUT /v1/profile` | `/profile` (`auth/ProfilePage.tsx`) | generated `ProfileUpsert`/`ProfileResponse`; optional `default_color` is omitted by onboarding and required when explicitly sent | DESIGN §13.1 | implemented |
+| `PUT /v1/profile` | `/account/profile` (`auth/AccountPage.tsx`) | generated `ProfileUpsert`/`ProfileResponse`; optional `default_color` is omitted by onboarding and required when explicitly sent | DESIGN §13.1 / P3-16 | implemented |
+| `POST /v1/feedback` | `useSubmitFeedback` (`features/feedback/api.ts`) | generated `FeedbackCreate`/`FeedbackResponse`. Identity is server-side (`user_id` from the bearer token, `user_agent` from the request); `route` must be a site-relative path; a `hunt_id` the caller cannot read is a 403; the per-hour cap returns 429 `feedback_rate_limited`. **No read hook exists or can exist** — `feedback` has no `SELECT` policy for anyone, so the response confirms receipt rather than echoing the row | P3-16 | implemented |
 
 Invitation Link responses carry an API-configured absolute `link`, but the frontend replaces its
 origin with `window.location.origin` before copying. Supabase Auth storage is origin-scoped, so a
