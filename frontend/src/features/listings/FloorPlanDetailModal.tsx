@@ -43,6 +43,7 @@ import classes from "./FloorPlanDetailModal.module.css";
 import { formatRange } from "./overviewRows";
 import { formatScore, scoreColor, scoreLabel } from "./scoreBands";
 import type { Extraction, FloorPlan, Override, PropertySource, Score } from "./types";
+import type { HuntMember } from "../collaboration/api";
 
 const STATE_HEADING: Record<AmenityState, { title: string; hint: string; glyph: string }> = {
   confirmed: { title: "Confirmed", hint: "stated for this plan", glyph: "✓" },
@@ -135,10 +136,11 @@ function AmenityGroup({
         {facts.map((fact) => {
           const selected = openKey === fact.key;
           const typed =
-            typeof fact.value === "string" &&
-            fact.value !== "confirmed" &&
-            fact.value !== "none" &&
-            fact.value !== "advertised_unconfirmed";
+            Array.isArray(fact.value) ||
+            (typeof fact.value === "string" &&
+              fact.value !== "confirmed" &&
+              fact.value !== "none" &&
+              fact.value !== "advertised_unconfirmed");
           return (
             <Box
               key={fact.key}
@@ -192,6 +194,7 @@ export interface FloorPlanDetailModalProps {
   pinned: boolean;
   saving?: boolean;
   isMobile: boolean;
+  members?: HuntMember[];
   onClose: () => void;
   onTogglePin: () => void;
 }
@@ -212,6 +215,7 @@ export function FloorPlanDetailModal({
   pinned,
   saving,
   isMobile,
+  members = [],
   onClose,
   onTogglePin,
 }: FloorPlanDetailModalProps) {
@@ -232,9 +236,10 @@ export function FloorPlanDetailModal({
   const allIn = score?.all_in_components?.total ?? null;
 
   // Desktop: re-anchor Mantine's viewport-fixed root/inner/overlay onto
-  // `Drawer.Body` (which owns `position: relative`), so the overlay covers the
-  // drawer column and the Overview behind it stays lit. Mobile: drop them
-  // entirely and let `fullScreen` behave normally — a real fork, exercise both.
+  // `Drawer.Content` (which owns `position: relative`), sibling to the scroll
+  // region so overflow:auto cannot clip the overlay. The drawer column stays
+  // lit against the Overview behind it. Mobile: drop them entirely and let
+  // `fullScreen` behave normally — a real fork, exercise both.
   //
   // This is the `styles` API rather than a CSS Module on purpose (UI_DESIGN §3
   // escalation step 3): Mantine's own `Modal-root`/`Modal-inner` rules win the
@@ -438,6 +443,7 @@ export function FloorPlanDetailModal({
                   overrides={overrides}
                   floorPlanId={plan.id}
                   isMobile={isMobile}
+                  members={members}
                 />
               ) : (
                 <Text size="sm" c="dimmed">

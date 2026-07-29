@@ -20,12 +20,14 @@ vi.mock("../src/features/listings/api", () => {
     useFees: () => ({ data: [] }),
     useExtractions: () => ({ data: data.extractions, isLoading: false }),
     useOverrides: () => ({ data: [] }),
+    useUtilityOverrides: () => ({ data: [] }),
     usePropertyImages: () => ({ data: [], isLoading: false }),
     usePropertyContacts: () => ({ data: [] }),
     useResolutionCandidates: () => ({ data: [] }),
     usePatchPins: mut,
     useCreateOverride: mut,
     useUpsertFee: mut,
+    useUpsertUtilityOverride: mut,
     usePatchSourcePolicy: mut,
   };
 });
@@ -158,16 +160,18 @@ it("shows Problematic when reconciliation used a conservative disputed fallback"
     </MantineProvider>,
   );
 
-  expect(screen.getByText("Problematic")).toBeInTheDocument();
+  expect(screen.getByLabelText("Problematic")).toBeInTheDocument();
 });
 
 describe("ListingDetailDrawer", () => {
-  it("renders the hero and the six section cards for a scored listing", () => {
+  it("renders the hero and one consolidated cost & fees card for a scored listing", () => {
     renderDrawer();
     expect(screen.getByRole("heading", { name: "Maple Court" })).toBeInTheDocument();
     expect(screen.getByText("1420 Alder St")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /Why this score/ })).toBeInTheDocument();
+    // §9.5 consolidation: one section, not the old Cost Breakdown / Fees split.
     expect(screen.getByRole("heading", { name: /Cost & fees/ })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /Cost Breakdown/ })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /Floor plans/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /Notes & ratings/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /Location/ })).toBeInTheDocument();
