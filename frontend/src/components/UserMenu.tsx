@@ -2,7 +2,7 @@
 // Profile + Sign out. Shared by the in-hunt AppShell header and the hunt
 // switcher so the profile page is reachable from anywhere.
 import { Avatar, Menu, UnstyledButton } from "@mantine/core";
-import { IconLogout, IconUserCircle } from "@tabler/icons-react";
+import { IconLogout, IconSettings, IconUserCircle } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
 
 import { useAuth } from "../auth/useAuth";
@@ -38,10 +38,17 @@ export function UserMenu() {
         {name && <Menu.Label>{name}</Menu.Label>}
         <Menu.Item
           component={Link}
-          to="/profile"
+          to="/account/profile"
           leftSection={<IconUserCircle size={14} stroke={1.5} />}
         >
           Profile
+        </Menu.Item>
+        <Menu.Item
+          component={Link}
+          to="/account/security"
+          leftSection={<IconSettings size={14} stroke={1.5} />}
+        >
+          Account settings
         </Menu.Item>
         <Menu.Item
           component={Link}

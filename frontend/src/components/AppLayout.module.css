@@ -1,0 +1,80 @@
+/* App frame — header three-up grid + navbar column with a pinned foot (P3-16). */
+
+/* Grid rather than space-between so the hunt name is centered on the *viewport*,
+   not on whatever space the two side groups happen to leave. */
+.header {
+  height: 100%;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--mantine-spacing-sm);
+  padding: 0 var(--mantine-spacing-md);
+}
+
+.headerCenter {
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+
+/* Ambient by default: the hunt name is orientation, not a call to action, so it
+   sits on the header with no chrome of its own and only reveals that it is a
+   control on hover or focus. */
+.huntSwitch {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 3px var(--mantine-spacing-xs);
+  border-radius: var(--mantine-radius-sm);
+  border: 1px solid transparent;
+  background-color: transparent;
+  color: var(--mantine-color-dimmed);
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.huntSwitch:hover,
+.huntSwitch:focus-visible {
+  background-color: var(--mantine-color-default-hover);
+  color: var(--mantine-color-text);
+}
+
+.huntName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  font-size: var(--mantine-font-size-sm);
+  font-weight: 500;
+  color: inherit;
+}
+
+.huntChevron {
+  color: inherit;
+  opacity: 0.6;
+  flex: none;
+}
+
+.navbar {
+  display: flex;
+  flex-direction: column;
+}
+
+.navSpacer {
+  flex: 1;
+  min-height: var(--mantine-spacing-md);
+}
+
+/* Three things share a phone-width header (Burger + wordmark, hunt, account),
+   so the hunt name drops a step in size rather than pushing the side cells. */
+@media (max-width: 48em) {
+  .header {
+    padding: 0 var(--mantine-spacing-sm);
+    gap: var(--mantine-spacing-xs);
+  }
+
+  .huntName {
+    font-size: var(--mantine-font-size-xs);
+  }
+}
