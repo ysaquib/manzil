@@ -166,6 +166,41 @@ describe("overlapWarnings", () => {
     expect(validateDraft(draft, [entry])).toEqual([]);
     expect(overlapWarnings(draft, [entry])[0].message).toMatch(/first match wins/);
   });
+
+  it("warns when objective flooring materials and subjective quality are both enabled", () => {
+    const materials: CatalogEntry = {
+      ...bedsEntry,
+      key: "flooring_materials",
+      label: "Flooring materials",
+      category: "fittings",
+      fact_scope: "mixed",
+      value_schema: {
+        type: "array",
+        items: { type: "string", enum: ["carpet", "hardwood"] },
+        minItems: 1,
+        uniqueItems: true,
+      },
+      default_options: [
+        option({ match: { op: "contains_any", value: ["hardwood"] } }),
+      ],
+    };
+    const quality: CatalogEntry = {
+      ...bedsEntry,
+      key: "flooring_quality",
+      label: "Flooring quality",
+      category: "fittings",
+      fact_scope: "floor_plan",
+    };
+    const draft = initDraft([materials, quality], []);
+    draft.forEach((criterion) => {
+      criterion.enabled = true;
+    });
+
+    expect(overlapWarnings(draft, [materials, quality])).toContainEqual({
+      catalogKey: "flooring_materials",
+      message: expect.stringMatching(/double-weighting flooring/),
+    });
+  });
 });
 
 describe("validateDraft", () => {

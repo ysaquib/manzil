@@ -183,6 +183,18 @@ export function overlapWarnings(
       }
     }
   }
+  const enabledKeys = new Set(
+    draft
+      .filter((criterion) => criterion.enabled && criterion.catalog_key !== null)
+      .map((criterion) => criterion.catalog_key),
+  );
+  if (enabledKeys.has("flooring_materials") && enabledKeys.has("flooring_quality")) {
+    warnings.push({
+      catalogKey: "flooring_materials",
+      message:
+        "Flooring materials and Flooring quality are both enabled; review their points to avoid double-weighting flooring.",
+    });
+  }
   return warnings;
 }
 

@@ -80,7 +80,7 @@ def parse_seed_sql(sql: str) -> list[CatalogEntry]:
 
 def test_catalog_contains_the_approved_p3_sc3_tranche() -> None:
     keys = [entry.key for entry in CATALOG]
-    assert len(keys) == len(set(keys)) == 32
+    assert len(keys) == len(set(keys)) == 40
     assert keys == [
         "beds",
         "baths",
@@ -91,12 +91,21 @@ def test_catalog_contains_the_approved_p3_sc3_tranche() -> None:
         "pets_policy",
         "all_in_monthly",
         "security_deposit",
+        # P3-SC8: composed like all_in_monthly, never extracted.
+        "estimated_move_in_cost",
         "availability_date",
         "kitchen_quality",
         "flooring_quality",
+        "flooring_materials",
         "parking",
         "cooling",
         "dishwasher",
+        "walk_in_closets",
+        "pantry",
+        "disposal",
+        "fireplace",
+        "ceiling_fans",
+        "stainless_steel_appliances",
         "min_lease_months",
         "grocery_proximity",
         "management_reviews",
@@ -125,6 +134,33 @@ def test_catalog_contains_the_approved_p3_sc3_tranche() -> None:
     assert by_key["unit_types"].fact_scope.value == "floor_plan"
     assert by_key["property_types"].value_schema["uniqueItems"] is True
     assert by_key["property_types"].default_options[0].match.op.value == "contains_any"
+    for key in {
+        "walk_in_closets",
+        "pantry",
+        "disposal",
+        "fireplace",
+        "ceiling_fans",
+        "stainless_steel_appliances",
+    }:
+        assert by_key[key].fact_scope.value == "floor_plan"
+        assert by_key[key].category.value == "fittings"
+        assert by_key[key].claim_value_schema == {"type": "boolean"}
+        assert by_key[key].escalation_policy.value == "available_sources_only"
+        assert by_key[key].conflict_policy.value == "verified_positive_preferred"
+    flooring = by_key["flooring_materials"]
+    assert flooring.fact_scope.value == "mixed"
+    assert flooring.value_schema["items"]["enum"] == [
+        "carpet",
+        "hardwood",
+        "engineered_wood",
+        "laminate",
+        "vinyl",
+        "tile",
+        "concrete",
+        "other",
+    ]
+    assert flooring.value_schema["uniqueItems"] is True
+    assert flooring.default_options[0].match.op.value == "contains_any"
 
 
 SCOPED_UNIT_HEADER = """-- P3-SC4 separates raw Source claim schemas from scoreable per-Floor-Plan
@@ -189,6 +225,26 @@ def test_laundry_guidance_migration_is_generated_from_catalog() -> None:
     assert migration == generate_catalog_sync_sql("in_unit_laundry").replace(
         "-- P3-SC3 first Property/Unit type tranche; idempotent on hosted and local databases.",
         LAUNDRY_GUIDANCE_HEADER,
+    )
+
+
+def test_sc6_sc7_catalog_migration_is_generated_from_catalog() -> None:
+    keys = [
+        "walk_in_closets",
+        "pantry",
+        "disposal",
+        "fireplace",
+        "ceiling_fans",
+        "stainless_steel_appliances",
+        "flooring_materials",
+    ]
+    migration = (
+        REPO_ROOT / "supabase" / "migrations" / "20260813000000_sc6_sc7_catalog.sql"
+    ).read_text()
+    assert migration == generate_catalog_sync_sql(*keys).replace(
+        "-- P3-SC3 first Property/Unit type tranche; idempotent on hosted and local databases.",
+        "-- P3-SC6/SC7 objective unit-feature and flooring tranches; "
+        "idempotent on hosted/local databases.",
     )
 
 

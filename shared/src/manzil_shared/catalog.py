@@ -50,6 +50,17 @@ PROPERTY_TYPE_VALUES = (
     "other",
 )
 
+FLOORING_MATERIAL_VALUES = (
+    "carpet",
+    "hardwood",
+    "engineered_wood",
+    "laminate",
+    "vinyl",
+    "tile",
+    "concrete",
+    "other",
+)
+
 
 def _controlled_set_schema(values: tuple[str, ...]) -> dict[str, Any]:
     return {
@@ -58,6 +69,35 @@ def _controlled_set_schema(values: tuple[str, ...]) -> dict[str, Any]:
         "minItems": 1,
         "uniqueItems": True,
     }
+
+
+def _unit_presence_entry(
+    *,
+    key: str,
+    label: str,
+    extraction_hint: str,
+) -> CatalogEntry:
+    """P3-SC6's shared objective unit-presence contract (DESIGN v3.26)."""
+    return CatalogEntry(
+        key=key,
+        label=label,
+        category=CriterionCategory.FITTINGS,
+        domain=CriterionDomain.RENT,
+        value_schema={
+            "type": "string",
+            "enum": ["confirmed", "advertised_unconfirmed", "none"],
+        },
+        claim_value_schema={"type": "boolean"},
+        default_options=[
+            _opt(MatchOp.EQ, "confirmed", 0.25),
+            _opt(MatchOp.EQ, "advertised_unconfirmed", 0.0),
+            _opt(MatchOp.EQ, "none", 0.0),
+        ],
+        extraction_hint=extraction_hint,
+        refresh_class=RefreshClass.LISTING_DETAILS,
+        escalation_policy=EscalationPolicy.AVAILABLE_SOURCES_ONLY,
+        conflict_policy=ConflictPolicy.VERIFIED_POSITIVE_PREFERRED,
+    )
 
 
 CATALOG: tuple[CatalogEntry, ...] = (
@@ -71,7 +111,7 @@ CATALOG: tuple[CatalogEntry, ...] = (
         default_options=[
             _opt(MatchOp.EQ, 2, 0.5),
             _opt(MatchOp.EQ, 1, 0.0),
-            _opt(MatchOp.EQ, 0, -1.0),
+            _opt(MatchOp.EQ, 0, -0.5),
         ],
         extraction_hint="Count distinct bedrooms; a studio is 0.",
         requires_tool=None,
@@ -241,6 +281,27 @@ CATALOG: tuple[CatalogEntry, ...] = (
         refresh_class=RefreshClass.PRICING,
     ),
     CatalogEntry(
+        key="estimated_move_in_cost",
+        label="Estimated move-in cost",
+        category=CriterionCategory.COST,
+        domain=CriterionDomain.RENT,
+        value_schema={"type": "number", "minimum": 0},
+        default_options=[
+            _opt(MatchOp.LT, 2500, 1.0),
+            _opt(MatchOp.RANGE, [2500, 4000], 0.5),
+            _opt(MatchOp.RANGE, [4000, 5500], 0.0),
+            _opt(MatchOp.RANGE, [5500, 7000], -0.5),
+            _opt(MatchOp.GT, 7000, -1.0),
+        ],
+        extraction_hint=(
+            "Composed by the pipeline (P3-SC8, DESIGN §9.5) from the first month's all-in, "
+            "the security deposit, required one-time fees and prepaids — never extracted "
+            "directly from the page. A missing required component leaves it unknown."
+        ),
+        requires_tool=None,
+        refresh_class=RefreshClass.PRICING,
+    ),
+    CatalogEntry(
         key="availability_date",
         label="Availability date",
         category=CriterionCategory.TENANCY,
@@ -299,6 +360,24 @@ CATALOG: tuple[CatalogEntry, ...] = (
         ),
         requires_tool=RequiresTool.VISION,
         refresh_class=RefreshClass.IMAGES,
+    ),
+    CatalogEntry(
+        key="flooring_materials",
+        label="Flooring materials",
+        category=CriterionCategory.FITTINGS,
+        domain=CriterionDomain.RENT,
+        value_schema=_controlled_set_schema(FLOORING_MATERIAL_VALUES),
+        default_options=[
+            _opt(MatchOp.CONTAINS_ANY, list(FLOORING_MATERIAL_VALUES), 0.0),
+        ],
+        extraction_hint=(
+            "Objective flooring materials inside the unit. Use only carpet, hardwood, "
+            "engineered_wood, laminate, vinyl, tile, concrete, or other; include every "
+            "explicitly stated material for the concrete target. Do not infer material "
+            "from appearance or use this field for condition/quality."
+        ),
+        requires_tool=None,
+        refresh_class=RefreshClass.LISTING_DETAILS,
     ),
     CatalogEntry(
         key="parking",
@@ -381,6 +460,48 @@ CATALOG: tuple[CatalogEntry, ...] = (
         extraction_hint="True if the unit includes a dishwasher.",
         requires_tool=None,
         refresh_class=RefreshClass.LISTING_DETAILS,
+    ),
+    _unit_presence_entry(
+        key="walk_in_closets",
+        label="Walk-in closets",
+        extraction_hint=(
+            "True only for an explicitly stated walk-in closet inside the unit; "
+            "large or ample closets alone are not sufficient."
+        ),
+    ),
+    _unit_presence_entry(
+        key="pantry",
+        label="Pantry",
+        extraction_hint=(
+            "True only when the unit explicitly includes a pantry; cabinet or walk-in "
+            "pantry details may remain in the evidence."
+        ),
+    ),
+    _unit_presence_entry(
+        key="disposal",
+        label="Garbage disposal",
+        extraction_hint="True only when the unit explicitly includes a kitchen garbage disposal.",
+    ),
+    _unit_presence_entry(
+        key="fireplace",
+        label="Fireplace",
+        extraction_hint=(
+            "True only for a fireplace inside the unit, not a clubhouse, lounge, "
+            "outdoor fireplace, or fire pit."
+        ),
+    ),
+    _unit_presence_entry(
+        key="ceiling_fans",
+        label="Ceiling fans",
+        extraction_hint="True only when the unit explicitly includes one or more ceiling fans.",
+    ),
+    _unit_presence_entry(
+        key="stainless_steel_appliances",
+        label="Stainless steel appliances",
+        extraction_hint=(
+            "True only when the unit's appliance finish is explicitly stainless steel; "
+            "this does not assert appliance age, condition, or quality."
+        ),
     ),
     CatalogEntry(
         key="min_lease_months",
@@ -754,14 +875,20 @@ _FLOOR_PLAN_KEYS = frozenset(
         "availability_date",
         "kitchen_quality",
         "flooring_quality",
+        "walk_in_closets",
+        "pantry",
+        "disposal",
+        "fireplace",
+        "ceiling_fans",
+        "stainless_steel_appliances",
         "cooling",
         "dishwasher",
         "unit_types",
     }
 )
-_MIXED_KEYS = frozenset({"in_unit_laundry", "parking", "min_lease_months"})
+_MIXED_KEYS = frozenset({"in_unit_laundry", "parking", "min_lease_months", "flooring_materials"})
 for _entry in CATALOG:
-    if _entry.key == "all_in_monthly":
+    if _entry.key in {"all_in_monthly", "estimated_move_in_cost"}:
         _entry.fact_scope = FactScope.COMPOSED
     elif _entry.key in _FLOOR_PLAN_KEYS:
         _entry.fact_scope = FactScope.FLOOR_PLAN
@@ -782,9 +909,28 @@ SCOPED_UNIT_CLAIM_KEYS = frozenset(
         "parking",
         "cooling",
         "dishwasher",
+        "walk_in_closets",
+        "pantry",
+        "disposal",
+        "fireplace",
+        "ceiling_fans",
+        "stainless_steel_appliances",
+        "flooring_materials",
     }
 )
-BOOLEAN_PRESENCE_KEYS = frozenset({"patio_balcony", "private_entry", "dishwasher"})
+PRESENCE_LIKE_KEYS = SCOPED_UNIT_CLAIM_KEYS - {"flooring_materials"}
+P3_SC6_KEYS = frozenset(
+    {
+        "walk_in_closets",
+        "pantry",
+        "disposal",
+        "fireplace",
+        "ceiling_fans",
+        "stainless_steel_appliances",
+    }
+)
+BOOLEAN_PRESENCE_KEYS = frozenset({"patio_balcony", "private_entry", "dishwasher"}) | P3_SC6_KEYS
+CONFIRMED_SCOPE_ONLY_KEYS = frozenset({"flooring_materials"})
 
 
 # --- seed.sql generation ---
