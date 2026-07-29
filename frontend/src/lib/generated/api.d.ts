@@ -507,6 +507,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/listings/{listing_id}/utilities/{utility}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Upsert Utility Override */
+        put: operations["upsert_utility_override_v1_listings__listing_id__utilities__utility__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/profile": {
         parameters: {
             query?: never;
@@ -519,6 +536,23 @@ export interface paths {
         /** Put Profile */
         put: operations["put_profile_v1_profile_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit product feedback */
+        post: operations["create_feedback_v1_feedback_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -637,8 +671,24 @@ export interface components {
             evidence_ref: string | null;
             /** Updated At */
             updated_at?: string | null;
+            /** Counted */
+            counted?: boolean | null;
+            /** Required */
+            required?: boolean | null;
+            /** Refundable */
+            refundable?: boolean | null;
+            /** Credited Amount */
+            credited_amount?: number | null;
         };
-        /** FeeEntryUpsert */
+        /**
+         * FeeEntryUpsert
+         * @description One fee-slot edit from the consolidated Cost & fees section (§9.5).
+         *
+         *     The three flags are tri-state and stay `None` unless a human decides:
+         *     `counted` NULL means the machine default (counted when an amount is known),
+         *     and `required`/`refundable` NULL mean the Source never said — which is what
+         *     keeps a move-in total honestly Incomplete instead of quietly optimistic.
+         */
         FeeEntryUpsert: {
             /** Amount */
             amount?: number | null;
@@ -646,6 +696,47 @@ export interface components {
             value_state: components["schemas"]["ValueState"];
             /** Evidence Ref */
             evidence_ref?: string | null;
+            /** Counted */
+            counted?: boolean | null;
+            /** Required */
+            required?: boolean | null;
+            /** Refundable */
+            refundable?: boolean | null;
+            /** Credited Amount */
+            credited_amount?: number | null;
+        };
+        /** FeedbackCreate */
+        FeedbackCreate: {
+            /**
+             * Category
+             * @enum {string}
+             */
+            category: "bug" | "feature" | "confusing" | "wrong_data" | "other";
+            /** Body */
+            body: string;
+            /** Route */
+            route?: string | null;
+            /** Hunt Id */
+            hunt_id?: string | null;
+            /** App Version */
+            app_version?: string | null;
+        };
+        /**
+         * FeedbackResponse
+         * @description Deliberately thin: the submitter cannot read feedback rows back, so the
+         *     response confirms receipt rather than echoing stored content.
+         */
+        FeedbackResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -860,6 +951,8 @@ export interface components {
             /** Finished At */
             finished_at?: string | null;
             checkpoint?: components["schemas"]["CheckpointPrompt"] | null;
+            /** Warnings */
+            warnings?: components["schemas"]["JobWarning"][];
         };
         /**
          * JobState
@@ -871,6 +964,25 @@ export interface components {
          * @enum {string}
          */
         JobType: "ingest" | "refresh" | "rescore" | "investigate";
+        /**
+         * JobWarning
+         * @description A non-fatal degradation the run wants shown on the task card (§10.8).
+         *
+         *     The run continued; nothing is parked and nothing failed. Mirrors the
+         *     worker's `StageWarning`.
+         */
+        JobWarning: {
+            /** Stage */
+            stage: string;
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /** Detail */
+            detail?: {
+                [key: string]: unknown;
+            };
+        };
         /** ListingCreate */
         ListingCreate: {
             /** Url */
@@ -1259,6 +1371,49 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** UtilityOverrideResponse */
+        UtilityOverrideResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Hunt Listing Id
+             * Format: uuid
+             */
+            hunt_listing_id: string;
+            /**
+             * Utility
+             * @enum {string}
+             */
+            utility: "electric" | "gas" | "water" | "sewer" | "cooling" | "heat" | "trash";
+            /** Included */
+            included: boolean | null;
+            /** Monthly Amount */
+            monthly_amount: number | null;
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** Note */
+            note: string | null;
+            /** Created At */
+            created_at?: string | null;
+        };
+        /**
+         * UtilityOverrideUpsert
+         * @description Both values null appends a revert tombstone for this utility.
+         */
+        UtilityOverrideUpsert: {
+            /** Included */
+            included: boolean | null;
+            /** Monthly Amount */
+            monthly_amount?: number | null;
+            /** Note */
+            note?: string | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -2563,6 +2718,42 @@ export interface operations {
             };
         };
     };
+    upsert_utility_override_v1_listings__listing_id__utilities__utility__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: string;
+                utility: "electric" | "gas" | "water" | "sewer" | "cooling" | "heat" | "trash";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UtilityOverrideUpsert"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UtilityOverrideResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_profile_v1_profile_get: {
         parameters: {
             query?: never;
@@ -2603,6 +2794,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_feedback_v1_feedback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeedbackCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackResponse"];
                 };
             };
             /** @description Validation Error */

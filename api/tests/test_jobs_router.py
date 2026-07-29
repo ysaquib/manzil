@@ -210,3 +210,53 @@ async def test_answer_checkpoint_requeues(client: AsyncClient, db_pool) -> None:
         assert stored["run_state"]["status"] == JobState.RUNNING.value
     finally:
         await db_pool.execute("delete from hunts where id = $1", hunt_id)
+
+
+@pytest.mark.asyncio
+async def test_job_exposes_stage_warnings(client: AsyncClient, db_pool) -> None:
+    """A degraded-but-successful run carries its warnings to the task card."""
+    hunt_id, listing_id = await _seed_hunt_with_listing(db_pool)
+    warnings = [
+        {
+            "stage": "IMAGE_CLASSIFY",
+            "code": "classification_missing",
+            "message": "The classifier skipped 2 of 30 photos.",
+            "detail": {"content_hashes": ["a" * 64, "b" * 64]},
+        }
+    ]
+    job_id = await db_pool.fetchval(
+        """
+        insert into jobs (hunt_id, hunt_listing_id, type, state, warnings)
+        values ($1, $2, 'ingest', 'done', $3::jsonb) returning id
+        """,
+        hunt_id,
+        listing_id,
+        json.dumps(warnings),
+    )
+    try:
+        resp = await client.get(f"/v1/hunts/{hunt_id}/jobs?state=done")
+        assert resp.status_code == 200
+        job = next(j for j in resp.json() if j["id"] == str(job_id))
+        assert job["warnings"] == warnings
+        assert job["error"] is None  # a warning is never a failure
+    finally:
+        await db_pool.execute("delete from hunts where id = $1", hunt_id)
+
+
+@pytest.mark.asyncio
+async def test_job_without_warnings_reads_as_an_empty_list(client: AsyncClient, db_pool) -> None:
+    hunt_id, listing_id = await _seed_hunt_with_listing(db_pool)
+    job_id = await db_pool.fetchval(
+        """
+        insert into jobs (hunt_id, hunt_listing_id, type, state)
+        values ($1, $2, 'ingest', 'done') returning id
+        """,
+        hunt_id,
+        listing_id,
+    )
+    try:
+        resp = await client.get(f"/v1/hunts/{hunt_id}/jobs?state=done")
+        job = next(j for j in resp.json() if j["id"] == str(job_id))
+        assert job["warnings"] == []
+    finally:
+        await db_pool.execute("delete from hunts where id = $1", hunt_id)

@@ -10,7 +10,21 @@ export type JobState = components["schemas"]["JobState"];
 export type JobType = components["schemas"]["JobType"];
 // started_at is intersected until the next `pnpm gen:api-types` run picks it
 // up from the API's JobResponse (added for the running-job elapsed timer).
-export type Job = components["schemas"]["JobResponse"] & { started_at?: string | null };
+// A non-fatal degradation a stage recorded (API `JobWarning`, worker
+// `StageWarning`): the run kept going, but it wants a human to know.
+export interface JobWarning {
+  stage: string;
+  code: string;
+  message: string;
+  detail?: Record<string, unknown>;
+}
+
+// started_at and warnings are intersected until the next `pnpm gen:api-types`
+// run picks them up from the API's JobResponse.
+export type Job = components["schemas"]["JobResponse"] & {
+  started_at?: string | null;
+  warnings?: JobWarning[];
+};
 
 export const ACTIVE_STATES = "queued,running,waiting_user";
 export const HISTORY_STATES = "done,failed,cancelled";

@@ -7,7 +7,20 @@ from typing import Any
 from uuid import UUID
 
 from manzil_shared.models import CheckpointPrompt, JobState, JobType
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+class JobWarning(BaseModel):
+    """A non-fatal degradation the run wants shown on the task card (§10.8).
+
+    The run continued; nothing is parked and nothing failed. Mirrors the
+    worker's `StageWarning`.
+    """
+
+    stage: str
+    code: str
+    message: str
+    detail: dict[str, Any] = Field(default_factory=dict)
 
 
 class JobResponse(BaseModel):
@@ -24,6 +37,7 @@ class JobResponse(BaseModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     checkpoint: CheckpointPrompt | None = None
+    warnings: list[JobWarning] = Field(default_factory=list)
 
 
 class CheckpointAnswer(BaseModel):
