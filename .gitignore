@@ -56,18 +56,24 @@ worker/tests/fixtures/recorded/*
 # (e2e_listing / success_text / injection_listing; validate+extract+verify each).
 # These are repo content, so committing them is repo-safe (DESIGN §20 v2.8
 # excludes only corpus-keyed artifacts). Per-file, keyed by content hash.
-# The verify recordings re-keyed on the P0-14 pin (extract/verify →
-# gemini-3-flash-preview, DESIGN §20 2026-07-21); validate/extract stay on the
-# haiku baseline (extract is frozen via _SEED_EXTRACT_RECORDINGS regardless).
-!worker/tests/fixtures/recorded/validate--66a28376a741c2d0.json
-!worker/tests/fixtures/recorded/validate--732bb26edb1bff20.json
-!worker/tests/fixtures/recorded/validate--b1649475d00045fd.json
+# Re-keyed 2026-07-28 when WORKHORSE_MODEL moved to gemini-3-flash-preview:
+# VALIDATE joined EXTRACT/VERIFY on the Gemini pin, which re-hashes every seed
+# recording. The three `extract--{5c2ab4,e4eff3,2ffad8}` files below are the
+# older haiku-keyed ones `_SEED_EXTRACT_RECORDINGS` still loads *by filename*
+# to pin legacy seed EXTRACT output in tests — they are not replayed by hash.
+!worker/tests/fixtures/recorded/validate--6286d09083a5962c.json
+!worker/tests/fixtures/recorded/validate--6ab9f7d8377c6954.json
+!worker/tests/fixtures/recorded/validate--dda874d8f5db06ee.json
+!worker/tests/fixtures/recorded/extract--33e30ecc6fba22ad.json
+!worker/tests/fixtures/recorded/extract--6cf6960a7fed2628.json
+!worker/tests/fixtures/recorded/extract--ca4dcd118e550d26.json
+!worker/tests/fixtures/recorded/verify--620a92c4036818de.json
+!worker/tests/fixtures/recorded/verify--a0d0b1a2d399cda0.json
+!worker/tests/fixtures/recorded/verify--d33440fb273381e7.json
+# Legacy filename-pinned seed EXTRACT outputs (see above).
 !worker/tests/fixtures/recorded/extract--5c2ab4abc7ec5991.json
 !worker/tests/fixtures/recorded/extract--e4eff37208aec8e0.json
 !worker/tests/fixtures/recorded/extract--2ffad86017282b67.json
-!worker/tests/fixtures/recorded/verify--232fefdcdc5f2e4b.json
-!worker/tests/fixtures/recorded/verify--9116bb2de41061c8.json
-!worker/tests/fixtures/recorded/verify--b98cd1ca328c4b82.json
 
 # Bench reports are keyed to the gitignored local eval kit (corpus + labels)
 # and carry page evidence quotes — local artifacts, never repo content.
