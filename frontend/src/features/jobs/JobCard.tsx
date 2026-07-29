@@ -8,6 +8,7 @@ import { IconPlayerStopFilled } from "@tabler/icons-react";
 import { CheckpointPromptCard } from "./CheckpointPromptCard";
 import { ElapsedTimer } from "./ElapsedTimer";
 import { JobCardHeader } from "./JobCardHeader";
+import { JobWarnings } from "./JobWarnings";
 import { PipelineTrack } from "./PipelineTrack";
 import { phasesForJob } from "./pipelinePhases";
 import type { Job, JobState } from "./api";
@@ -74,6 +75,7 @@ export function JobCard({
             {job.error}
           </Text>
         )}
+        <JobWarnings warnings={job.warnings} />
         {job.state === "waiting_user" && job.checkpoint && (
           <Paper withBorder p="sm" style={{ backgroundColor: "var(--mantine-color-yellow-light)" }}>
             <CheckpointPromptCard prompt={job.checkpoint} onAnswer={onAnswer} answering={busy} />

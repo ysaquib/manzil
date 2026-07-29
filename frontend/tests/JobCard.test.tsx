@@ -114,3 +114,28 @@ describe("checkpoint answering", () => {
     expect(onAnswer).toHaveBeenCalledWith("other", "check site");
   });
 });
+
+describe("run warnings", () => {
+  it("shows a non-fatal warning without dressing it up as a failure", () => {
+    renderCard(
+      job({
+        warnings: [
+          {
+            stage: "IMAGE_CLASSIFY",
+            code: "classification_missing",
+            message: "The classifier skipped 2 of 30 photos.",
+          },
+        ],
+      }),
+    );
+    expect(screen.getByText("The classifier skipped 2 of 30 photos.")).toBeInTheDocument();
+    // Still a live run: the warning changed nothing about the job's state.
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+  });
+
+  it("renders nothing when a run is clean", () => {
+    const { container } = renderCard(job());
+    expect(container.querySelectorAll(".tabler-icon-alert-triangle")).toHaveLength(0);
+  });
+});
