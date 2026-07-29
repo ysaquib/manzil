@@ -55,6 +55,10 @@ async def upsert_fee(
                 "value_state": body.value_state.value,
                 "entered_by": user_id,
                 "evidence_ref": body.evidence_ref,
+                "counted": body.counted,
+                "required": body.required,
+                "refundable": body.refundable,
+                "credited_amount": body.credited_amount,
                 # Bump on re-entry: the INSERT default only fires on first insert,
                 # so an upsert of an existing (hunt_listing_id, fee_slot) must set
                 # updated_at explicitly or it would freeze at the original time.
