@@ -39,9 +39,9 @@ from typing import Any, Literal
 
 CONSERVATIVE = "conservative"
 
-# Utilities the composition estimates when not included (§9.5). Internet/cable
-# stay inclusion-flags only — every household pays them regardless of listing,
-# so they add nothing to comparability (§20 2026-07-18).
+# Utilities the composition estimates when not included (§9.5). Cooling is an
+# inclusion flag only because cooling usage is already inside the electric
+# baseline; internet/cable likewise add nothing to comparability.
 _PER_PERSON_UTILITIES = frozenset({"water", "sewer"})
 
 # fee_checklist slots the extracted mandatory fees may fill (pet slots are
@@ -133,9 +133,7 @@ class AllInComposition:
 
     @property
     def estimated_total(self) -> float:
-        return round(
-            sum(c.amount for c in self.components if c.tag == "estimated" and c.amount), 2
-        )
+        return round(sum(c.amount for c in self.components if c.tag == "estimated" and c.amount), 2)
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -160,27 +158,46 @@ def _utility_components(
     occupants: int,
     beds: int,
     baseline_scope_note: str | None = None,
+    utility_amounts: dict[str, float] | None = None,
 ) -> list[Component]:
     """The estimated/unknown utility components for one heating variant
     ('gas' | 'electric'). A needed utility missing from `baselines` yields an
     unknown component (strict branch)."""
+    amount_overrides = utility_amounts or {}
     if heating_variant == "gas":
-        needed = [("electric", "electric"), ("gas", "gas_heat")]
+        needed = [("electric", "electric")]
+        needed.append(("heat", "manual") if "heat" in amount_overrides else ("gas", "gas_heat"))
     else:
         # Electric heat: one heating-inclusive electric figure — unless "heat"
-        # is included, which covers heating but leaves base electric owed.
-        needed = [("electric", "electric" if "heat" in included else "electric_heat")]
+        # is included or separately overridden, either of which leaves base
+        # electric as its own component.
+        needed = [
+            (
+                "electric",
+                "electric" if "heat" in included or "heat" in amount_overrides else "electric_heat",
+            )
+        ]
+        if "heat" in amount_overrides:
+            needed.append(("heat", "manual"))
     needed += [("water", "water"), ("sewer", "sewer"), ("trash", "trash")]
 
     out: list[Component] = []
     for kind, baseline_key in needed:
         if kind in included or (kind == "gas" and "heat" in included):
             continue
+        if kind in amount_overrides:
+            out.append(
+                Component(
+                    name=kind,
+                    amount=round(amount_overrides[kind], 2),
+                    tag="actual",
+                    note="manual utility amount",
+                )
+            )
+            continue
         row = baselines.get(baseline_key)
         if row is None:
-            out.append(
-                Component(name=kind, amount=None, tag="unknown", note="no baseline figure")
-            )
+            out.append(Component(name=kind, amount=None, tag="unknown", note="no baseline figure"))
             continue
         amount = row[0] if mode == CONSERVATIVE else row[1]
         note = "winter-weighted" if baseline_key in ("electric_heat", "gas_heat") else None
@@ -204,6 +221,8 @@ def compose_all_in(
     occupants: int = 1,
     beds: int = 1,
     baseline_scope_note: str | None = None,
+    utility_amounts: dict[str, float] | None = None,
+    inclusions_unverified: bool = False,
 ) -> AllInComposition:
     """The full §9.5 composition for one floor plan. `baselines` maps utility →
     (monthly_high, monthly_median) for this plan's beds bucket; None means the
@@ -223,6 +242,8 @@ def compose_all_in(
         included_set: set[str] = set()
     else:
         included_set = set(included)
+    if inclusions_unverified and "fees_unverified" not in badges:
+        badges.append("fees_unverified")
     # An actual billed fee beats a baseline estimate: a water/sewer billing fee
     # or valet-trash fee IS that utility's cost — estimating it again would
     # double-count (§20 2026-07-18).
@@ -232,7 +253,13 @@ def compose_all_in(
 
     if baselines is None:
         badges.append("utilities_not_estimated")
-        utility_components: list[Component] = []
+        utility_components = [
+            Component(
+                name=name, amount=round(amount, 2), tag="actual", note="manual utility amount"
+            )
+            for name, amount in (utility_amounts or {}).items()
+            if name not in included_set and name != "cooling"
+        ]
     elif heating in ("gas", "electric"):
         utility_components = _utility_components(
             heating,
@@ -242,6 +269,7 @@ def compose_all_in(
             occupants=occupants,
             beds=beds,
             baseline_scope_note=baseline_scope_note,
+            utility_amounts=utility_amounts,
         )
     else:
         # Unknown heating: the worse of the two variants (§9.5). A variant with
@@ -255,15 +283,14 @@ def compose_all_in(
                 occupants=occupants,
                 beds=beds,
                 baseline_scope_note=baseline_scope_note,
+                utility_amounts=utility_amounts,
             )
             for v in ("gas", "electric")
         ]
         computable = [v for v in variants if all(c.amount is not None for c in v)]
         variant_decided = False
         if len(computable) == len(variants):
-            utility_components = max(
-                variants, key=lambda v: sum(c.amount or 0.0 for c in v)
-            )
+            utility_components = max(variants, key=lambda v: sum(c.amount or 0.0 for c in v))
             variant_decided = True
         elif not computable:
             utility_components = variants[0]  # both carry unknowns; either reports them

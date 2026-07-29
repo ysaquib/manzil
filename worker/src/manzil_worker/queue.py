@@ -1098,11 +1098,14 @@ async def _persist_ingest_results(
     await conn.execute(
         """
         update hunt_listings
-        set unavailable_at = null, all_in_components = $2::jsonb
+        set unavailable_at = null,
+            all_in_components = $2::jsonb,
+            move_in_components = $3::jsonb
         where id = $1
         """,
         hunt_listing_id,
         json.dumps(state.all_in_components) if state.all_in_components is not None else None,
+        json.dumps(state.move_in_components) if state.move_in_components is not None else None,
     )
     # strict=True: SCORE guarantees one PlanScore per scorable plan, so any length
     # mismatch is a real filter/order drift and must surface, not truncate.
@@ -1113,13 +1116,14 @@ async def _persist_ingest_results(
             """
             insert into scores
                 (hunt_listing_id, floor_plan_id, total, breakdown, rubric_version,
-                 all_in_components)
-            values ($1, $2, $3, $4::jsonb, $5, $6::jsonb)
+                 all_in_components, move_in_components)
+            values ($1, $2, $3, $4::jsonb, $5, $6::jsonb, $7::jsonb)
             on conflict (hunt_listing_id, floor_plan_id) do update set
                 total = excluded.total,
                 breakdown = excluded.breakdown,
                 rubric_version = excluded.rubric_version,
                 all_in_components = excluded.all_in_components,
+                move_in_components = excluded.move_in_components,
                 computed_at = now()
             """,
             hunt_listing_id,
@@ -1129,6 +1133,9 @@ async def _persist_ingest_results(
             rubric_version,
             json.dumps(plan_score.all_in_components)
             if plan_score.all_in_components is not None
+            else None,
+            json.dumps(plan_score.move_in_components)
+            if plan_score.move_in_components is not None
             else None,
         )
 

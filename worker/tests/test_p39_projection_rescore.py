@@ -351,3 +351,110 @@ async def test_rescore_recomposes_and_mode_flip_changes_total(pg_pool: asyncpg.P
         assert entry["value"] == 1780.0
     finally:
         await _cleanup(pg_pool, hunt_id, property_id, metro)
+
+
+async def test_rescore_applies_and_reverts_individual_utility_corrections(
+    pg_pool: asyncpg.Pool,
+) -> None:
+    metro = f"UtilityOverrideVille-{uuid4().hex[:6]}"
+    hunt_id, property_id, listing_id = await _seed(pg_pool, city=metro)
+    rubric = [
+        RubricCriterion(
+            hunt_id=hunt_id,
+            catalog_key="all_in_monthly",
+            options=[
+                RubricOption(match=OptionMatch(op=MatchOp.LT, value=2500), delta=0.5),
+            ],
+            unknown_delta=-1.0,
+            position=0,
+        )
+    ]
+    try:
+        async with pg_pool.acquire() as conn, conn.transaction():
+            await _persist_ingest_results(
+                conn,
+                hunt_listing_id=listing_id,
+                property_id=property_id,
+                rubric_version=1,
+                state=_state(),
+            )
+        # A combined extracted water/sewer charge must yield to a manual
+        # per-utility correction instead of appearing alongside it.
+        await pg_pool.execute(
+            """
+            insert into fee_checklist
+                (hunt_listing_id, fee_slot, amount, value_state)
+            values ($1, 'water_sewer', 60, 'extracted')
+            """,
+            listing_id,
+        )
+        await pg_pool.executemany(
+            """
+            insert into utility_overrides
+                (hunt_listing_id, utility, included, monthly_amount, user_id)
+            values ($1, $2, $3, $4, $5)
+            """,
+            [
+                (listing_id, "water", True, None, uuid4()),
+                (listing_id, "electric", False, 92, uuid4()),
+            ],
+        )
+        async with pg_pool.acquire() as conn, conn.transaction():
+            await rescore_hunt(
+                conn,
+                hunt_id=hunt_id,
+                rubric=rubric,
+                rubric_version=2,
+                min_confidence=Confidence.MEDIUM,
+            )
+        corrected = json.loads(
+            await pg_pool.fetchval(
+                "select all_in_components from hunt_listings where id = $1",
+                listing_id,
+            )
+        )
+        assert corrected["total"] == 1822.0
+        assert not any(component["name"] == "water_sewer" for component in corrected["components"])
+        electric = next(
+            component for component in corrected["components"] if component["name"] == "electric"
+        )
+        assert electric["amount"] == 92.0 and electric["tag"] == "actual"
+
+        # Reverting both utilities restores the extracted combined charge and
+        # the baseline electric figure without touching either history.
+        await pg_pool.executemany(
+            """
+            insert into utility_overrides
+                (hunt_listing_id, utility, included, monthly_amount, user_id)
+            values ($1, $2, null, null, $3)
+            """,
+            [
+                (listing_id, "water", uuid4()),
+                (listing_id, "electric", uuid4()),
+            ],
+        )
+        async with pg_pool.acquire() as conn, conn.transaction():
+            await rescore_hunt(
+                conn,
+                hunt_id=hunt_id,
+                rubric=rubric,
+                rubric_version=3,
+                min_confidence=Confidence.MEDIUM,
+            )
+        reverted = json.loads(
+            await pg_pool.fetchval(
+                "select all_in_components from hunt_listings where id = $1",
+                listing_id,
+            )
+        )
+        assert reverted["total"] == 1865.0
+        assert any(component["name"] == "water_sewer" for component in reverted["components"])
+        assert (
+            await pg_pool.fetchval(
+                "select count(*) from utility_overrides where hunt_listing_id = $1",
+                listing_id,
+            )
+            == 4
+        )
+    finally:
+        await _cleanup(pg_pool, hunt_id, property_id, metro)
