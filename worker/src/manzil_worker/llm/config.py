@@ -19,19 +19,26 @@ from __future__ import annotations
 import os
 
 # Baseline pins (§11.2) as OpenRouter slugs.
-WORKHORSE_MODEL = "anthropic/claude-haiku-4.5"
-P3_6_MODEL = "google/gemini-3-flash-preview"
+#
+# 2026-07-28 (DESIGN §20 v3.23): the workhorse tier collapsed onto one model.
+# EXTRACT/VERIFY had been on Gemini since P0-14 while everything else stayed on
+# `anthropic/claude-haiku-4.5`; the Owner moved the remaining workhorse stages
+# across. DISCOVER (below) and the taste tier are deliberately exempt. This is a
+# pin decision, not a bench result — do not change it without bench evidence,
+# and remember that every recording re-keys when it moves.
+WORKHORSE_MODEL = "google/gemini-3-flash-preview"
 TASTE_MODEL = "anthropic/claude-sonnet-4.6"
 
 # P0-14 model-pin (DESIGN §20 2026-07-21). The 10-listing bench (P0-13) ranked
 # gemini-3-flash-preview first for the EXTRACT/VERIFY pair: criterion accuracy
 # 0.904 vs the haiku baseline's 0.862, tied gate accuracy (1.0), zero failures,
-# and 63% cheaper. Scope is the benched pair ONLY — the other workhorse stages
-# stay on WORKHORSE_MODEL because the bench never measured them, and this model
-# trades a higher evidence-flag rate (0.20 vs 0.03) for that accuracy/cost win.
+# and 63% cheaper. That bench measured the pair ONLY; this model trades a higher
+# evidence-flag rate (0.20 vs 0.03) for the accuracy/cost win.
 #
-# P3-6's Owner waiver deliberately reuses the same Gemini pin.
-EXTRACT_VERIFY_MODEL = P3_6_MODEL
+# P3-6's Owner waiver reuses the same Gemini pin, and since v3.23 the workhorse
+# tier does too — the alias is kept because the bench evidence above is about
+# this pair specifically, and a future split must not have to rediscover that.
+EXTRACT_VERIFY_MODEL = WORKHORSE_MODEL
 
 # 2026-07-22: claude-haiku-4.5 is now the default for discover since trying to
 # use gemini-3-flash-preview for discover was causing issues with the web search
@@ -46,11 +53,11 @@ STAGE_MODELS: dict[str, str] = {
     "validate": WORKHORSE_MODEL,
     "extract": EXTRACT_VERIFY_MODEL,  # P0-14 pin (DESIGN §20 2026-07-21)
     "verify": EXTRACT_VERIFY_MODEL,  # P0-14 pin; check 4 only, checks 1-3 are code
-    "reconcile_equivalence": P3_6_MODEL,
+    "reconcile_equivalence": WORKHORSE_MODEL,
     "custom_match": WORKHORSE_MODEL,
     "enrich_reviews": WORKHORSE_MODEL,  # P3-8 ratings stage 1 review synthesis
     "utility_baselines": WORKHORSE_MODEL,  # P3-9 metro baselines pass (scheduler tick)
-    "plan_assist": P3_6_MODEL,
+    "plan_assist": WORKHORSE_MODEL,
     # Owner-selected shadow classifier pin (DESIGN §20 2026-07-28).
     "image_classify": "google/gemini-3-flash-preview",
     # taste tier
