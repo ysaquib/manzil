@@ -4,7 +4,32 @@
 .viewport { border-radius: var(--mantine-radius-md); }
 .primaryBtn { display: block; width: 100%; cursor: zoom-in; }
 .primary { width: 100%; aspect-ratio: 16 / 10; object-fit: cover;}
-.assessment { position: absolute; left: 10px; bottom: 10px; padding: 5px 8px; border-radius: var(--mantine-radius-sm); background: rgba(0,0,0,.62); pointer-events: none; }
+.assessment {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 3px 7px;
+  border-radius: var(--mantine-radius-sm);
+  background: rgba(0, 0, 0, 0.26);
+  pointer-events: none;
+  max-width: calc(100% - 4.5rem);
+}
+
+.assessmentTag {
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  line-height: 1.25;
+  color: rgba(255, 255, 255, 0.72);
+  text-transform: capitalize;
+}
+
+.assessmentHint {
+  font-size: 0.625rem;
+  font-weight: 400;
+  line-height: 1.25;
+  color: rgba(255, 255, 255, 0.48);
+}
 .control { background: rgba(0, 0, 0, .42); color: var(--mantine-color-white); border: 0; box-shadow: none; opacity: 1; }
 .control:hover { background: rgba(0, 0, 0, .58); }
 .counter { position: absolute; right: 10px; bottom: 10px; font-size: 11.5px; font-weight: 600; color: var(--mantine-color-white); background: rgba(0,0,0,.42); padding: 3px 9px; border-radius: 999px; z-index: 1; }

@@ -27,6 +27,8 @@ import classes from "./CriterionBreakdown.module.css";
 import drawer from "./ListingDetailDrawer.module.css";
 import type { Extraction, Override, ResolutionCandidate } from "./types";
 import type { CatalogEntry } from "../rubric/api";
+import { memberDisplayName } from "../collaboration/memberDisplay";
+import type { HuntMember } from "../collaboration/api";
 
 function applicabilityLabel(extraction: Extraction): string | null {
   if (extraction.target_scope === "floor_plan") return "this floor plan";
@@ -165,6 +167,7 @@ export interface CriterionBreakdownProps {
   overrides: Override[];
   floorPlanId: string | null;
   isMobile: boolean;
+  members?: HuntMember[];
 }
 
 export function CriterionBreakdown({
@@ -174,6 +177,7 @@ export function CriterionBreakdown({
   overrides,
   floorPlanId,
   isMobile,
+  members = [],
 }: CriterionBreakdownProps) {
   const catalogByKey = new Map(catalog.map((entry) => [entry.key, entry]));
   // Latest-per-key, null tombstones excluded (§9.6) — a reverted criterion no
@@ -246,6 +250,11 @@ export function CriterionBreakdown({
               extraction={extraction}
               displayValue={displayVal}
               savedOverride={savedOverride}
+              overrideBy={
+                savedOverrideRow
+                  ? memberDisplayName(members, savedOverrideRow.user_id)
+                  : undefined
+              }
               isPending={isPending}
               isMobile={isMobile}
               floorPlanId={floorPlanId}
@@ -314,6 +323,7 @@ function CriterionRow({
   extraction,
   displayValue: value,
   savedOverride,
+  overrideBy,
   isPending,
   isMobile,
   floorPlanId,
@@ -324,6 +334,7 @@ function CriterionRow({
   extraction: Extraction | undefined;
   displayValue: unknown;
   savedOverride: boolean;
+  overrideBy?: string;
   isPending: boolean;
   isMobile: boolean;
   floorPlanId: string | null;
@@ -338,7 +349,11 @@ function CriterionRow({
     <Box className={classes.crit}>
       <Group gap={6} wrap="nowrap" className={classes.nameCell}>
         {showOverrideDot && (
-          <Tooltip label="Value overridden">
+          <Tooltip
+            label={
+              overrideBy ? `Overridden manually by ${overrideBy}` : "Value overridden manually"
+            }
+          >
             <Box component="span" className={classes.dot} aria-label="overridden" />
           </Tooltip>
         )}

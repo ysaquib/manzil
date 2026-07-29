@@ -165,8 +165,8 @@ describe("CriterionBreakdown", () => {
   it("renders criteria rows with catalog labels and deltas", () => {
     renderBreakdown(normalBreakdown);
     expect(screen.getByText("Number of bedrooms")).toBeInTheDocument();
-    expect(screen.getByText("+0.5")).toBeInTheDocument();
-    expect(screen.getByText("-1.0")).toBeInTheDocument();
+    expect(screen.getByText("+0.50")).toBeInTheDocument();
+    expect(screen.getByText("-1.00")).toBeInTheDocument();
     expect(screen.getByText("unknown")).toBeInTheDocument();
   });
 
@@ -244,7 +244,7 @@ describe("CriterionBreakdown", () => {
     renderBreakdown(breakdown);
     expect(screen.getByText("Baseline")).toBeInTheDocument();
     expect(screen.getByText("10.0")).toBeInTheDocument();
-    expect(screen.getByText("+1.5")).toBeInTheDocument();
+    expect(screen.getByText("+1.50")).toBeInTheDocument();
     expect(screen.getByText(/12\.5/)).toBeInTheDocument();
     expect(screen.getByText("/ 15")).toBeInTheDocument();
   });

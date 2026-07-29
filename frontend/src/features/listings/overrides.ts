@@ -17,6 +17,13 @@ const SCOPED_UNIT_CRITERIA = new Set([
   "cooling",
   "dishwasher",
   "heating",
+  "walk_in_closets",
+  "pantry",
+  "disposal",
+  "fireplace",
+  "ceiling_fans",
+  "stainless_steel_appliances",
+  "flooring_materials",
 ]);
 
 /** Latest non-tombstone override per criterion key. `overrides` must be
