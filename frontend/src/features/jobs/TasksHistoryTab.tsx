@@ -7,6 +7,7 @@ import { useMembers } from "../collaboration/api";
 import { useListings } from "../listings/api";
 import classes from "./HistoryCard.module.css";
 import { JobCardHeader } from "./JobCardHeader";
+import { JobWarnings } from "./JobWarnings";
 import { PipelineTrack } from "./PipelineTrack";
 import { phasesForJob } from "./pipelinePhases";
 import { useHistoryJobs, useJobEvents, useRetryJob, type JobEvent, type Job } from "./api";
@@ -102,6 +103,7 @@ function HistoryCard({ job, listingName, memberName, onRetry, retrying }: {
         <EventTimeline jobId={job.id} expanded={expanded} />
       </PipelineTrack>
       {job.error && <div className={classes.error}>{job.error}</div>}
+      <JobWarnings warnings={job.warnings} />
       {escalation && (
         <Text size="xs" c="dimmed">
           {escalation}
