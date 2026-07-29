@@ -1,4 +1,5 @@
-import { Badge, Tooltip } from "@mantine/core";
+import { Badge, Box, Tooltip } from "@mantine/core";
+import { IconAlertTriangle } from "@tabler/icons-react";
 
 import type { SingleSourceReason } from "../../features/listings/types";
 
@@ -41,9 +42,13 @@ export function SingleSourceBadge({ reason }: { reason: SingleSourceReason }) {
 export function ProblematicBadge() {
   return (
     <Tooltip label="Decision-relevant Sources still disagree; review the evidence or waiting task.">
-      <Badge size="xs" variant="light" color="red">
-        Problematic
-      </Badge>
+      <Box c="yellow.6" display="flex" style={{ flexShrink: 0 }}>
+        <IconAlertTriangle
+          size={14}
+          stroke={1.5}
+          aria-label="Problematic"
+        />
+      </Box>
     </Tooltip>
   );
 }

@@ -1,9 +1,19 @@
-import { ColorInput, Group, Select, Stack } from "@mantine/core";
+// Member color picker (P3-16 reshape, DESIGN §20 v3.27): a row of swatches
+// rather than a dropdown.
+//
+// A color is chosen by looking at it, so the six palette tokens are all visible
+// at once — a Select hid every option behind a click and named them in words
+// ("moss", "ochre") that only mean anything once you have already seen the
+// color. The seventh swatch opens the custom picker and previews the custom
+// color it would apply.
+import { ColorInput, Group, Stack, Text, UnstyledButton } from "@mantine/core";
+import { IconPencil } from "@tabler/icons-react";
+import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
 
 import { MEMBER_COLOR_TOKENS, memberColor } from "./memberColors";
+import classes from "./MemberColorControl.module.css";
 
-const CUSTOM_SENTINEL = "__custom__";
 const DEFAULT_CUSTOM = "#5C5CAA";
 const HEX_RE = /^#[0-9A-Fa-f]{6}$/;
 
@@ -38,47 +48,54 @@ export function MemberColorControl({
     }
   }, [value]);
 
-  const selectValue = customSelected || (value !== null && isHexColor(value)) ? CUSTOM_SENTINEL : value;
+  // One source of truth for "the custom picker is in play". The effect above
+  // keeps it in step with an incoming hex value, and the initial state derives
+  // from it — so deriving a second answer from `value` here would only
+  // disagree in the moment between clicking a token and the parent's re-render.
+  const usingCustom = customSelected;
 
   return (
-    <Stack gap="sm">
-      <Select
-        label={label}
-        placeholder="Choose a color"
-        data={[
-          ...MEMBER_COLOR_TOKENS.map((token) => ({ value: token, label: token })),
-          { value: CUSTOM_SENTINEL, label: "Custom color" },
-        ]}
-        value={selectValue}
-        onChange={(next) => {
-          if (!next) return;
-          if (next === CUSTOM_SENTINEL) {
-            setCustomSelected(true);
-            return;
-          }
-          setCustomSelected(false);
-          onChange(next);
-        }}
-        allowDeselect={false}
-        renderOption={({ option }) => (
-          <Group gap="xs">
-            <span
-              style={{
-                width: 10,
-                height: 10,
-                borderRadius: "50%",
-                background:
-                  option.value === CUSTOM_SENTINEL
-                    ? customColor
-                    : memberColor(option.value),
-                display: "inline-block",
+    <Stack gap="xs">
+      {label && (
+        <Text size="sm" fw={500}>
+          {label}
+        </Text>
+      )}
+      <Group gap="xs" role="radiogroup" aria-label={label || "Color"}>
+        {MEMBER_COLOR_TOKENS.map((token) => {
+          const selected = !usingCustom && value === token;
+          return (
+            <UnstyledButton
+              key={token}
+              role="radio"
+              aria-label={token}
+              aria-checked={selected}
+              data-selected={selected || undefined}
+              className={classes.swatch}
+              style={{ "--swatch": memberColor(token) } as CSSProperties}
+              disabled={loading}
+              onClick={() => {
+                setCustomSelected(false);
+                onChange(token);
               }}
             />
-            {option.label}
-          </Group>
-        )}
-      />
-      {customSelected && (
+          );
+        })}
+        <UnstyledButton
+          role="radio"
+          aria-label="Pick a custom color"
+          aria-checked={usingCustom}
+          data-selected={usingCustom || undefined}
+          className={`${classes.swatch} ${classes.custom}`}
+          style={{ "--swatch": customColor } as CSSProperties}
+          disabled={loading}
+          onClick={() => setCustomSelected(true)}
+        >
+          <IconPencil size={13} stroke={2} className={classes.customIcon} />
+        </UnstyledButton>
+      </Group>
+
+      {usingCustom && (
         <ColorInput
           label="Custom color"
           value={customColor}

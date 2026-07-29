@@ -1,0 +1,53 @@
+/* Palette swatches (P3-16). Selection is a ring rather than a border, so the
+   swatch itself never changes size and the row cannot shift as you click along
+   it. The gap ring uses the body color so it reads on both schemes. */
+
+.swatch {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  background-color: var(--swatch);
+  display: grid;
+  place-items: center;
+  flex: none;
+  transition: box-shadow 140ms ease, transform 140ms ease;
+}
+
+.swatch:hover:not(:disabled) {
+  transform: scale(1.08);
+}
+
+.swatch:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.swatch[data-selected] {
+  box-shadow:
+    0 0 0 2px var(--mantine-color-body),
+    0 0 0 4px var(--mantine-color-text);
+}
+
+.swatch:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 3px;
+}
+
+/* Dashed edge marks the one swatch that opens a picker instead of applying a
+   color directly. */
+.custom {
+  border: 1px dashed var(--mantine-color-default-border);
+}
+
+.customIcon {
+  color: var(--mantine-color-white);
+  opacity: 0.9;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .swatch,
+  .swatch:hover:not(:disabled) {
+    transition: none;
+    transform: none;
+  }
+}
