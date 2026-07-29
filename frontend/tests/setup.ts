@@ -42,6 +42,19 @@ if (typeof window !== "undefined") {
   window.HTMLElement.prototype.scrollIntoView =
     window.HTMLElement.prototype.scrollIntoView || (() => {});
 
+  // jsdom ships no FontFaceSet. Mantine's autosize Textarea (the feedback form)
+  // subscribes to `loadingdone` so it can re-measure once webfonts land.
+  if (!document.fonts) {
+    Object.defineProperty(document, "fonts", {
+      value: {
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        ready: Promise.resolve(),
+      },
+      configurable: true,
+    });
+  }
+
   // jsdom implements neither scroll method; the drawer scrolls its body back
   // to the top when the selected listing changes.
   window.HTMLElement.prototype.scrollTo =

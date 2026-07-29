@@ -29,10 +29,11 @@ import { useParams } from "react-router-dom";
 import { PageHeader } from "../../components/PageHeader";
 import { useListings, useUnitGroupStates } from "../listings/api";
 import { useOverviewFilters } from "../listings/filterState";
-import { ListingDetailDrawer, type DrawerSelection } from "../listings/ListingDetailDrawer";
+import { ListingDetailDrawer } from "../listings/ListingDetailDrawer";
+import { useDrawerRoute } from "../listings/drawerRoute";
 import { OverviewFilterBar } from "../listings/OverviewFilterBar";
 import {
-  applyOverviewFilters,
+  analyzeOverviewFilters,
   buildRows,
   formatRange,
   sortRows,
@@ -62,9 +63,13 @@ export function HuntMapPage() {
     () => buildRows(listings ?? [], unitGroupStates),
     [listings, unitGroupStates],
   );
-  const rows = useMemo(
-    () => sortRows(applyOverviewFilters(allRows, filters), { key: "score", dir: "desc" }),
+  const filterResult = useMemo(
+    () => analyzeOverviewFilters(allRows, filters),
     [allRows, filters],
+  );
+  const rows = useMemo(
+    () => sortRows(filterResult.rows, { key: "score", dir: "desc" }),
+    [filterResult.rows],
   );
   const { points, omissions } = useMemo(() => buildMapPoints(rows), [rows]);
 
@@ -77,14 +82,17 @@ export function HuntMapPage() {
   );
 
   const [picker, setPicker] = useState<MapPoint | null>(null);
-  const [selection, setSelection] = useState<DrawerSelection | null>(null);
-  const [drawerOpened, setDrawerOpened] = useState(false);
+  // Drawer state is URL state (P3-16) — a pin opened from the map produces the
+  // same shareable link the Overview does, filters included.
+  const drawer = useDrawerRoute();
 
-  const openDrawer = useCallback((listingId: string, groupKey: string | null) => {
-    setPicker(null);
-    setSelection({ listingId, groupKey });
-    setDrawerOpened(true);
-  }, []);
+  const openDrawer = useCallback(
+    (listingId: string, groupKey: string | null) => {
+      setPicker(null);
+      drawer.open(listingId, groupKey);
+    },
+    [drawer],
+  );
 
   const onPinClick = useCallback(
     (point: MapPoint) => {
@@ -104,6 +112,7 @@ export function HuntMapPage() {
         cities={cities}
         visibleCount={rows.length}
         totalCount={allRows.length}
+        manualPinAlternateMatchCount={filterResult.manualPinAlternateMatchCount}
         sharedFilters={sharedFilters}
         canPublish={canPublish}
         onPublish={publish}
@@ -125,10 +134,11 @@ export function HuntMapPage() {
 
       <ListingDetailDrawer
         huntId={huntId}
-        selection={selection}
-        opened={drawerOpened}
-        onClose={() => setDrawerOpened(false)}
-        onExited={() => setSelection(null)}
+        selection={drawer.renderSelection}
+        opened={drawer.opened}
+        onClose={drawer.close}
+        onExited={drawer.onExited}
+        filters={filters}
       />
     </Stack>
   );
