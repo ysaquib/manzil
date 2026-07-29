@@ -25,6 +25,13 @@ EXPECTED_KEYS = {
     "parking",
     "cooling",
     "dishwasher",
+    "walk_in_closets",
+    "pantry",
+    "disposal",
+    "fireplace",
+    "ceiling_fans",
+    "stainless_steel_appliances",
+    "flooring_materials",
     "min_lease_months",
     "pool",
     "fitness_center",
@@ -342,6 +349,41 @@ def test_scoped_claim_requires_valid_source_local_target() -> None:
     payload["dishwasher"][0]["floor_plan_refs"] = ["invented"]
     with pytest.raises(ValidationError, match="unknown Source-local"):
         schema.model_validate(payload)
+
+
+def test_sc6_presence_and_sc7_material_claims_share_the_scoped_contract() -> None:
+    payload = extraction_payload(
+        floor_plans=[{"response_key": "a1", "plan_name": "A1"}],
+        fireplace=[
+            {
+                "value": True,
+                "confidence": "high",
+                "evidence_quote": "A1 includes a fireplace",
+                "applicability": "specific_floor_plans",
+                "floor_plan_refs": ["a1"],
+            }
+        ],
+        flooring_materials=[
+            {
+                "value": ["hardwood", "tile"],
+                "confidence": "high",
+                "evidence_quote": "Hardwood living areas and tile bath",
+                "applicability": "specific_floor_plans",
+                "floor_plan_refs": ["a1"],
+            }
+        ],
+    )
+    parsed = build_extraction_schema().model_validate(payload)
+    assert parsed.fireplace[0].value is True
+    assert parsed.flooring_materials[0].value == ["hardwood", "tile"]
+
+    payload["flooring_materials"][0]["value"] = ["hardwood", "marble"]
+    with pytest.raises(ValidationError, match="flooring_materials"):
+        build_extraction_schema().model_validate(payload)
+
+    payload["flooring_materials"][0]["value"] = ["tile", "tile"]
+    with pytest.raises(ValidationError, match="unique"):
+        build_extraction_schema().model_validate(payload)
 
 
 def test_scoped_claim_rejects_universal_scope_with_refs() -> None:
