@@ -21,6 +21,7 @@ from manzil_api.collaboration.router import router as collaboration_router
 from manzil_api.config import Settings, get_settings
 from manzil_api.database import create_db_pool
 from manzil_api.exceptions import CatchAllMiddleware, register_exception_handlers
+from manzil_api.feedback.router import router as feedback_router
 from manzil_api.fees.router import router as fees_router
 from manzil_api.hunts.router import router as hunts_router
 from manzil_api.invitation_links.router import router as invitation_links_router
@@ -30,6 +31,7 @@ from manzil_api.listings.router import router as listings_router
 from manzil_api.overrides.router import router as overrides_router
 from manzil_api.profiles.router import router as profiles_router
 from manzil_api.rubric.router import router as rubric_router
+from manzil_api.utilities.router import router as utilities_router
 from manzil_api.worker_loop import run_inprocess_worker
 
 logger = logging.getLogger("manzil_api")
@@ -111,7 +113,9 @@ def create_app() -> FastAPI:
         jobs_router,
         overrides_router,
         fees_router,
+        utilities_router,
         profiles_router,
+        feedback_router,
     ):
         app.include_router(router, prefix="/v1")
 
