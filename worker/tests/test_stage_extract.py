@@ -76,7 +76,16 @@ def test_extract_populates_every_criterion_with_provenance() -> None:
 
     assert {claim.criterion_key for claim in state.source_claims} == {
         e.key for e in extractable_entries()
-    } - {"private_entry"}
+    } - {
+        "private_entry",
+        "walk_in_closets",
+        "pantry",
+        "disposal",
+        "fireplace",
+        "ceiling_fans",
+        "stainless_steel_appliances",
+        "flooring_materials",
+    }
     beds = get_claim(state, "beds")
     assert beds.value == 2
     assert beds.source_id == state.sources[0].url
@@ -314,6 +323,37 @@ def test_extract_expands_one_claim_across_several_floor_plans() -> None:
     claims = [claim for claim in state.source_claims if claim.criterion_key == "dishwasher"]
     assert [claim.floor_plan_ref for claim in claims] == ["a1", "a2"]
     assert len({claim.claim_group_id for claim in claims}) == 1
+
+
+def test_extract_lands_sc6_presence_and_sc7_material_claims_without_a_side_path() -> None:
+    payload = extraction_payload(
+        floor_plans=[{"response_key": "a1", "plan_name": "A1"}],
+        fireplace=scoped_claim_payload(
+            True,
+            "A1 includes a fireplace",
+            applicability="specific_floor_plans",
+            floor_plan_refs=["a1"],
+        ),
+        flooring_materials=scoped_claim_payload(
+            ["hardwood", "tile"],
+            "Hardwood living areas and tile bath",
+            applicability="all_units",
+        ),
+    )
+    state = asyncio.run(
+        extract_stage(
+            make_state(cleaned_text="A1 includes a fireplace. Hardwood and tile throughout."),
+            StageCtx(call_structured=FakeLLM({"extract": payload})),
+        )
+    )
+
+    fireplace = get_claim(state, "fireplace")
+    assert fireplace.floor_plan_ref == "a1"
+    assert fireplace.applicability == "specific_floor_plans"
+    materials = get_claim(state, "flooring_materials")
+    assert materials.value == ["hardwood", "tile"]
+    assert materials.target_scope == "property"
+    assert materials.applicability == "all_units"
 
 
 def test_extract_blocks_absent_stay_none() -> None:

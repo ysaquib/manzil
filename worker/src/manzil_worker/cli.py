@@ -725,9 +725,12 @@ def bench_audit_scoped(
     """Audit P3-SC4 human-label count and required scoped/diagram cases."""
     from manzil_worker.evals.labels import (
         LABELS_DIR,
+        SC6_REQUIRED_COVERAGE,
+        SC7_REQUIRED_COVERAGE,
         LabelError,
         load_labels_split,
         scoped_coverage_audit,
+        scoped_tranche_coverage_audit,
     )
 
     try:
@@ -741,7 +744,19 @@ def bench_audit_scoped(
     for case, contributors in coverage.items():
         status = "covered" if contributors else "MISSING"
         typer.echo(f"{case}: {status}" + (f" — {', '.join(contributors)}" if contributors else ""))
-    if len(labels) != 10 or skipped or any(not contributors for contributors in coverage.values()):
+    tranche_coverage = scoped_tranche_coverage_audit(labels)
+    tranche_missing = False
+    for key, cases in tranche_coverage.items():
+        required = SC7_REQUIRED_COVERAGE if key == "flooring_materials" else SC6_REQUIRED_COVERAGE
+        missing = [case for case in required if not cases[case]]
+        tranche_missing = tranche_missing or bool(missing)
+        typer.echo(f"{key}: " + ("covered" if not missing else f"MISSING {', '.join(missing)}"))
+    if (
+        len(labels) != 10
+        or skipped
+        or any(not contributors for contributors in coverage.values())
+        or tranche_missing
+    ):
         raise typer.Exit(code=1)
 
 

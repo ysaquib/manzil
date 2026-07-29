@@ -8,12 +8,17 @@ floor plan via the shared engine, upsert `scores`.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
 import structlog
-from manzil_shared.catalog import BOOLEAN_PRESENCE_KEYS, SCOPED_UNIT_CLAIM_KEYS
+from manzil_shared.catalog import (
+    BOOLEAN_PRESENCE_KEYS,
+    CONFIRMED_SCOPE_ONLY_KEYS,
+    PRESENCE_LIKE_KEYS,
+)
 from manzil_shared.models import Confidence, FloorPlan, RubricCriterion
 from manzil_shared.scoped_facts import (
     resolve_effective_facts,
@@ -32,12 +37,22 @@ from manzil_worker.scoped_facts import (
     load_current_overrides,
     property_values,
 )
+from manzil_worker.stages.move_in import (
+    Household,
+    MoveInCharge,
+    basis_multiplier,
+    charge_from_extracted_fee,
+    compose_move_in,
+    default_required,
+)
 from manzil_worker.stages.pet_costs import (
     MANDATORY_FEE_SLOTS,
+    ONE_TIME_FEE_SLOTS,
     beds_bucket,
     compose_all_in,
     pet_monthly,
     slot_for_fee,
+    slot_for_one_time_fee,
 )
 
 if True:  # TYPE_CHECKING without import cycle
@@ -102,10 +117,17 @@ async def _mandatory_fees(
     conn: asyncpg.Connection,
     hunt_listing_id: UUID,
     catalog_ext: dict[str, tuple[Any, Confidence]],
+    utility_amount_keys: frozenset[str] = frozenset(),
 ) -> list[tuple[str, float]]:
     """§9.5 mandatory-fee components at rescore: checklist slot amounts (manual
     entries naturally win — projection never clobbers them) + the extracted fees
-    that map to no slot (they live only on the `mandatory_fees` extraction)."""
+    that map to no slot (they live only on the `mandatory_fees` extraction).
+
+    A slot the user has explicitly un-counted drops out of the all-in entirely
+    (§9.5, the consolidated Cost & fees surface): the row still displays with
+    its amount, struck through, but a charge nobody is going to pay must not
+    inflate the scored figure. `counted` NULL is the machine default, counted.
+    """
     rows = await conn.fetch(
         """
         select fee_slot, amount from fee_checklist
@@ -113,19 +135,161 @@ async def _mandatory_fees(
           and fee_slot = any($2::text[])
           and value_state <> 'unknown'
           and amount is not null
+          and coalesce(counted, true)
         """,
         hunt_listing_id,
         list(MANDATORY_FEE_SLOTS),
     )
-    fees = [(row["fee_slot"], float(row["amount"])) for row in rows]
+    covered_slots = {
+        "water_sewer" if key in {"water", "sewer"} else "valet_trash"
+        for key in utility_amount_keys
+        if key in {"water", "sewer", "trash"}
+    }
+    fees = [
+        (row["fee_slot"], float(row["amount"]))
+        for row in rows
+        if row["fee_slot"] not in covered_slots
+    ]
     extracted = catalog_ext.get("mandatory_fees")
     if extracted is not None and isinstance(extracted[0], list):
         for entry in extracted[0]:
             name = entry.get("name")
             amount = entry.get("amount_monthly")
-            if name and amount is not None and slot_for_fee(name) is None:
+            slot = slot_for_fee(name or "")
+            if name and amount is not None and slot is None:
                 fees.append((name, float(amount)))
     return fees
+
+
+async def _effective_utilities_included(
+    conn: asyncpg.Connection,
+    hunt_listing_id: UUID,
+    extracted: Any,
+) -> tuple[list[str] | None, dict[str, float], frozenset[str]]:
+    """Merge individual manual utility decisions onto the extracted list.
+
+    A NULL current override is a revert tombstone, so it intentionally has no
+    effect and the underlying extracted fact shows through again.  Returning
+    None preserves the conservative "page silent" branch when no human has
+    made a decision.
+    """
+    rows = await conn.fetch(
+        """
+        select utility, included, monthly_amount from current_utility_overrides
+        where hunt_listing_id = $1
+        """,
+        hunt_listing_id,
+    )
+    active = [
+        row for row in rows if row["included"] is not None or row["monthly_amount"] is not None
+    ]
+    amounts = {
+        row["utility"]: float(row["monthly_amount"])
+        for row in active
+        if row["monthly_amount"] is not None
+    }
+    fee_replacements = frozenset(amounts) | frozenset(
+        row["utility"] for row in active if row["included"] is True
+    )
+    if extracted is None and not active:
+        return None, amounts, fee_replacements
+    values = set(extracted) if isinstance(extracted, list) else set()
+    for row in active:
+        if row["included"] is True:
+            values.add(row["utility"])
+        elif row["included"] is False:
+            values.discard(row["utility"])
+    return sorted(values), amounts, fee_replacements
+
+
+async def _move_in_charges(
+    conn: asyncpg.Connection,
+    hunt_listing_id: UUID,
+    catalog_ext: dict[str, tuple[Any, Confidence]],
+    household: Household,
+) -> list[MoveInCharge]:
+    """The §9.5 P3-SC8 one-time ledger for this Listing and household.
+
+    Each standard slot merges three layers: the `one_time_fees` extraction
+    (basis + stated refundability), the checklist amount (a manual entry beats
+    the extracted one), and the human decisions — required, refundable,
+    credited portion, counted. Extracted charges that map to no standard slot
+    still count; they just have no checklist affordance.
+    """
+    extracted = catalog_ext.get("one_time_fees")
+    fees: list[dict[str, Any]] = []
+    if extracted is not None and isinstance(extracted[0], list):
+        fees = [fee for fee in extracted[0] if isinstance(fee, dict)]
+    by_slot: dict[str, dict[str, Any]] = {}
+    unslotted: list[dict[str, Any]] = []
+    for fee in fees:
+        slot = slot_for_one_time_fee(str(fee.get("name") or ""))
+        if slot is None:
+            unslotted.append(fee)
+        elif slot not in by_slot:
+            by_slot[slot] = fee
+
+    rows = await conn.fetch(
+        """
+        select fee_slot, amount, value_state, counted, required, refundable,
+               credited_amount
+        from fee_checklist
+        where hunt_listing_id = $1 and fee_slot = any($2::text[])
+        """,
+        hunt_listing_id,
+        list(ONE_TIME_FEE_SLOTS),
+    )
+    persisted = {row["fee_slot"]: row for row in rows}
+
+    charges: list[MoveInCharge] = []
+    for slot in ONE_TIME_FEE_SLOTS:
+        row = persisted.get(slot)
+        fee = by_slot.get(slot)
+        if row is None and fee is None:
+            continue
+        basis = str(fee.get("basis")) if fee and fee.get("basis") is not None else None
+        multiplier = basis_multiplier(basis, household)
+        stated: float | None = None
+        if row is not None and row["amount"] is not None and row["value_state"] != "unknown":
+            stated = float(row["amount"])
+        elif fee is not None and isinstance(fee.get("amount"), int | float):
+            stated = float(fee["amount"])
+        amount = round(stated * multiplier, 2) if stated is not None else None
+
+        required = default_required(slot, household)
+        if row is not None and row["required"] is not None:
+            required = bool(row["required"])
+        refundable: bool | None = None
+        if fee is not None and isinstance(fee.get("refundable"), bool):
+            refundable = bool(fee["refundable"])
+        if row is not None and row["refundable"] is not None:
+            refundable = bool(row["refundable"])
+        credited = (
+            float(row["credited_amount"])
+            if row is not None and row["credited_amount"] is not None
+            else 0.0
+        )
+        counted = required
+        if row is not None and row["counted"] is not None:
+            counted = bool(row["counted"])
+        note = None
+        if multiplier != 1 and stated is not None:
+            unit = "person" if basis == "per_person" else "pet"
+            note = f"${stated:g} per {unit} x {multiplier}"
+        charges.append(
+            MoveInCharge(
+                name=slot,
+                amount=amount,
+                tag="actual" if amount is not None else "unknown",
+                required=required,
+                refundable=refundable,
+                credited=min(credited, amount) if amount is not None else 0.0,
+                counted=counted,
+                note=note,
+            )
+        )
+    charges += [charge_from_extracted_fee(fee, household) for fee in unslotted]
+    return charges
 
 
 async def rescore_hunt(
@@ -174,9 +338,20 @@ async def rescore_hunt(
         )
         # §9.5 P3-9 composition inputs, from the same persisted rows the ingest
         # projection writes — the two paths never drift.
-        fees = await _mandatory_fees(conn, listing_id, catalog_ext)
         included_ext = catalog_ext.get("utilities_included")
-        included = included_ext[0] if included_ext is not None else None
+        included, utility_amounts, utility_fee_replacements = await _effective_utilities_included(
+            conn,
+            listing_id,
+            included_ext[0] if included_ext is not None else None,
+        )
+        fees = await _mandatory_fees(
+            conn,
+            listing_id,
+            catalog_ext,
+            utility_fee_replacements,
+        )
+        household = Household(occupants=occupants, cats=cats, dogs=dogs)
+        one_time_charges = await _move_in_charges(conn, listing_id, catalog_ext, household)
         baselines_by_bucket: dict[int, BaselineSet | None] = {}
 
         floor_plans = await conn.fetch(
@@ -185,6 +360,7 @@ async def rescore_hunt(
         )
         breakdown_objs = []
         compositions = []
+        move_in_jsons: list[dict[str, Any]] = []
         for fp in floor_plans:
             if fp["beds"] is None or fp["baths"] is None:
                 continue
@@ -209,12 +385,11 @@ async def rescore_hunt(
                 overrides=current_overrides,
                 min_confidence=min_confidence,
                 min_vision_confidence=min_vision_confidence,
-                presence_like_keys=SCOPED_UNIT_CLAIM_KEYS,
+                presence_like_keys=PRESENCE_LIKE_KEYS,
                 boolean_presence_keys=BOOLEAN_PRESENCE_KEYS,
+                generalized_unknown_keys=CONFIRMED_SCOPE_ONLY_KEYS,
             )
-            values, gate_values = scoring_values_for_policy(
-                facts, generalized_vision_policy
-            )
+            values, gate_values = scoring_values_for_policy(facts, generalized_vision_policy)
             heating_value = resolve_effective_value(
                 criterion_key="heating_type",
                 floor_plan_id=fp["id"],
@@ -225,6 +400,18 @@ async def rescore_hunt(
             )
             heating = heating_value if heating_value in {"gas", "electric"} else None
             rent = _conservative_rent(fp["rent_min"], fp["rent_max"])
+            # §9.6: base rent is overrideable like any other cost component —
+            # a leasing-office quote beats an advertised teaser. Floor-plan
+            # scoped, append-only, revert by tombstone, exactly like the rest.
+            rent_override = resolve_effective_value(
+                criterion_key="base_rent",
+                floor_plan_id=fp["id"],
+                extractions=(),
+                overrides=current_overrides,
+                min_confidence=min_confidence,
+            )
+            if isinstance(rent_override, int | float):
+                rent = float(rent_override)
             composition = None
             # A live all_in_monthly override beats the composition (§9.6, §20
             # 2026-07-18): the scored value is the human's figure (already in
@@ -264,10 +451,47 @@ async def rescore_hunt(
                     mode=cost_estimate_mode,
                     occupants=occupants,
                     beds=fp["beds"],
+                    utility_amounts=utility_amounts,
+                    inclusions_unverified=included_ext is None,
                 )
                 if all_in_override is None and composition.total is not None:
                     values["all_in_monthly"] = composition.total
                     gate_values["all_in_monthly"] = composition.total
+            # §9.5 P3-SC8. The first month follows the *effective* all-in, so a
+            # human's all-in override flows into the cash figure too.
+            first_month = None
+            if all_in_override is not None and isinstance(all_in_override, int | float):
+                first_month = float(all_in_override)
+            elif composition is not None:
+                first_month = composition.total
+            move_in = compose_move_in(
+                first_month_all_in=first_month,
+                security_deposit=(
+                    float(deposit_override)
+                    if isinstance(
+                        deposit_override := resolve_effective_value(
+                            criterion_key="security_deposit",
+                            floor_plan_id=fp["id"],
+                            extractions=current_extractions,
+                            overrides=current_overrides,
+                            min_confidence=min_confidence,
+                        ),
+                        int | float,
+                    )
+                    else (float(fp["deposit"]) if fp["deposit"] is not None else None)
+                ),
+                charges=[replace(charge) for charge in one_time_charges],
+            )
+            move_in_override = resolve_effective_value(
+                criterion_key="estimated_move_in_cost",
+                floor_plan_id=fp["id"],
+                extractions=(),
+                overrides=current_overrides,
+                min_confidence=min_confidence,
+            )
+            if move_in_override is None and move_in.total is not None:
+                values["estimated_move_in_cost"] = move_in.total
+                gate_values["estimated_move_in_cost"] = move_in.total
             breakdown_obj = score(
                 rubric,
                 values,
@@ -277,18 +501,28 @@ async def rescore_hunt(
             )
             breakdown_objs.append(breakdown_obj)
             compositions.append(_composition_json(composition, all_in_override))
+            move_in_json = move_in.to_json()
+            if move_in_override is not None:
+                try:
+                    move_in_json["total"] = float(move_in_override)
+                    move_in_json["overridden"] = True
+                    move_in_json["incomplete"] = False
+                except (TypeError, ValueError):
+                    pass
+            move_in_jsons.append(move_in_json)
             breakdown = breakdown_obj.to_contract()
             await conn.execute(
                 """
                 insert into scores
                     (hunt_listing_id, floor_plan_id, total, breakdown, rubric_version,
-                     all_in_components)
-                values ($1, $2, $3, $4::jsonb, $5, $6::jsonb)
+                     all_in_components, move_in_components)
+                values ($1, $2, $3, $4::jsonb, $5, $6::jsonb, $7::jsonb)
                 on conflict (hunt_listing_id, floor_plan_id) do update set
                     total = excluded.total,
                     breakdown = excluded.breakdown,
                     rubric_version = excluded.rubric_version,
                     all_in_components = excluded.all_in_components,
+                    move_in_components = excluded.move_in_components,
                     computed_at = now()
                 """,
                 listing_id,
@@ -297,16 +531,23 @@ async def rescore_hunt(
                 json.dumps(breakdown),
                 rubric_version,
                 json.dumps(compositions[-1]) if compositions[-1] is not None else None,
+                json.dumps(move_in_jsons[-1]),
             )
             upserted += 1
         if breakdown_objs:
             # Same display selection as SCORE: the display plan's composition
             # detail lands on hunt_listings.all_in_components (P3-9).
-            display = compositions[select_display_score(breakdown_objs)]
+            display_index = select_display_score(breakdown_objs)
+            display = compositions[display_index]
             await conn.execute(
-                "update hunt_listings set all_in_components = $2::jsonb where id = $1",
+                """
+                update hunt_listings
+                set all_in_components = $2::jsonb, move_in_components = $3::jsonb
+                where id = $1
+                """,
                 listing_id,
                 json.dumps(display) if display is not None else None,
+                json.dumps(move_in_jsons[display_index]),
             )
     log.info("rescore_hunt_complete", hunt_id=str(hunt_id), score_rows=upserted)
     return upserted

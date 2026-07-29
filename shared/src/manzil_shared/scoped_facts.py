@@ -60,14 +60,9 @@ class EffectiveFact:
 
     @property
     def vision(self) -> bool:
-        return (
-            not self.from_override
-            and (
-                bool(self.origin_key and self.origin_key.startswith("vision:"))
-                or bool(
-                    self.resolution_rule and self.resolution_rule.startswith("vision_")
-                )
-            )
+        return not self.from_override and (
+            bool(self.origin_key and self.origin_key.startswith("vision:"))
+            or bool(self.resolution_rule and self.resolution_rule.startswith("vision_"))
         )
 
     @property
@@ -148,6 +143,7 @@ def resolve_effective_value(
     min_vision_confidence: Confidence | None = None,
     presence_like: bool = False,
     boolean_presence: bool = True,
+    generalized_unknown: bool = False,
 ) -> Any:
     """Resolve one Criterion for one Floor Plan in DESIGN §9.3 order.
 
@@ -155,6 +151,7 @@ def resolve_effective_value(
     Property/all-units/generalized resolved Extraction ▸ unknown. A latest null
     Override is a target-specific tombstone and falls through.
     """
+    scoped_unit = presence_like or generalized_unknown
     relevant_overrides = [row for row in overrides if row.criterion_key == criterion_key]
     exact_override = _newest_override(
         row
@@ -171,7 +168,7 @@ def resolve_effective_value(
     )
     if all_override is not None and all_override.value is not None:
         return all_override.value
-    if not presence_like:
+    if not scoped_unit:
         property_override = _newest_override(
             row
             for row in relevant_overrides
@@ -210,7 +207,7 @@ def resolve_effective_value(
     # A true Property fact is distinct from generalized unit evidence. It is
     # still a valid effective value for every plan because its subject is the
     # Property, not because a unit association was inferred.
-    if not presence_like:
+    if not scoped_unit:
         property_fact = _newest(
             row
             for row in eligible
@@ -230,6 +227,8 @@ def resolve_effective_value(
             if row.target_scope is TargetScope.PROPERTY and row.applicability is applicability
         )
         if generalized is not None:
+            if generalized_unknown and applicability is not UnitApplicability.ALL_UNITS:
+                return None
             return (
                 compose_presence(
                     generalized.value,
@@ -252,6 +251,7 @@ def resolve_effective_values(
     min_vision_confidence: Confidence | None = None,
     presence_like_keys: frozenset[str] = frozenset(),
     boolean_presence_keys: frozenset[str] = frozenset(),
+    generalized_unknown_keys: frozenset[str] = frozenset(),
 ) -> dict[str, Any]:
     extraction_rows = list(extractions)
     override_rows = list(overrides)
@@ -266,6 +266,7 @@ def resolve_effective_values(
             min_vision_confidence=min_vision_confidence,
             presence_like=key in presence_like_keys,
             boolean_presence=key in boolean_presence_keys,
+            generalized_unknown=key in generalized_unknown_keys,
         )
         if value is not None:
             values[key] = value
@@ -282,8 +283,10 @@ def resolve_effective_fact(
     min_vision_confidence: Confidence | None = None,
     presence_like: bool = False,
     boolean_presence: bool = True,
+    generalized_unknown: bool = False,
 ) -> EffectiveFact | None:
     """Provenance-carrying companion to the value-only compatibility wrapper."""
+    scoped_unit = presence_like or generalized_unknown
     extraction_rows = list(extractions)
     override_rows = list(overrides)
     value = resolve_effective_value(
@@ -295,20 +298,18 @@ def resolve_effective_fact(
         min_vision_confidence=min_vision_confidence,
         presence_like=presence_like,
         boolean_presence=boolean_presence,
+        generalized_unknown=generalized_unknown,
     )
     if value is None:
         return None
     relevant_overrides = [
-        row
-        for row in override_rows
-        if row.criterion_key == criterion_key and row.value is not None
+        row for row in override_rows if row.criterion_key == criterion_key and row.value is not None
     ]
     for candidates in (
         [
             row
             for row in relevant_overrides
-            if row.target_scope is TargetScope.FLOOR_PLAN
-            and row.floor_plan_id == floor_plan_id
+            if row.target_scope is TargetScope.FLOOR_PLAN and row.floor_plan_id == floor_plan_id
         ],
         [
             row
@@ -319,7 +320,7 @@ def resolve_effective_fact(
         [
             row
             for row in relevant_overrides
-            if not presence_like
+            if not scoped_unit
             and row.target_scope is TargetScope.PROPERTY
             and row.applicability is None
         ],
@@ -350,13 +351,12 @@ def resolve_effective_fact(
         [
             row
             for row in eligible
-            if row.target_scope is TargetScope.FLOOR_PLAN
-            and row.floor_plan_id == floor_plan_id
+            if row.target_scope is TargetScope.FLOOR_PLAN and row.floor_plan_id == floor_plan_id
         ],
         [
             row
             for row in eligible
-            if not presence_like
+            if not scoped_unit
             and row.target_scope is TargetScope.PROPERTY
             and row.applicability is None
         ],
@@ -366,8 +366,7 @@ def resolve_effective_fact(
             [
                 row
                 for row in eligible
-                if row.target_scope is TargetScope.PROPERTY
-                and row.applicability is applicability
+                if row.target_scope is TargetScope.PROPERTY and row.applicability is applicability
             ]
             for applicability in (
                 UnitApplicability.ALL_UNITS,
@@ -400,6 +399,7 @@ def resolve_effective_facts(
     min_vision_confidence: Confidence | None = None,
     presence_like_keys: frozenset[str] = frozenset(),
     boolean_presence_keys: frozenset[str] = frozenset(),
+    generalized_unknown_keys: frozenset[str] = frozenset(),
 ) -> dict[str, EffectiveFact]:
     extraction_rows = list(extractions)
     override_rows = list(overrides)
@@ -414,6 +414,7 @@ def resolve_effective_facts(
             min_vision_confidence=min_vision_confidence,
             presence_like=key in presence_like_keys,
             boolean_presence=key in boolean_presence_keys,
+            generalized_unknown=key in generalized_unknown_keys,
         )
         if fact is not None:
             output[key] = fact

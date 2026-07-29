@@ -17,6 +17,7 @@ from manzil_worker.evals.labels import (
     load_labels,
     load_labels_split,
     scoped_coverage_audit,
+    scoped_tranche_coverage_audit,
     skeleton_payload,
     write_skeleton,
 )
@@ -158,11 +159,18 @@ def test_skeleton_prefills_every_extractable_key_as_null(tmp_path: Path) -> None
         "parking",
         "cooling",
         "dishwasher",
+        "walk_in_closets",
+        "pantry",
+        "disposal",
+        "fireplace",
+        "ceiling_fans",
+        "stainless_steel_appliances",
+        "flooring_materials",
         "heating_type",
     }
-    assert set(payload["criteria"]) == {
-        e.key for e in extractable_entries()
-    } - (scoped - {"heating_type"})
+    assert set(payload["criteria"]) == {e.key for e in extractable_entries()} - (
+        scoped - {"heating_type"}
+    )
     assert all(v is None for v in payload["criteria"].values())
     assert set(payload["scoped_claims"]) == scoped
     assert all(claims == [] for claims in payload["scoped_claims"].values())
@@ -329,3 +337,45 @@ def test_scoped_coverage_audit_reports_only_human_label_cases() -> None:
     assert coverage["diagram_ambiguous"] == ["coverage"]
     assert coverage["diagram_unambiguous"] == ["coverage"]
     assert coverage["all_units"] == []
+
+
+def test_scoped_tranche_audit_is_per_criterion_and_requires_explicit_missing() -> None:
+    label = BenchLabel.model_validate(
+        {
+            "slug": "tranche",
+            "url": "https://example.test",
+            "labeled_at": "2026-07-29",
+            "floor_plans": [{"response_key": "a1", "plan_name": "A1"}],
+            "scoped_claims": {
+                "fireplace": [
+                    {
+                        "value": True,
+                        "applicability": "select_units",
+                        "floor_plan_refs": [],
+                    },
+                    {
+                        "value": False,
+                        "applicability": "unit_scope_unspecified",
+                        "floor_plan_refs": [],
+                    },
+                ],
+                "pantry": [],
+                "flooring_materials": [
+                    {
+                        "value": ["hardwood", "tile"],
+                        "applicability": "specific_floor_plans",
+                        "floor_plan_refs": ["a1"],
+                    }
+                ],
+            },
+        }
+    )
+
+    coverage = scoped_tranche_coverage_audit([label])
+    assert coverage["fireplace"]["positive"] == ["tranche"]
+    assert coverage["fireplace"]["negative"] == ["tranche"]
+    assert coverage["fireplace"]["select_units"] == ["tranche"]
+    assert coverage["fireplace"]["unit_scope_unspecified"] == ["tranche"]
+    assert coverage["pantry"]["missing"] == ["tranche"]
+    assert coverage["flooring_materials"]["exact"] == ["tranche"]
+    assert coverage["walk_in_closets"]["missing"] == []

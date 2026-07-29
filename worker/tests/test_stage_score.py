@@ -265,6 +265,68 @@ def test_exact_unit_feature_changes_only_target_floor_plan() -> None:
     assert values == ["none", None]
 
 
+def test_sc6_presence_claim_scores_only_its_exact_floor_plan() -> None:
+    state = make_state()
+    state.floor_plans = [
+        FloorPlanIn(response_key="a", plan_name="A", beds=2, baths=1.0, rent_min=1700.0),
+        FloorPlanIn(response_key="b", plan_name="B", beds=2, baths=1.0, rent_min=1700.0),
+    ]
+    exact = fe(True, "Plan A includes a fireplace")
+    exact.target_scope = TargetScope.FLOOR_PLAN
+    exact.floor_plan_ref = "a"
+    exact.applicability = UnitApplicability.SPECIFIC_FLOOR_PLANS
+    set_claim(state, "fireplace", exact)
+    criterion = RubricCriterion(
+        hunt_id=uuid4(),
+        catalog_key="fireplace",
+        options=[
+            RubricOption(
+                match=OptionMatch(op=MatchOp.EQ, value="confirmed"),
+                delta=0.25,
+            )
+        ],
+    )
+
+    state = asyncio.run(score_stage(state, StageCtx(rubric=[criterion], rubric_version=1)))
+
+    values = [score.breakdown["criteria"][0]["value"] for score in state.scores]
+    assert values == ["confirmed", None]
+    assert [score.breakdown["total"] for score in state.scores] == [10.25, 10.0]
+
+
+def test_sc7_flooring_scores_exact_and_all_units_but_not_select_units() -> None:
+    criterion = RubricCriterion(
+        hunt_id=uuid4(),
+        catalog_key="flooring_materials",
+        options=[
+            RubricOption(
+                match=OptionMatch(op=MatchOp.CONTAINS_ANY, value=["hardwood"]),
+                delta=1.0,
+            )
+        ],
+        unknown_delta=-1.0,
+    )
+
+    def scored(applicability: UnitApplicability) -> tuple[object, float]:
+        state = make_state()
+        state.floor_plans = [
+            FloorPlanIn(response_key="a", plan_name="A", beds=2, baths=1.0, rent_min=1700.0)
+        ]
+        materials = fe(["hardwood", "tile"], "Hardwood living areas and tile bath")
+        materials.applicability = applicability
+        if applicability is UnitApplicability.SPECIFIC_FLOOR_PLANS:
+            materials.target_scope = TargetScope.FLOOR_PLAN
+            materials.floor_plan_ref = "a"
+        set_claim(state, "flooring_materials", materials)
+        result = asyncio.run(score_stage(state, StageCtx(rubric=[criterion], rubric_version=1)))
+        row = result.scores[0].breakdown["criteria"][0]
+        return row["value"], result.scores[0].breakdown["total"]
+
+    assert scored(UnitApplicability.SPECIFIC_FLOOR_PLANS) == (["hardwood", "tile"], 11.0)
+    assert scored(UnitApplicability.ALL_UNITS) == (["hardwood", "tile"], 11.0)
+    assert scored(UnitApplicability.SELECT_UNITS) == (None, 9.0)
+
+
 def test_unspecified_laundry_cannot_pass_gate() -> None:
     state = seeded_state()
     set_claim(

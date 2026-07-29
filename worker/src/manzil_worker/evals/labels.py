@@ -23,7 +23,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from manzil_shared.catalog import SCOPED_UNIT_CLAIM_KEYS
+from manzil_shared.catalog import P3_SC6_KEYS, SCOPED_UNIT_CLAIM_KEYS
 from manzil_shared.models import UnitApplicability
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -171,9 +171,7 @@ def validate_label(label: BenchLabel) -> None:
             problems.append(f"criteria.{key} = {value!r} violates the catalog schema: {first}")
 
     plan_refs = {
-        plan.response_key
-        for plan in (label.floor_plans or [])
-        if plan.response_key is not None
+        plan.response_key for plan in (label.floor_plans or []) if plan.response_key is not None
     }
     entries = {e.key: e for e in extractable_entries()}
     for key, claims in label.scoped_claims.items():
@@ -199,9 +197,7 @@ def validate_label(label: BenchLabel) -> None:
                     )
             exact = claim.applicability is UnitApplicability.SPECIFIC_FLOOR_PLANS
             if exact and not claim.floor_plan_refs:
-                problems.append(
-                    f"scoped_claims.{key}[{index}] exact claim needs floor_plan_refs"
-                )
+                problems.append(f"scoped_claims.{key}[{index}] exact claim needs floor_plan_refs")
             if not exact and claim.floor_plan_refs:
                 problems.append(
                     f"scoped_claims.{key}[{index}] non-exact claim cannot name Floor Plans"
@@ -215,9 +211,7 @@ def validate_label(label: BenchLabel) -> None:
             targets: list[str | None] = claim.floor_plan_refs or [None]
             duplicates = seen_targets.intersection(targets)
             if duplicates:
-                problems.append(
-                    f"scoped_claims.{key}[{index}] duplicates a concrete claim target"
-                )
+                problems.append(f"scoped_claims.{key}[{index}] duplicates a concrete claim target")
             seen_targets.update(targets)
 
     for association in label.diagram_associations or []:
@@ -261,9 +255,7 @@ def load_label(path: Path) -> BenchLabel:
     return label
 
 
-def load_labels(
-    slugs: list[str] | None = None, labels_dir: Path = LABELS_DIR
-) -> list[BenchLabel]:
+def load_labels(slugs: list[str] | None = None, labels_dir: Path = LABELS_DIR) -> list[BenchLabel]:
     if not labels_dir.is_dir():
         return []
     return [
@@ -321,6 +313,61 @@ def scoped_coverage_audit(labels: list[BenchLabel]) -> dict[str, list[str]]:
             coverage["diagram_ambiguous"].append(label.slug)
         if any(not diagram.ambiguous and diagram.floor_plan_refs for diagram in diagrams):
             coverage["diagram_unambiguous"].append(label.slug)
+    return coverage
+
+
+TRANCHE_COVERAGE_CASES = (
+    "positive",
+    "negative",
+    "exact",
+    "all_units",
+    "select_units",
+    "unit_scope_unspecified",
+    "missing",
+)
+SC6_REQUIRED_COVERAGE = (
+    "positive",
+    "negative",
+    "select_units",
+    "unit_scope_unspecified",
+    "missing",
+)
+SC7_REQUIRED_COVERAGE = (
+    "positive",
+    "exact",
+    "all_units",
+    "select_units",
+    "unit_scope_unspecified",
+    "missing",
+)
+
+
+def scoped_tranche_coverage_audit(
+    labels: list[BenchLabel],
+) -> dict[str, dict[str, list[str]]]:
+    """Per-Criterion human coverage for P3-SC6/SC7 accuracy claims."""
+    keys = sorted(P3_SC6_KEYS | {"flooring_materials"})
+    coverage = {key: {case: [] for case in TRANCHE_COVERAGE_CASES} for key in keys}
+    for label in labels:
+        for key in keys:
+            if key not in label.scoped_claims:
+                continue
+            claims = label.scoped_claims[key]
+            if not claims:
+                coverage[key]["missing"].append(label.slug)
+                continue
+            if any(claim.value is True or isinstance(claim.value, list) for claim in claims):
+                coverage[key]["positive"].append(label.slug)
+            if any(claim.value is False or claim.value == "none" for claim in claims):
+                coverage[key]["negative"].append(label.slug)
+            for applicability, case in (
+                (UnitApplicability.SPECIFIC_FLOOR_PLANS, "exact"),
+                (UnitApplicability.ALL_UNITS, "all_units"),
+                (UnitApplicability.SELECT_UNITS, "select_units"),
+                (UnitApplicability.UNIT_SCOPE_UNSPECIFIED, "unit_scope_unspecified"),
+            ):
+                if any(claim.applicability is applicability for claim in claims):
+                    coverage[key][case].append(label.slug)
     return coverage
 
 
