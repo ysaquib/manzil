@@ -18,22 +18,23 @@ import {
   Title,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
-import { IconDroplet, IconMapPin } from "@tabler/icons-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { IconMapPin } from "@tabler/icons-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { SectionCard } from "../../components/SectionCard";
 import { ProblematicBadge } from "../../components/badges/ListingBadges";
 import { CommentsSection } from "../collaboration/CommentsSection";
 import { RatingControl } from "../collaboration/RatingControl";
 import { useCurrentMember, useMembers } from "../collaboration/api";
+import { memberDisplayNameMap } from "../collaboration/memberDisplay";
 import { useHunt } from "../hunts/api";
 import { ListingLocationMap } from "../map/ListingLocationMap";
 import { useCatalog } from "../rubric/api";
-import { AllInBreakdown, AllInOverrideControl } from "./AllInCost";
 import { activeOverrides, extractionForFloorPlan } from "./overrides";
 import { CriterionBreakdown } from "./CriterionBreakdown";
 import { DrawerHero } from "./DrawerHero";
-import { FeeChecklist } from "./FeeChecklist";
+import { CostAndFees } from "./CostAndFees";
+import { FloorPlanDetailModal } from "./FloorPlanDetailModal";
 import { FloorPlanList } from "./FloorPlanList";
 import { UnmatchedDiagrams, unmatchedDiagrams } from "./UnmatchedDiagrams";
 import { ListingDetailDraftProvider, useListingDetailDraft } from "./ListingDetailDraft";
@@ -41,9 +42,16 @@ import { propertyLocationLabel } from "./locality";
 import { PropertyContactRow } from "./PropertyContact";
 import { extractedFeeOriginals, parseOneTimeFees } from "./oneTimeFees";
 import { SourcesList } from "./SourcesList";
-import { useExtractions, useFees, useListings, useOverrides, usePropertyImages } from "./api";
-import { resolveRow, resolveRowWithDraft } from "./unitGroups";
-import type { Extraction, Listing } from "./types";
+import {
+  useExtractions, useFees, useListings, useOverrides, usePropertyImages, useUtilityOverrides,
+} from "./api";
+import { resolveRow, resolveRowWithDraft, unitGroupLabel } from "./unitGroups";
+import {
+  DEFAULT_OVERVIEW_FILTERS,
+  selectFilterDisplayPlan,
+  type OverviewFilterState,
+} from "./overviewRows";
+import type { Listing } from "./types";
 import drawerClasses from "./ListingDetailDrawer.module.css";
 
 export interface DrawerSelection {
@@ -58,6 +66,10 @@ const drawerStyles = {
     overflow: "hidden",
     height: "calc(100dvh - var(--drawer-offset, 0px) * 2)",
     maxHeight: "calc(100dvh - var(--drawer-offset, 0px) * 2)",
+    // Anchor for the drawer-scoped Floor Plan detail modal (P3-SC5): its
+    // absolute root/inner/overlay resolve against the whole drawer column
+    // (header + body), not the scroll region, and stay outside overflow:auto.
+    position: "relative",
   },
   body: {
     display: "flex",
@@ -66,35 +78,8 @@ const drawerStyles = {
     overflow: "hidden",
     minHeight: 0,
     padding: 0,
-    // Anchor for the drawer-scoped Floor Plan detail modal (P3-SC5): its
-    // absolute root/inner/overlay resolve against this box, so the overlay
-    // covers the drawer column and leaves the Overview behind it lit.
-    position: "relative",
   },
 } as const;
-
-// §9.5 utilities-included: the latest `utilities_included` extraction (hunt_id
-// NULL) rides in on the same useExtractions map the breakdown already reads.
-// Promoted from a dimmed line into a sage-tinted block inside "Cost & fees".
-function UtilitiesBlock({ extraction }: { extraction: Extraction | undefined }) {
-  if (!extraction) return null;
-  const included = Array.isArray(extraction.value) ? (extraction.value as string[]) : [];
-  return (
-    <Box className={drawerClasses.utilBlock}>
-      <IconDroplet size={18} stroke={2} className={drawerClasses.utilIcon} />
-      <Stack gap={2}>
-        <Text className={drawerClasses.utilLabel} tt="uppercase" fw={600}>
-          Utilities included
-        </Text>
-        <Text size="sm" className={drawerClasses.utilValue}>
-          {included.length
-            ? included.map((s) => s.replace(/_/g, " ")).join(" · ")
-            : "None stated"}
-        </Text>
-      </Stack>
-    </Box>
-  );
-}
 
 export function ListingDetailDrawer({
   huntId,
@@ -102,12 +87,14 @@ export function ListingDetailDrawer({
   opened,
   onClose,
   onExited,
+  filters = DEFAULT_OVERVIEW_FILTERS,
 }: {
   huntId: string;
   selection: DrawerSelection | null;
   opened: boolean;
   onClose: () => void;
   onExited?: () => void;
+  filters?: OverviewFilterState;
 }) {
   const isMobile = useMediaQuery("(max-width: 48em)");
   const onCloseRef = useRef(onClose);
@@ -136,6 +123,7 @@ export function ListingDetailDrawer({
             isMobile={!!isMobile}
             onClose={onClose}
             setCloseHandler={setCloseHandler}
+            filters={filters}
           />
         ) : null}
       </Drawer.Content>
@@ -150,6 +138,7 @@ function SelectionGate({
   isMobile,
   onClose,
   setCloseHandler,
+  filters,
 }: {
   huntId: string;
   selection: DrawerSelection;
@@ -157,10 +146,12 @@ function SelectionGate({
   isMobile: boolean;
   onClose: () => void;
   setCloseHandler: (fn: () => void) => void;
+  filters: OverviewFilterState;
 }) {
   const { data: listings, isLoading: listingsLoading } = useListings(huntId);
   const { listing } = resolveRow(listings ?? [], selection.listingId, selection.groupKey);
   const { data: fees } = useFees(listing?.id ?? "");
+  const { data: utilityOverrides } = useUtilityOverrides(listing?.id ?? "");
 
   useEffect(() => {
     if (opened && !listingsLoading && listings && !listing) onClose();
@@ -178,6 +169,7 @@ function SelectionGate({
       huntId={huntId}
       listing={listing}
       serverFees={fees ?? []}
+      serverUtilityOverrides={utilityOverrides ?? []}
     >
       <DrawerShell
         huntId={huntId}
@@ -186,6 +178,7 @@ function SelectionGate({
         isMobile={isMobile}
         onClose={onClose}
         setCloseHandler={setCloseHandler}
+        filters={filters}
       />
     </ListingDetailDraftProvider>
   );
@@ -198,6 +191,7 @@ function DrawerShell({
   isMobile,
   onClose,
   setCloseHandler,
+  filters,
 }: {
   huntId: string;
   selection: DrawerSelection;
@@ -205,9 +199,11 @@ function DrawerShell({
   isMobile: boolean;
   onClose: () => void;
   setCloseHandler: (fn: () => void) => void;
+  filters: OverviewFilterState;
 }) {
-  const { draftPins, isDirty, saving, saveAll, resetDraft } = useListingDetailDraft();
+  const { draftPins, setDraftPin, isDirty, saving, saveAll, resetDraft } = useListingDetailDraft();
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
+  const [openFloorPlanId, setOpenFloorPlanId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [headerScrolled, setHeaderScrolled] = useState(false);
 
@@ -216,12 +212,19 @@ function DrawerShell({
     setHeaderScrolled((el?.scrollTop ?? 0) > 0);
   }, []);
 
-  const { listing, group } = resolveRowWithDraft(
+  const { listing, group: resolvedGroup } = resolveRowWithDraft(
     listings,
     selection.listingId,
     selection.groupKey,
     draftPins,
   );
+  const group =
+    listing && resolvedGroup
+      ? selectFilterDisplayPlan(
+          { listing, group: resolvedGroup, state: null },
+          filters,
+        ).group
+      : resolvedGroup;
 
   const { data: catalog } = useCatalog();
   const { data: extractions, isLoading: extractionsLoading } = useExtractions(
@@ -230,6 +233,7 @@ function DrawerShell({
   );
   const { data: overrides } = useOverrides(listing?.id ?? "");
   const { data: fees } = useFees(listing?.id ?? "");
+  const { data: utilityOverrides } = useUtilityOverrides(listing?.id ?? "");
   const { data: images, isLoading: imagesLoading } = usePropertyImages(
     listing?.property_id ?? "",
   );
@@ -242,9 +246,7 @@ function DrawerShell({
     cats: Number(hunt?.settings.cats ?? 0),
     dogs: Number(hunt?.settings.dogs ?? 0),
   };
-  const memberNames = new Map(
-    members.map((m) => [m.user_id, m.display_name ?? m.user_id] as const),
-  );
+  const memberNames = memberDisplayNameMap(members);
 
   useEffect(() => {
     setCloseHandler(() => {
@@ -258,6 +260,7 @@ function DrawerShell({
 
   useEffect(() => {
     setHeaderScrolled(false);
+    setOpenFloorPlanId(null);
     scrollRef.current?.scrollTo({ top: 0 });
   }, [listing?.id, selection?.groupKey]);
 
@@ -272,6 +275,18 @@ function DrawerShell({
   // Display metadata for the hero's all-in stat: the pinned/displayed plan's
   // composition, falling back to the listing-level projection (§9.5 P3-9).
   const composition = group?.displayScore?.all_in_components ?? listing.all_in_components;
+  // P3-SC8: the same display-plan rule as the all-in composition — the move-in
+  // ledger must describe the plan the drawer is showing.
+  const moveInComposition =
+    group?.displayScore?.move_in_components ?? listing.move_in_components ?? null;
+  const utilitiesValue = extractionForFloorPlan(
+    extractions ?? [],
+    "utilities_included",
+    null,
+  )?.value;
+  const extractedIncluded = Array.isArray(utilitiesValue)
+    ? utilitiesValue.filter((item): item is string => typeof item === "string")
+    : null;
 
   const handleDiscard = () => {
     resetDraft();
@@ -284,6 +299,20 @@ function DrawerShell({
     setConfirmCloseOpen(false);
     if (ok) onClose();
   };
+
+  const openFloorPlan = group?.plans.find((plan) => plan.id === openFloorPlanId) ?? null;
+  const openFloorPlanScore = openFloorPlan
+    ? (listing.scores.find((row) => row.floor_plan_id === openFloorPlan.id) ?? undefined)
+    : undefined;
+  const openFloorPlanDiagramUrls = useMemo(() => {
+    if (!openFloorPlan) return [];
+    const urls: string[] = [];
+    for (const image of images ?? []) {
+      if (image.kind !== "floor_plan_diagram") continue;
+      if (image.floorPlanAssociations?.includes(openFloorPlan.id)) urls.push(image.url);
+    }
+    return urls;
+  }, [images, openFloorPlan]);
 
   return (
     <>
@@ -357,6 +386,7 @@ function DrawerShell({
                     overrides={overrides ?? []}
                     floorPlanId={displayFloorPlanId}
                     isMobile={isMobile}
+                    members={members}
                   />
                 )
               ) : isUnavailable ? (
@@ -370,34 +400,27 @@ function DrawerShell({
               )}
             </SectionCard>
 
-            <SectionCard title="Cost & fees">
-              <Stack gap="xs">
-                <AllInBreakdown composition={composition} />
-                <AllInOverrideControl
-                  overridden={activeOverrides(overrides ?? [], displayFloorPlanId).has(
-                    "all_in_monthly",
-                  )}
-                />
-                <FeeChecklist
-                  fees={fees ?? []}
-                  oneTimeFees={parseOneTimeFees(
-                    extractionForFloorPlan(extractions ?? [], "one_time_fees", null)?.value,
-                  )}
-                  household={household}
-                  memberNames={memberNames}
-                  feeOriginals={extractedFeeOriginals(
-                    extractionForFloorPlan(extractions ?? [], "mandatory_fees", null)?.value,
-                    extractionForFloorPlan(extractions ?? [], "one_time_fees", null)?.value,
-                  )}
-                />
-                <UtilitiesBlock
-                  extraction={extractionForFloorPlan(
-                    extractions ?? [],
-                    "utilities_included",
-                    null,
-                  )}
-                />
-              </Stack>
+            <SectionCard title="Cost &amp; fees">
+              <CostAndFees
+                composition={composition}
+                moveIn={moveInComposition}
+                fees={fees ?? []}
+                oneTimeFees={parseOneTimeFees(
+                  extractionForFloorPlan(extractions ?? [], "one_time_fees", null)?.value,
+                )}
+                household={household}
+                memberNames={memberNames}
+                feeOriginals={extractedFeeOriginals(
+                  extractionForFloorPlan(extractions ?? [], "mandatory_fees", null)?.value,
+                  extractionForFloorPlan(extractions ?? [], "one_time_fees", null)?.value,
+                )}
+                extractedIncluded={extractedIncluded}
+                utilityOverrides={utilityOverrides ?? []}
+                allInOverridden={activeOverrides(overrides ?? [], displayFloorPlanId).has(
+                  "all_in_monthly",
+                )}
+                floorPlanId={displayFloorPlanId}
+              />
             </SectionCard>
 
             <SectionCard title="Floor plans" hint={`${group?.plans.length ?? 0} plans`}>
@@ -405,14 +428,12 @@ function DrawerShell({
                 <FloorPlanList
                   group={group}
                   scores={listing.scores}
-                  huntId={huntId}
-                  listingId={listing.id}
                   catalog={catalog ?? []}
                   extractions={extractions ?? []}
                   overrides={overrides ?? []}
-                  sources={listing.property.sources}
                   images={images ?? []}
-                  isMobile={isMobile}
+                  openPlanId={openFloorPlanId}
+                  onOpenPlan={setOpenFloorPlanId}
                 />
               ) : (
                 <Text size="sm" c="dimmed">
@@ -506,6 +527,35 @@ function DrawerShell({
           </Box>
         )}
       </Drawer.Body>
+
+      {group && (
+        <FloorPlanDetailModal
+          opened={openFloorPlan !== null}
+          plan={openFloorPlan}
+          score={openFloorPlanScore}
+          huntId={huntId}
+          listingId={listing.id}
+          unitGroupLabel={unitGroupLabel(group.beds, group.baths)}
+          planCount={group.plans.length}
+          catalog={catalog ?? []}
+          extractions={extractions ?? []}
+          overrides={overrides ?? []}
+          sources={listing.property.sources}
+          diagramUrls={openFloorPlanDiagramUrls}
+          pinned={openFloorPlan ? (draftPins[group.key] ?? null) === openFloorPlan.id : false}
+          saving={saving}
+          isMobile={isMobile}
+          members={members}
+          onClose={() => setOpenFloorPlanId(null)}
+          onTogglePin={() =>
+            openFloorPlan &&
+            setDraftPin(
+              group.key,
+              (draftPins[group.key] ?? null) === openFloorPlan.id ? null : openFloorPlan.id,
+            )
+          }
+        />
+      )}
 
       <Modal
         opened={confirmCloseOpen}

@@ -5,17 +5,16 @@
 //
 // Pinning stays draft-only until the drawer's Save, exactly as before — the
 // card and the modal footer both call the same `setDraftPin`.
-import { Box, Group, Stack, Text } from "@mantine/core";
-import { useMemo, useState } from "react";
+import { Group, Stack, Text } from "@mantine/core";
+import { useMemo } from "react";
 
 import type { CatalogEntry } from "../rubric/api";
 import { amenityCounts, floorPlanAmenities } from "./floorPlanAmenities";
 import { FloorPlanCard } from "./FloorPlanCard";
 import listClasses from "./FloorPlanList.module.css";
-import { FloorPlanDetailModal } from "./FloorPlanDetailModal";
 import { useListingDetailDraft } from "./ListingDetailDraft";
 import type { PropertyImage } from "./api";
-import type { Extraction, Override, PropertySource, Score } from "./types";
+import type { Extraction, Override, Score } from "./types";
 import { unitGroupLabel, type UnitGroupRow } from "./unitGroups";
 
 const LEGEND: { state: string; glyph: string; word: string }[] = [
@@ -28,30 +27,25 @@ const LEGEND: { state: string; glyph: string; word: string }[] = [
 export interface FloorPlanListProps {
   group: UnitGroupRow;
   scores: Score[];
-  huntId: string;
-  listingId: string;
   catalog: CatalogEntry[];
   extractions: Extraction[];
   overrides: Override[];
-  sources: PropertySource[];
   images: PropertyImage[];
-  isMobile: boolean;
+  openPlanId: string | null;
+  onOpenPlan: (planId: string) => void;
 }
 
 export function FloorPlanList({
   group,
   scores,
-  huntId,
-  listingId,
   catalog,
   extractions,
   overrides,
-  sources,
   images,
-  isMobile,
+  openPlanId,
+  onOpenPlan,
 }: FloorPlanListProps) {
   const { draftPins, setDraftPin, saving } = useListingDetailDraft();
-  const [openPlanId, setOpenPlanId] = useState<string | null>(null);
 
   const scoreByPlan = useMemo(
     () => new Map(scores.map((score) => [score.floor_plan_id, score])),
@@ -82,7 +76,6 @@ export function FloorPlanList({
 
   const pinnedId = draftPins[group.key] ?? null;
   const label = unitGroupLabel(group.beds, group.baths);
-  const openPlan = group.plans.find((plan) => plan.id === openPlanId) ?? null;
   const displayed = pinnedId
     ? (group.plans.find((plan) => plan.id === pinnedId)?.plan_name ?? null)
     : group.displayPlan.plan_name;
@@ -96,6 +89,13 @@ export function FloorPlanList({
           {pinnedId ? (
             <>
               Pinned:{" "}
+              <Text span fw={600} c="var(--mantine-color-text)">
+                {displayed}
+              </Text>
+            </>
+          ) : group.filterSelectedPlanId ? (
+            <>
+              Filter-selected Floor Plan:{" "}
               <Text span fw={600} c="var(--mantine-color-text)">
                 {displayed}
               </Text>
@@ -144,34 +144,12 @@ export function FloorPlanList({
               allIn={score?.all_in_components?.total ?? null}
               unitGroupLabel={label}
               disabled={saving}
-              onOpen={() => setOpenPlanId(plan.id)}
+              onOpen={() => onOpenPlan(plan.id)}
               onTogglePin={() => togglePin(plan.id)}
             />
           );
         })}
       </Stack>
-
-      <Box>
-        <FloorPlanDetailModal
-          opened={openPlan !== null}
-          plan={openPlan}
-          score={openPlan ? scoreByPlan.get(openPlan.id) : undefined}
-          huntId={huntId}
-          listingId={listingId}
-          unitGroupLabel={label}
-          planCount={group.plans.length}
-          catalog={catalog}
-          extractions={extractions}
-          overrides={overrides}
-          sources={sources}
-          diagramUrls={openPlan ? (diagramsByPlan.get(openPlan.id) ?? []) : []}
-          pinned={openPlan ? pinnedId === openPlan.id : false}
-          saving={saving}
-          isMobile={isMobile}
-          onClose={() => setOpenPlanId(null)}
-          onTogglePin={() => openPlan && togglePin(openPlan.id)}
-        />
-      </Box>
     </Stack>
   );
 }

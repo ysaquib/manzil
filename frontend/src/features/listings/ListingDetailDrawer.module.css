@@ -47,19 +47,29 @@
   }
 }
 
-/* --- Utilities block (sage) --- */
+/* --- Read-only utilities-included banner (score-band colors) --- */
 .utilBlock {
   display: flex;
   gap: var(--mantine-spacing-xs);
   align-items: flex-start;
   padding: var(--mantine-spacing-sm) var(--mantine-spacing-sm);
   border-radius: 10px;
-  background: color-mix(in srgb, var(--mantine-color-green-6) 10%, var(--mantine-color-body));
-  border: 1px solid color-mix(in srgb, var(--mantine-color-green-6) 22%, var(--mantine-color-default-border));
+  background: color-mix(in srgb, var(--mantine-color-gray-6) 8%, var(--mantine-color-body));
+  border: 1px solid color-mix(in srgb, var(--mantine-color-gray-6) 20%, var(--mantine-color-default-border));
+}
+
+.utilBlock[data-level="high"] {
+  background: color-mix(in srgb, var(--mantine-color-scoreHigh-6) 13%, var(--mantine-color-body));
+  border-color: color-mix(in srgb, var(--mantine-color-scoreHigh-6) 28%, var(--mantine-color-default-border));
+}
+
+.utilBlock[data-level="highest"] {
+  background: color-mix(in srgb, var(--mantine-color-scoreHighest-6) 13%, var(--mantine-color-body));
+  border-color: color-mix(in srgb, var(--mantine-color-scoreHighest-6) 28%, var(--mantine-color-default-border));
 }
 
 .utilIcon {
-  color: var(--mantine-color-green-7);
+  color: var(--mantine-color-gray-7);
   flex-shrink: 0;
   margin-top: 1px;
 }
@@ -68,8 +78,18 @@
   font-size: 0.625rem;
   letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: var(--mantine-color-green-7);
+  color: var(--mantine-color-gray-7);
   font-weight: 600;
+}
+
+.utilBlock[data-level="high"] .utilIcon,
+.utilBlock[data-level="high"] .utilLabel {
+  color: var(--mantine-color-scoreHigh-7);
+}
+
+.utilBlock[data-level="highest"] .utilIcon,
+.utilBlock[data-level="highest"] .utilLabel {
+  color: var(--mantine-color-scoreHighest-7);
 }
 
 .utilValue {
@@ -78,7 +98,7 @@
   margin-top: 0.125rem;
 }
 
-/* --- Cost & fees ledger (All-in breakdown + Fees checklist) --- */
+/* --- Cost Breakdown / Fees ledgers --- */
 .ledgerSectionLabel {
   font-size: var(--mantine-font-size-xs);
   letter-spacing: 0.06em;

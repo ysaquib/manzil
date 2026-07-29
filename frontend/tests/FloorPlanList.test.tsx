@@ -1,11 +1,13 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useMemo, useState } from "react";
 import { describe, expect, it } from "vitest";
 
 import { renderWithProviders } from "./testUtils";
 import type { PropertyImage } from "../src/features/listings/api";
+import { FloorPlanDetailModal } from "../src/features/listings/FloorPlanDetailModal";
 import { FloorPlanList } from "../src/features/listings/FloorPlanList";
-import { ListingDetailDraftProvider } from "../src/features/listings/ListingDetailDraft";
+import { ListingDetailDraftProvider, useListingDetailDraft } from "../src/features/listings/ListingDetailDraft";
 import type { Extraction, FloorPlan, Listing, Score } from "../src/features/listings/types";
 import type { UnitGroupRow } from "../src/features/listings/unitGroups";
 import type { CatalogEntry } from "../src/features/rubric/api";
@@ -89,6 +91,7 @@ const group: UnitGroupRow = {
   scoredPlanCount: 2,
   displayPlan: birch,
   displayScore: birchScore,
+  filterSelectedPlanId: null,
   pinnedPlanId: null,
   rentMin: 1800,
   rentMax: 2100,
@@ -166,21 +169,75 @@ const diagram: PropertyImage = {
   floorPlanAssociations: ["plan-birch"],
 };
 
-function renderList(images: PropertyImage[] = [diagram]) {
-  return renderWithProviders(
-    <ListingDetailDraftProvider huntId="hunt-1" listing={listingFixture} serverFees={[]}>
+function FloorPlanSurface({
+  images,
+  isMobile = false,
+}: {
+  images: PropertyImage[];
+  isMobile?: boolean;
+}) {
+  const { draftPins, setDraftPin, saving } = useListingDetailDraft();
+  const [openPlanId, setOpenPlanId] = useState<string | null>(null);
+  const openPlan = group.plans.find((plan) => plan.id === openPlanId) ?? null;
+  const scoreByPlan = useMemo(
+    () => new Map([birchScore, cedarScore].map((score) => [score.floor_plan_id, score])),
+    [],
+  );
+  const diagramUrls = useMemo(() => {
+    if (!openPlan) return [];
+    const urls: string[] = [];
+    for (const image of images) {
+      if (image.kind !== "floor_plan_diagram") continue;
+      if (image.floorPlanAssociations?.includes(openPlan.id)) urls.push(image.url);
+    }
+    return urls;
+  }, [images, openPlan]);
+
+  return (
+    <div style={{ position: "relative", height: "32rem", overflow: "hidden" }}>
       <FloorPlanList
         group={group}
         scores={[birchScore, cedarScore]}
+        catalog={catalog}
+        extractions={extractions}
+        overrides={[]}
+        images={images}
+        openPlanId={openPlanId}
+        onOpenPlan={setOpenPlanId}
+      />
+      <FloorPlanDetailModal
+        opened={openPlan !== null}
+        plan={openPlan}
+        score={openPlan ? scoreByPlan.get(openPlan.id) : undefined}
         huntId="hunt-1"
         listingId="listing-1"
+        unitGroupLabel="1 bd / 1 ba"
+        planCount={group.plans.length}
         catalog={catalog}
         extractions={extractions}
         overrides={[]}
         sources={listingFixture.property.sources}
-        images={images}
-        isMobile={false}
+        diagramUrls={diagramUrls}
+        pinned={openPlan ? (draftPins[group.key] ?? null) === openPlan.id : false}
+        saving={saving}
+        isMobile={isMobile}
+        onClose={() => setOpenPlanId(null)}
+        onTogglePin={() =>
+          openPlan &&
+          setDraftPin(
+            group.key,
+            (draftPins[group.key] ?? null) === openPlan.id ? null : openPlan.id,
+          )
+        }
       />
+    </div>
+  );
+}
+
+function renderList(images: PropertyImage[] = [diagram]) {
+  return renderWithProviders(
+    <ListingDetailDraftProvider huntId="hunt-1" listing={listingFixture} serverFees={[]}>
+      <FloorPlanSurface images={images} />
     </ListingDetailDraftProvider>,
   );
 }
@@ -356,18 +413,7 @@ describe("FloorPlanList — detail modal", () => {
     const user = userEvent.setup();
     const { container } = renderWithProviders(
       <ListingDetailDraftProvider huntId="hunt-1" listing={listingFixture} serverFees={[]}>
-        <FloorPlanList
-          group={group}
-          scores={[birchScore, cedarScore]}
-          huntId="hunt-1"
-          listingId="listing-1"
-          catalog={catalog}
-          extractions={extractions}
-          overrides={[]}
-          sources={listingFixture.property.sources}
-          images={[diagram]}
-          isMobile
-        />
+        <FloorPlanSurface images={[diagram]} isMobile />
       </ListingDetailDraftProvider>,
     );
 
