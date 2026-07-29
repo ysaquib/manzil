@@ -12,7 +12,11 @@ vi.mock("../src/features/rubric/api", () => ({
 import type { CatalogEntry, RubricCriterion } from "../src/features/rubric/api";
 import { RubricEditor } from "../src/features/rubric/RubricEditor";
 
-const entry = (key: string, label: string): CatalogEntry => ({
+const entry = (
+  key: string,
+  label: string,
+  overrides: Partial<CatalogEntry> = {},
+): CatalogEntry => ({
   key,
   label,
   category: "unit",
@@ -23,6 +27,7 @@ const entry = (key: string, label: string): CatalogEntry => ({
   extraction_hint: "how this is read off the page",
   requires_tool: null,
   refresh_class: "static",
+  ...overrides,
 });
 
 const catalog = [
@@ -100,5 +105,56 @@ describe("RubricEditor", () => {
       ["sqft", true, 1],
       ["parking", false, 2],
     ]);
+  });
+
+  it("warns when objective flooring materials and subjective quality are both enabled", () => {
+    const flooringCatalog = [
+      entry("flooring_materials", "Flooring materials", {
+        value_schema: {
+          type: "array",
+          items: {
+            type: "string",
+            enum: ["carpet", "hardwood", "engineered_wood", "laminate"],
+          },
+        },
+        default_options: [
+          {
+            match: { op: "contains_any", value: ["hardwood", "engineered_wood"] },
+            delta: 0.5,
+            dealbreaker_set_score: null,
+          },
+        ],
+      }),
+      entry("flooring_quality", "Flooring quality", {
+        value_schema: { type: "string", enum: ["low", "medium", "high"] },
+        default_options: [
+          { match: { op: "eq", value: "high" }, delta: 0.5, dealbreaker_set_score: null },
+        ],
+      }),
+    ];
+    const flooringSaved: RubricCriterion[] = flooringCatalog.map((catalogEntry, position) => ({
+      catalog_key: catalogEntry.key,
+      custom_def: null,
+      enabled: true,
+      options: catalogEntry.default_options,
+      unknown_delta: 0,
+      non_negotiable: null,
+      is_bonus: true,
+      position,
+    }));
+
+    render(
+      <MantineProvider>
+        <RubricEditor
+          huntId="h1"
+          catalog={flooringCatalog}
+          saved={flooringSaved}
+          onDone={vi.fn()}
+        />
+      </MantineProvider>,
+    );
+
+    expect(screen.getByText("Review overlapping options")).toBeInTheDocument();
+    expect(screen.getByText(/avoid double-weighting flooring/)).toBeInTheDocument();
   });
 });

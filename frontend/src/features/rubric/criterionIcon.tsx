@@ -26,7 +26,12 @@ import {
   IconFence,
   IconGlassFull,
   IconHammer,
+  IconHanger,
   IconHome,
+  IconBread,
+  IconCooker,
+  IconFlame,
+  IconLayersSubtract,
   IconLayoutGrid,
   IconListCheck,
   IconMapPin,
@@ -44,9 +49,11 @@ import {
   IconThumbUp,
   IconTool,
   IconToolsKitchen2,
+  IconTrash,
   IconUrgent,
   IconUserCheck,
   IconWashMachine,
+  IconWind,
   IconWifi,
 } from "@tabler/icons-react";
 
@@ -82,6 +89,12 @@ const BY_KEY: Record<string, TablerIcon> = {
   parking: IconCar,
   cooling: IconSnowflake,
   dishwasher: IconGlassFull,
+  walk_in_closets: IconHanger,
+  pantry: IconBread,
+  disposal: IconTrash,
+  fireplace: IconFlame,
+  ceiling_fans: IconWind,
+  stainless_steel_appliances: IconCooker,
   unit_types: IconLayoutGrid,
   // Policies
   pets_policy: IconPaw,
@@ -94,6 +107,7 @@ const BY_KEY: Record<string, TablerIcon> = {
   // Condition
   kitchen_quality: IconToolsKitchen2,
   flooring_quality: IconTexture,
+  flooring_materials: IconLayersSubtract,
   // Location
   grocery_proximity: IconShoppingCart,
   location_safety: IconShield,
