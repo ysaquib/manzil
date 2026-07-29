@@ -127,6 +127,11 @@ MAX_IMAGE_CLASSIFY_IMAGES = 30
 MAX_VISION_TARGET_IMAGES = 8
 VISION_TARGET_QUOTAS = {"kitchen_quality": 3}
 IMAGE_CLASSIFY_MAX_DIM = 384
+# How many response anomalies IMAGE_CLASSIFY tolerates in one batch before it
+# fails closed: at most this many requested hashes may go unanswered, and at
+# most this many surplus records (unknown hashes + repeats) may arrive. Beyond
+# that the response is not a slightly-lossy batch, it is a malformed one.
+IMAGE_CLASSIFY_ANOMALY_TOLERANCE = 2
 IMAGE_CLASSIFY_WEBP_QUALITY = 70
 IMAGE_PERCEPTUAL_HASH_DISTANCE = 5
 IMAGE_MAX_DIM = 1024

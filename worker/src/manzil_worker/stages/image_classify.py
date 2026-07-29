@@ -9,6 +9,7 @@ from typing import Literal
 import structlog
 from manzil_shared.config import (
     DIAGRAM_NORMALIZATION_PROFILE,
+    IMAGE_CLASSIFY_ANOMALY_TOLERANCE,
     IMAGE_PERCEPTUAL_HASH_DISTANCE,
     MAX_IMAGE_CLASSIFY_IMAGES,
     VISION_TARGET_QUOTAS,
@@ -27,7 +28,7 @@ from manzil_worker.llm import VisionImage
 from manzil_worker.llm.config import model_for_stage
 from manzil_worker.llm.prompt_loader import load_prompt
 from manzil_worker.stages.base import StageCtx
-from manzil_worker.state import PropertyImageIn, RunState
+from manzil_worker.state import PropertyImageIn, RunState, StageWarning
 from manzil_worker.vision_refs import load_reference_manifest, vision_references_ready
 
 log = structlog.get_logger()
@@ -49,6 +50,164 @@ class ImageClassification(BaseModel):
 
 class ImageClassificationBatch(BaseModel):
     assessments: list[ImageClassification] = Field(default_factory=list)
+
+
+CONFIDENCE_RANK = {"low": 0, "medium": 1, "high": 2}
+
+# Scenes that are containers rather than claims: a specific room recognised
+# where the other reading said "living" or "other" is the same picture read more
+# sharply, not a contradiction (open-plan kitchens produce exactly this).
+_GENERIC_SCENES = {"other", "living"}
+_INTERIOR_SCENES = {"kitchen", "bathroom", "bedroom", "living"}
+
+
+class ClassificationBatch(BaseModel):
+    """What one classifier response actually yielded, after reconciliation.
+
+    `resolved` is the usable classification per requested hash; `missing`,
+    `disputed`, and `surplus` are the tolerated anomalies the stage turns into
+    task-card warnings.
+    """
+
+    resolved: dict[str, ImageClassification] = Field(default_factory=dict)
+    missing: list[str] = Field(default_factory=list)
+    disputed: list[str] = Field(default_factory=list)
+    unknown: list[str] = Field(default_factory=list)
+    repeats: int = 0
+
+
+def _sharper(left: ImageClassification, right: ImageClassification) -> ImageClassification | None:
+    """The sharper of two readings of one image, or None when they truly disagree.
+
+    A diagram claim flips the image's `kind` and removes it from every quality
+    path, so a disagreement about it is never reconciled away.
+    """
+    if left.diagram != right.diagram or left.irrelevant != right.irrelevant:
+        return None
+    if left.primary_scene == right.primary_scene:
+        return left  # same picture, same verdict — the first reading stands
+    scenes = {left.primary_scene, right.primary_scene}
+    if not scenes & _GENERIC_SCENES:
+        return None  # two positive, incompatible claims — e.g. kitchen vs exterior
+    if "other" in scenes:  # the catch-all loses to any real scene
+        return left if right.primary_scene == "other" else right
+    if scenes <= _INTERIOR_SCENES:  # living vs a specific room inside it
+        return left if right.primary_scene == "living" else right
+    return None  # e.g. living vs exterior — same generality, different picture
+
+
+def _reconcile_repeats(records: list[ImageClassification]) -> ImageClassification | None:
+    """Fold repeated readings of one hash into one, or None when disputed.
+
+    Confidence decides first — a `high` reading beats a `medium` one outright.
+    Only a tie falls through to the content of the two classifications.
+    """
+    winner = records[0]
+    for record in records[1:]:
+        by_confidence = CONFIDENCE_RANK[record.confidence] - CONFIDENCE_RANK[winner.confidence]
+        if by_confidence > 0:
+            winner = record
+        elif by_confidence == 0:
+            sharper = _sharper(winner, record)
+            if sharper is None:
+                return None
+            winner = sharper
+    return winner
+
+
+def reconcile_classification_batch(
+    requested: list[str], assessments: list[ImageClassification]
+) -> ClassificationBatch:
+    """Reconcile a classifier response against the hashes it was asked about.
+
+    The strict contract (every requested hash exactly once, nothing else) is
+    what we want and what the prompt asks for, but no benched model holds it
+    across a 30-image batch (DESIGN §20 2026-07-28). So a *small* shortfall
+    degrades instead of failing: up to `IMAGE_CLASSIFY_ANOMALY_TOLERANCE`
+    unanswered hashes and as many surplus records are tolerated and reported.
+    Past that the response is malformed, not lossy, and the stage still fails
+    closed rather than persist evidence from a call that went wrong.
+    """
+    wanted = set(requested)
+    grouped: dict[str, list[ImageClassification]] = {}
+    unknown: list[str] = []
+    for assessment in assessments:
+        if assessment.content_hash in wanted:
+            grouped.setdefault(assessment.content_hash, []).append(assessment)
+        else:
+            unknown.append(assessment.content_hash)
+
+    missing = [content_hash for content_hash in requested if content_hash not in grouped]
+    repeats = sum(len(records) - 1 for records in grouped.values())
+    surplus = len(unknown) + repeats
+    if (
+        len(missing) > IMAGE_CLASSIFY_ANOMALY_TOLERANCE
+        or surplus > IMAGE_CLASSIFY_ANOMALY_TOLERANCE
+    ):
+        raise ValueError(
+            "IMAGE_CLASSIFY response is malformed beyond tolerance: "
+            f"{len(missing)} of {len(requested)} requested hashes unanswered, "
+            f"{len(unknown)} unknown and {repeats} repeated records "
+            f"(tolerance {IMAGE_CLASSIFY_ANOMALY_TOLERANCE} each)"
+        )
+
+    batch = ClassificationBatch(missing=missing, unknown=unknown, repeats=repeats)
+    for content_hash, records in grouped.items():
+        winner = records[0] if len(records) == 1 else _reconcile_repeats(records)
+        if winner is None:
+            batch.disputed.append(content_hash)
+        else:
+            batch.resolved[content_hash] = winner
+    return batch
+
+
+def _classification_warnings(
+    *,
+    requested: int,
+    unanswered: list[str],
+    disputed: list[str],
+    unknown: int,
+    repeats: int,
+) -> list[StageWarning]:
+    """One task-card line per kind of anomaly the batch survived."""
+    warnings: list[StageWarning] = []
+    if unanswered:
+        warnings.append(
+            StageWarning(
+                stage="IMAGE_CLASSIFY",
+                code="classification_missing",
+                message=(
+                    f"The classifier skipped {len(unanswered)} of {requested} photos; "
+                    "they are marked unclassified and excluded from photo-based ratings."
+                ),
+                detail={"content_hashes": unanswered},
+            )
+        )
+    if disputed:
+        warnings.append(
+            StageWarning(
+                stage="IMAGE_CLASSIFY",
+                code="classification_disputed",
+                message=(
+                    f"{len(disputed)} of {requested} photos came back with conflicting "
+                    "classifications and were excluded from photo-based ratings."
+                ),
+                detail={"content_hashes": disputed},
+            )
+        )
+    if unknown or repeats:
+        warnings.append(
+            StageWarning(
+                stage="IMAGE_CLASSIFY",
+                code="classification_surplus",
+                message=(
+                    f"The classifier returned {unknown + repeats} extra records "
+                    f"for a batch of {requested} photos."
+                ),
+                detail={"unknown": unknown, "repeated": repeats},
+            )
+        )
+    return warnings
 
 
 def hamming_distance(left: str, right: str) -> int:
@@ -197,9 +356,20 @@ async def image_classify_stage(state: RunState, ctx: StageCtx) -> RunState:
     cache_key = f"{model}:prompt-{prompt.version}"
     cached = await ctx.existing_image_classifications(state.property_id)
     pending: list[tuple[PropertyImageIn, bytes]] = []
+    # Classifications from an earlier run under a *different* model/prompt. They
+    # are not fresh enough to skip the call, but they are real evidence, so a
+    # re-ask the classifier then skips must not throw them away.
+    superseded: dict[str, dict] = {}
     for image in state.property_images[:MAX_IMAGE_CLASSIFY_IMAGES]:
         prior_analysis = cached.get(image.content_hash)
         prior = prior_analysis.get("classification") if isinstance(prior_analysis, dict) else None
+        if isinstance(prior, dict) and prior.get("cache_key") != cache_key:
+            try:
+                ImageClassification.model_validate(prior.get("assessment"))
+            except (ValueError, TypeError):
+                pass
+            else:
+                superseded[image.content_hash] = prior
         if isinstance(prior, dict) and prior.get("cache_key") == cache_key:
             image.vision_assessment = dict(prior_analysis)
             cached_assessment = ImageClassification.model_validate(prior.get("assessment"))
@@ -211,6 +381,7 @@ async def image_classify_stage(state: RunState, ctx: StageCtx) -> RunState:
         normalized = await ctx.image_store.get(image.storage_path)
         pending.append((image, classification_thumbnail(normalized)))
 
+    warnings: list[StageWarning] = []
     if pending:
         blocks = [
             VisionImage(
@@ -221,17 +392,45 @@ async def image_classify_stage(state: RunState, ctx: StageCtx) -> RunState:
             for image, thumbnail in pending
         ]
         result = await ctx.call_vision("image_classify", ImageClassificationBatch, blocks)
-        requested = [block.content_hash for block in blocks]
-        returned = [assessment.content_hash for assessment in result.assessments]
-        if len(returned) != len(set(returned)) or set(returned) != set(requested):
-            raise ValueError("IMAGE_CLASSIFY must return every requested hash exactly once")
-        by_hash = {assessment.content_hash: assessment for assessment in result.assessments}
+        batch = reconcile_classification_batch(
+            [block.content_hash for block in blocks], result.assessments
+        )
+        unanswered: list[str] = []
+        disputed: list[str] = []
         for (image, _), block in zip(pending, blocks, strict=True):
+            resolved = batch.resolved.get(block.content_hash)
+            if resolved is None:
+                # Unanswered or disputed. Recorded as exactly that — an image the
+                # classifier failed on reads differently from one it looked at
+                # and found nothing in — and deliberately left un-cache-keyed so
+                # the next run asks about it again.
+                unresolved = "disputed" if block.content_hash in batch.disputed else "missing"
+                (disputed if unresolved == "disputed" else unanswered).append(image.content_hash)
+                # A skipped image keeps an older run's classification (this call
+                # said nothing about it, so nothing is contradicted) with the
+                # skip recorded beside it — the retained assessment's own
+                # model/prompt provenance stays intact. A disputed image does
+                # not: two current readings conflict, and that is the one case
+                # where stale evidence must not settle it. With no `assessment`,
+                # every quality path skips it (`eligible_quality_images`).
+                prior = superseded.get(image.content_hash) if unresolved == "missing" else None
+                classification = (
+                    {**prior, "status": unresolved, "unanswered_by": model}
+                    if prior is not None
+                    else {
+                        "status": unresolved,
+                        "model": model,
+                        "prompt_version": prompt.version,
+                    }
+                )
+                image.vision_assessment = {
+                    **(image.vision_assessment or {}),
+                    "classification": classification,
+                }
+                continue
             # The transport hash authenticates the in-memory thumbnail bytes;
             # cache and selection remain keyed to the normalized Property image.
-            assessment = by_hash[block.content_hash].model_copy(
-                update={"content_hash": image.content_hash}
-            )
+            assessment = resolved.model_copy(update={"content_hash": image.content_hash})
             if assessment.diagram:
                 image.kind = "floor_plan_diagram"
             elif assessment.irrelevant:
@@ -245,6 +444,16 @@ async def image_classify_stage(state: RunState, ctx: StageCtx) -> RunState:
                     "assessment": assessment.model_dump(),
                 },
             }
+        warnings.extend(
+            _classification_warnings(
+                requested=len(blocks),
+                unanswered=unanswered,
+                disputed=disputed,
+                unknown=len(batch.unknown),
+                repeats=batch.repeats,
+            )
+        )
+    state.replace_warnings("IMAGE_CLASSIFY", warnings)
 
     await _renormalize_late_diagrams(state, ctx)
 
