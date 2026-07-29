@@ -61,4 +61,16 @@ describe("OverviewFilterBar counts", () => {
       "3 visible · 7 filtered out",
     );
   });
+
+  it("calls out manual pins whose alternate Floor Plans may match", () => {
+    renderBar({
+      filters: { ...DEFAULT_OVERVIEW_FILTERS, availableBy: "2026-08-15" },
+      visibleCount: 4,
+      totalCount: 10,
+      manualPinAlternateMatchCount: 2,
+    });
+    expect(screen.getByLabelText("Manual pin filter note")).toHaveTextContent(
+      "2 pinned Unit Groups may have another Floor Plan that meets these filters.",
+    );
+  });
 });

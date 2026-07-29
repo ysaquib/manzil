@@ -1,7 +1,8 @@
 // Unit Group derivation (§3, §9.4): group a listing's floor plans by
 // (beds, baths); each plan is scored independently and the group displays the
-// best score — unless a per-group pin (§8.2 hunt_listings.pins) switches the
-// group to the pinned plan. Pure and unit-tested.
+// best score — unless a per-group manual pin (§8.2 hunt_listings.pins) or the
+// ephemeral filter-selection rule (§9.4) switches the Display Floor Plan.
+// Pure and unit-tested.
 import type { FloorPlan, Listing, Score } from "./types";
 
 export interface UnitGroupRow {
@@ -14,9 +15,15 @@ export interface UnitGroupRow {
   plans: FloorPlan[];
   /** number of plans in this group that have a score */
   scoredPlanCount: number;
-  /** the plan whose score the row displays: pinned, else best-scored, else first */
+  /** the plan whose score the row displays: manual pin, filter match, best score, or first */
   displayPlan: FloorPlan;
   displayScore: Score | null;
+  /**
+   * Ephemeral filter-selected Display Floor Plan. Never persisted to
+   * `hunt_listings.pins`; null for manual pins and the ordinary best-score
+   * selection.
+   */
+  filterSelectedPlanId: string | null;
   pinnedPlanId: string | null;
   rentMin: number | null;
   rentMax: number | null;
@@ -81,6 +88,7 @@ export function deriveUnitGroups(listing: Listing): UnitGroupRow[] {
       scoredPlanCount: scored.length,
       displayPlan,
       displayScore,
+      filterSelectedPlanId: null,
       pinnedPlanId: pinned ? pinnedPlanId : null,
       rentMin: rangeMin(plans.map((p) => p.rent_min ?? p.rent_max)),
       rentMax: rangeMax(plans.map((p) => p.rent_max ?? p.rent_min)),

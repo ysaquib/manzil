@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   allInValue,
+  analyzeOverviewFilters,
   applyOverviewFilters,
   buildRows,
   DEFAULT_OVERVIEW_FILTERS,
@@ -258,6 +259,99 @@ describe("applyOverviewFilters (criterion + cost + availability-date)", () => {
       availableBy: "2026-08-15",
     });
     expect(filtered.map((r) => r.listing.id)).toEqual(["f1", "f3"]); // f2 opens Oct 1
+  });
+});
+
+describe("Floor Plan-aware filter selection", () => {
+  function multiPlanListing(): Listing {
+    const listing = makeListing(
+      "multi",
+      "Many Plans",
+      [
+        {
+          plan_name: "High-score late",
+          availability_date: "2026-10-01",
+          rent_min: 1800,
+          rent_max: 1800,
+        },
+        {
+          plan_name: "Lower-score early",
+          availability_date: "2026-08-01",
+          rent_min: 2100,
+          rent_max: 2100,
+        },
+      ],
+      { "multi-plan-0": 11, "multi-plan-1": 8 },
+    );
+    listing.scores[0].breakdown.criteria = [
+      { key: "dishwasher", value: "none", matched: null, delta: 0 },
+    ];
+    listing.scores[1].breakdown.criteria = [
+      { key: "dishwasher", value: "confirmed", matched: null, delta: 0 },
+    ];
+    return listing;
+  }
+
+  it("temporarily displays the best-scoring Floor Plan that meets an availability date", () => {
+    const listing = multiPlanListing();
+    const result = analyzeOverviewFilters(buildRows([listing]), {
+      ...DEFAULT_OVERVIEW_FILTERS,
+      availableBy: "2026-08-15",
+    });
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0].group?.displayPlan.plan_name).toBe("Lower-score early");
+    expect(result.rows[0].group?.filterSelectedPlanId).toBe("multi-plan-1");
+    expect(result.rows[0].group?.pinnedPlanId).toBeNull();
+
+    const cleared = applyOverviewFilters(buildRows([listing]), DEFAULT_OVERVIEW_FILTERS);
+    expect(cleared[0].group?.displayPlan.plan_name).toBe("High-score late");
+    expect(cleared[0].group?.filterSelectedPlanId).toBeNull();
+  });
+
+  it("requires one Floor Plan to satisfy every active Floor-Plan filter", () => {
+    const listing = multiPlanListing();
+    const result = analyzeOverviewFilters(buildRows([listing]), {
+      ...DEFAULT_OVERVIEW_FILTERS,
+      maxRent: 2000,
+      dishwasher: true,
+    });
+
+    // The first plan satisfies rent, the second dishwasher; their facts must
+    // not be combined into a Unit Group match.
+    expect(result.rows).toHaveLength(0);
+  });
+
+  it("keeps a matching manual pin authoritative", () => {
+    const listing = multiPlanListing();
+    listing.pins = { "2-2": "multi-plan-1" };
+    const result = analyzeOverviewFilters(buildRows([listing]), {
+      ...DEFAULT_OVERVIEW_FILTERS,
+      availableBy: "2026-08-15",
+    });
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0].group?.pinnedPlanId).toBe("multi-plan-1");
+    expect(result.rows[0].group?.filterSelectedPlanId).toBeNull();
+    expect(result.manualPinAlternateMatchCount).toBe(0);
+  });
+
+  it("hides a failing manual pin and counts an alternate Floor Plan match", () => {
+    const listing = multiPlanListing();
+    listing.pins = { "2-2": "multi-plan-0" };
+    const result = analyzeOverviewFilters(buildRows([listing]), {
+      ...DEFAULT_OVERVIEW_FILTERS,
+      availableBy: "2026-08-15",
+    });
+
+    expect(result.rows).toHaveLength(0);
+    expect(result.manualPinAlternateMatchCount).toBe(1);
+
+    // Clearing filters clears only the ephemeral selection, never the
+    // persisted manual pin.
+    const cleared = analyzeOverviewFilters(buildRows([listing]), DEFAULT_OVERVIEW_FILTERS);
+    expect(cleared.rows[0].group?.pinnedPlanId).toBe("multi-plan-0");
+    expect(cleared.rows[0].group?.filterSelectedPlanId).toBeNull();
   });
 });
 

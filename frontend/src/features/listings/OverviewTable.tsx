@@ -1,6 +1,7 @@
 // Overview table (P1-10, §13.2; redesigned UI Decision Log 2026-07-26): plain
 // Mantine Table over the tested pure row logic in overviewRows.ts. One row per
-// Unit Group; the score cell shows the group's best or pinned plan (§9.4).
+// Unit Group; the score cell shows the group's manual pin, filter-selected
+// Floor Plan, or ordinary best-scoring plan (§9.4).
 //
 // Layout decisions:
 // - One fact per column, so every value stays independently sortable, grouped
@@ -584,6 +585,8 @@ export function OverviewTable({
                     <ScoreCell
                       total={group.displayScore.total}
                       pinned={group.pinnedPlanId !== null}
+                      filterSelected={group.filterSelectedPlanId !== null}
+                      planName={group.displayPlan.plan_name}
                       planCount={group.scoredPlanCount}
                     />
                   ) : (
