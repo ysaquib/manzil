@@ -30,7 +30,9 @@ VerifyCheck = Literal["evidence", "conformance", "plausibility", "consistency"]
 
 # Utilities a listing can state are included in rent (§9.5). Kept here so the
 # EXTRACT schema block and the RunState model share one closed vocabulary.
-UtilityKind = Literal["water", "sewer", "trash", "gas", "electric", "heat", "internet", "cable"]
+UtilityKind = Literal[
+    "water", "sewer", "trash", "gas", "electric", "cooling", "heat", "internet", "cable"
+]
 
 
 class SourceClaim(BaseModel):
@@ -216,9 +218,7 @@ class HeatingClaimIn(BaseModel):
 
     @field_validator("applicability")
     @classmethod
-    def applicability_is_unit_scoped(
-        cls, value: UnitApplicability
-    ) -> UnitApplicability:
+    def applicability_is_unit_scoped(cls, value: UnitApplicability) -> UnitApplicability:
         return value
 
 
@@ -331,6 +331,10 @@ class PlanScore(BaseModel):
     plan_name: str | None = None
     breakdown: dict[str, Any]
     all_in_components: dict[str, Any] | None = None
+    # P3-SC8 §9.5: this plan's move-in ledger (display metadata, projected onto
+    # scores.move_in_components). Optional-with-default so pre-P3-SC8 snapshots
+    # keep validating.
+    move_in_components: dict[str, Any] | None = None
 
 
 class SourceFreshness(BaseModel):
@@ -458,6 +462,24 @@ class PlanManifest(BaseModel):
     escalation: PlanEscalation | None = None
 
 
+class StageWarning(BaseModel):
+    """A non-fatal degradation a stage wants the human to see.
+
+    Warnings never halt or park a run — that is what `error` and checkpoints are
+    for. They travel on the RunState, land on the `jobs.warnings` column, and
+    surface on the task card so a run that finished *slightly* short of its
+    inputs says so instead of looking clean.
+
+    `stage` owns its warnings: a stage that re-runs on resume replaces its own
+    entries (`RunState.replace_warnings`) rather than appending duplicates.
+    """
+
+    stage: str
+    code: str
+    message: str
+    detail: dict[str, Any] = Field(default_factory=dict)
+
+
 class RunState(BaseModel):
     job_id: UUID
     job_type: JobType
@@ -517,9 +539,20 @@ class RunState(BaseModel):
     # badges), projected onto hunt_listings.all_in_components. Display metadata;
     # the pinned breakdown stays the scoring truth.
     all_in_components: dict[str, Any] | None = None
+    # P3-SC8: the display plan's move-in ledger, projected onto
+    # hunt_listings.move_in_components. Display metadata; the Criterion value
+    # travels in the pinned breakdown like any other.
+    move_in_components: dict[str, Any] | None = None
     scores: list[PlanScore] = Field(default_factory=list)
     display_score_index: int | None = None
     checkpoint: CheckpointPrompt | None = None
     checkpoint_answer: dict[str, Any] | None = None
     confirm_value_resolved: list[str] = Field(default_factory=list)
+    # Non-fatal degradations to show on the task card. Optional-with-default so
+    # every pre-existing snapshot and recorded fixture keeps validating.
+    warnings: list[StageWarning] = Field(default_factory=list)
     cost_usd: float = 0.0
+
+    def replace_warnings(self, stage: str, warnings: list[StageWarning]) -> None:
+        """Make `stage`'s warnings exactly `warnings` (idempotent across resume)."""
+        self.warnings = [warning for warning in self.warnings if warning.stage != stage] + warnings

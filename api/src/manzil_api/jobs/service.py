@@ -17,7 +17,7 @@ from manzil_api.jobs.exceptions import (
     JobNotRetryable,
     NotJobOwner,
 )
-from manzil_api.jobs.schemas import CheckpointAnswer, JobResponse
+from manzil_api.jobs.schemas import CheckpointAnswer, JobResponse, JobWarning
 from supabase import Client
 
 
@@ -25,6 +25,16 @@ def _parse_payload(raw: Any) -> dict[str, Any]:
     if isinstance(raw, str):
         return json.loads(raw)
     return raw or {}
+
+
+def _parse_warnings(raw: Any) -> list[JobWarning]:
+    """`jobs.warnings` → the response list. Rows written before the column
+    existed (and any shape the worker did not write) read as no warnings."""
+    if isinstance(raw, str):
+        raw = json.loads(raw)
+    if not isinstance(raw, list):
+        return []
+    return [JobWarning.model_validate(item) for item in raw if isinstance(item, dict)]
 
 
 def _row_to_response(row: dict[str, Any]) -> JobResponse:
@@ -49,6 +59,7 @@ def _row_to_response(row: dict[str, Any]) -> JobResponse:
         started_at=row.get("started_at"),
         finished_at=row.get("finished_at"),
         checkpoint=checkpoint,
+        warnings=_parse_warnings(row.get("warnings")),
     )
 
 

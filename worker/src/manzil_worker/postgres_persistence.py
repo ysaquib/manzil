@@ -92,6 +92,9 @@ class PostgresPersistence:
             if state.plan is not None
             else None
         )
+        # Non-fatal degradations for the task card (§10.8). Rewritten wholesale:
+        # stages own their own entries on the RunState, so the column mirrors it.
+        warnings = json.dumps([warning.model_dump(mode="json") for warning in state.warnings])
         finished = state.status in _TERMINAL
         current_stage = self._current_stage(cursor)
 
@@ -112,6 +115,7 @@ class PostgresPersistence:
                     payload = jsonb_set(coalesce(payload, '{}'::jsonb),
                                         '{run_state}', $6::jsonb, true),
                     plan = $7::jsonb,
+                    warnings = $9::jsonb,
                     locked_at = now(),
                     finished_at = case when $8 then now() else finished_at end
                 where id = $1
@@ -124,6 +128,7 @@ class PostgresPersistence:
                 snapshot,
                 plan,
                 finished,
+                warnings,
             )
             # A stage completes when the cursor advances past it (persist-before-
             # advance means outputs are already durable at that point).

@@ -52,6 +52,10 @@ API_MUTATION_MATRIX = [
     MatrixCase("curator", "fee", "owner", True),
     MatrixCase("member", "fee", "member", True),
     MatrixCase("member", "fee", "owner", False),
+    MatrixCase("owner", "utility", "owner", True),
+    MatrixCase("curator", "utility", "owner", True),
+    MatrixCase("member", "utility", "member", True),
+    MatrixCase("member", "utility", "owner", False),
     MatrixCase("owner", "delete_listing", "owner", True),
     MatrixCase("curator", "delete_listing", "owner", False),
     MatrixCase("member", "delete_listing", "member", False),
@@ -228,6 +232,11 @@ async def test_api_mutation_matrix(
         response = await client.put(
             f"/v1/listings/{listing_id}/fees/parking",
             json={"amount": 25, "value_state": "manual"},
+        )
+    elif case.action == "utility":
+        response = await client.put(
+            f"/v1/listings/{listing_id}/utilities/electric",
+            json={"included": False, "monthly_amount": 80},
         )
     elif case.action == "delete_listing":
         response = await client.delete(f"/v1/listings/{listing_id}")
