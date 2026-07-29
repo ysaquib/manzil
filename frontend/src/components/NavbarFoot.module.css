@@ -1,0 +1,88 @@
+/* Navbar foot — feedback entry + in-place account cluster (P3-16). */
+
+.foot {
+  border-top: 1px solid var(--mantine-color-default-border);
+  margin: var(--mantine-spacing-xs) calc(var(--mantine-spacing-xs) * -1) 0;
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-xs) 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Dashed, so it reads as reachable-but-secondary and is never mistaken for a
+   navigation item sitting directly above it. */
+.feedback {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+  border-radius: var(--mantine-radius-md);
+  border: 1px dashed var(--mantine-color-default-border);
+  color: var(--mantine-color-text);
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.feedbackIcon {
+  color: var(--mantine-color-accent-filled);
+  flex: none;
+}
+
+.feedback:hover {
+  background-color: var(--mantine-color-accent-light);
+  border-color: var(--mantine-color-accent-filled);
+  color: var(--mantine-color-accent-light-color);
+}
+
+.account {
+  padding: 6px var(--mantine-spacing-xs);
+  border-radius: var(--mantine-radius-md);
+  border: 1px solid transparent;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.account:hover,
+.account[aria-expanded="true"] {
+  background-color: var(--mantine-color-default-hover);
+  border-color: var(--mantine-color-default-border);
+}
+
+.identity {
+  min-width: 0;
+  flex: 1;
+}
+
+.chevron {
+  color: var(--mantine-color-dimmed);
+  flex: none;
+  transition: transform 150ms ease;
+}
+
+.chevron[data-expanded] {
+  transform: rotate(180deg);
+}
+
+.item,
+.itemDanger {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  padding: 6px var(--mantine-spacing-sm);
+  border-radius: var(--mantine-radius-md);
+  color: var(--mantine-color-text);
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.item:hover {
+  background-color: var(--mantine-color-default-hover);
+}
+
+.itemDanger:hover {
+  background-color: var(--mantine-color-red-light);
+  color: var(--mantine-color-red-light-color);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron {
+    transition: none;
+  }
+}
