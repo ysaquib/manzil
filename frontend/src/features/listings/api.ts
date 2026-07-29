@@ -14,6 +14,8 @@ import type {
   Override,
   ResolutionCandidate,
   UnitGroupState,
+  UtilityName,
+  UtilityOverride,
 } from "./types";
 
 type ListingResponse = components["schemas"]["ListingResponse"];
@@ -109,6 +111,22 @@ export function useFees(listingId: string) {
         .eq("hunt_listing_id", listingId);
       if (error) throw error;
       return (data ?? []) as FeeEntry[];
+    },
+    enabled: Boolean(listingId),
+  });
+}
+
+export function useUtilityOverrides(listingId: string) {
+  return useQuery({
+    queryKey: ["utility_overrides", listingId],
+    queryFn: async (): Promise<UtilityOverride[]> => {
+      const { data, error } = await supabase
+        .from("current_utility_overrides")
+        .select("*")
+        .eq("hunt_listing_id", listingId)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as UtilityOverride[];
     },
     enabled: Boolean(listingId),
   });
@@ -300,6 +318,25 @@ export function useUpsertFee(huntId: string, listingId: string) {
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["fee_checklist", listingId] });
+      void qc.invalidateQueries({ queryKey: ["hunt_listings", huntId] });
+    },
+  });
+}
+
+export function useUpsertUtilityOverride(huntId: string, listingId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ utility, included, monthly_amount, note }: {
+      utility: UtilityName;
+      included: boolean | null;
+      monthly_amount: number | null;
+      note?: string | null;
+    }) => apiFetch<UtilityOverride>(`/v1/listings/${listingId}/utilities/${utility}`, {
+      method: "PUT",
+      body: { included, monthly_amount, note: note ?? null },
+    }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["utility_overrides", listingId] });
       void qc.invalidateQueries({ queryKey: ["hunt_listings", huntId] });
     },
   });
