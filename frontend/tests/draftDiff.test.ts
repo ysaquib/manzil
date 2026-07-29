@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   changedFeeSlots,
+  changedUtilities,
   isDraftDirty,
   isFeeSlotDirty,
   isPinsDirty,
+  isUtilityDirty,
   pinsEqual,
 } from "../src/features/listings/draftDiff";
-import type { FeeEntry } from "../src/features/listings/types";
+import type { FeeEntry, UtilityOverride } from "../src/features/listings/types";
 
 const serverFees: FeeEntry[] = [
   {
@@ -18,6 +20,19 @@ const serverFees: FeeEntry[] = [
     entered_by: null,
     evidence_ref: null,
     updated_at: null,
+  },
+];
+
+const serverUtilities: UtilityOverride[] = [
+  {
+    id: "utility-1",
+    hunt_listing_id: "listing-1",
+    utility: "electric",
+    included: false,
+    monthly_amount: 90,
+    user_id: "user-1",
+    note: null,
+    created_at: "2026-07-28T00:00:00Z",
   },
 ];
 
@@ -58,6 +73,25 @@ describe("listingDetailDraft helpers", () => {
       ["parking", { amount: 25 }],
     ]);
     expect(changedFeeSlots(draft, serverFees)).toEqual(["parking"]);
+  });
+
+  it("tracks utility corrections and all-null reverts independently", () => {
+    expect(
+      isUtilityDirty(
+        "electric",
+        { included: false, monthly_amount: 90, note: null },
+        serverUtilities,
+      ),
+    ).toBe(false);
+    expect(
+      changedUtilities(
+        new Map([
+          ["electric", { included: null, monthly_amount: null, note: null }],
+          ["water", { included: true, monthly_amount: null, note: null }],
+        ]),
+        serverUtilities,
+      ),
+    ).toEqual(["electric", "water"]);
   });
 
   it("isDraftDirty for overrides and combined state", () => {

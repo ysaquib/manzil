@@ -6,18 +6,21 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
 import { ApiError } from "../../lib/apiClient";
 import {
   changedFeeSlots,
+  changedUtilities,
   isDraftDirty,
   isPinsDirty,
   type DraftFee,
   type DraftOverride,
+  type DraftUtility,
 } from "./draftDiff";
-import { useCreateOverride, usePatchPins, useUpsertFee } from "./api";
-import type { FeeEntry, Listing } from "./types";
+import { useCreateOverride, usePatchPins, useUpsertFee, useUpsertUtilityOverride } from "./api";
+import type { FeeEntry, Listing, UtilityName, UtilityOverride } from "./types";
 
 interface ListingDetailDraftContextValue {
   draftPins: Record<string, string>;
   draftOverrides: Map<string, DraftOverride>;
   draftFees: Map<string, DraftFee>;
+  draftUtilities: Map<UtilityName, DraftUtility>;
   isDirty: boolean;
   saving: boolean;
   setDraftPin: (groupKey: string, planId: string | null) => void;
@@ -25,6 +28,8 @@ interface ListingDetailDraftContextValue {
   clearDraftOverride: (criterionKey: string) => void;
   setDraftFee: (slot: string, entry: DraftFee) => void;
   clearDraftFee: (slot: string) => void;
+  setDraftUtility: (utility: UtilityName, entry: DraftUtility) => void;
+  clearDraftUtility: (utility: UtilityName) => void;
   resetDraft: () => void;
   saveAll: () => Promise<boolean>;
 }
@@ -43,11 +48,13 @@ export function ListingDetailDraftProvider({
   huntId,
   listing,
   serverFees,
+  serverUtilityOverrides = [],
   children,
 }: {
   huntId: string;
   listing: Listing;
   serverFees: FeeEntry[];
+  serverUtilityOverrides?: UtilityOverride[];
   children: ReactNode;
 }) {
   const [baselinePins, setBaselinePins] = useState<Record<string, string>>(
@@ -60,15 +67,21 @@ export function ListingDetailDraftProvider({
     () => new Map(),
   );
   const [draftFees, setDraftFees] = useState<Map<string, DraftFee>>(() => new Map());
+  const [draftUtilities, setDraftUtilities] = useState<Map<UtilityName, DraftUtility>>(
+    () => new Map(),
+  );
   const [saving, setSaving] = useState(false);
 
   const patchPins = usePatchPins(huntId);
   const createOverride = useCreateOverride(huntId, listing.id);
   const upsertFee = useUpsertFee(huntId, listing.id);
+  const upsertUtility = useUpsertUtilityOverride(huntId, listing.id);
 
   const isDirty = useMemo(
-    () => isDraftDirty(baselinePins, draftPins, draftOverrides, draftFees, serverFees),
-    [baselinePins, draftPins, draftOverrides, draftFees, serverFees],
+    () => isDraftDirty(
+      baselinePins, draftPins, draftOverrides, draftFees, serverFees, draftUtilities, serverUtilityOverrides,
+    ),
+    [baselinePins, draftPins, draftOverrides, draftFees, serverFees, draftUtilities, serverUtilityOverrides],
   );
 
   const setDraftPin = useCallback((groupKey: string, planId: string | null) => {
@@ -114,10 +127,24 @@ export function ListingDetailDraftProvider({
     });
   }, []);
 
+  const setDraftUtility = useCallback((utility: UtilityName, entry: DraftUtility) => {
+    setDraftUtilities((prev) => new Map(prev).set(utility, entry));
+  }, []);
+
+  const clearDraftUtility = useCallback((utility: UtilityName) => {
+    setDraftUtilities((prev) => {
+      if (!prev.has(utility)) return prev;
+      const next = new Map(prev);
+      next.delete(utility);
+      return next;
+    });
+  }, []);
+
   const resetDraft = useCallback(() => {
     setDraftPins({ ...baselinePins });
     setDraftOverrides(new Map());
     setDraftFees(new Map());
+    setDraftUtilities(new Map());
   }, [baselinePins]);
 
   const saveAll = useCallback(async (): Promise<boolean> => {
@@ -127,11 +154,19 @@ export function ListingDetailDraftProvider({
     const pinsChanged = isPinsDirty(baselinePins, draftPins);
     const overrideEntries = [...draftOverrides.entries()];
     const feeSlots = changedFeeSlots(draftFees, serverFees);
+    const utilities = changedUtilities(draftUtilities, serverUtilityOverrides);
 
     type Task =
       | { kind: "pins" }
       | { kind: "override"; key: string; entry: DraftOverride }
-      | { kind: "fee"; slot: string; amount: number | null; state: "manual" | "extracted" | "unknown" };
+      | {
+          kind: "fee";
+          slot: string;
+          amount: number | null;
+          state: "manual" | "extracted" | "unknown";
+          decisions: Pick<DraftFee, "counted" | "required" | "refundable" | "credited_amount">;
+        }
+      | { kind: "utility"; utility: UtilityName; entry: DraftUtility };
 
     const tasks: Task[] = [];
     if (pinsChanged) tasks.push({ kind: "pins" });
@@ -143,7 +178,17 @@ export function ListingDetailDraftProvider({
         slot,
         amount: draft?.amount ?? null,
         state: draft?.state ?? "manual",
+        decisions: {
+          counted: draft?.counted,
+          required: draft?.required,
+          refundable: draft?.refundable,
+          credited_amount: draft?.credited_amount,
+        },
       });
+    }
+    for (const utility of utilities) {
+      const entry = draftUtilities.get(utility);
+      if (entry) tasks.push({ kind: "utility", utility, entry });
     }
 
     const results = await Promise.allSettled(
@@ -161,10 +206,19 @@ export function ListingDetailDraftProvider({
             applicability: task.entry.applicability ?? null,
           });
         }
+        if (task.kind === "utility") {
+          return upsertUtility.mutateAsync({
+            utility: task.utility,
+            included: task.entry.included,
+            monthly_amount: task.entry.monthly_amount,
+            note: task.entry.note,
+          });
+        }
         return upsertFee.mutateAsync({
           slot: task.slot,
           amount: task.amount,
           value_state: task.state,
+          ...task.decisions,
         });
       }),
     );
@@ -172,16 +226,19 @@ export function ListingDetailDraftProvider({
     const failed: string[] = [];
     const succeededOverrides = new Set<string>();
     const succeededFees = new Set<string>();
+    const succeededUtilities = new Set<UtilityName>();
 
     results.forEach((result, i) => {
       const task = tasks[i];
       if (result.status === "fulfilled") {
         if (task.kind === "override") succeededOverrides.add(task.key);
         if (task.kind === "fee") succeededFees.add(task.slot);
+        if (task.kind === "utility") succeededUtilities.add(task.utility);
         return;
       }
       if (task.kind === "pins") failed.push("floor plan pin");
       else if (task.kind === "override") failed.push(`override (${task.key})`);
+      else if (task.kind === "utility") failed.push(`utility (${task.utility})`);
       else failed.push(`fee (${task.slot})`);
     });
 
@@ -206,11 +263,18 @@ export function ListingDetailDraftProvider({
         return next;
       });
     }
+    if (succeededUtilities.size > 0) {
+      setDraftUtilities((prev) => {
+        const next = new Map(prev);
+        for (const utility of succeededUtilities) next.delete(utility);
+        return next;
+      });
+    }
 
     setSaving(false);
 
     if (failed.length === 0) {
-      const hadOverrides = overrideEntries.length > 0;
+      const hadOverrides = overrideEntries.length > 0 || utilities.length > 0;
       notifications.show({
         title: "Changes saved",
         message: hadOverrides
@@ -234,9 +298,12 @@ export function ListingDetailDraftProvider({
     draftOverrides,
     draftFees,
     serverFees,
+    draftUtilities,
+    serverUtilityOverrides,
     patchPins,
     createOverride,
     upsertFee,
+    upsertUtility,
     listing.id,
   ]);
 
@@ -245,6 +312,7 @@ export function ListingDetailDraftProvider({
       draftPins,
       draftOverrides,
       draftFees,
+      draftUtilities,
       isDirty,
       saving,
       setDraftPin,
@@ -252,6 +320,8 @@ export function ListingDetailDraftProvider({
       clearDraftOverride,
       setDraftFee,
       clearDraftFee,
+      setDraftUtility,
+      clearDraftUtility,
       resetDraft,
       saveAll,
     }),
@@ -259,6 +329,7 @@ export function ListingDetailDraftProvider({
       draftPins,
       draftOverrides,
       draftFees,
+      draftUtilities,
       isDirty,
       saving,
       setDraftPin,
@@ -266,6 +337,8 @@ export function ListingDetailDraftProvider({
       clearDraftOverride,
       setDraftFee,
       clearDraftFee,
+      setDraftUtility,
+      clearDraftUtility,
       resetDraft,
       saveAll,
     ],

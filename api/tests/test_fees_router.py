@@ -53,6 +53,53 @@ async def test_upsert_fee_enqueues_rescore(client: AsyncClient, db_pool) -> None
 
 
 @pytest.mark.asyncio
+async def test_upsert_fee_persists_cost_decisions(client: AsyncClient, db_pool) -> None:
+    """P3-SC8: counted / required / refundable / credited_amount round-trip, and
+    an unstated flag stays NULL rather than defaulting to false."""
+    hunt_id, listing_id = await _seed_listing(db_pool)
+    try:
+        resp = await client.put(
+            f"/v1/listings/{listing_id}/fees/pet_deposit",
+            json={
+                "amount": 300.0,
+                "value_state": "manual",
+                "counted": True,
+                "required": True,
+                "credited_amount": 100.0,
+            },
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["counted"] is True
+        assert body["required"] is True
+        assert body["credited_amount"] == 100.0
+        assert body["refundable"] is None, "silence must not read as non-refundable"
+
+        row = await db_pool.fetchrow(
+            "select counted, required, refundable, credited_amount from fee_checklist"
+            " where hunt_listing_id = $1 and fee_slot = 'pet_deposit'",
+            listing_id,
+        )
+        assert (row["counted"], row["required"], row["refundable"]) == (True, True, None)
+        assert float(row["credited_amount"]) == 100.0
+    finally:
+        await db_pool.execute("delete from hunts where id = $1", hunt_id)
+
+
+@pytest.mark.asyncio
+async def test_upsert_fee_rejects_negative_credit(client: AsyncClient, db_pool) -> None:
+    hunt_id, listing_id = await _seed_listing(db_pool)
+    try:
+        resp = await client.put(
+            f"/v1/listings/{listing_id}/fees/pet_deposit",
+            json={"amount": 300.0, "value_state": "manual", "credited_amount": -5.0},
+        )
+        assert resp.status_code == 422
+    finally:
+        await db_pool.execute("delete from hunts where id = $1", hunt_id)
+
+
+@pytest.mark.asyncio
 async def test_upsert_fee_bumps_updated_at(client: AsyncClient, db_pool) -> None:
     hunt_id, listing_id = await _seed_listing(db_pool)
     try:

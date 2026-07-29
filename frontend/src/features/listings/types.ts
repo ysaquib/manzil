@@ -80,6 +80,8 @@ export interface Score {
   // listing-level display plan's. Optional: rows scored before the column
   // landed carry null until their next rescore.
   all_in_components?: AllInComponents | null;
+  // P3-SC8: THIS plan's move-in ledger (scores.move_in_components).
+  move_in_components?: MoveInComponents | null;
 }
 
 export interface Extraction {
@@ -139,14 +141,43 @@ export interface FeeEntry {
   entered_by: string | null;
   evidence_ref: string | null;
   updated_at: string | null;
+  // P3-SC8 per-charge decisions (§9.5). All tri-state: null is "nobody said",
+  // which is what keeps a move-in total honestly Incomplete. `counted` null
+  // means the machine default; `credited_amount` is the part applied to first
+  // month's rent, so only the remainder is cash at move-in.
+  counted?: boolean | null;
+  required?: boolean | null;
+  refundable?: boolean | null;
+  credited_amount?: number | null;
+}
+
+// §9.5: independently revertible inclusion/cost corrections for utilities
+// whose status changes the all-in composition or its disclosure.
+export type UtilityName =
+  | "electric"
+  | "gas"
+  | "water"
+  | "sewer"
+  | "cooling"
+  | "heat"
+  | "trash";
+
+export interface UtilityOverride {
+  id: string;
+  hunt_listing_id: string;
+  utility: UtilityName;
+  /** Both correction fields null is the append-only revert tombstone. */
+  included: boolean | null;
+  monthly_amount: number | null;
+  user_id: string;
+  note: string | null;
+  created_at: string;
 }
 
 // §9.5 standard fee slots, in checklist order — split monthly vs one-time
 // (§20 2026-07-18): monthly fees compose into all-in; one-time fees are
 // move-in costs, display-only, never composed.
 export const MONTHLY_FEE_SLOTS: { slot: string; label: string }[] = [
-  { slot: "water_sewer", label: "Water / sewer billing" },
-  { slot: "valet_trash", label: "Valet trash" },
   { slot: "parking", label: "Parking" },
   { slot: "pet_rent", label: "Pet rent" },
   { slot: "pet_rent_cat", label: "Pet rent (cat)" },
@@ -160,6 +191,16 @@ export const ONE_TIME_FEE_SLOTS: { slot: string; label: string }[] = [
   { slot: "pet_deposit", label: "Pet deposit" },
   { slot: "pet_fee", label: "Pet fee (one-time)" },
 ];
+
+// §9.5 P3-SC8 ledger lines the composer always emits, ahead of the slots.
+export const MOVE_IN_LINE_LABELS: Record<string, string> = {
+  first_month: "First month",
+  security_deposit: "Security deposit",
+  application_fee: "Application fee",
+  admin: "Admin fee",
+  pet_deposit: "Pet deposit",
+  pet_fee: "Pet fee (one-time)",
+};
 
 export const FEE_SLOTS: { slot: string; label: string }[] = [
   ...MONTHLY_FEE_SLOTS,
@@ -195,6 +236,35 @@ export interface AllInComponents {
   overridden?: boolean;
 }
 
+// §9.5 P3-SC8: one line of the move-in ledger. `amount` is this household's
+// figure (basis multipliers applied); `credited` is the part applied to first
+// month's rent, so the cash required is `amount - credited`.
+export interface MoveInCharge {
+  name: string;
+  amount: number | null;
+  tag: "actual" | "estimated" | "unknown";
+  required: boolean;
+  refundable: boolean | null;
+  counted: boolean;
+  credited?: number;
+  note?: string;
+}
+
+// §9.5 P3-SC8 composition (hunt_listings/scores.move_in_components).
+// `total` null with `incomplete` true is the honest state: the subtotal is
+// displayable, but the Criterion stays unknown and it is never a lower bound.
+export interface MoveInComponents {
+  total: number | null;
+  subtotal: number;
+  refundable_total: number;
+  non_refundable_total: number;
+  unclassified_total: number;
+  incomplete: boolean;
+  charges: MoveInCharge[];
+  badges: string[];
+  overridden?: boolean;
+}
+
 // One §3 Listing with the embeds the Overview reads in a single query.
 export interface Listing {
   id: string;
@@ -210,6 +280,7 @@ export interface Listing {
   // pending or scored. A no-availability listing renders as a dimmed, null-score row.
   unavailable_at: string | null;
   all_in_components: AllInComponents | null;
+  move_in_components?: MoveInComponents | null;
   property: Property & { floor_plans: FloorPlan[]; sources: PropertySource[] };
   scores: Score[];
 }
