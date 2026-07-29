@@ -10,6 +10,7 @@ from uuid import uuid4
 from manzil_shared.models import MatchOp, OptionMatch, RubricCriterion, RubricOption
 from manzil_worker.enrich.utility_baselines import BaselineRegion, BaselineSet
 from manzil_worker.stages.base import StageCtx
+from manzil_worker.stages.pet_costs import compose_all_in
 from manzil_worker.stages.score import score_stage
 from manzil_worker.state import (
     FloorPlanIn,
@@ -146,3 +147,53 @@ def test_no_geocode_means_no_state_and_v1_fallback() -> None:
     ctx = StageCtx(rubric=ALL_IN_RUBRIC, utility_baselines_lookup=boom)
     state = asyncio.run(score_stage(state, ctx))
     assert _all_in_entry(state)["value"] == 1525.0
+
+
+def test_manual_utility_amount_replaces_the_baseline_component() -> None:
+    composition = compose_all_in(
+        rent=1500,
+        pet_add=0,
+        mandatory_fees=[],
+        included=[],
+        heating="gas",
+        baselines=BASELINES,
+        utility_amounts={"electric": 92},
+    )
+    electric = next(
+        component for component in composition.components if component.name == "electric"
+    )
+    assert electric.amount == 92
+    assert electric.tag == "actual"
+    assert electric.note == "manual utility amount"
+
+
+def test_manual_utility_amount_still_composes_before_baselines_exist() -> None:
+    composition = compose_all_in(
+        rent=1500,
+        pet_add=0,
+        mandatory_fees=[],
+        included=[],
+        heating=None,
+        baselines=None,
+        utility_amounts={"water": 40},
+    )
+    assert composition.total == 1540
+    assert composition.estimated_total == 0
+    assert "utilities_not_estimated" in composition.badges
+
+
+def test_manual_electric_heat_amount_keeps_base_electric_separate() -> None:
+    composition = compose_all_in(
+        rent=1500,
+        pet_add=0,
+        mandatory_fees=[],
+        included=[],
+        heating="electric",
+        baselines=BASELINES,
+        utility_amounts={"heat": 100},
+    )
+    by_name = {component.name: component for component in composition.components}
+    assert by_name["electric"].amount == 120
+    assert by_name["electric"].tag == "estimated"
+    assert by_name["heat"].amount == 100
+    assert by_name["heat"].tag == "actual"
