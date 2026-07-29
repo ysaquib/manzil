@@ -196,9 +196,7 @@ def test_semantic_conflicts_are_normalized_in_one_batched_call() -> None:
         ),
     )
 
-    out = asyncio.run(
-        reconcile_stage(run, StageCtx(call_structured=normalize))
-    )
+    out = asyncio.run(reconcile_stage(run, StageCtx(call_structured=normalize)))
 
     assert len(calls) == 1
     assert len(calls[0]["claims"]) == 4  # type: ignore[arg-type]
@@ -206,10 +204,7 @@ def test_semantic_conflicts_are_normalized_in_one_batched_call() -> None:
         "pets_policy",
         "smoking_policy",
     }
-    assert all(
-        claim.resolution_rule == "family_supermajority"
-        for claim in out.resolved_claims
-    )
+    assert all(claim.resolution_rule == "family_supermajority" for claim in out.resolved_claims)
 
 
 def test_available_sources_positive_preferred_does_not_buy_escalation() -> None:
@@ -228,6 +223,23 @@ def test_available_sources_positive_preferred_does_not_buy_escalation() -> None:
     out = asyncio.run(reconcile_stage(run, StageCtx()))
 
     assert out.resolved_claims[0].value == "outdoor"
+    assert out.resolved_claims[0].resolution_rule == "verified_positive_preferred"
+    assert out.resolved_claims[0].disputed is True
+    assert out.plan is not None and out.plan.escalation is None
+
+
+def test_sc6_presence_uses_p3_6_catalog_policy() -> None:
+    one = "https://one.test"
+    two = "https://two.test"
+    run = state(
+        result(one, "one", [claim(one, True, key="fireplace")]),
+        result(two, "two", [claim(two, False, key="fireplace")]),
+    )
+    run.official_source_url = "https://official.test"
+
+    out = asyncio.run(reconcile_stage(run, StageCtx()))
+
+    assert out.resolved_claims[0].value is True
     assert out.resolved_claims[0].resolution_rule == "verified_positive_preferred"
     assert out.resolved_claims[0].disputed is True
     assert out.plan is not None and out.plan.escalation is None

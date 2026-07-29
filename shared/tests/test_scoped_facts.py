@@ -106,6 +106,53 @@ def test_typed_presence_keeps_exact_value_but_generalized_is_unconfirmed() -> No
     )
 
 
+def test_controlled_set_scores_exact_and_all_units_but_not_uncertain_scope() -> None:
+    target = uuid4()
+    exact = ScopedValue(
+        criterion_key="flooring_materials",
+        value=["hardwood", "tile"],
+        target_scope=TargetScope.FLOOR_PLAN,
+        floor_plan_id=target,
+        applicability=UnitApplicability.SPECIFIC_FLOOR_PLANS,
+    )
+    all_units = ScopedValue(
+        criterion_key="flooring_materials",
+        value=["vinyl"],
+        target_scope=TargetScope.PROPERTY,
+        applicability=UnitApplicability.ALL_UNITS,
+    )
+    select_units = ScopedValue(
+        criterion_key="flooring_materials",
+        value=["carpet"],
+        target_scope=TargetScope.PROPERTY,
+        applicability=UnitApplicability.SELECT_UNITS,
+    )
+    legacy_property = ScopedValue(
+        criterion_key="flooring_materials",
+        value=["concrete"],
+        target_scope=TargetScope.PROPERTY,
+        applicability=None,
+    )
+    legacy_override = ScopedOverrideValue(
+        criterion_key="flooring_materials",
+        value=["carpet"],
+        target_scope=TargetScope.PROPERTY,
+        applicability=None,
+    )
+    common = {
+        "criterion_key": "flooring_materials",
+        "floor_plan_id": target,
+        "min_confidence": Confidence.MEDIUM,
+        "generalized_unknown": True,
+    }
+
+    assert resolve_effective_value(extractions=[exact], **common) == ["hardwood", "tile"]
+    assert resolve_effective_value(extractions=[all_units], **common) == ["vinyl"]
+    assert resolve_effective_value(extractions=[select_units], **common) is None
+    assert resolve_effective_value(extractions=[legacy_property], **common) is None
+    assert resolve_effective_value(extractions=[], overrides=[legacy_override], **common) is None
+
+
 def test_legacy_property_boolean_never_becomes_confirmed_unit_truth() -> None:
     legacy = ScopedValue(
         criterion_key="patio_balcony",

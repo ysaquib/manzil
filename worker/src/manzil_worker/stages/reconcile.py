@@ -64,6 +64,7 @@ _POLICY_CAP = {
 }
 _ALL_IN_INPUTS = {
     "all_in_monthly",
+    "one_time_fees",
     "mandatory_fees",
     "utilities_included",
     "heating_type",

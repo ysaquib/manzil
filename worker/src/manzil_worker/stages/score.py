@@ -23,12 +23,17 @@ Assembly semantics (Phase 0, single source):
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 import structlog
-from manzil_shared.catalog import BOOLEAN_PRESENCE_KEYS, SCOPED_UNIT_CLAIM_KEYS
+from manzil_shared.catalog import (
+    BOOLEAN_PRESENCE_KEYS,
+    CONFIRMED_SCOPE_ONLY_KEYS,
+    PRESENCE_LIKE_KEYS,
+)
 from manzil_shared.models import Confidence, FloorPlan
 from manzil_shared.scoped_facts import (
     ScopedValue,
@@ -43,6 +48,11 @@ from manzil_shared.scoring.engine import criterion_key, score, select_display_sc
 
 from manzil_worker.enrich.utility_baselines import region_estimate_note
 from manzil_worker.stages.base import StageCtx
+from manzil_worker.stages.move_in import (
+    Household,
+    charge_from_extracted_fee,
+    compose_move_in,
+)
 from manzil_worker.stages.pet_costs import beds_bucket, compose_all_in, pet_monthly
 from manzil_worker.state import FloorPlanIn, PlanScore, RunState
 
@@ -121,9 +131,7 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
             confidence=claim.confidence,
             target_scope=claim.target_scope,
             floor_plan_id=(
-                plan_ids_by_ref.get(
-                    (claim.source_id or state.sources[0].url, claim.floor_plan_ref)
-                )
+                plan_ids_by_ref.get((claim.source_id or state.sources[0].url, claim.floor_plan_ref))
                 if claim.floor_plan_ref is not None
                 else claim.floor_plan_id
             ),
@@ -162,6 +170,15 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
         if (state.utilities and state.utilities.included is not None)
         else None
     )
+    # §9.5 P3-SC8: the page's one-time move-in charges for THIS household.
+    # Ingest has no human decisions yet (the fee_checklist rows are written by
+    # the projection after SCORE), so this is the extraction's own reading;
+    # rescore recomposes with any human required/refundable/credited edits.
+    household = Household(occupants=ctx.occupants, cats=ctx.cats, dogs=ctx.dogs)
+    one_time_charges = [
+        charge_from_extracted_fee(fee.model_dump(), household)
+        for fee in (state.one_time_fees.fees if state.one_time_fees else [])
+    ]
     scorable = [
         (plan, floor_plan)
         for index, plan in enumerate(state.floor_plans)
@@ -177,6 +194,7 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
     if scorable:
         breakdowns = []
         compositions = []
+        move_ins = []
         for plan_in, floor_plan in scorable:
             facts = resolve_effective_facts(
                 criterion_keys=criterion_keys,
@@ -184,12 +202,11 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
                 extractions=scoped_rows,
                 min_confidence=ctx.min_confidence,
                 min_vision_confidence=ctx.min_vision_confidence,
-                presence_like_keys=SCOPED_UNIT_CLAIM_KEYS,
+                presence_like_keys=PRESENCE_LIKE_KEYS,
                 boolean_presence_keys=BOOLEAN_PRESENCE_KEYS,
+                generalized_unknown_keys=CONFIRMED_SCOPE_ONLY_KEYS,
             )
-            values, gate_values = scoring_values_for_policy(
-                facts, ctx.generalized_vision_policy
-            )
+            values, gate_values = scoring_values_for_policy(facts, ctx.generalized_vision_policy)
             rent = conservative_rent(plan_in)
             composition = None
             if rent is not None:
@@ -207,11 +224,7 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
                     min_confidence=ctx.min_confidence,
                     presence_like_keys=frozenset({"heating_type"}),
                 ).get("heating_type")
-                plan_heating = (
-                    heating_value
-                    if heating_value in {"gas", "electric"}
-                    else None
-                )
+                plan_heating = heating_value if heating_value in {"gas", "electric"} else None
                 composition = compose_all_in(
                     rent=rent,
                     pet_add=pet_add,
@@ -231,6 +244,19 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
                 if composition.total is not None:
                     values["all_in_monthly"] = composition.total
                     gate_values["all_in_monthly"] = composition.total
+            move_in = compose_move_in(
+                first_month_all_in=composition.total if composition is not None else None,
+                security_deposit=(
+                    float(floor_plan.deposit) if floor_plan.deposit is not None else None
+                ),
+                charges=[replace(charge) for charge in one_time_charges],
+            )
+            # Incomplete ⇒ total None ⇒ the Criterion stays unknown (§9.5): a
+            # partial cash figure is never scored as if it were the whole.
+            if move_in.total is not None:
+                values["estimated_move_in_cost"] = move_in.total
+                gate_values["estimated_move_in_cost"] = move_in.total
+            move_ins.append(move_in)
             compositions.append(composition)
             breakdowns.append(
                 (
@@ -249,8 +275,9 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
                 plan_name=name,
                 breakdown=b.to_contract(),
                 all_in_components=comp.to_json() if comp is not None else None,
+                move_in_components=move_in.to_json(),
             )
-            for (name, b), comp in zip(breakdowns, compositions, strict=True)
+            for (name, b), comp, move_in in zip(breakdowns, compositions, move_ins, strict=True)
         ]
         state.display_score_index = select_display_score([b for _, b in breakdowns])
         display_floor_plan = scorable[state.display_score_index][1]
@@ -260,13 +287,15 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
             extractions=scoped_rows,
             min_confidence=ctx.min_confidence,
             min_vision_confidence=ctx.min_vision_confidence,
-            presence_like_keys=SCOPED_UNIT_CLAIM_KEYS,
+            presence_like_keys=PRESENCE_LIKE_KEYS,
             boolean_presence_keys=BOOLEAN_PRESENCE_KEYS,
+            generalized_unknown_keys=CONFIRMED_SCOPE_ONLY_KEYS,
         )
         display_composition = compositions[state.display_score_index]
         state.all_in_components = (
             display_composition.to_json() if display_composition is not None else None
         )
+        state.move_in_components = move_ins[state.display_score_index].to_json()
     else:
         facts = resolve_effective_facts(
             criterion_keys=criterion_keys,
@@ -274,12 +303,11 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
             extractions=scoped_rows,
             min_confidence=ctx.min_confidence,
             min_vision_confidence=ctx.min_vision_confidence,
-            presence_like_keys=SCOPED_UNIT_CLAIM_KEYS,
+            presence_like_keys=PRESENCE_LIKE_KEYS,
             boolean_presence_keys=BOOLEAN_PRESENCE_KEYS,
+            generalized_unknown_keys=CONFIRMED_SCOPE_ONLY_KEYS,
         )
-        base_values, gate_values = scoring_values_for_policy(
-            facts, ctx.generalized_vision_policy
-        )
+        base_values, gate_values = scoring_values_for_policy(facts, ctx.generalized_vision_policy)
         state.effective_values = dict(base_values)
         breakdown = score(
             ctx.rubric,

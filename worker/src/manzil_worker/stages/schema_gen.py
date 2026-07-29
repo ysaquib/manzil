@@ -8,8 +8,8 @@ field description, so hints reach the model inside the (cached) tool schema
 rather than being duplicated into prompts.
 
 Included fields: catalog entries extractable from page text — `requires_tool`
-None and not pipeline-composed (`all_in_monthly` is composed per §9.5, its
-hint says "never extracted directly"). Tool-dependent criteria (maps,
+None and not pipeline-composed (`all_in_monthly` and `estimated_move_in_cost`
+are composed per §9.5; their hints say "never extracted directly"). Tool-dependent criteria (maps,
 web-search) enter at ENRICH/CUSTOM_MATCH (Phase 3); extraction stages get
 zero tools (§16).
 """
@@ -43,7 +43,7 @@ from manzil_worker.state import (
 )
 
 # Composed by the pipeline, never extracted from the page (§9.5).
-COMPOSED_KEYS = frozenset({"all_in_monthly"})
+COMPOSED_KEYS = frozenset({"all_in_monthly", "estimated_move_in_cost"})
 
 
 def _maybe_decode_container(data: Any) -> Any:
