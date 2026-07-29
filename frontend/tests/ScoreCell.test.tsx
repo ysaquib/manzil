@@ -1,6 +1,8 @@
+import { screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { formatScore, scoreColor } from "../src/features/listings/ScoreCell";
+import { formatScore, ScoreCell, scoreColor } from "../src/features/listings/ScoreCell";
+import { renderWithProviders } from "./testUtils";
 
 describe("scoreColor", () => {
   // Default max is the §9.3 engine clamp (15); green anchors on the base (10).
@@ -28,5 +30,20 @@ describe("formatScore", () => {
   it("keeps half points visible", () => {
     expect(formatScore(9.5)).toBe("9.5");
     expect(formatScore(10)).toBe("10");
+  });
+});
+
+describe("ScoreCell selection state", () => {
+  it("marks an ephemeral filter-selected Floor Plan", () => {
+    renderWithProviders(
+      <ScoreCell
+        total={8}
+        filterSelected
+        planName="Lower-score early"
+        planCount={2}
+      />,
+    );
+
+    expect(screen.getByLabelText("filter-selected Floor Plan")).toBeInTheDocument();
   });
 });

@@ -188,6 +188,7 @@ export function OverviewFilterBar({
   cities,
   visibleCount,
   totalCount,
+  manualPinAlternateMatchCount = 0,
   sharedFilters = null,
   canPublish = false,
   onPublish,
@@ -198,6 +199,8 @@ export function OverviewFilterBar({
   cities: string[];
   visibleCount: number;
   totalCount: number;
+  /** Hidden manual pins for which another Floor Plan satisfies the filters. */
+  manualPinAlternateMatchCount?: number;
   /** The published hunt-wide filter set (sanitized), or null when none. */
   sharedFilters?: OverviewFilterState | null;
   canPublish?: boolean;
@@ -285,6 +288,13 @@ export function OverviewFilterBar({
         {filtersActive && (
           <Text size="xs" c="dimmed" aria-label="Filter result summary">
             {visibleCount} visible · {filteredOut} filtered out
+          </Text>
+        )}
+        {filtersActive && manualPinAlternateMatchCount > 0 && (
+          <Text size="xs" c="dimmed" aria-label="Manual pin filter note">
+            {manualPinAlternateMatchCount} pinned Unit{" "}
+            {manualPinAlternateMatchCount === 1 ? "Group may" : "Groups may"} have another Floor
+            Plan that meets these filters.
           </Text>
         )}
       </Group>

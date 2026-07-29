@@ -246,6 +246,8 @@ function OverviewRowCard({
               <ScoreCell
                 total={group.displayScore.total}
                 pinned={group.pinnedPlanId !== null}
+                filterSelected={group.filterSelectedPlanId !== null}
+                planName={group.displayPlan.plan_name}
                 planCount={group.scoredPlanCount}
               />
             ) : (

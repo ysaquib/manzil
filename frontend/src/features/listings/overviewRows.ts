@@ -4,6 +4,7 @@ import { cityFilterMatches, propertyLocationLabel } from "./locality";
 import {
   INTEREST_STATUSES,
   type AllInComponents,
+  type FloorPlan,
   type InterestStatus,
   type Listing,
   type UnitGroupState,
@@ -195,9 +196,10 @@ function scorePredicate(row: OverviewRow, filters: OverviewFilterState): boolean
 function rentPredicate(row: OverviewRow, filters: OverviewFilterState): boolean {
   if (filters.minRent === null && filters.maxRent === null) return true;
   if (row.group === null) return true;
+  const plan = row.group.displayPlan;
   return rangeOverlaps(
-    row.group.rentMin,
-    row.group.rentMax,
+    plan.rent_min,
+    plan.rent_max,
     filters.minRent,
     filters.maxRent,
   );
@@ -206,9 +208,10 @@ function rentPredicate(row: OverviewRow, filters: OverviewFilterState): boolean 
 function sqftPredicate(row: OverviewRow, filters: OverviewFilterState): boolean {
   if (filters.minSqft === null && filters.maxSqft === null) return true;
   if (row.group === null) return true;
+  const plan = row.group.displayPlan;
   return rangeOverlaps(
-    row.group.sqftMin,
-    row.group.sqftMax,
+    plan.sqft_min,
+    plan.sqft_max,
     filters.minSqft,
     filters.maxSqft,
   );
@@ -256,9 +259,10 @@ function availabilityPredicate(row: OverviewRow, filters: OverviewFilterState): 
   return filters.availabilities.length === 0 || filters.availabilities.includes(rowAvailability(row));
 }
 
-// Effective criterion value for the plan this row displays, read from the
-// persisted breakdown (§9.3) — the only per-criterion data the Overview loads.
-// A criterion absent from the rubric (or an unscored row) reads as unknown.
+// Effective criterion value for the candidate Floor Plan this row displays,
+// read from the persisted breakdown (§9.3) — the only per-criterion data the
+// Overview loads. A criterion absent from the rubric (or an unscored row)
+// reads as unknown.
 export function criterionValue(row: OverviewRow, key: string): unknown {
   const entry = row.group?.displayScore?.breakdown.criteria.find((c) => c.key === key);
   if (!entry || entry.unknown) return null;
@@ -298,27 +302,30 @@ function maxAllInPredicate(row: OverviewRow, filters: OverviewFilterState): bool
 
 function availableByPredicate(row: OverviewRow, filters: OverviewFilterState): boolean {
   if (filters.availableBy === null || row.group === null) return true;
-  const dates = row.group.plans
-    .map((plan) => plan.availability_date)
-    .filter((d): d is string => d !== null);
-  if (dates.length === 0) return true;
-  // ISO dates compare lexicographically; earliest available plan decides.
-  return dates.some((d) => d <= filters.availableBy!);
+  const date = row.group.displayPlan.availability_date;
+  if (date === null) return true;
+  // ISO dates compare lexicographically.
+  return date <= filters.availableBy;
 }
 
 type RowPredicate = (row: OverviewRow, filters: OverviewFilterState) => boolean;
 
-// Registry — adding a future filter appends one predicate here.
-const FILTER_PREDICATES: RowPredicate[] = [
+// Property/Unit-Group predicates apply once. Floor-Plan predicates are tested
+// together against each candidate plan so separate plans cannot collectively
+// manufacture a match.
+const ROW_PREDICATES: RowPredicate[] = [
   queryPredicate,
-  scorePredicate,
-  rentPredicate,
-  sqftPredicate,
   bedsPredicate,
   bathsPredicate,
   cityPredicate,
   statusPredicate,
   visitedPredicate,
+];
+
+const FLOOR_PLAN_PREDICATES: RowPredicate[] = [
+  scorePredicate,
+  rentPredicate,
+  sqftPredicate,
   availabilityPredicate,
   enumCriterionPredicate("laundry", "in_unit_laundry"),
   enumCriterionPredicate("parking", "parking"),
@@ -329,11 +336,157 @@ const FILTER_PREDICATES: RowPredicate[] = [
   availableByPredicate,
 ];
 
+const FLOOR_PLAN_FILTER_KEYS: (keyof OverviewFilterState)[] = [
+  "minScore",
+  "maxScore",
+  "minRent",
+  "maxRent",
+  "minSqft",
+  "maxSqft",
+  "availabilities",
+  "laundry",
+  "parking",
+  "pets",
+  "cooling",
+  "dishwasher",
+  "maxAllIn",
+  "availableBy",
+];
+
+function hasActiveFloorPlanFilters(filters: OverviewFilterState): boolean {
+  return FLOOR_PLAN_FILTER_KEYS.some((key) => {
+    const value = filters[key];
+    return Array.isArray(value) ? value.length > 0 : value !== null;
+  });
+}
+
+function rowWithDisplayPlan(
+  row: OverviewRow,
+  plan: FloorPlan,
+  filterSelected: boolean,
+): OverviewRow {
+  if (row.group === null) return row;
+  return {
+    ...row,
+    group: {
+      ...row.group,
+      displayPlan: plan,
+      displayScore:
+        row.listing.scores.find((score) => score.floor_plan_id === plan.id) ?? null,
+      filterSelectedPlanId: filterSelected ? plan.id : null,
+    },
+  };
+}
+
+function planMatches(
+  row: OverviewRow,
+  plan: FloorPlan,
+  filters: OverviewFilterState,
+): boolean {
+  const candidate = rowWithDisplayPlan(row, plan, false);
+  return FLOOR_PLAN_PREDICATES.every((predicate) => predicate(candidate, filters));
+}
+
+function bestMatchingPlan(row: OverviewRow, matchingPlans: FloorPlan[]): FloorPlan {
+  const scoreByPlan = new Map(
+    row.listing.scores.map((score) => [score.floor_plan_id, score.total]),
+  );
+  const scored = matchingPlans.filter((plan) => scoreByPlan.has(plan.id));
+  if (scored.length === 0) return matchingPlans[0];
+  return scored.reduce((best, plan) =>
+    (scoreByPlan.get(plan.id) ?? -Infinity) > (scoreByPlan.get(best.id) ?? -Infinity)
+      ? plan
+      : best,
+  );
+}
+
+/**
+ * Resolve the ephemeral filter-selected Display Floor Plan for a visible row.
+ * A valid manual pin remains authoritative and is never replaced here.
+ */
+export function selectFilterDisplayPlan(
+  row: OverviewRow,
+  filters: OverviewFilterState,
+): OverviewRow {
+  if (
+    row.group === null ||
+    row.group.pinnedPlanId !== null ||
+    !hasActiveFloorPlanFilters(filters)
+  ) {
+    return row;
+  }
+  const matchingPlans = row.group.plans.filter((plan) => planMatches(row, plan, filters));
+  if (matchingPlans.length === 0) return row;
+  const selected = bestMatchingPlan(row, matchingPlans);
+  return rowWithDisplayPlan(row, selected, selected.id !== row.group.displayPlan.id);
+}
+
+export interface OverviewFilterResult {
+  rows: OverviewRow[];
+  /**
+   * Hidden Unit Groups whose manual pin fails, although another Floor Plan in
+   * the group passes every active Floor-Plan predicate.
+   */
+  manualPinAlternateMatchCount: number;
+}
+
+export function analyzeOverviewFilters(
+  rows: OverviewRow[],
+  filters: OverviewFilterState,
+): OverviewFilterResult {
+  const visible: OverviewRow[] = [];
+  let manualPinAlternateMatchCount = 0;
+  const floorPlanFiltersActive = hasActiveFloorPlanFilters(filters);
+
+  for (const row of rows) {
+    if (!ROW_PREDICATES.every((predicate) => predicate(row, filters))) continue;
+
+    if (row.group === null) {
+      if (FLOOR_PLAN_PREDICATES.every((predicate) => predicate(row, filters))) {
+        visible.push(row);
+      }
+      continue;
+    }
+
+    if (!floorPlanFiltersActive) {
+      visible.push(row);
+      continue;
+    }
+
+    if (row.group.pinnedPlanId !== null) {
+      const pinnedPlanId = row.group.pinnedPlanId;
+      if (FLOOR_PLAN_PREDICATES.every((predicate) => predicate(row, filters))) {
+        visible.push(row);
+        continue;
+      }
+      if (
+        row.group.plans.some(
+          (plan) =>
+            plan.id !== pinnedPlanId &&
+            planMatches(row, plan, filters),
+        )
+      ) {
+        manualPinAlternateMatchCount += 1;
+      }
+      continue;
+    }
+
+    const matchingPlans = row.group.plans.filter((plan) => planMatches(row, plan, filters));
+    if (matchingPlans.length === 0) continue;
+    const selected = bestMatchingPlan(row, matchingPlans);
+    visible.push(
+      rowWithDisplayPlan(row, selected, selected.id !== row.group.displayPlan.id),
+    );
+  }
+
+  return { rows: visible, manualPinAlternateMatchCount };
+}
+
 export function applyOverviewFilters(
   rows: OverviewRow[],
   filters: OverviewFilterState,
 ): OverviewRow[] {
-  return rows.filter((row) => FILTER_PREDICATES.every((pred) => pred(row, filters)));
+  return analyzeOverviewFilters(rows, filters).rows;
 }
 
 export type FilterPillKey = keyof OverviewFilterState;
