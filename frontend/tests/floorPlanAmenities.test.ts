@@ -33,6 +33,16 @@ const catalog: CatalogEntry[] = [
   entry("in_unit_laundry", "In-unit laundry", LAUNDRY),
   entry("dishwasher", "Dishwasher", PRESENCE),
   entry("private_entry", "Private entry", PRESENCE),
+  {
+    ...entry("flooring_materials", "Flooring materials"),
+    fact_scope: "mixed",
+    value_schema: {
+      type: "array",
+      items: { type: "string", enum: ["carpet", "hardwood", "tile"] },
+      minItems: 1,
+      uniqueItems: true,
+    },
+  },
   entry("sqft", "Square footage"), // not a scoped presence criterion
 ];
 
@@ -67,6 +77,7 @@ describe("isScopedAmenity", () => {
       "in_unit_laundry",
       "dishwasher",
       "private_entry",
+      "flooring_materials",
     ]);
   });
 
@@ -109,7 +120,7 @@ describe("floorPlanAmenities", () => {
     const facts = floorPlanAmenities(catalog, extractions, [], "plan-a");
     const byKey = new Map(facts.map((fact) => [fact.key, fact]));
 
-    expect(facts).toHaveLength(4);
+    expect(facts).toHaveLength(5);
     expect(byKey.get("patio_balcony")).toMatchObject({ state: "confirmed", scope: "this plan" });
     expect(byKey.get("in_unit_laundry")).toMatchObject({
       state: "advertised",
@@ -117,6 +128,28 @@ describe("floorPlanAmenities", () => {
     });
     expect(byKey.get("private_entry")).toMatchObject({ state: "absent" });
     expect(byKey.get("dishwasher")).toMatchObject({ state: "unknown", scope: null });
+  });
+
+  it("shows uncertain flooring materials as advertised evidence, not confirmed", () => {
+    const facts = floorPlanAmenities(
+      catalog,
+      [
+        extraction({
+          criterion_key: "flooring_materials",
+          target_scope: "property",
+          floor_plan_id: null,
+          applicability: "select_units",
+          value: ["hardwood", "tile"],
+        }),
+      ],
+      [],
+      "plan-a",
+    );
+    expect(facts.find((fact) => fact.key === "flooring_materials")).toMatchObject({
+      state: "advertised",
+      value: ["hardwood", "tile"],
+      scope: "select units",
+    });
   });
 
   it("does not leak another plan's exact claim onto this plan", () => {
@@ -163,7 +196,7 @@ describe("groupAmenities / amenityCounts", () => {
       confirmed: 1,
       advertised: 0,
       absent: 0,
-      unknown: 3,
+      unknown: 4,
     });
   });
 });

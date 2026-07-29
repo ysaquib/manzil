@@ -58,6 +58,11 @@ describe("activeOverrides", () => {
     expect(
       activeOverrides([row("dishwasher", true, "2026-07-18")], "fp-1").has("dishwasher"),
     ).toBe(false);
+    expect(
+      activeOverrides([row("flooring_materials", ["hardwood"], "2026-07-18")], "fp-1").has(
+        "flooring_materials",
+      ),
+    ).toBe(false);
   });
 });
 
@@ -106,5 +111,12 @@ describe("extractionForFloorPlan", () => {
       value: true,
     };
     expect(extractionForFloorPlan([legacy], "dishwasher", "fp-1")).toBeUndefined();
+    expect(
+      extractionForFloorPlan(
+        [{ ...legacy, criterion_key: "flooring_materials", value: ["hardwood"] }],
+        "flooring_materials",
+        "fp-1",
+      ),
+    ).toBeUndefined();
   });
 });

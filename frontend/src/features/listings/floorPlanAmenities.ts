@@ -40,14 +40,18 @@ export interface AmenityCounts {
 /**
  * A Criterion belongs to the scoped unit tranche when its *effective*
  * vocabulary carries `advertised_unconfirmed` — the marker P3-SC4 gave every
- * member of the tranche. Deriving membership from the Catalog rather than a
- * hardcoded key list means P3-SC6/SC7 tranches appear here for free.
+ * member of a presence tranche. P3-SC7's controlled-set flooring Criterion is
+ * the one approved exception: its applicability, rather than a string sentinel,
+ * distinguishes confirmed from advertised evidence.
  */
 export function isScopedAmenity(entry: CatalogEntry): boolean {
   // Optional chain, not a formality: a custom Criterion can reach the UI
   // without a `value_schema`, and a hunt's catalog must never crash the
   // drawer over one.
-  return Boolean(entry.value_schema?.enum?.includes(ADVERTISED_UNCONFIRMED));
+  return (
+    Boolean(entry.value_schema?.enum?.includes(ADVERTISED_UNCONFIRMED)) ||
+    entry.key === "flooring_materials"
+  );
 }
 
 /** Effective value → presence bucket. `null`/absent is unknown, never absent. */
@@ -69,8 +73,10 @@ function scopeLabel(extraction: Extraction | undefined): string | null {
 
 /**
  * Every scoped amenity for one concrete Floor Plan, in Catalog order.
- * Resolution goes through the same `activeOverrides`/`extractionForFloorPlan`
- * seam the breakdown uses, so the modal can never disagree with the score.
+ * Resolution goes through the shared frontend
+ * `activeOverrides`/`extractionForFloorPlan` seam. Flooring's select/unspecified
+ * evidence is deliberately displayed as advertised even though scoring treats
+ * it as unknown for this concrete Floor Plan.
  */
 export function floorPlanAmenities(
   catalog: CatalogEntry[],
@@ -83,10 +89,16 @@ export function floorPlanAmenities(
     const extraction = extractionForFloorPlan(extractions, entry.key, floorPlanId);
     const override = active.get(entry.key);
     const value = override ? override.value : (extraction?.value ?? null);
+    const flooringAdvertised =
+      entry.key === "flooring_materials" &&
+      !override &&
+      extraction?.target_scope === "property" &&
+      (extraction.applicability === "select_units" ||
+        extraction.applicability === "unit_scope_unspecified");
     return {
       key: entry.key,
       label: entry.label,
-      state: amenityState(value),
+      state: flooringAdvertised ? "advertised" : amenityState(value),
       value,
       scope: override ? "overridden" : scopeLabel(extraction),
       extraction,

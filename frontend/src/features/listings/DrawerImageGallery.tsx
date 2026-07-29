@@ -1,4 +1,4 @@
-import { AspectRatio, Badge, Box, Group, Image, Skeleton, Stack, Text, UnstyledButton } from "@mantine/core";
+import { AspectRatio, Box, Group, Image, Skeleton, Stack, Text, UnstyledButton } from "@mantine/core";
 import { Carousel } from "@mantine/carousel";
 import type { EmblaCarouselType } from "embla-carousel";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -96,21 +96,30 @@ export function DrawerImageGallery({ images, loading }: { images: PropertyImage[
                   loading="lazy"
                   className={classes.primary}
                 />
-                {assessmentOf(img) && (
-                  <Stack gap={4} className={classes.assessment}>
-                    <Group gap={4}>
-                      <Badge size="xs" variant="filled">
-                        {String(assessmentOf(img)?.primary_scene ?? "photo")}
-                      </Badge>
-                      {(img.floorPlanAssociations?.length ?? 0) > 0 && (
-                        <Badge size="xs" color="teal">Exact Floor Plan</Badge>
+                {(() => {
+                  const assessment = assessmentOf(img);
+                  if (!assessment) return null;
+                  const scene = String(assessment.primary_scene ?? "photo").replaceAll("_", " ");
+                  return (
+                    <Stack gap={2} className={classes.assessment}>
+                      <Group gap={6} wrap="wrap">
+                        <Text component="span" className={classes.assessmentTag}>
+                          {scene}
+                        </Text>
+                        {(img.floorPlanAssociations?.length ?? 0) > 0 && (
+                          <Text component="span" className={classes.assessmentTag}>
+                            Exact floor plan
+                          </Text>
+                        )}
+                      </Group>
+                      {assessment.kitchen_visibility === "assessable" && (
+                        <Text component="span" className={classes.assessmentHint}>
+                          Kitchen assessable
+                        </Text>
                       )}
-                    </Group>
-                    {assessmentOf(img)?.kitchen_visibility === "assessable" && (
-                      <Text size="xs" c="white">Kitchen assessable</Text>
-                    )}
-                  </Stack>
-                )}
+                    </Stack>
+                  );
+                })()}
               </UnstyledButton>
             </Carousel.Slide>
           ))}
