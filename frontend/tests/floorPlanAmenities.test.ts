@@ -103,6 +103,65 @@ describe("amenityState", () => {
 });
 
 describe("floorPlanAmenities", () => {
+  it("shows confirmed and advertised typed values as separate scoped facts", () => {
+    const parking: CatalogEntry = {
+      ...entry("parking", "Parking"),
+      fact_scope: "mixed",
+      value_schema: {
+        type: "array",
+        items: {
+          type: "string",
+          enum: ["garage", "carport", "none", "advertised_unconfirmed"],
+        },
+        minItems: 1,
+        uniqueItems: true,
+      },
+    };
+    const facts = floorPlanAmenities(
+      [parking],
+      [
+        extraction({
+          id: "parking-carport",
+          criterion_key: "parking",
+          target_scope: "property",
+          floor_plan_id: null,
+          applicability: "all_units",
+          claim_variant: "carport",
+          value: "carport",
+        }),
+        extraction({
+          id: "parking-garage",
+          criterion_key: "parking",
+          target_scope: "property",
+          floor_plan_id: null,
+          applicability: "select_units",
+          claim_variant: "garage",
+          value: "garage",
+        }),
+      ],
+      [],
+      "plan-a",
+    );
+
+    expect(facts).toHaveLength(2);
+    expect(facts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "parking",
+          value: "carport",
+          state: "confirmed",
+          scope: "all units",
+        }),
+        expect.objectContaining({
+          key: "parking",
+          value: "garage",
+          state: "advertised",
+          scope: "select units",
+        }),
+      ]),
+    );
+  });
+
   it("resolves each criterion for the given plan and labels its applicability", () => {
     const extractions: Extraction[] = [
       extraction({ criterion_key: "patio_balcony", value: "confirmed" }),
