@@ -9,7 +9,10 @@
 
 .railScroll {
   position: sticky;
-  top: var(--mantine-spacing-md);
+  top: var(--settings-rail-sticky-top, var(--mantine-spacing-md));
+  z-index: 2;
+  align-self: start;
+  background-color: var(--mantine-color-body);
 }
 
 .rail {
@@ -88,6 +91,10 @@
 
   .railScroll {
     position: static;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    margin-inline: calc(-1 * var(--mantine-spacing-xs));
+    padding-inline: var(--mantine-spacing-xs);
   }
 
   /* Horizontal rail on phones: the column below it is the content, so the tabs

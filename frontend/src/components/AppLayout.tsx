@@ -164,7 +164,7 @@ export function AppLayout() {
         <NavbarFoot onOpenFeedback={openFeedback} />
       </AppShell.Navbar>
 
-      <AppShell.Main>
+      <AppShell.Main className={classes.main}>
         {huntId && <CreateRubricPrompt huntId={huntId} />}
         {/* Filter state lives above the Outlet so Overview and Map filter the
             same set; keying on huntId re-seeds hunt-wide filters on switch. */}
