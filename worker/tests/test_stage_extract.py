@@ -325,6 +325,39 @@ def test_extract_expands_one_claim_across_several_floor_plans() -> None:
     assert len({claim.claim_group_id for claim in claims}) == 1
 
 
+def test_extract_preserves_multiple_parking_values_and_variants() -> None:
+    payload = extraction_payload(
+        parking=[
+            {
+                "value": "carport",
+                "confidence": "high",
+                "evidence_quote": "Covered Parking: Carport",
+                "applicability": "all_units",
+                "floor_plan_refs": [],
+            },
+            {
+                "value": "garage",
+                "confidence": "high",
+                "evidence_quote": "Attached Garages (in Select Townhomes)",
+                "applicability": "select_units",
+                "floor_plan_refs": [],
+            },
+        ]
+    )
+    state = asyncio.run(
+        extract_stage(
+            make_state(cleaned_text="Carport. Attached garages in select townhomes."),
+            StageCtx(call_structured=FakeLLM({"extract": payload})),
+        )
+    )
+
+    parking = [claim for claim in state.source_claims if claim.criterion_key == "parking"]
+    assert [(claim.value, claim.applicability, claim.claim_variant) for claim in parking] == [
+        ("carport", "all_units", "carport"),
+        ("garage", "select_units", "garage"),
+    ]
+
+
 def test_extract_lands_sc6_presence_and_sc7_material_claims_without_a_side_path() -> None:
     payload = extraction_payload(
         floor_plans=[{"response_key": "a1", "plan_name": "A1"}],

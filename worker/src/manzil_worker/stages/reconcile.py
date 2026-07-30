@@ -10,7 +10,11 @@ from urllib.parse import urlsplit
 from uuid import UUID
 
 import structlog
-from manzil_shared.catalog import CATALOG
+from manzil_shared.catalog import (
+    CATALOG,
+    MULTI_CLAIM_IDENTITY_KEYS,
+    TYPED_MULTI_CLAIM_KEYS,
+)
 from manzil_shared.config import (
     ESCALATION_MAX_SIBLING_ROUNDS,
     ESCALATION_MAX_SIBLING_SOURCES,
@@ -81,11 +85,19 @@ class EquivalenceResponse(BaseModel):
     items: list[EquivalenceItem] = Field(default_factory=list)
 
 
-def _target_key(claim: SourceClaim) -> str:
+def _base_target_key(claim: SourceClaim) -> str:
     if claim.target_scope is TargetScope.FLOOR_PLAN:
         concrete = claim.floor_plan_id or f"{claim.source_id}#{claim.floor_plan_ref}"
         return f"{claim.criterion_key}|floor_plan|{concrete}"
     return f"{claim.criterion_key}|property"
+
+
+def _target_key(claim: SourceClaim) -> str:
+    base = _base_target_key(claim)
+    if claim.criterion_key in MULTI_CLAIM_IDENTITY_KEYS and claim.value is not None:
+        variant = claim.claim_variant or _canonical(claim.value)
+        return f"{base}|variant|{variant}"
+    return base
 
 
 def _canonical(value: Any) -> str:
@@ -107,9 +119,7 @@ def _best_claim(claims: list[SourceClaim], results: dict[str, SourceResult]) -> 
     )
 
 
-def _family_dedup(
-    claims: list[SourceClaim], results: dict[str, SourceResult]
-) -> list[SourceClaim]:
+def _family_dedup(claims: list[SourceClaim], results: dict[str, SourceResult]) -> list[SourceClaim]:
     by_family: dict[str, list[SourceClaim]] = defaultdict(list)
     for claim in claims:
         result = results.get(claim.source_id or "")
@@ -131,12 +141,13 @@ def _family_dedup(
 def _numeric_tolerance(key: str, claims: list[SourceClaim]) -> SourceClaim | None:
     values = [claim.value for claim in claims]
     if not values or any(
-        isinstance(value, bool) or not isinstance(value, int | float)
-        for value in values
+        isinstance(value, bool) or not isinstance(value, int | float) for value in values
     ):
         return None
-    tolerance = SQFT_AGREE_PCT if key == "sqft" else (
-        RENT_AGREE_PCT if "rent" in key or key == "all_in_monthly" else None
+    tolerance = (
+        SQFT_AGREE_PCT
+        if key == "sqft"
+        else (RENT_AGREE_PCT if "rent" in key or key == "all_in_monthly" else None)
     )
     if tolerance is None:
         return None
@@ -161,8 +172,7 @@ async def _equivalence_keys(
     for target_key, claims in grouped.items():
         values = {_canonical(claim.value) for claim in claims}
         if len(values) <= 1 or all(
-            isinstance(claim.value, (int, float, bool, type(None)))
-            for claim in claims
+            isinstance(claim.value, (int, float, bool, type(None))) for claim in claims
         ):
             continue
         for claim in claims:
@@ -191,17 +201,14 @@ async def _equivalence_keys(
         sort_keys=True,
     )
     try:
-        response = await ctx.call_structured(
-            "reconcile_equivalence", EquivalenceResponse, content
-        )
+        response = await ctx.call_structured("reconcile_equivalence", EquivalenceResponse, content)
         returned = {item.item_id: item.equivalence_key for item in response.items}
         if len(returned) != len(response.items) or set(returned) != set(requested):
             raise ValueError("equivalence response must contain every claim exactly once")
         return {
             **exact,
             **{
-                requested[item_id]: equivalence_key
-                for item_id, equivalence_key in returned.items()
+                requested[item_id]: equivalence_key for item_id, equivalence_key in returned.items()
             },
         }
     except Exception as error:
@@ -262,14 +269,13 @@ def _conservative(
 ) -> SourceClaim:
     key = claims[0].criterion_key
     if key in {"mandatory_fees", "one_time_fees"}:
+
         def fee_total(claim: SourceClaim) -> float:
             if not isinstance(claim.value, list):
                 return 0.0
             amount_key = "amount_monthly" if key == "mandatory_fees" else "amount"
             return sum(
-                float(item.get(amount_key, 0))
-                for item in claim.value
-                if isinstance(item, dict)
+                float(item.get(amount_key, 0)) for item in claim.value if isinstance(item, dict)
             )
 
         return max(claims, key=fee_total)
@@ -288,6 +294,7 @@ def _conservative(
         )
     criterion = next((item for item in ctx.rubric if criterion_key(item) == key), None)
     if criterion is not None:
+
         def delta(claim: SourceClaim) -> float:
             matched = first_match(criterion.options, claim.value)
             return matched.delta if matched is not None else criterion.unknown_delta
@@ -346,10 +353,7 @@ def _record_round(
     assert state.plan is not None
     if state.plan.escalation is None:
         state.plan.escalation = PlanEscalation()
-    entries = [
-        PlanSource(url=url, action="fetch", tier=tiers.get(url, 1))
-        for url in urls
-    ]
+    entries = [PlanSource(url=url, action="fetch", tier=tiers.get(url, 1)) for url in urls]
     state.plan.escalation.rounds.append(
         PlanEscalationRound(
             kind=kind,  # type: ignore[arg-type]
@@ -372,10 +376,7 @@ def _plan_official(state: RunState, target_keys: list[str]) -> bool:
         or not state.official_source_url
     ):
         return False
-    if any(
-        result.source_url == state.official_source_url
-        for result in state.source_results
-    ):
+    if any(result.source_url == state.official_source_url for result in state.source_results):
         state.reconcile_escalation.official_attempted = True
         return False
     discovered = next(
@@ -458,9 +459,7 @@ def _apply_dispute_answer(state: RunState) -> bool:
         selected = candidates[0].model_copy(
             update={"value": None, "confidence": Confidence.NOT_FOUND}
         )
-        resolution = _resolved(
-            selected, candidates, "dispute_left_unknown", disputed=True
-        )
+        resolution = _resolved(selected, candidates, "dispute_left_unknown", disputed=True)
     else:
         group_id = pending.option_claim_groups.get(str(choice))
         selected = next(
@@ -504,12 +503,10 @@ def _apply_auxiliary_resolutions(state: RunState) -> None:
         )
 
 
-def _checkpoint_for(
-    state: RunState, target_key: str, claims: list[SourceClaim]
-) -> None:
+def _checkpoint_for(state: RunState, target_key: str, claims: list[SourceClaim]) -> None:
     labels: dict[str, UUID] = {}
     for claim in claims:
-        host = (urlsplit(claim.source_id or "").hostname or claim.source_id or "Source")
+        host = urlsplit(claim.source_id or "").hostname or claim.source_id or "Source"
         base = f"{claim.value!s} — {host}"
         label = base
         suffix = 2
@@ -539,9 +536,7 @@ async def reconcile_stage(state: RunState, ctx: StageCtx) -> RunState:
     if not ctx.reconcile_rubric and state.property_id is not None:
         ctx.reconcile_rubric = await ctx.reconcile_rubric_lookup(state.property_id)
     if state.plan is not None and state.plan.escalation is not None:
-        verified_urls = {
-            result.source_url for result in state.source_results if result.verified
-        }
+        verified_urls = {result.source_url for result in state.source_results if result.verified}
         for round_ in state.plan.escalation.rounds:
             if round_.status == "planned" and all(
                 source.url in verified_urls for source in round_.sources
@@ -557,10 +552,22 @@ async def reconcile_stage(state: RunState, ctx: StageCtx) -> RunState:
         return state
 
     results = {result.source_url: result for result in state.source_results if result.verified}
+    verified_claims = [claim for result in results.values() for claim in result.source_claims]
+    typed_values_by_target: dict[str, set[object]] = defaultdict(set)
+    for claim in verified_claims:
+        if claim.criterion_key in TYPED_MULTI_CLAIM_KEYS:
+            typed_values_by_target[_base_target_key(claim)].add(claim.value)
+    exclusive_conflicts = {
+        target_key
+        for target_key, values in typed_values_by_target.items()
+        if "none" in values and any(value != "none" for value in values)
+    }
     grouped: dict[str, list[SourceClaim]] = defaultdict(list)
-    for result in results.values():
-        for claim in result.source_claims:
-            grouped[_target_key(claim)].append(claim)
+    for claim in verified_claims:
+        base = _base_target_key(claim)
+        grouped[
+            f"{base}|exclusive_conflict" if base in exclusive_conflicts else _target_key(claim)
+        ].append(claim)
     settled = set(state.reconcile_escalation.settled_targets)
     vote_groups = {
         target_key: _family_dedup(raw_claims, results)
@@ -598,9 +605,7 @@ async def reconcile_stage(state: RunState, ctx: StageCtx) -> RunState:
             selected = _best_claim(winner, results)
             # Value agreement does not invent applicability. Per DESIGN v3.21,
             # the best verified/fresh evidence supplies generalized scope.
-            state.resolved_claims.append(
-                _resolved(selected, raw_claims, "family_supermajority")
-            )
+            state.resolved_claims.append(_resolved(selected, raw_claims, "family_supermajority"))
             state.reconcile_escalation.settled_targets.append(target_key)
             continue
 
@@ -694,9 +699,7 @@ async def reconcile_stage(state: RunState, ctx: StageCtx) -> RunState:
             _checkpoint_for(state, target_key, raw_claims)
 
     state.floor_plans = [
-        plan.model_copy(deep=True)
-        for result in state.source_results
-        for plan in result.floor_plans
+        plan.model_copy(deep=True) for result in state.source_results for plan in result.floor_plans
     ]
     _apply_auxiliary_resolutions(state)
     log.info(

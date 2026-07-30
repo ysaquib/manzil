@@ -106,6 +106,57 @@ def test_typed_presence_keeps_exact_value_but_generalized_is_unconfirmed() -> No
     )
 
 
+def test_typed_multi_value_composes_confirmed_and_advertised_claims() -> None:
+    target = uuid4()
+    carport = ScopedValue(
+        criterion_key="parking",
+        value="carport",
+        target_scope=TargetScope.PROPERTY,
+        applicability=UnitApplicability.ALL_UNITS,
+    )
+    garage = ScopedValue(
+        criterion_key="parking",
+        value="garage",
+        target_scope=TargetScope.PROPERTY,
+        applicability=UnitApplicability.SELECT_UNITS,
+    )
+
+    assert resolve_effective_value(
+        criterion_key="parking",
+        floor_plan_id=target,
+        extractions=[carport, garage],
+        min_confidence=Confidence.MEDIUM,
+        presence_like=True,
+        boolean_presence=False,
+    ) == ["carport", "advertised_unconfirmed"]
+
+
+def test_typed_exact_and_all_unit_values_union_for_target_plan() -> None:
+    target = uuid4()
+    garage = ScopedValue(
+        criterion_key="parking",
+        value="garage",
+        target_scope=TargetScope.FLOOR_PLAN,
+        floor_plan_id=target,
+        applicability=UnitApplicability.SPECIFIC_FLOOR_PLANS,
+    )
+    carport = ScopedValue(
+        criterion_key="parking",
+        value="carport",
+        target_scope=TargetScope.PROPERTY,
+        applicability=UnitApplicability.ALL_UNITS,
+    )
+
+    assert resolve_effective_value(
+        criterion_key="parking",
+        floor_plan_id=target,
+        extractions=[garage, carport],
+        min_confidence=Confidence.MEDIUM,
+        presence_like=True,
+        boolean_presence=False,
+    ) == ["garage", "carport"]
+
+
 def test_controlled_set_scores_exact_and_all_units_but_not_uncertain_scope() -> None:
     target = uuid4()
     exact = ScopedValue(
@@ -148,6 +199,11 @@ def test_controlled_set_scores_exact_and_all_units_but_not_uncertain_scope() -> 
 
     assert resolve_effective_value(extractions=[exact], **common) == ["hardwood", "tile"]
     assert resolve_effective_value(extractions=[all_units], **common) == ["vinyl"]
+    assert resolve_effective_value(extractions=[exact, all_units, select_units], **common) == [
+        "hardwood",
+        "vinyl",
+        "tile",
+    ]
     assert resolve_effective_value(extractions=[select_units], **common) is None
     assert resolve_effective_value(extractions=[legacy_property], **common) is None
     assert resolve_effective_value(extractions=[], overrides=[legacy_override], **common) is None

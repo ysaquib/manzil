@@ -90,8 +90,8 @@ enabled = true
 # Port to use for Supabase Studio.
 port = 54323
 # External URL of the API server that frontend connects to.
-# api_url = "http://127.0.0.1"
-api_url = "http://192.168.86.237"
+api_url = "http://127.0.0.1"
+# api_url = "http://192.168.86.237"
 # OpenAI API Key to use for Supabase AI in the Supabase Studio.
 openai_api_key = "env(OPENAI_API_KEY)"
 
@@ -157,8 +157,8 @@ max_indexes = 5
 enabled = true
 # The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
 # in emails.
-# site_url = "http://127.0.0.1:3000"
-site_url = "http://192.168.86.237:5173"
+site_url = "http://127.0.0.1:5173"
+# site_url = "http://192.168.86.237:5173"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 external_url = "http://192.168.86.237:54321"
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.

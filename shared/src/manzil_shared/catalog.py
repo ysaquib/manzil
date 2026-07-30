@@ -61,6 +61,16 @@ FLOORING_MATERIAL_VALUES = (
     "other",
 )
 
+TYPED_MULTI_CLAIM_VALUES: dict[str, tuple[str, ...]] = {
+    "in_unit_laundry": ("in_unit", "hookups", "on_site", "none"),
+    "parking": ("garage", "carport", "covered", "dedicated_lot", "street_only", "none"),
+    "cooling": ("central", "window_units", "none"),
+    # Internal composition input rather than a Catalog Criterion.
+    "heating_type": ("gas", "electric"),
+}
+TYPED_MULTI_CLAIM_KEYS = frozenset(TYPED_MULTI_CLAIM_VALUES)
+MULTI_CLAIM_IDENTITY_KEYS = TYPED_MULTI_CLAIM_KEYS | {"flooring_materials"}
+
 
 def _controlled_set_schema(values: tuple[str, ...]) -> dict[str, Any]:
     return {
@@ -69,6 +79,16 @@ def _controlled_set_schema(values: tuple[str, ...]) -> dict[str, Any]:
         "minItems": 1,
         "uniqueItems": True,
     }
+
+
+def _typed_effective_set_schema(values: tuple[str, ...]) -> dict[str, Any]:
+    return _controlled_set_schema((*values, "advertised_unconfirmed"))
+
+
+def _typed_set_options(
+    values: tuple[tuple[str, float], ...],
+) -> list[RubricOption]:
+    return [_opt(MatchOp.CONTAINS_ANY, [value], delta) for value, delta in values]
 
 
 def _unit_presence_entry(
@@ -192,28 +212,27 @@ CATALOG: tuple[CatalogEntry, ...] = (
         label="Laundry",
         category=CriterionCategory.FITTINGS,
         domain=CriterionDomain.RENT,
-        value_schema={
-            "type": "string",
-            "enum": ["in_unit", "hookups", "on_site", "none", "advertised_unconfirmed"],
-        },
+        value_schema=_typed_effective_set_schema(TYPED_MULTI_CLAIM_VALUES["in_unit_laundry"]),
         claim_value_schema={
             "type": "string",
             "enum": ["in_unit", "hookups", "on_site", "none"],
         },
-        default_options=[
-            _opt(MatchOp.EQ, "in_unit", 0.0),
-            _opt(MatchOp.EQ, "hookups", -0.25),
-            _opt(MatchOp.EQ, "on_site", -1.0),
-            _opt(MatchOp.EQ, "none", -2.0),
-            _opt(MatchOp.EQ, "advertised_unconfirmed", 0.0),
-        ],
+        default_options=_typed_set_options(
+            (
+                ("in_unit", 0.0),
+                ("hookups", -0.25),
+                ("on_site", -1.0),
+                ("none", -2.0),
+                ("advertised_unconfirmed", 0.0),
+            )
+        ),
         extraction_hint=(
             "in_unit = washer/dryer inside the unit; hookups = connections only; "
             "on_site = shared laundry room/facilities; none = the page explicitly "
             "states that no laundry option of any kind is available. A statement "
             "that in-unit laundry is unavailable is not `none` when hookups or "
-            "shared facilities are stated; emit the best available mode once per "
-            "concrete target."
+            "shared facilities are stated. Emit one claim per distinct supported "
+            "mode; distinct positive modes may coexist at one concrete target."
         ),
         requires_tool=None,
         refresh_class=RefreshClass.LISTING_DETAILS,
@@ -384,34 +403,26 @@ CATALOG: tuple[CatalogEntry, ...] = (
         label="Parking",
         category=CriterionCategory.UNIT,
         domain=CriterionDomain.RENT,
-        value_schema={
-            "type": "string",
-            "enum": [
-                "garage",
-                "carport",
-                "covered",
-                "dedicated_lot",
-                "street_only",
-                "none",
-                "advertised_unconfirmed",
-            ],
-        },
+        value_schema=_typed_effective_set_schema(TYPED_MULTI_CLAIM_VALUES["parking"]),
         claim_value_schema={
             "type": "string",
             "enum": ["garage", "carport", "covered", "dedicated_lot", "street_only", "none"],
         },
-        default_options=[
-            _opt(MatchOp.EQ, "garage", 0.5),
-            _opt(MatchOp.EQ, "carport", 0.25),
-            _opt(MatchOp.EQ, "covered", 0.25),
-            _opt(MatchOp.EQ, "dedicated_lot", 0.0),
-            _opt(MatchOp.EQ, "street_only", -0.5),
-            _opt(MatchOp.EQ, "none", -1.0),
-            _opt(MatchOp.EQ, "advertised_unconfirmed", 0.0),
-        ],
+        default_options=_typed_set_options(
+            (
+                ("garage", 0.5),
+                ("carport", 0.25),
+                ("covered", 0.25),
+                ("dedicated_lot", 0.0),
+                ("street_only", -0.5),
+                ("none", -1.0),
+                ("advertised_unconfirmed", 0.0),
+            )
+        ),
         extraction_hint=(
-            "Best parking included or available with the unit: garage, carport, covered, "
-            "dedicated_lot (assigned or off-street lot), street_only, or none."
+            "Parking included or available with the unit: garage, carport, covered, "
+            "dedicated_lot (assigned or off-street lot), street_only, or none. Emit "
+            "one claim per distinct supported type; positive types may coexist."
         ),
         requires_tool=None,
         refresh_class=RefreshClass.LISTING_DETAILS,
@@ -421,20 +432,19 @@ CATALOG: tuple[CatalogEntry, ...] = (
         label="Cooling",
         category=CriterionCategory.FITTINGS,
         domain=CriterionDomain.RENT,
-        value_schema={
-            "type": "string",
-            "enum": ["central", "window_units", "none", "advertised_unconfirmed"],
-        },
+        value_schema=_typed_effective_set_schema(TYPED_MULTI_CLAIM_VALUES["cooling"]),
         claim_value_schema={
             "type": "string",
             "enum": ["central", "window_units", "none"],
         },
-        default_options=[
-            _opt(MatchOp.EQ, "central", 0.5),
-            _opt(MatchOp.EQ, "window_units", 0.0),
-            _opt(MatchOp.EQ, "none", -1.0),
-            _opt(MatchOp.EQ, "advertised_unconfirmed", 0.0),
-        ],
+        default_options=_typed_set_options(
+            (
+                ("central", 0.5),
+                ("window_units", 0.0),
+                ("none", -1.0),
+                ("advertised_unconfirmed", 0.0),
+            )
+        ),
         extraction_hint=(
             "central = central air conditioning; window_units = window/wall units "
             "provided or explicitly permitted; none otherwise."

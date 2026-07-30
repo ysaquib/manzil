@@ -12,10 +12,11 @@ error appended to the content; a second failure raises ExtractionInvalid
 
 from __future__ import annotations
 
+import json
 from uuid import uuid4
 
 import structlog
-from manzil_shared.catalog import SCOPED_UNIT_CLAIM_KEYS
+from manzil_shared.catalog import SCOPED_UNIT_CLAIM_KEYS, TYPED_MULTI_CLAIM_KEYS
 from manzil_shared.errors import ExtractionInvalid
 from manzil_shared.models import Confidence, FactScope, TargetScope, UnitApplicability
 from pydantic import ValidationError
@@ -115,12 +116,17 @@ async def _extract_single(state: RunState, ctx: StageCtx) -> RunState:
                             model=model,
                             prompt_version=prompt_version,
                             target_scope=(
-                                TargetScope.FLOOR_PLAN
-                                if ref is not None
-                                else TargetScope.PROPERTY
+                                TargetScope.FLOOR_PLAN if ref is not None else TargetScope.PROPERTY
                             ),
                             floor_plan_ref=ref,
                             applicability=scoped.applicability,
+                            claim_variant=(
+                                json.dumps(sorted(scoped.value), separators=(",", ":"))
+                                if entry.key == "flooring_materials"
+                                else str(scoped.value)
+                                if entry.key in TYPED_MULTI_CLAIM_KEYS
+                                else None
+                            ),
                             claim_group_id=claim_group_id,
                         )
                     )
@@ -163,6 +169,7 @@ async def _extract_single(state: RunState, ctx: StageCtx) -> RunState:
                     ),
                     floor_plan_ref=ref,
                     applicability=scoped.applicability,
+                    claim_variant=str(scoped.value),
                     claim_group_id=claim_group_id,
                 )
             )

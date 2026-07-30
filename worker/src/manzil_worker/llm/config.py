@@ -27,7 +27,7 @@ import os
 # pin decision, not a bench result — do not change it without bench evidence,
 # and remember that every recording re-keys when it moves.
 WORKHORSE_MODEL = "google/gemini-3-flash-preview"
-TASTE_MODEL = "anthropic/claude-sonnet-4.6"
+TASTE_MODEL = "google/gemini-3.6-flash"
 
 # P0-14 model-pin (DESIGN §20 2026-07-21). The 10-listing bench (P0-13) ranked
 # gemini-3-flash-preview first for the EXTRACT/VERIFY pair: criterion accuracy
@@ -43,7 +43,8 @@ EXTRACT_VERIFY_MODEL = WORKHORSE_MODEL
 # 2026-07-22: claude-haiku-4.5 is now the default for discover since trying to
 # use gemini-3-flash-preview for discover was causing issues with the web search
 # tool.
-DISCOVER_MODEL = "anthropic/claude-haiku-4.5"
+# DISCOVER_MODEL = "anthropic/claude-haiku-4.5"
+DISCOVER_MODEL = "openai/gpt-5.6-luna"
 
 # Stage -> model. Unknown stage is an error, not a fallback: a new stage must
 # be assigned a tier deliberately (and get a prompt file) before it can call.
@@ -59,7 +60,7 @@ STAGE_MODELS: dict[str, str] = {
     "utility_baselines": WORKHORSE_MODEL,  # P3-9 metro baselines pass (scheduler tick)
     "plan_assist": WORKHORSE_MODEL,
     # Owner-selected shadow classifier pin (DESIGN §20 2026-07-28).
-    "image_classify": "google/gemini-3-flash-preview",
+    "image_classify": TASTE_MODEL,
     # taste tier
     "vision": TASTE_MODEL,
     # discover

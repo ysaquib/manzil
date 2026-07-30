@@ -149,6 +149,91 @@ async def test_current_view_selects_latest_append_only_resolution(
         await pg_pool.execute("delete from properties where id = $1", property_id)
 
 
+async def test_typed_claim_variants_remain_independently_current(
+    pg_pool: asyncpg.Pool,
+) -> None:
+    property_id, source_id = await _seed_property_source(pg_pool)
+    try:
+        async with pg_pool.acquire() as conn, conn.transaction():
+            for value, applicability in (
+                ("carport", UnitApplicability.ALL_UNITS),
+                ("garage", UnitApplicability.SELECT_UNITS),
+            ):
+                await append_candidate_resolution(
+                    conn,
+                    property_id=property_id,
+                    hunt_id=None,
+                    criterion_key="parking",
+                    value=value,
+                    confidence=Confidence.HIGH,
+                    evidence_quote=value,
+                    source_id=source_id,
+                    origin_key=f"property_source:{source_id}",
+                    target_scope=TargetScope.PROPERTY,
+                    floor_plan_id=None,
+                    applicability=applicability,
+                    claim_group_id=uuid4(),
+                    model="fixture",
+                    job_id=None,
+                )
+
+        rows = await pg_pool.fetch(
+            "select claim_variant, value #>> '{}' as value, applicability "
+            "from current_extractions "
+            "where property_id = $1 and criterion_key = 'parking' "
+            "order by claim_variant",
+            property_id,
+        )
+        assert [tuple(row) for row in rows] == [
+            ("carport", "carport", "all_units"),
+            ("garage", "garage", "select_units"),
+        ]
+    finally:
+        await pg_pool.execute("delete from properties where id = $1", property_id)
+
+
+async def test_flooring_set_variants_remain_independently_current(
+    pg_pool: asyncpg.Pool,
+) -> None:
+    property_id, source_id = await _seed_property_source(pg_pool)
+    try:
+        async with pg_pool.acquire() as conn, conn.transaction():
+            for value, applicability in (
+                (["vinyl"], UnitApplicability.ALL_UNITS),
+                (["hardwood", "carpet"], UnitApplicability.UNIT_SCOPE_UNSPECIFIED),
+            ):
+                await append_candidate_resolution(
+                    conn,
+                    property_id=property_id,
+                    hunt_id=None,
+                    criterion_key="flooring_materials",
+                    value=value,
+                    confidence=Confidence.HIGH,
+                    evidence_quote=", ".join(value),
+                    source_id=source_id,
+                    origin_key=f"property_source:{source_id}",
+                    target_scope=TargetScope.PROPERTY,
+                    floor_plan_id=None,
+                    applicability=applicability,
+                    claim_group_id=uuid4(),
+                    model="fixture",
+                    job_id=None,
+                )
+
+        rows = await pg_pool.fetch(
+            "select value, applicability from current_extractions "
+            "where property_id = $1 and criterion_key = 'flooring_materials' "
+            "order by applicability",
+            property_id,
+        )
+        assert [(row["value"], row["applicability"]) for row in rows] == [
+            ('["vinyl"]', "all_units"),
+            ('["hardwood", "carpet"]', "unit_scope_unspecified"),
+        ]
+    finally:
+        await pg_pool.execute("delete from properties where id = $1", property_id)
+
+
 async def test_response_local_floor_plan_reference_resolves_before_persistence(
     pg_pool: asyncpg.Pool,
 ) -> None:
@@ -411,8 +496,7 @@ async def test_shared_claim_group_persists_once_per_target_floor_plan(
                 ],
                 source_ids_by_url={source_url: source_id},
                 floor_plan_ids_by_source_ref={
-                    (source_url, ref): floor_plan_id
-                    for ref, floor_plan_id in ids_by_ref.items()
+                    (source_url, ref): floor_plan_id for ref, floor_plan_id in ids_by_ref.items()
                 },
             )
         rows = await pg_pool.fetch(

@@ -13,6 +13,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import asyncpg
+from manzil_shared.catalog import TYPED_MULTI_CLAIM_KEYS
 from manzil_shared.models import Confidence, TargetScope, UnitApplicability
 from manzil_shared.scoped_facts import ScopedOverrideValue, ScopedValue
 
@@ -23,6 +24,16 @@ def _json_value(raw: Any) -> Any:
     if isinstance(raw, str):
         return json.loads(raw)
     return raw
+
+
+def _claim_variant(criterion_key: str, value: Any, explicit: str | None = None) -> str | None:
+    if explicit is not None:
+        return explicit
+    if criterion_key in TYPED_MULTI_CLAIM_KEYS and isinstance(value, str):
+        return value
+    if criterion_key == "flooring_materials" and isinstance(value, list):
+        return json.dumps(sorted(value), separators=(",", ":"))
+    return None
 
 
 async def append_candidate(
@@ -42,16 +53,17 @@ async def append_candidate(
     claim_group_id: UUID,
     model: str,
     job_id: UUID | None,
+    claim_variant: str | None = None,
 ) -> UUID:
     candidate_id: UUID = await conn.fetchval(
         """
         insert into extractions
             (property_id, hunt_id, criterion_key, record_kind, origin_key, source_id,
-             target_scope, floor_plan_id, applicability, claim_group_id, value,
+             target_scope, floor_plan_id, applicability, claim_variant, claim_group_id, value,
              confidence, evidence_quote, model, job_id)
         values
-            ($1, $2, $3, 'candidate', $4, $5, $6, $7, $8, $9,
-             $10::jsonb, $11::confidence, $12, $13, $14)
+            ($1, $2, $3, 'candidate', $4, $5, $6, $7, $8, $9, $10,
+             $11::jsonb, $12::confidence, $13, $14, $15)
         returning id
         """,
         property_id,
@@ -62,6 +74,7 @@ async def append_candidate(
         target_scope.value,
         floor_plan_id,
         applicability.value if applicability is not None else None,
+        _claim_variant(criterion_key, value, claim_variant),
         claim_group_id,
         json.dumps(value),
         confidence.value,
@@ -81,20 +94,18 @@ async def append_resolution(
     floor_plan_id: UUID | None,
     model: str,
     job_id: UUID | None,
-    candidate_ids: Mapping[
-        UUID, list[tuple[TargetScope, UUID | None, UUID]]
-    ],
+    candidate_ids: Mapping[UUID, list[tuple[TargetScope, UUID | None, UUID]]],
 ) -> UUID:
     resolution_group_id = uuid4()
     resolution_id: UUID = await conn.fetchval(
         """
         insert into extractions
             (property_id, hunt_id, criterion_key, record_kind, origin_key,
-             target_scope, floor_plan_id, applicability, claim_group_id, value,
+             target_scope, floor_plan_id, applicability, claim_variant, claim_group_id, value,
              confidence, evidence_quote, model, resolution_rule, disputed, job_id)
         values
-            ($1, $2, $3, 'resolved', $4, $5, $6, $7, $8, $9::jsonb,
-             $10::confidence, $11, $12, $13, $14, $15)
+            ($1, $2, $3, 'resolved', $4, $5, $6, $7, $8, $9, $10::jsonb,
+             $11::confidence, $12, $13, $14, $15, $16)
         returning id
         """,
         property_id,
@@ -104,6 +115,7 @@ async def append_resolution(
         claim.target_scope.value,
         floor_plan_id,
         claim.applicability.value if claim.applicability is not None else None,
+        _claim_variant(claim.criterion_key, claim.value, claim.claim_variant),
         resolution_group_id,
         json.dumps(claim.value),
         claim.confidence.value,
@@ -117,11 +129,8 @@ async def append_resolution(
         candidate_id = next(
             (
                 row_id
-                for target_scope, candidate_floor_plan_id, row_id in candidate_ids.get(
-                    group_id, []
-                )
-                if target_scope is claim.target_scope
-                and candidate_floor_plan_id == floor_plan_id
+                for target_scope, candidate_floor_plan_id, row_id in candidate_ids.get(group_id, [])
+                if target_scope is claim.target_scope and candidate_floor_plan_id == floor_plan_id
             ),
             None,
         )
@@ -159,6 +168,7 @@ async def append_candidate_resolution(
     job_id: UUID | None,
     resolution_rule: str = "single_source",
     disputed: bool = False,
+    claim_variant: str | None = None,
 ) -> tuple[UUID, UUID]:
     """Append one candidate, its one-Source resolution, and lineage edge."""
     candidate_id = await append_candidate(
@@ -177,6 +187,7 @@ async def append_candidate_resolution(
         claim_group_id=claim_group_id,
         model=model,
         job_id=job_id,
+        claim_variant=claim_variant,
     )
     resolution_claim = SourceClaim(
         criterion_key=criterion_key,
@@ -189,6 +200,7 @@ async def append_candidate_resolution(
         target_scope=target_scope,
         floor_plan_id=floor_plan_id,
         applicability=applicability,
+        claim_variant=_claim_variant(criterion_key, value, claim_variant),
         claim_group_id=claim_group_id,
         resolution_rule=resolution_rule,
         disputed=disputed,
@@ -202,9 +214,7 @@ async def append_candidate_resolution(
         floor_plan_id=floor_plan_id,
         model=model,
         job_id=job_id,
-        candidate_ids={
-            claim_group_id: [(target_scope, floor_plan_id, candidate_id)]
-        },
+        candidate_ids={claim_group_id: [(target_scope, floor_plan_id, candidate_id)]},
     )
     return candidate_id, resolution_id
 
@@ -238,7 +248,8 @@ async def persist_reconciled_claims(
             continue
         prior_by_url[source_url] = await conn.fetch(
             """
-            select criterion_key, target_scope, floor_plan_id, applicability, confidence
+            select criterion_key, target_scope, floor_plan_id, applicability,
+                   claim_variant, confidence
             from current_extraction_candidates
             where property_id = $1 and hunt_id is not distinct from $2 and source_id = $3
             """,
@@ -247,26 +258,23 @@ async def persist_reconciled_claims(
             source_id,
         )
 
-    candidate_ids: dict[
-        UUID, list[tuple[TargetScope, UUID | None, UUID]]
-    ] = {}
-    observed_by_url: dict[str, set[tuple[str, TargetScope, UUID | None]]] = {
+    candidate_ids: dict[UUID, list[tuple[TargetScope, UUID | None, UUID]]] = {}
+    observed_by_url: dict[str, set[tuple[str, TargetScope, UUID | None, str | None]]] = {
         url: set() for url in authoritative_urls
     }
-    observed_any: set[tuple[str, TargetScope, UUID | None]] = set()
+    observed_any: set[tuple[str, TargetScope, UUID | None, str | None]] = set()
     for claim in materialized_candidates:
         source_url = claim.source_id or ""
         source_id = source_ids_by_url.get(source_url)
         floor_plan_id = claim.floor_plan_id
         if claim.floor_plan_ref is not None:
-            floor_plan_id = floor_plan_ids_by_source_ref.get(
-                (source_url, claim.floor_plan_ref)
-            )
+            floor_plan_id = floor_plan_ids_by_source_ref.get((source_url, claim.floor_plan_ref))
             if floor_plan_id is None:
                 raise ValueError(
                     f"unknown Source-local Floor Plan {source_url}#{claim.floor_plan_ref}"
                 )
-        identity = (claim.criterion_key, claim.target_scope, floor_plan_id)
+        variant = _claim_variant(claim.criterion_key, claim.value, claim.claim_variant)
+        identity = (claim.criterion_key, claim.target_scope, floor_plan_id, variant)
         observed_any.add(identity)
         if source_url in observed_by_url:
             observed_by_url[source_url].add(identity)
@@ -286,20 +294,26 @@ async def persist_reconciled_claims(
             claim_group_id=claim.claim_group_id,
             model=claim.model,
             job_id=job_id,
+            claim_variant=variant,
         )
         candidate_ids.setdefault(claim.claim_group_id, []).append(
             (claim.target_scope, floor_plan_id, candidate_id)
         )
 
-    resolved_identities: set[tuple[str, TargetScope, UUID | None]] = set()
+    resolved_identities: set[tuple[str, TargetScope, UUID | None, str | None]] = set()
     for claim in materialized_resolutions:
         source_url = claim.source_id or ""
         floor_plan_id = claim.floor_plan_id
         if claim.floor_plan_ref is not None:
-            floor_plan_id = floor_plan_ids_by_source_ref.get(
-                (source_url, claim.floor_plan_ref)
+            floor_plan_id = floor_plan_ids_by_source_ref.get((source_url, claim.floor_plan_ref))
+        resolved_identities.add(
+            (
+                claim.criterion_key,
+                claim.target_scope,
+                floor_plan_id,
+                _claim_variant(claim.criterion_key, claim.value, claim.claim_variant),
             )
-        resolved_identities.add((claim.criterion_key, claim.target_scope, floor_plan_id))
+        )
         await append_resolution(
             conn,
             property_id=property_id,
@@ -312,15 +326,18 @@ async def persist_reconciled_claims(
         )
 
     refresh_model = (
-        materialized_candidates[0].model
-        if materialized_candidates
-        else "authoritative_refresh"
+        materialized_candidates[0].model if materialized_candidates else "authoritative_refresh"
     )
     for source_url, prior_rows in prior_by_url.items():
         source_id = source_ids_by_url[source_url]
         for row in prior_rows:
             target_scope = TargetScope(row["target_scope"])
-            identity = (row["criterion_key"], target_scope, row["floor_plan_id"])
+            identity = (
+                row["criterion_key"],
+                target_scope,
+                row["floor_plan_id"],
+                row["claim_variant"],
+            )
             if (
                 identity in observed_by_url[source_url]
                 or row["confidence"] == Confidence.NOT_FOUND.value
@@ -348,6 +365,7 @@ async def persist_reconciled_claims(
                 claim_group_id=group_id,
                 model=refresh_model,
                 job_id=job_id,
+                claim_variant=row["claim_variant"],
             )
             if identity in observed_any or identity in resolved_identities:
                 continue
@@ -365,6 +383,7 @@ async def persist_reconciled_claims(
                     target_scope=target_scope,
                     floor_plan_id=row["floor_plan_id"],
                     applicability=applicability,
+                    claim_variant=row["claim_variant"],
                     claim_group_id=group_id,
                     resolution_rule="source_refresh_not_found",
                     candidate_claim_group_ids=[group_id],
@@ -372,9 +391,7 @@ async def persist_reconciled_claims(
                 floor_plan_id=row["floor_plan_id"],
                 model=refresh_model,
                 job_id=job_id,
-                candidate_ids={
-                    group_id: [(target_scope, row["floor_plan_id"], tombstone_id)]
-                },
+                candidate_ids={group_id: [(target_scope, row["floor_plan_id"], tombstone_id)]},
             )
 
 
@@ -401,7 +418,8 @@ async def persist_single_source_claims(
     if authoritative:
         prior_rows = await conn.fetch(
             """
-            select criterion_key, target_scope, floor_plan_id, applicability, confidence
+            select criterion_key, target_scope, floor_plan_id, applicability,
+                   claim_variant, confidence
             from current_extraction_candidates
             where property_id = $1 and hunt_id is not distinct from $2 and source_id = $3
             """,
@@ -410,7 +428,7 @@ async def persist_single_source_claims(
             source_id,
         )
 
-    observed: set[tuple[str, TargetScope, UUID | None]] = set()
+    observed: set[tuple[str, TargetScope, UUID | None, str | None]] = set()
     materialized_claims = list(claims)
     for claim in materialized_claims:
         floor_plan_id = claim.floor_plan_id
@@ -432,7 +450,8 @@ async def persist_single_source_claims(
         elif floor_plan_id is not None:
             raise ValueError("Property-target claim cannot carry floor_plan_id")
 
-        observed.add((claim.criterion_key, claim.target_scope, floor_plan_id))
+        variant = _claim_variant(claim.criterion_key, claim.value, claim.claim_variant)
+        observed.add((claim.criterion_key, claim.target_scope, floor_plan_id, variant))
 
         from_page = claim.source_id == source_url
         producer_origin = claim.origin_key or claim.source_id or claim.model
@@ -454,6 +473,7 @@ async def persist_single_source_claims(
             job_id=job_id,
             resolution_rule=claim.resolution_rule or "single_source",
             disputed=claim.disputed,
+            claim_variant=variant,
         )
 
     if not authoritative:
@@ -461,7 +481,12 @@ async def persist_single_source_claims(
     refresh_model = materialized_claims[0].model if materialized_claims else "authoritative_refresh"
     for row in prior_rows:
         target_scope = TargetScope(row["target_scope"])
-        identity = (row["criterion_key"], target_scope, row["floor_plan_id"])
+        identity = (
+            row["criterion_key"],
+            target_scope,
+            row["floor_plan_id"],
+            row["claim_variant"],
+        )
         if identity in observed or row["confidence"] == Confidence.NOT_FOUND.value:
             continue
         applicability = (
@@ -484,6 +509,7 @@ async def persist_single_source_claims(
             model=refresh_model,
             job_id=job_id,
             resolution_rule="source_refresh_not_found",
+            claim_variant=row["claim_variant"],
         )
 
 
@@ -496,7 +522,7 @@ async def load_current_extractions(
     rows = await conn.fetch(
         """
         select criterion_key, value, confidence, target_scope, floor_plan_id,
-               applicability, extracted_at, origin_key, resolution_rule
+               applicability, claim_variant, extracted_at, origin_key, resolution_rule
         from current_extractions
         where property_id = $1 and (hunt_id is null or hunt_id = $2)
         """,
@@ -515,6 +541,7 @@ async def load_current_extractions(
                 if row["applicability"] is not None
                 else None
             ),
+            claim_variant=row["claim_variant"],
             observed_at=row["extracted_at"],
             origin_key=row["origin_key"],
             resolution_rule=row["resolution_rule"],

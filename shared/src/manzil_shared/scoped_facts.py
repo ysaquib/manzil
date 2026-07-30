@@ -13,6 +13,11 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
+from manzil_shared.catalog import (
+    FLOORING_MATERIAL_VALUES,
+    TYPED_MULTI_CLAIM_KEYS,
+    TYPED_MULTI_CLAIM_VALUES,
+)
 from manzil_shared.models import Confidence, TargetScope, UnitApplicability
 
 _CONFIDENCE_RANK = {
@@ -31,6 +36,7 @@ class ScopedValue:
     target_scope: TargetScope = TargetScope.PROPERTY
     floor_plan_id: UUID | None = None
     applicability: UnitApplicability | None = None
+    claim_variant: str | None = None
     observed_at: datetime | None = None
     origin_key: str | None = None
     resolution_rule: str | None = None
@@ -133,6 +139,147 @@ def compose_presence(
     return "confirmed" if boolean_claim else value
 
 
+def _as_value_set(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, str)]
+    return [value] if isinstance(value, str) else []
+
+
+def _resolve_typed_multi_value(
+    *,
+    criterion_key: str,
+    floor_plan_id: UUID | None,
+    extractions: list[ScopedValue],
+    overrides: list[ScopedOverrideValue],
+    minimum: Confidence,
+    vision_minimum: Confidence | None,
+) -> list[str] | None:
+    """Compose independently scoped enum claims into one scoreable set."""
+    relevant_overrides = [
+        row for row in overrides if row.criterion_key == criterion_key and row.value is not None
+    ]
+    exact_override = _newest_override(
+        row
+        for row in relevant_overrides
+        if row.target_scope is TargetScope.FLOOR_PLAN and row.floor_plan_id == floor_plan_id
+    )
+    if exact_override is not None:
+        values = _as_value_set(exact_override.value)
+        return values or None
+    all_override = _newest_override(
+        row
+        for row in relevant_overrides
+        if row.target_scope is TargetScope.PROPERTY
+        and row.applicability is UnitApplicability.ALL_UNITS
+    )
+    if all_override is not None:
+        values = _as_value_set(all_override.value)
+        return values or None
+
+    eligible = [
+        row
+        for row in extractions
+        if row.criterion_key == criterion_key
+        and isinstance(row.value, str)
+        and _row_meets_confidence(
+            row,
+            minimum=minimum,
+            vision_minimum=vision_minimum,
+        )
+    ]
+    exact_values = {
+        str(row.value)
+        for row in eligible
+        if row.target_scope is TargetScope.FLOOR_PLAN and row.floor_plan_id == floor_plan_id
+    }
+    all_values = {
+        str(row.value)
+        for row in eligible
+        if row.target_scope is TargetScope.PROPERTY
+        and row.applicability is UnitApplicability.ALL_UNITS
+    }
+    exact_positive = exact_values - {"none"}
+    all_positive = all_values - {"none"}
+    if "none" in exact_values:
+        if exact_positive:
+            return None
+        return ["none"]
+    if exact_positive:
+        confirmed = exact_positive | all_positive
+    elif "none" in all_values:
+        if all_positive:
+            return None
+        return ["none"]
+    else:
+        confirmed = all_positive
+
+    uncertain = {
+        str(row.value)
+        for row in eligible
+        if row.target_scope is TargetScope.PROPERTY
+        and row.applicability
+        in {
+            UnitApplicability.SELECT_UNITS,
+            UnitApplicability.UNIT_SCOPE_UNSPECIFIED,
+        }
+        and row.value != "none"
+    }
+    ordered = [value for value in TYPED_MULTI_CLAIM_VALUES[criterion_key] if value in confirmed]
+    if uncertain - confirmed:
+        ordered.append("advertised_unconfirmed")
+    return ordered or None
+
+
+def _resolve_flooring_materials(
+    *,
+    floor_plan_id: UUID | None,
+    extractions: list[ScopedValue],
+    overrides: list[ScopedOverrideValue],
+    minimum: Confidence,
+    vision_minimum: Confidence | None,
+) -> list[str] | None:
+    """Union exact and universal flooring sets; weaker scopes stay unconfirmed."""
+    relevant_overrides = [row for row in overrides if row.criterion_key == "flooring_materials"]
+    exact_override = _newest_override(
+        row
+        for row in relevant_overrides
+        if row.target_scope is TargetScope.FLOOR_PLAN and row.floor_plan_id == floor_plan_id
+    )
+    if exact_override is not None and exact_override.value is not None:
+        values = _as_value_set(exact_override.value)
+        return values or None
+    all_override = _newest_override(
+        row
+        for row in relevant_overrides
+        if row.target_scope is TargetScope.PROPERTY
+        and row.applicability is UnitApplicability.ALL_UNITS
+    )
+    if all_override is not None and all_override.value is not None:
+        values = _as_value_set(all_override.value)
+        return values or None
+
+    confirmed: set[str] = set()
+    for row in extractions:
+        applicable = (
+            row.target_scope is TargetScope.FLOOR_PLAN and row.floor_plan_id == floor_plan_id
+        ) or (
+            row.target_scope is TargetScope.PROPERTY
+            and row.applicability is UnitApplicability.ALL_UNITS
+        )
+        if (
+            row.criterion_key == "flooring_materials"
+            and applicable
+            and _row_meets_confidence(
+                row,
+                minimum=minimum,
+                vision_minimum=vision_minimum,
+            )
+        ):
+            confirmed.update(_as_value_set(row.value))
+    ordered = [value for value in FLOORING_MATERIAL_VALUES if value in confirmed]
+    return ordered or None
+
+
 def resolve_effective_value(
     *,
     criterion_key: str,
@@ -151,8 +298,28 @@ def resolve_effective_value(
     Property/all-units/generalized resolved Extraction ▸ unknown. A latest null
     Override is a target-specific tombstone and falls through.
     """
+    extraction_rows = list(extractions)
+    override_rows = list(overrides)
+    if criterion_key in TYPED_MULTI_CLAIM_KEYS:
+        return _resolve_typed_multi_value(
+            criterion_key=criterion_key,
+            floor_plan_id=floor_plan_id,
+            extractions=extraction_rows,
+            overrides=override_rows,
+            minimum=min_confidence,
+            vision_minimum=min_vision_confidence,
+        )
+    if criterion_key == "flooring_materials":
+        return _resolve_flooring_materials(
+            floor_plan_id=floor_plan_id,
+            extractions=extraction_rows,
+            overrides=override_rows,
+            minimum=min_confidence,
+            vision_minimum=min_vision_confidence,
+        )
+
     scoped_unit = presence_like or generalized_unknown
-    relevant_overrides = [row for row in overrides if row.criterion_key == criterion_key]
+    relevant_overrides = [row for row in override_rows if row.criterion_key == criterion_key]
     exact_override = _newest_override(
         row
         for row in relevant_overrides
@@ -179,7 +346,7 @@ def resolve_effective_value(
 
     eligible = [
         row
-        for row in extractions
+        for row in extraction_rows
         if row.criterion_key == criterion_key
         and row.value is not None
         and _row_meets_confidence(
