@@ -2,14 +2,14 @@
 
 | | |
 |---|---|
-| **Version** | 2.0.89 |
+| **Version** | 2.0.90 |
 | **Status** | Living — churns freely, no ceremony required. **v2.0 is the implementation-start baseline**: further changes should come from code reality, not further pre-code polishing |
 | **Sibling** | `DESIGN.md` (intent + contracts; wins all conflicts about *what* and *why*) |
 | **Repo location** | `/IMPLEMENTATION.md` |
 
 **Division of authority:** DESIGN.md owns intent, requirements, and cross-component contracts. This document owns *current mechanics* — how things are actually built right now. Code and docstrings win on exact interfaces; this doc points at modules rather than duplicating signatures once they exist. If this doc and DESIGN.md disagree, stop and flag it (CLAUDE.md rule) — do not silently pick a side. Update protocol here is deliberately lightweight: edit in place, add a line to the [Changelog](#9-changelog). No decision-log ceremony; that lives in DESIGN.md §20 for *design* changes only.
 
-`docs/scoped-criteria-and-amenities.md` is the supplementary decision workbook for the P3-SC series. DESIGN (currently v3.28) and this document supersede it wherever wording or mechanics differ.
+`docs/scoped-criteria-and-amenities.md` is the supplementary decision workbook for the P3-SC series. DESIGN (currently v3.29) and this document supersede it wherever wording or mechanics differ.
 
 **Status labels.** Every section below carries one, so nobody — human or agent — has to guess how binding a given detail is:
 
@@ -211,12 +211,12 @@ The dynamic zero-tool EXTRACT schema emits required sparse arrays for
 `dishwasher`, and `heating`; an empty list means Source silence. Each item has
 one non-null raw claim value, confidence/evidence, Unit Applicability, and
 response-local Floor Plan refs only for `specific_floor_plans`. Response keys
-must be unique; exact refs must exist in that response; a Criterion may emit
-only one value per concrete target. One claim may name several Floor Plans;
+must be unique; exact refs must exist in that response. Boolean Criteria emit
+one value per concrete target; laundry, parking, cooling, and heating emit one
+claim per distinct typed value and may retain several positive variants. One claim may name several Floor Plans;
 EXTRACT expands it to candidates sharing one `claim_group_id`.
-The EXTRACT v7 prompt and generated schema clarify that applicability is claim
-data, not a second target, so competing statements about one generalized
-target must be reconciled before emission. Laundry's `none` means no laundry
+The EXTRACT v8 prompt and generated schema clarify that applicability is claim
+data while opted-in typed values are independent variants. Laundry's `none` means no laundry
 option of any kind: a page that denies in-unit laundry while advertising a
 shared facility emits one `on_site` claim. The schema boundary deterministically
 drops only a redundant generalized `none` when exactly one generalized positive
@@ -245,6 +245,25 @@ legacy labels plus 11 unfinished skeletons, but no scoped claims or diagram
 labels, so every new coverage case is missing. Those labels are human-only:
 finish/review them, rerun the current model pin, and record zero wrong exact
 associations plus the Gate regression report before marking P3-SC4 complete.
+
+Migration `20260815000000_multi_value_scoped_claims.sql` adds
+`claim_variant` to candidate/resolved current identities. Laundry, parking,
+cooling, and heating variants persist and reconcile independently; their
+effective values are controlled sets, while boolean scoped Criteria remain
+scalar. Flooring uses a canonical set variant so independently scoped material
+sets remain current together and exact/all sets union for scoring. Prompt v8
+and the schema boundary normalize malformed exact claims
+across every scoped Criterion: valid response refs survive; explicit
+select/some/certain/varies wording becomes `select_units`; everything else
+becomes `unit_scope_unspecified`. This only reduces specificity and never
+invents a Floor Plan association.
+
+Prompt-v8 record-mode bench after the flooring follow-up: 10 finished labels,
+0 failures, 11 unfinished skeletons skipped, Criterion accuracy 0.8085, Gate
+accuracy 0.95, unknown accuracy 0.8333, plan-field accuracy 0.9479, and 0 wrong
+exact associations (`extract-v8-multi-scoped-claims-final.json`). The legacy
+labels still contain no scoped-claim grading, so scoped accuracy/target recall
+remain unavailable and the existing human-label debt is unchanged.
 
 ### P3-SC6/SC7 objective unit-feature contract
 
@@ -790,6 +809,7 @@ history. Version and date, rather than row position, define chronology.
 | Version | Date | Change |
 |---|---|---|
 | 2.0.90 | 2026-07-29 | **P3-16 landed — settings/account shell, navbar foot, feedback, Drawer deep links (DESIGN v3.27, Yusuf-directed).** **Shell:** `components/SettingsShell.tsx` (+ module CSS) — 13rem sticky tab rail with a second descriptive line, a 39rem card column, and `SettingsSaveBar`, which renders **only** when a panel is dirty and names the changed fields rather than saying "unsaved changes". Below `sm` the rail becomes a horizontal scroller and the subtitles hide. **Hunt settings** splits into `/h/:huntId/settings` (Hunt) and `/settings/profile` (Your profile) with `settings/:tab` added to the router: the Hunt panel keeps General/Household/Scoring defaults/Danger zone and folds Members + Invites + Invitation Links into one **People** card; rename stays inline (a save bar for one field is ceremony) while the nine settings keys batch through the save bar via a `SETTING_LABEL` map. The Your-profile panel batches hunt display name + color and hosts the new role card. **`features/collaboration/rolePermissions.ts`** is a pure transcription of DESIGN §4.2 (owner/curator/member, with §4.2's "own listings" rows carried as `scope` qualifiers rather than dropped), rendered by `RolePermissionsCard` for **every** role — the Owner's withheld list is a sentence, not an empty list. **Account:** `auth/AccountPage.tsx` replaces `auth/ProfilePage.tsx` at `/account/:tab` (Profile · Account) inside `PublicPageShell`; `/profile` is now a redirect to `/account/profile`, and `UserMenu` gains an Account-settings item. Email change and account deletion are explicitly *not* built — an Alert says so rather than offering dead controls. **Chrome:** `AppLayout` header becomes a three-column grid so the hunt name is centered on the viewport (a `Menu` switcher over `useHunts`), and `NavbarFoot` puts Submit feedback (dashed, secondary) above an account cluster carrying avatar + name + **email** that expands in place via `Collapse` — no floating dropdown over the content. The header `UserMenu` is retained below `sm`, where the navbar sits behind the Burger. **Feedback:** migration `20260814000000_feedback.sql` — `feedback` table with an authenticated `INSERT` policy pinned to `user_id = auth.uid()` and **no SELECT/UPDATE/DELETE policy at all** (reads are `service_role`-only), plus a `SECURITY DEFINER` before-insert trigger capping 10 rows/user/hour and raising SQLSTATE `53400`. `POST /v1/feedback` sets identity from the bearer token and `user_agent` from the request, rejects a non-site-relative `route` (422) and a Hunt the caller cannot read (403), maps `53400` to 429, and uses `returning="minimal"` **because** the caller has no SELECT privilege — the response id/timestamp are generated server-side rather than read back. **Drawer deep links:** `features/listings/drawerRoute.ts` makes `?listing=&group=&plan=&tab=` the single source of truth via `useSearchParams` for both Overview and Map; open **pushes** (so Back closes the Drawer), close and tab changes **replace**, and a `renderSelection`/`onExited` pair keeps content mounted through the exit transition. **Verification:** frontend 69 files / 426 tests (26 new across `rolePermissions`, `drawerRoute` — push/replace asserted through `useNavigationType`, not a mocked setter — `SettingsShell`, `RolePermissionsCard`, `FeedbackModal`), api 138 incl. 10 new feedback tests covering the insert-only posture (a submitter cannot read their own row; a direct PostgREST insert cannot forge `user_id`; update/delete leave the row intact) and the 429 cap; tsc, eslint, `vite build`, and ruff clean over the new code. Driven end-to-end in Safari against the live stack: `POST /v1/feedback` → 201 with route/hunt/user-agent persisted. Two defects found in that pass and fixed: a `Badge` (div) nested inside Mantine `Text` (a `p`) in the role card, and the card defaulting to `member` before the membership query resolved, which flashed the wrong permission set at an Owner. `tests/setup.ts` gains a `document.fonts` stub (jsdom ships no FontFaceSet; Mantine's autosize Textarea subscribes to `loadingdone`). Light mode was verified structurally (tokens + DOM), **not** visually — Safari returned blank captures for that window. |
+| 2.0.90 | 2026-07-29 | **Typed multi-claim scoped facts + safe exact-scope normalization (DESIGN v3.29).** EXTRACT prompt v8 permits distinct laundry/parking/cooling/heating values at one target and explicitly maps unnamed “select townhomes” wording to `select_units`. The generated schema normalizes malformed exact claims downward without inventing refs, retains valid refs, rejects duplicate variants and same-target `none`+positive contradictions, and emits structured warnings. Migration 20260815 adds `claim_variant` to candidate/resolved identities and authoritative refresh, migrates typed Catalog schemas/Rubrics to controlled sets + `contains_any`, bumps affected Hunt versions, and queues rescore. RECONCILE votes per positive variant but reunites positive-versus-`none` as an exclusive conflict. The shared resolver unions exact/all positives, carries uncertain variants only as `advertised_unconfirmed`, and treats multiple heating types conservatively. Floor Plan detail renders one typed value/scope/evidence chip per variant; filters use confirmed set membership. Seed regenerated; focused shared/worker/frontend and clean-reset coverage includes the reported fireplace and parking shapes. |
 | 2.0.89 | 2026-07-29 | **Floor-Plan-aware Overview/Map filtering landed (DESIGN v3.28).** `overviewRows.ts` splits Property/Unit-Group predicates from Floor-Plan predicates and evaluates the latter as one conjunction per candidate Floor Plan. Unpinned Unit Groups keep any-plan semantics without optimistic unions: the highest-scoring matching candidate becomes an ephemeral `filterSelectedPlanId` Display Floor Plan, feeding score/all-in/deposit/Criteria in Overview, Map, and the Drawer; clearing/changing filters derives the ordinary best-score plan again, with no API or `hunt_listings.pins` write. Manual pins remain authoritative and a failing pin hides the row, while `analyzeOverviewFilters` counts groups with alternate matches for the filter-bar notice. Score cells and the Floor Plans section label a filter-selected representative; Compare remains manual-pin/best-score. Pure tests cover availability reselection/clear, same-plan conjunction, matching/failing manual pins, alternate counts, and UI markers. Frontend suite: 69 files / 426 tests pass. |
 | 2.0.88 | 2026-07-29 | **P3-SC6/SC7 engineering landed (DESIGN v3.26).** Catalog grows to 40 entries through generated seed + migration `20260813000000_sc6_sc7_catalog.sql`: six `fittings` presence Criteria with boolean claims, `confirmed/advertised_unconfirmed/none` effective values, `+0.25/0/0` defaults, and `available_sources_only + verified_positive_preferred`; plus mixed-scope `flooring_materials` with the controlled eight-value set. All seven ride the existing sparse scoped EXTRACT/VERIFY/P3-6 candidate-resolution/persistence path. The shared resolver now separates presence-like keys from confirmed-scope-only sets: flooring exact/all retains its array, select/unspecified remains visible in Floor Plan evidence but scores unknown for points and Gates. Rubric UI warns both for overlapping set options and for material+quality double-weighting; Floor Plan detail displays material arrays and applicability. The human-only audit now reports required SC6/SC7 coverage per Criterion instead of allowing generic scoped coverage to stand in for the tranche. Synthetic targeted suites pass; no current-pin accuracy claim is made because the local human labels do not yet supply those per-Criterion cases. Also repaired the previously recorded pinned Catalog conflict by restoring `beds=0` to DESIGN's `-0.5` default with Owner approval. |
 | 2.0.87 | 2026-07-28 | **Cost Breakdown / Fees split and utility correction ledger (DESIGN v3.24).** Migration `20260811000000_utility_overrides.sql` adds append-only per-Listing electric/gas/water/sewer/cooling/heat/trash corrections plus the RLS-preserving `current_utility_overrides` view. `PUT /v1/listings/{id}/utilities/{utility}` appends inclusion/monthly-amount decisions (both null = revert) and enqueues the ordinary hunt rescore. Rescore merges each decision over `utilities_included`; manual amounts replace matching baseline components and suppress overlapping combined water/sewer or valet-trash fee slots. The drawer now has separate Cost Breakdown and Fees cards: the former keeps tagged components, all-in override/result, and a read-only gray/scoreHigh/scoreHighest utilities banner; the latter owns utility and non-utility fee popovers. Extracted combined water/sewer and valet-trash inputs no longer render duplicate generic rows. Cooling is inclusion-only because electricity already prices it. |
