@@ -344,9 +344,13 @@ function CriterionRow({
   const valueOverridden = savedOverride || isPending;
   const evidenceOverridden = savedOverride || isPending;
   const flag = rowFlag(criterion, extraction, isPending);
+  const showRevert = showOverrideDot || isPending;
 
   return (
-    <Box className={classes.crit}>
+    <Box
+      className={classes.crit}
+      data-hover-reveal={!showRevert ? "true" : undefined}
+    >
       <Group gap={6} wrap="nowrap" className={classes.nameCell}>
         {showOverrideDot && (
           <Tooltip
@@ -397,15 +401,8 @@ function CriterionRow({
         {criterion.delta > 0 ? "+" : ""}
         {criterion.delta.toFixed(2)}
       </Text>
-      <Group gap={4} wrap="nowrap" justify="flex-end">
-        <OverrideControl
-          criterionKey={criterion.key}
-          schema={entry?.value_schema}
-          currentValue={value}
-          factScope={entry?.fact_scope}
-          floorPlanId={floorPlanId}
-        />
-        {showOverrideDot && (
+      <Group gap={4} wrap="nowrap" justify="flex-end" className={classes.rowAction}>
+        {showRevert ? (
           <Tooltip label="Revert to original value">
             <ActionIcon
               color="gray"
@@ -417,6 +414,15 @@ function CriterionRow({
               <IconArrowBackUp size={14} stroke={1.5} color="var(--mantine-color-dimmed)" />
             </ActionIcon>
           </Tooltip>
+        ) : (
+          <OverrideControl
+            criterionKey={criterion.key}
+            schema={entry?.value_schema}
+            currentValue={value}
+            factScope={entry?.fact_scope}
+            floorPlanId={floorPlanId}
+            className={drawer.hoverRevealPencil}
+          />
         )}
       </Group>
     </Box>

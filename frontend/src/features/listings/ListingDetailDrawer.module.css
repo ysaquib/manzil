@@ -158,6 +158,24 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Pencil edit affordance: visible on row hover/focus; always on touch (Cost & fees,
+   criterion breakdown). Revert replaces the pencil when a value is modified. */
+[data-hover-reveal="true"] .hoverRevealPencil {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+[data-hover-reveal="true"]:hover .hoverRevealPencil,
+[data-hover-reveal="true"]:focus-within .hoverRevealPencil {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  [data-hover-reveal="true"] .hoverRevealPencil {
+    opacity: 1;
+  }
+}
+
 /* --- Score band text (hero numeral, match tag, criterion total) --- */
 .bandText[data-band="highest"] {
   color: var(--mantine-color-scoreHighest-7);

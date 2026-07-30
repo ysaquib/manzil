@@ -19,10 +19,17 @@
 
 .crit {
   display: grid;
-  grid-template-columns: 1fr auto 52px auto;
+  grid-template-columns: 1fr auto 3.25rem auto;
   align-items: center;
   gap: var(--mantine-spacing-xs);
   padding: 0.375rem 0;
+}
+
+.rowAction {
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  width: 1.75rem;
 }
 
 .nameCell {

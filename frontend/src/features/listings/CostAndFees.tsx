@@ -162,9 +162,8 @@ function CompositionBadges({ badges }: { badges: string[] }) {
   );
 }
 
-/** The shared row. `action` is the single trailing control; pencils hide until
- * hover or keyboard focus, a revert never does — an unsaved or overridden
- * figure must never hide its way out. */
+/** The shared row. When a figure is modified, `action` is a revert control only;
+ * otherwise it is the edit popover and the pencil hides until hover or focus. */
 function CostRow({
   label,
   state,
@@ -178,7 +177,7 @@ function CostRow({
   icons,
   chips,
   action,
-  revealAction = true,
+  hoverRevealAction = false,
 }: {
   label: string;
   state: string;
@@ -192,7 +191,7 @@ function CostRow({
   icons?: ReactNode;
   chips?: ReactNode;
   action?: ReactNode;
-  revealAction?: boolean;
+  hoverRevealAction?: boolean;
 }) {
   const text = amountText ?? money(amount);
   return (
@@ -200,7 +199,7 @@ function CostRow({
       className={`${drawer.ledgerRow} ${classes.row}`}
       data-counted={counted ? "yes" : "no"}
       data-pending={pending ? "true" : undefined}
-      data-reveal={revealAction ? "true" : undefined}
+      data-hover-reveal={hoverRevealAction ? "true" : undefined}
     >
       <Box className={classes.name}>
         <Box
@@ -221,23 +220,23 @@ function CostRow({
           </Text>
         ) : null}
       </Box>
-      <Text
-        size="sm"
-        fw={600}
-        ta="right"
-        className={`${drawer.tabularNums} ${classes.amount}`}
-        data-manual={manual ? "true" : undefined}
-        data-struck={!counted && amount != null ? "true" : undefined}
-      >
-        {amount == null && amountText === undefined ? (
-          <Text component="span" c="dimmed" fs="italic" fw={500}>
-            unknown
-          </Text>
-        ) : (
-          text
-        )}
-      </Text>
-      <Group gap={2} wrap="nowrap" className={classes.actions}>
+      <Group gap={4} wrap="nowrap" className={classes.valueAction}>
+        <Text
+          size="sm"
+          fw={600}
+          ta="right"
+          className={`${drawer.tabularNums} ${classes.amount}`}
+          data-manual={manual ? "true" : undefined}
+          data-struck={!counted && amount != null ? "true" : undefined}
+        >
+          {amount == null && amountText === undefined ? (
+            <Text component="span" c="dimmed" fs="italic" fw={500}>
+              unknown
+            </Text>
+          ) : (
+            text
+          )}
+        </Text>
         {action}
       </Group>
     </Box>
@@ -246,7 +245,7 @@ function CostRow({
 
 function RevertButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
-    <Tooltip label="Revert to the machine's value">
+    <Tooltip label="Revert to original value">
       <ActionIcon
         color="gray"
         size="sm"
@@ -283,17 +282,16 @@ function RentRow({ amount, floorPlanId }: { amount: number | null; floorPlanId: 
       amount={shown}
       pending={pending}
       subline={pending ? "Your edit applies when you save" : undefined}
-      revealAction={!pending}
+      hoverRevealAction={!pending}
       action={
-        <>
-          {pending && (
-            <RevertButton
-              label="base rent"
-              onClick={() =>
-                setDraftOverride("base_rent", { value: null, note: REVERT_NOTE, ...scope })
-              }
-            />
-          )}
+        pending ? (
+          <RevertButton
+            label="base rent"
+            onClick={() =>
+              setDraftOverride("base_rent", { value: null, note: REVERT_NOTE, ...scope })
+            }
+          />
+        ) : (
           <Popover
             opened={opened}
             onChange={setOpened}
@@ -307,11 +305,11 @@ function RentRow({ amount, floorPlanId }: { amount: number | null; floorPlanId: 
                 color="gray"
                 size="sm"
                 variant="subtle"
-                className={classes.pencil}
+                className={drawer.hoverRevealPencil}
                 aria-label="edit Base rent"
                 onClick={() => {
-                  setValue(typeof draft?.value === "number" ? draft.value : (amount ?? ""));
-                  setNote(draft?.note ?? "");
+                  setValue(amount ?? "");
+                  setNote("");
                   setOpened(true);
                 }}
               >
@@ -351,7 +349,7 @@ function RentRow({ amount, floorPlanId }: { amount: number | null; floorPlanId: 
               </Stack>
             </Popover.Dropdown>
           </Popover>
-        </>
+        )
       }
     />
   );
@@ -408,6 +406,8 @@ function UtilityRow({
       ? "extracted"
       : (component?.tag ?? "unknown");
 
+  const showRevert = manuallyOverridden || draft !== undefined;
+
   return (
     <CostRow
       label={label}
@@ -424,17 +424,16 @@ function UtilityRow({
           ? "Cost sits inside the electricity estimate — inclusion only"
           : component?.note || undefined
       }
-      revealAction={!manuallyOverridden && draft === undefined}
+      hoverRevealAction={!showRevert}
       action={
-        <>
-          {manuallyOverridden && (
-            <RevertButton
-              label={`${label} utility override`}
-              onClick={() =>
-                setDraftUtility(utility, { included: null, monthly_amount: null, note: null })
-              }
-            />
-          )}
+        showRevert ? (
+          <RevertButton
+            label={`${label} utility override`}
+            onClick={() =>
+              setDraftUtility(utility, { included: null, monthly_amount: null, note: null })
+            }
+          />
+        ) : (
           <Popover
             opened={opened}
             onChange={setOpened}
@@ -448,7 +447,7 @@ function UtilityRow({
                 color="gray"
                 size="sm"
                 variant="subtle"
-                className={classes.pencil}
+                className={drawer.hoverRevealPencil}
                 aria-label={`edit ${label}`}
                 onClick={() => {
                   setNextIncluded(included);
@@ -496,7 +495,7 @@ function UtilityRow({
               </Stack>
             </Popover.Dropdown>
           </Popover>
-        </>
+        )
       }
     />
   );
@@ -575,6 +574,8 @@ function SlotRow({
     .filter(Boolean)
     .join(" · ");
 
+  const showRevert = pending || state === "manual";
+
   return (
     <CostRow
       label={label}
@@ -591,24 +592,23 @@ function SlotRow({
         />
       }
       subline={subline || undefined}
-      revealAction={!pending && state !== "manual"}
+      hoverRevealAction={!showRevert}
       action={
-        <>
-          {(pending || state === "manual") && (
-            <RevertButton
-              label={label}
-              onClick={() =>
-                setDraftFee(slot, {
-                  amount: original ?? null,
-                  state: original !== undefined ? "extracted" : "unknown",
-                  counted: null,
-                  required: null,
-                  refundable: null,
-                  credited_amount: null,
-                })
-              }
-            />
-          )}
+        showRevert ? (
+          <RevertButton
+            label={label}
+            onClick={() =>
+              setDraftFee(slot, {
+                amount: original ?? null,
+                state: original !== undefined ? "extracted" : "unknown",
+                counted: null,
+                required: null,
+                refundable: null,
+                credited_amount: null,
+              })
+            }
+          />
+        ) : (
           <Popover
             opened={opened}
             onChange={setOpened}
@@ -622,7 +622,7 @@ function SlotRow({
                 color="gray"
                 size="sm"
                 variant="subtle"
-                className={classes.pencil}
+                className={drawer.hoverRevealPencil}
                 aria-label={`edit ${label}`}
                 onClick={() => {
                   setAmount(displayAmount ?? "");
@@ -708,7 +708,7 @@ function SlotRow({
               </Stack>
             </Popover.Dropdown>
           </Popover>
-        </>
+        )
       }
     />
   );
@@ -735,6 +735,7 @@ function Tile({
   badges,
   flagged,
   action,
+  kind,
 }: {
   label: string;
   value: string;
@@ -742,9 +743,14 @@ function Tile({
   badges?: string[];
   flagged?: boolean;
   action?: ReactNode;
+  kind: "monthly" | "moveIn";
 }) {
   return (
-    <Box className={classes.tile} data-flagged={flagged ? "true" : undefined}>
+    <Box
+      className={classes.tile}
+      data-kind={kind}
+      data-flagged={flagged ? "true" : undefined}
+    >
       <Group justify="space-between" wrap="nowrap" gap={4}>
         <Text className={classes.tileLabel}>{label}</Text>
         {action}
@@ -771,38 +777,42 @@ function AllInOverrideAction({ overridden }: { overridden: boolean }) {
   const [amount, setAmount] = useState<number | "">("");
   const [note, setNote] = useState("");
   const draft = draftOverrides.get("all_in_monthly");
+  const showRevert = overridden || draft !== undefined;
+
+  if (showRevert) {
+    return (
+      <RevertButton
+        label="all-in override"
+        onClick={() => setDraftOverride("all_in_monthly", { value: null, note: REVERT_NOTE })}
+      />
+    );
+  }
 
   return (
-    <Group gap={2} wrap="nowrap">
-      {(overridden || draft !== undefined) && (
-        <RevertButton
-          label="all-in override"
-          onClick={() => setDraftOverride("all_in_monthly", { value: null, note: REVERT_NOTE })}
-        />
-      )}
-      <Popover
-            opened={opened}
-            onChange={setOpened}
-            hideDetached={false}
-            width={240}
-            position="bottom-end"
-            withArrow
-          >
-        <Popover.Target>
-          <ActionIcon
-            color="gray"
-            size="sm"
-            variant="subtle"
-            aria-label="edit All-in monthly"
-            onClick={() => {
-              setAmount(typeof draft?.value === "number" ? draft.value : "");
-              setNote(draft?.note ?? "");
-              setOpened(true);
-            }}
-          >
-            <IconPencil size={14} stroke={1.5} />
-          </ActionIcon>
-        </Popover.Target>
+    <Popover
+      opened={opened}
+      onChange={setOpened}
+      hideDetached={false}
+      width={240}
+      position="bottom-end"
+      withArrow
+    >
+      <Popover.Target>
+        <ActionIcon
+          color="gray"
+          size="sm"
+          variant="subtle"
+          className={drawer.hoverRevealPencil}
+          aria-label="edit All-in monthly"
+          onClick={() => {
+            setAmount("");
+            setNote("");
+            setOpened(true);
+          }}
+        >
+          <IconPencil size={14} stroke={1.5} />
+        </ActionIcon>
+      </Popover.Target>
         <Popover.Dropdown>
           <Stack gap="xs">
             <NumberInput
@@ -832,7 +842,6 @@ function AllInOverrideAction({ overridden }: { overridden: boolean }) {
           </Stack>
         </Popover.Dropdown>
       </Popover>
-    </Group>
   );
 }
 
@@ -842,23 +851,28 @@ function TotalRow({
   badges,
   action,
   subtotals,
+  hoverRevealAction = false,
 }: {
   label: string;
   value: string;
   badges?: ReactNode;
   action?: ReactNode;
   subtotals?: ReactNode;
+  hoverRevealAction?: boolean;
 }) {
   return (
-    <Box className={classes.total}>
+    <Box
+      className={classes.total}
+      data-hover-reveal={hoverRevealAction ? "true" : undefined}
+    >
       <Group gap="sm" wrap="wrap" className={classes.totalLabel}>
         <Text size="sm" fw={700}>
           {label}
         </Text>
         {badges}
       </Group>
-      <Text className={`${classes.totalValue} ${drawer.tabularNums}`}>{value}</Text>
-      <Group gap={2} wrap="nowrap">
+      <Group gap={4} wrap="nowrap" className={classes.valueAction}>
+        <Text className={`${classes.totalValue} ${drawer.tabularNums}`}>{value}</Text>
         {action}
       </Group>
       {subtotals ? <Box className={classes.subtotals}>{subtotals}</Box> : null}
@@ -929,6 +943,7 @@ export function CostAndFees({
     <Stack gap={0}>
       <Box className={classes.tiles}>
         <Tile
+          kind="monthly"
           label="All-in / month"
           value={composition?.total == null ? "unknown" : money(composition.total)}
           sub={
@@ -947,6 +962,7 @@ export function CostAndFees({
           badges={composition?.badges}
         />
         <Tile
+          kind="moveIn"
           label="Cash at move-in"
           value={
             moveIn == null
@@ -986,7 +1002,6 @@ export function CostAndFees({
               state={component.tag}
               amount={component.amount}
               subline={component.note || undefined}
-              revealAction={false}
             />
           ))}
           {MONTHLY_FEE_SLOTS.map(({ slot, label }) => {
@@ -1042,6 +1057,7 @@ export function CostAndFees({
               ) : null
             }
             action={<AllInOverrideAction overridden={allInOverridden} />}
+            hoverRevealAction={!allInOverridden}
           />
         </>
       )}
@@ -1060,7 +1076,6 @@ export function CostAndFees({
                 counted={charge.counted}
                 icons={<StatusIcons refundable={charge.refundable} />}
                 subline={charge.note || undefined}
-                revealAction={false}
               />
             ))}
         </>
@@ -1105,7 +1120,6 @@ export function CostAndFees({
               />
             }
             subline={charge.note || undefined}
-            revealAction={false}
           />
         ))}
 

@@ -19,6 +19,7 @@ export type AmenityState = "confirmed" | "advertised" | "absent" | "unknown";
 export const AMENITY_STATES: AmenityState[] = ["confirmed", "advertised", "absent", "unknown"];
 
 export interface AmenityFact {
+  id: string;
   key: string;
   label: string;
   state: AmenityState;
@@ -29,6 +30,8 @@ export interface AmenityFact {
   extraction: Extraction | undefined;
   overridden: boolean;
 }
+
+const TYPED_MULTI_CRITERIA = new Set(["in_unit_laundry", "parking", "cooling"]);
 
 export interface AmenityCounts {
   confirmed: number;
@@ -50,6 +53,7 @@ export function isScopedAmenity(entry: CatalogEntry): boolean {
   // drawer over one.
   return (
     Boolean(entry.value_schema?.enum?.includes(ADVERTISED_UNCONFIRMED)) ||
+    Boolean(entry.value_schema?.items?.enum?.includes(ADVERTISED_UNCONFIRMED)) ||
     entry.key === "flooring_materials"
   );
 }
@@ -85,9 +89,112 @@ export function floorPlanAmenities(
   floorPlanId: string,
 ): AmenityFact[] {
   const active = activeOverrides(overrides, floorPlanId);
-  return catalog.filter(isScopedAmenity).map((entry) => {
-    const extraction = extractionForFloorPlan(extractions, entry.key, floorPlanId);
+  return catalog.filter(isScopedAmenity).flatMap((entry) => {
     const override = active.get(entry.key);
+    if (TYPED_MULTI_CRITERIA.has(entry.key)) {
+      if (override) {
+        const values = Array.isArray(override.value) ? override.value : [override.value];
+        return values.map((value) => ({
+          id: `${entry.key}:override:${String(value)}`,
+          key: entry.key,
+          label: entry.label,
+          state: amenityState(value),
+          value,
+          scope: "overridden",
+          extraction: undefined,
+          overridden: true,
+        }));
+      }
+      const rows = extractions.filter((row) => row.criterion_key === entry.key);
+      const exact = rows.filter(
+        (row) => row.target_scope === "floor_plan" && row.floor_plan_id === floorPlanId,
+      );
+      const all = rows.filter(
+        (row) => row.target_scope === "property" && row.applicability === "all_units",
+      );
+      const exactValues = new Set(
+        exact.filter((row) => typeof row.value === "string").map((row) => row.value),
+      );
+      const allValues = new Set(
+        all.filter((row) => typeof row.value === "string").map((row) => row.value),
+      );
+      if (exactValues.has("none")) {
+        const row = exact.find((candidate) => candidate.value === "none");
+        return row
+          ? [{
+              id: `${entry.key}:${row.id}`,
+              key: entry.key,
+              label: entry.label,
+              state: "absent",
+              value: "none",
+              scope: scopeLabel(row),
+              extraction: row,
+              overridden: false,
+            }]
+          : [];
+      }
+      const confirmedRows = [
+        ...exact.filter((row) => typeof row.value === "string" && row.value !== "none"),
+        ...all.filter(
+          (row) =>
+            typeof row.value === "string" &&
+            row.value !== "none" &&
+            !exactValues.has(row.value),
+        ),
+      ];
+      if (confirmedRows.length === 0 && allValues.has("none")) {
+        const row = all.find((candidate) => candidate.value === "none");
+        return row
+          ? [{
+              id: `${entry.key}:${row.id}`,
+              key: entry.key,
+              label: entry.label,
+              state: "absent",
+              value: "none",
+              scope: scopeLabel(row),
+              extraction: row,
+              overridden: false,
+            }]
+          : [];
+      }
+      const confirmedValues = new Set(confirmedRows.map((row) => row.value));
+      const advertisedRows = rows.filter(
+        (row) =>
+          row.target_scope === "property" &&
+          (row.applicability === "select_units" ||
+            row.applicability === "unit_scope_unspecified") &&
+          typeof row.value === "string" &&
+          row.value !== "none" &&
+          !confirmedValues.has(row.value),
+      );
+      const visible = [
+        ...confirmedRows.map((row) => ({ row, state: "confirmed" as const })),
+        ...advertisedRows.map((row) => ({ row, state: "advertised" as const })),
+      ];
+      if (visible.length === 0) {
+        return [{
+          id: `${entry.key}:unknown`,
+          key: entry.key,
+          label: entry.label,
+          state: "unknown",
+          value: null,
+          scope: null,
+          extraction: undefined,
+          overridden: false,
+        }];
+      }
+      return visible.map(({ row, state }) => ({
+        id: `${entry.key}:${row.id}`,
+        key: entry.key,
+        label: entry.label,
+        state,
+        value: row.value,
+        scope: scopeLabel(row),
+        extraction: row,
+        overridden: false,
+      }));
+    }
+    const extraction = extractionForFloorPlan(extractions, entry.key, floorPlanId);
     const value = override ? override.value : (extraction?.value ?? null);
     const flooringAdvertised =
       entry.key === "flooring_materials" &&
@@ -95,7 +202,8 @@ export function floorPlanAmenities(
       extraction?.target_scope === "property" &&
       (extraction.applicability === "select_units" ||
         extraction.applicability === "unit_scope_unspecified");
-    return {
+    return [{
+      id: entry.key,
       key: entry.key,
       label: entry.label,
       state: flooringAdvertised ? "advertised" : amenityState(value),
@@ -103,7 +211,7 @@ export function floorPlanAmenities(
       scope: override ? "overridden" : scopeLabel(extraction),
       extraction,
       overridden: Boolean(override),
-    };
+    }];
   });
 }
 
