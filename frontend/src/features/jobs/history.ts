@@ -26,3 +26,32 @@ export function filterHistoryJobs(
     return true;
   });
 }
+
+export function formatJobCostUsd(usd: number): string {
+  return `$${Number(usd).toFixed(4)}`;
+}
+
+export function historySpendSummary(jobs: Job[]): { spendUsd: number; runCount: number } {
+  return {
+    spendUsd: jobs.reduce((sum, job) => sum + Number(job.cost_actual_usd ?? 0), 0),
+    runCount: jobs.length,
+  };
+}
+
+function runCountLabel(count: number): string {
+  return `${count} run${count === 1 ? "" : "s"}`;
+}
+
+export function historySpendLabel(
+  filtered: Job[],
+  all: Job[],
+  filtersActive: boolean,
+): string {
+  const filteredSummary = historySpendSummary(filtered);
+  const allSummary = historySpendSummary(all);
+
+  if (filtersActive) {
+    return `${formatJobCostUsd(filteredSummary.spendUsd)} · ${runCountLabel(filteredSummary.runCount)} · ${formatJobCostUsd(allSummary.spendUsd)} total across ${runCountLabel(allSummary.runCount)}`;
+  }
+  return `Total spend: ${formatJobCostUsd(allSummary.spendUsd)} · ${runCountLabel(allSummary.runCount)}`;
+}

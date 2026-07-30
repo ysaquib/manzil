@@ -11,7 +11,7 @@ import { JobWarnings } from "./JobWarnings";
 import { PipelineTrack } from "./PipelineTrack";
 import { phasesForJob } from "./pipelinePhases";
 import { useHistoryJobs, useJobEvents, useRetryJob, type JobEvent, type Job } from "./api";
-import { filterHistoryJobs, jobDuration } from "./history";
+import { filterHistoryJobs, formatJobCostUsd, historySpendLabel, jobDuration } from "./history";
 
 // A stage event reads as a failure when its name mentions failing or erroring.
 function isFailureEvent(event: JobEvent): boolean {
@@ -56,7 +56,7 @@ function jobMeta(job: Job, memberName: string): string {
   if (job.attempts > 1) parts.push(`attempt ${job.attempts}`);
   const duration = jobDuration(job);
   if (duration) parts.push(duration);
-  parts.push(`$${Number(job.cost_actual_usd).toFixed(4)}`);
+  parts.push(formatJobCostUsd(job.cost_actual_usd));
   return parts.join(" · ");
 }
 
@@ -151,11 +151,10 @@ export function TasksHistoryTab() {
 
   const listingById = new Map(listings.map((listing) => [listing.id, listing]));
   const memberById = new Map(members.map((member) => [member.user_id, member]));
-  const filtered = filterHistoryJobs(
-    jobs,
-    { listingId: listingFilter, memberId: memberFilter, outcome: outcomeFilter },
-    new Map(listings.map((listing) => [listing.id, listing.added_by])),
-  );
+  const filters = { listingId: listingFilter, memberId: memberFilter, outcome: outcomeFilter };
+  const addedByByListing = new Map(listings.map((listing) => [listing.id, listing.added_by]));
+  const filtered = filterHistoryJobs(jobs, filters, addedByByListing);
+  const filtersActive = listingFilter !== null || memberFilter !== null || outcomeFilter !== null;
 
   if (error) return <Alert color="red">Couldn&apos;t load task history.</Alert>;
   return (
@@ -171,6 +170,11 @@ export function TasksHistoryTab() {
             label: sentenceCase(outcome),
           }))} />
       </SimpleGrid>
+      {jobs.length > 0 && (
+        <Text size="sm" c="dimmed" ta="right" style={{ fontVariantNumeric: "tabular-nums" }}>
+          {historySpendLabel(filtered, jobs, filtersActive)}
+        </Text>
+      )}
       {filtered.length === 0 && <Card><Text c="dimmed" size="sm">No past runs match these filters.</Text></Card>}
       <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
         {filtered.map((job) => {
