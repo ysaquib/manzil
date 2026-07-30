@@ -145,17 +145,19 @@ function OptionRow({
           onChange={(delta) => onChange({ ...option, delta })}
         />
       )}
-      <DealbreakerToggle
-        active={isDealbreaker}
-        onToggle={() =>
-          onChange({ ...option, dealbreaker_set_score: isDealbreaker ? null : 0 })
-        }
-      />
-      <Tooltip label="Remove option" openDelay={300}>
-        <ActionIcon color="gray" size="sm" onClick={onRemove} aria-label="remove option">
-          <IconX size={14} stroke={1.5} />
-        </ActionIcon>
-      </Tooltip>
+      <Group gap={4} >
+        <DealbreakerToggle
+          active={isDealbreaker}
+          onToggle={() =>
+            onChange({ ...option, dealbreaker_set_score: isDealbreaker ? null : 0 })
+          }
+        />
+        <Tooltip label="Remove option" openDelay={300}>
+          <ActionIcon color="gray" size="sm" onClick={onRemove} aria-label="remove option">
+            <IconX size={14} stroke={1.5} />
+          </ActionIcon>
+        </Tooltip>
+      </Group>
     </OptionGridRow>
   );
 }
@@ -284,8 +286,6 @@ export function CriterionCard({
               <Text size="xs" c="dimmed">
                 Points
               </Text>
-              <div />
-              <div />
             </OptionGridRow>
 
             {isBoolean ? (

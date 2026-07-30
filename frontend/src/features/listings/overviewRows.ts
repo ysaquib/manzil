@@ -280,8 +280,15 @@ function enumCriterionPredicate(
     const selected = filters[filterKey];
     if (selected.length === 0) return true;
     const value = criterionValue(row, criterionKey);
-    if (typeof value !== "string") return true;
-    if (value === "advertised_unconfirmed") return true;
+    if (Array.isArray(value)) {
+      const confirmed = value.filter(
+        (item): item is string =>
+          typeof item === "string" && item !== "advertised_unconfirmed",
+      );
+      if (confirmed.length === 0) return true;
+      return confirmed.some((item) => selected.includes(item));
+    }
+    if (typeof value !== "string" || value === "advertised_unconfirmed") return true;
     return selected.includes(value);
   };
 }

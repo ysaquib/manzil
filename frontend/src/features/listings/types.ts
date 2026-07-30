@@ -99,6 +99,7 @@ export interface Extraction {
     | "select_units"
     | "unit_scope_unspecified"
     | null;
+  claim_variant?: string | null;
   claim_group_id: string;
   value: unknown;
   confidence: Confidence;
