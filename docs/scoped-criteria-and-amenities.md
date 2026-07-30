@@ -431,13 +431,21 @@ Conceptually, an Extraction needs:
 - enough candidate history for P3-6 to preserve disagreements.
 
 The append-only Source-claim identity is based on Property, nullable Hunt/custom
-Criterion scope, Criterion, Source, target scope, and target ID. Applicability
-is retained on the claim but does not create an independently current lineage:
-if one Source changes the same target claim from `all_units` to `select_units`,
-the successful new observation supersedes the prior Source claim. Reconciled
-effective values use the same Criterion and target while resolving across
-current Source claims. Centralize both lookups behind one repository/query seam
-or database view rather than duplicating “latest timestamp” logic.
+Criterion scope, Criterion, Source, target scope, target ID, and a nullable
+typed `claim_variant`. The variant is populated for typed multi-claim Criteria
+such as laundry, parking, and cooling so distinct positive values remain
+independently current at the same target; flooring uses a canonical controlled
+set variant so differently scoped material sets remain independent too.
+Applicability is retained on the
+claim but does not otherwise create an independently current lineage: if one
+Source changes the same target and variant from `all_units` to `select_units`,
+the successful new observation supersedes the prior Source claim. Boolean
+Criteria remain scalar per concrete target. Reconciled effective typed values
+are sets of confirmed values plus `advertised_unconfirmed` when a weaker
+select/unspecified claim adds information; boolean claims resolve to
+`confirmed`, `advertised_unconfirmed`, or `none`. Centralize both lookups behind
+one repository/query seam or database view rather than duplicating “latest
+timestamp” logic.
 
 Audit every existing Extraction read, write, current-value, rescore,
 persistence, DEDUPE/split, and API/UI provenance query before implementation so
