@@ -19,10 +19,11 @@ export interface JobWarning {
   detail?: Record<string, unknown>;
 }
 
-// started_at and warnings are intersected until the next `pnpm gen:api-types`
-// run picks them up from the API's JobResponse.
+// started_at, stage_index, and warnings are intersected until the next
+// `pnpm gen:api-types` run picks them up from the API's JobResponse.
 export type Job = components["schemas"]["JobResponse"] & {
   started_at?: string | null;
+  stage_index?: number | null;
   warnings?: JobWarning[];
 };
 

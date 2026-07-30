@@ -934,6 +934,8 @@ export interface components {
             state: components["schemas"]["JobState"];
             /** Current Stage */
             current_stage: string | null;
+            /** Stage Index */
+            stage_index?: number | null;
             /** Plan */
             plan?: {
                 [key: string]: unknown;

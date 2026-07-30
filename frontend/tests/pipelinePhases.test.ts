@@ -46,46 +46,71 @@ function statusOf(job: Job, key: string) {
 }
 
 describe("phasesForJob", () => {
-  it("always renders the five canonical phases in order", () => {
+  it("always renders the six canonical phases in order", () => {
     const model = phasesForJob(job({ plan: fullPlan }));
     expect(model.phases.map((p) => p.key)).toEqual(PHASE_ORDER);
   });
 
   it("marks passed phases done, the current phase active, and later phases pending", () => {
-    const j = job({ plan: fullPlan, current_stage: "EXTRACT", state: "running" });
+    const j = job({ plan: fullPlan, current_stage: "EXTRACT", stage_index: 4, state: "running" });
     expect(statusOf(j, "prepare").status).toBe("done");
     expect(statusOf(j, "fetch").status).toBe("done");
     const read = statusOf(j, "read");
     expect(read.status).toBe("active");
     expect(read.tone).toBe("running");
     expect(statusOf(j, "verify").status).toBe("pending");
-    expect(statusOf(j, "score").status).toBe("pending");
+    expect(statusOf(j, "finalize").status).toBe("pending");
     expect(phasesForJob(j).caption).toBe("Reading the listing…");
     expect(phasesForJob(j).stageToken).toBe("EXTRACT");
   });
 
-  it("reports the active phase's sub-steps: total stages and current index", () => {
-    // Read covers EXTRACT · DEDUPE · DISCOVER.
-    expect(phasesForJob(job({ plan: fullPlan, current_stage: "EXTRACT" })).substeps).toEqual({
-      total: 3,
-      index: 0,
-    });
-    expect(phasesForJob(job({ plan: fullPlan, current_stage: "DISCOVER" })).substeps).toEqual({
-      total: 3,
-      index: 2,
-    });
-    // Verify covers source reconciliation, image evidence, and ENRICH.
+  it("reports the active phase's sub-steps when the phase has no duplicate stages", () => {
     expect(
-      phasesForJob(job({ plan: fullPlan, current_stage: "VERIFY", state: "waiting_user" })).substeps,
-    ).toEqual({ total: 6, index: 0 });
+      phasesForJob(job({ plan: fullPlan, current_stage: "VERIFY", state: "waiting_user", stage_index: 9 }))
+        .substeps,
+    ).toEqual({ total: 2, index: 0 });
     expect(
-      phasesForJob(job({ plan: fullPlan, current_stage: "RECONCILE", state: "running" })).substeps,
-    ).toEqual({ total: 6, index: 1 });
+      phasesForJob(job({ plan: fullPlan, current_stage: "RECONCILE", state: "running", stage_index: 10 }))
+        .substeps,
+    ).toEqual({ total: 2, index: 1 });
+  });
+
+  it("suppresses phase sub-steps when the active phase contains duplicate manifest stages", () => {
+    expect(
+      phasesForJob(job({ plan: fullPlan, current_stage: "EXTRACT", stage_index: 4 })).substeps,
+    ).toBeNull();
+    expect(
+      phasesForJob(job({ plan: fullPlan, current_stage: "DISCOVER", stage_index: 6 })).substeps,
+    ).toBeNull();
+  });
+
+  it("keeps read done and shows cross-check caption on the second FETCH after DISCOVER", () => {
+    const j = job({ plan: fullPlan, current_stage: "FETCH", stage_index: 7, state: "running" });
+    expect(statusOf(j, "read").status).toBe("done");
+    expect(statusOf(j, "fetch").status).toBe("active");
+    expect(statusOf(j, "verify").status).toBe("pending");
+    expect(phasesForJob(j).caption).toBe("Cross-checking other sources…");
+    expect(phasesForJob(j).manifestProgress).toEqual({ index: 7, total: 16 });
+    expect(phasesForJob(j).substeps).toBeNull();
+  });
+
+  it("shows primary fetch caption on the first FETCH", () => {
+    const j = job({ plan: fullPlan, current_stage: "FETCH", stage_index: 2, state: "running" });
+    expect(statusOf(j, "read").status).toBe("pending");
+    expect(statusOf(j, "fetch").status).toBe("active");
+    expect(phasesForJob(j).caption).toBe("Fetching the page…");
+    expect(phasesForJob(j).manifestProgress).toEqual({ index: 2, total: 16 });
+  });
+
+  it("shows cross-check caption on post-DISCOVER EXTRACT", () => {
+    const j = job({ plan: fullPlan, current_stage: "EXTRACT", stage_index: 8, state: "running" });
+    expect(statusOf(j, "fetch").status).toBe("done");
+    expect(statusOf(j, "read").status).toBe("active");
+    expect(phasesForJob(j).caption).toBe("Cross-checking other sources…");
   });
 
   it("counts only the sub-stages this job's plan actually runs", () => {
-    // Read here has just EXTRACT in the plan, so it is a single sub-step.
-    const j = job({ plan: { stages: ["EXTRACT", "SCORE"] }, current_stage: "EXTRACT" });
+    const j = job({ plan: { stages: ["EXTRACT", "SCORE"] }, current_stage: "EXTRACT", stage_index: 0 });
     expect(phasesForJob(j).substeps).toEqual({ total: 1, index: 0 });
   });
 
@@ -95,7 +120,7 @@ describe("phasesForJob", () => {
   });
 
   it("marks the current phase cancelled and captions where it stopped", () => {
-    const j = job({ plan: fullPlan, current_stage: "EXTRACT", state: "cancelled" });
+    const j = job({ plan: fullPlan, current_stage: "EXTRACT", stage_index: 4, state: "cancelled" });
     expect(statusOf(j, "fetch").status).toBe("done");
     const read = statusOf(j, "read");
     expect(read.status).toBe("active");
@@ -110,18 +135,19 @@ describe("phasesForJob", () => {
       type: "rescore",
       plan: { stages: ["SCORE"] },
       current_stage: "SCORE",
+      stage_index: 0,
       state: "running",
     });
     expect(statusOf(j, "prepare").status).toBe("skipped");
     expect(statusOf(j, "fetch").status).toBe("skipped");
     expect(statusOf(j, "read").status).toBe("skipped");
     expect(statusOf(j, "verify").status).toBe("skipped");
-    expect(statusOf(j, "score").status).toBe("active");
-    expect(phasesForJob(j).caption).toBe("Scoring…");
+    expect(statusOf(j, "finalize").status).toBe("active");
+    expect(phasesForJob(j).caption).toBe("Finalizing…");
   });
 
   it("marks the current phase failed and leaves later phases pending", () => {
-    const j = job({ plan: fullPlan, current_stage: "FETCH", state: "failed", error: "blocked" });
+    const j = job({ plan: fullPlan, current_stage: "FETCH", stage_index: 2, state: "failed", error: "blocked" });
     expect(statusOf(j, "prepare").status).toBe("done");
     const fetch = statusOf(j, "fetch");
     expect(fetch.status).toBe("active");
@@ -131,7 +157,7 @@ describe("phasesForJob", () => {
   });
 
   it("marks the current phase as waiting when parked on the user", () => {
-    const j = job({ plan: fullPlan, current_stage: "VERIFY", state: "waiting_user" });
+    const j = job({ plan: fullPlan, current_stage: "VERIFY", state: "waiting_user", stage_index: 9 });
     expect(statusOf(j, "read").status).toBe("done");
     const verify = statusOf(j, "verify");
     expect(verify.status).toBe("active");
@@ -140,11 +166,12 @@ describe("phasesForJob", () => {
   });
 
   it("marks every present phase done for a finished job", () => {
-    const j = job({ plan: fullPlan, current_stage: "SCORE", state: "done" });
+    const j = job({ plan: fullPlan, current_stage: "SCORE", state: "done", stage_index: 16 });
     for (const key of PHASE_ORDER) {
       expect(statusOf(j, key).status).toBe("done");
     }
     expect(phasesForJob(j).caption).toBeNull();
+    expect(phasesForJob(j).manifestProgress).toBeNull();
   });
 
   it("falls back to the legacy six-stage list when the job has no plan", () => {
@@ -153,6 +180,7 @@ describe("phasesForJob", () => {
     expect(statusOf(j, "fetch").status).toBe("done");
     expect(statusOf(j, "read").status).toBe("active");
     expect(phasesForJob(j).caption).toBe("Reading the listing…");
+    expect(phasesForJob(j).manifestProgress).toBeNull();
   });
 
   it("shows a not-started track for a queued job", () => {

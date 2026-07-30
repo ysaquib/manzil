@@ -1,4 +1,4 @@
-// One live job card (P1-13, §13.2): shared header, five-phase pipeline track,
+// One live job card (P1-13, §13.2): shared header, six-phase pipeline track,
 // inline checkpoint prompt when the job waits on the user. Running jobs get a
 // loader + counting-up timer so progress is visibly alive; cancellable jobs get
 // a small round stop control beside the timer.
