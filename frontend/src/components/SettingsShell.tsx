@@ -7,7 +7,7 @@
 // and the subtitle is what lets someone find the color picker without opening
 // every tab. Below `sm` the rail becomes a horizontal scroller above the
 // column (frontend/AGENTS.md responsive rule).
-import { Box, Button, Group, Paper, ScrollArea, Stack, Text, UnstyledButton } from "@mantine/core";
+import { Box, Button, Group, Paper, Stack, Text, UnstyledButton } from "@mantine/core";
 import type { ReactNode } from "react";
 
 import classes from "./SettingsShell.module.css";
@@ -36,7 +36,7 @@ export function SettingsShell({
 }) {
   return (
     <Box className={classes.shell}>
-      <ScrollArea type="never" className={classes.railScroll}>
+      <Box className={classes.railScroll}>
         <Stack gap={2} className={classes.rail} role="tablist" aria-label="Settings sections">
           {tabs.map((tab) => {
             const selected = tab.value === active;
@@ -65,7 +65,7 @@ export function SettingsShell({
             );
           })}
         </Stack>
-      </ScrollArea>
+      </Box>
 
       <Stack gap="md" className={classes.column}>
         {children}

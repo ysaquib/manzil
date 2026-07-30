@@ -56,9 +56,11 @@
   flex: none;
 }
 
-.navbar {
-  display: flex;
-  flex-direction: column;
+.main {
+  /* Hunt/account settings rail sticks below the AppShell header (P3-16). */
+  --settings-rail-sticky-top: calc(
+    var(--app-shell-header-height, 3.5rem) + var(--app-shell-padding, var(--mantine-spacing-md))
+  );
 }
 
 .navSpacer {
