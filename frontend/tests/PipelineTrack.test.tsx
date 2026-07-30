@@ -8,7 +8,24 @@ import type { Job } from "../src/features/jobs/api";
 import { phasesForJob } from "../src/features/jobs/pipelinePhases";
 
 const FULL_PLAN = {
-  stages: ["PLAN", "VALIDATE_URL", "FETCH", "VALIDATE", "EXTRACT", "DEDUPE", "DISCOVER", "IMAGE_FETCH", "VISION", "VERIFY", "ENRICH", "SCORE"],
+  stages: [
+    "PLAN",
+    "VALIDATE_URL",
+    "FETCH",
+    "VALIDATE",
+    "EXTRACT",
+    "DEDUPE",
+    "DISCOVER",
+    "FETCH",
+    "EXTRACT",
+    "VERIFY",
+    "RECONCILE",
+    "IMAGE_FETCH",
+    "IMAGE_CLASSIFY",
+    "VISION",
+    "ENRICH",
+    "SCORE",
+  ],
 };
 
 function job(overrides: Partial<Job> = {}): Job {
@@ -27,13 +44,16 @@ function job(overrides: Partial<Job> = {}): Job {
 }
 
 describe("PipelineTrack", () => {
-  it("renders sub-pips and a fraction for the active phase's stage position", () => {
-    const j = job({ current_stage: "DISCOVER", state: "running" });
-    const { container } = renderWithProviders(<PipelineTrack model={phasesForJob(j)} />);
-    // Read runs EXTRACT · DEDUPE · DISCOVER; image evidence now follows
-    // RECONCILE in the Verify phase.
-    expect(container.querySelectorAll("[data-s]")).toHaveLength(3);
-    expect(screen.getByText("DISCOVER · 3/3")).toBeInTheDocument();
+  it("renders manifest fraction for the active phase's stage position", () => {
+    const j = job({ current_stage: "DISCOVER", stage_index: 6, state: "running" });
+    renderWithProviders(<PipelineTrack model={phasesForJob(j)} />);
+    expect(screen.getByText("DISCOVER · 7/16")).toBeInTheDocument();
+  });
+
+  it("renders manifest fraction on the second FETCH after DISCOVER", () => {
+    const j = job({ current_stage: "FETCH", stage_index: 7, state: "running" });
+    renderWithProviders(<PipelineTrack model={phasesForJob(j)} />);
+    expect(screen.getByText("FETCH · 8/16")).toBeInTheDocument();
   });
 
   it("shows no expand affordance when not expandable", () => {

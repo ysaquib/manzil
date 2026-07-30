@@ -23,7 +23,7 @@ declared at all · `implemented` = working · `no table` = table not yet in a mi
 | `PATCH /v1/listings/{id}/pins` | `usePatchPins` (`features/listings/api.ts`) | generated `PinsPatch` | P1-11 mini-endpoint | implemented |
 | `PATCH /v1/listings/{id}/source-policy` | `usePatchSourcePolicy` (`features/listings/api.ts`) | generated `SourcePolicyPatch`/`ListingResponse`; Owner or submitter; relaxing atomically queues a `refresh(scope=discover)` Job | P3-5 | implemented |
 | `PATCH /v1/listings/{id}/unit-groups/{unit_group_key}/state` | `usePatchUnitGroupState` (`features/listings/api.ts`) | generated `UnitGroupStatePatch`/`UnitGroupStateResponse` | DESIGN v3.5 | implemented |
-| `GET /v1/hunts/{id}/jobs?state=…` | `useActiveJobs` (`features/jobs/api.ts`) — the one polled read, 3s | generated `JobResponse` + optional `checkpoint`; `started_at` drives elapsed time for running jobs | P1-7 / P1-13 | implemented |
+| `GET /v1/hunts/{id}/jobs?state=…` | `useActiveJobs` (`features/jobs/api.ts`) — the one polled read, 3s | generated `JobResponse` + optional `checkpoint`; `started_at` drives elapsed time for running jobs; `stage_index` (manifest cursor from `payload.run_state.cursor`) drives pipeline progress on duplicate stages | P1-7 / P1-13 | implemented |
 
 `state` accepts repeated query params (`state=queued&state=running`) **and** a single
 comma-separated value (`state=queued,running,waiting_user`) — the form the Tasks tab polls.
@@ -81,7 +81,9 @@ origin that appears logged out.
    `buildRows` now emits one listing-level row (`group: null`) for a plan-less listing.
 6. **`jobs.hunt_id`** — added (migration 0004): `list_jobs` filters on it directly. Not read by
    the frontend (jobs are fetched via `GET /v1/hunts/{id}/jobs`). `JobResponse.started_at` was
-   later exposed for the running-job elapsed timer (DESIGN §13.2).
+   later exposed for the running-job elapsed timer (DESIGN §13.2). `JobResponse.stage_index`
+   exposes `payload.run_state.cursor` for manifest-cursor pipeline progress (duplicate FETCH
+   after DISCOVER).
 
 ## Not assumed (deliberately)
 

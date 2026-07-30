@@ -1,4 +1,4 @@
-// Presentational pipeline track: renders the five-phase model from
+// Presentational pipeline track: renders the six-phase model from
 // pipelinePhases as a horizontal dotted line with the current phase highlighted,
 // its internal stages as sub-pips, a friendly caption, and the exact stage
 // token. On History cards it is expandable — the whole region toggles an inline
@@ -59,9 +59,11 @@ export function PipelineTrack({
   const tokenText =
     model.stageToken === null
       ? null
-      : showSub && model.substeps
-        ? `${model.stageToken} · ${model.substeps.index + 1}/${model.substeps.total}`
-        : model.stageToken;
+      : model.manifestProgress
+        ? `${model.stageToken} · ${model.manifestProgress.index + 1}/${model.manifestProgress.total}`
+        : showSub && model.substeps
+          ? `${model.stageToken} · ${model.substeps.index + 1}/${model.substeps.total}`
+          : model.stageToken;
 
   const region = (
     <>

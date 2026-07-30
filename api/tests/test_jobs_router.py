@@ -260,3 +260,24 @@ async def test_job_without_warnings_reads_as_an_empty_list(client: AsyncClient, 
         assert job["warnings"] == []
     finally:
         await db_pool.execute("delete from hunts where id = $1", hunt_id)
+
+
+@pytest.mark.asyncio
+async def test_list_jobs_exposes_stage_index_from_run_state_cursor(client: AsyncClient, db_pool) -> None:
+    hunt_id, listing_id = await _seed_hunt_with_listing(db_pool)
+    job_id = await db_pool.fetchval(
+        """
+        insert into jobs (hunt_id, hunt_listing_id, type, state, current_stage, payload)
+        values ($1, $2, 'ingest', 'running', 'FETCH', $3::jsonb) returning id
+        """,
+        hunt_id,
+        listing_id,
+        json.dumps({"run_state": {"cursor": 7}}),
+    )
+    try:
+        resp = await client.get(f"/v1/hunts/{hunt_id}/jobs?state=running")
+        assert resp.status_code == 200
+        job = next(j for j in resp.json() if j["id"] == str(job_id))
+        assert job["stage_index"] == 7
+    finally:
+        await db_pool.execute("delete from hunts where id = $1", hunt_id)

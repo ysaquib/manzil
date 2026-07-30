@@ -39,9 +39,12 @@ def _parse_warnings(raw: Any) -> list[JobWarning]:
 
 def _row_to_response(row: dict[str, Any]) -> JobResponse:
     payload = _parse_payload(row.get("payload"))
+    run_state = payload.get("run_state") or {}
+    stage_index = run_state.get("cursor")
+    if not isinstance(stage_index, int):
+        stage_index = None
     checkpoint = None
     if row.get("state") == JobState.WAITING_USER.value:
-        run_state = payload.get("run_state") or {}
         cp = run_state.get("checkpoint")
         if cp is not None:
             checkpoint = CheckpointPrompt.model_validate(cp)
@@ -51,6 +54,7 @@ def _row_to_response(row: dict[str, Any]) -> JobResponse:
         type=row["type"],
         state=row["state"],
         current_stage=row.get("current_stage"),
+        stage_index=stage_index,
         plan=row.get("plan"),
         attempts=row.get("attempts", 0),
         error=row.get("error"),

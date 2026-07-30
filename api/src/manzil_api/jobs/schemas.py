@@ -29,6 +29,8 @@ class JobResponse(BaseModel):
     type: JobType
     state: JobState
     current_stage: str | None
+    # Index into plan.stages (RunState.cursor). None when no persisted run_state.
+    stage_index: int | None = None
     plan: dict[str, Any] | None = None
     attempts: int
     error: str | None
