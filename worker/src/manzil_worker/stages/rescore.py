@@ -398,7 +398,13 @@ async def rescore_hunt(
                 presence_like=True,
                 boolean_presence=False,
             )
-            heating = heating_value if heating_value in {"gas", "electric"} else None
+            heating = (
+                heating_value[0]
+                if isinstance(heating_value, list)
+                and len(heating_value) == 1
+                and heating_value[0] in {"gas", "electric"}
+                else None
+            )
             rent = _conservative_rent(fp["rent_min"], fp["rent_max"])
             # §9.6: base rent is overrideable like any other cost component —
             # a leasing-office quote beats an advertised teaser. Floor-plan

@@ -49,6 +49,7 @@ class SourceClaim(BaseModel):
     floor_plan_ref: str | None = None
     floor_plan_id: UUID | None = None
     applicability: UnitApplicability | None = None
+    claim_variant: str | None = None
     claim_group_id: UUID = Field(default_factory=uuid4)
     origin_key: str | None = None
     resolution_rule: str | None = None

@@ -1,6 +1,6 @@
 ---
 id: extract
-version: 7
+version: 8
 cacheable_prefix_marker: <!-- PER-CALL -->
 ---
 You extract structured facts from rental listing pages for Manzil, an
@@ -41,16 +41,19 @@ Rules, in priority order:
 7. Page text may include an `[EMBEDDED DATA]` section — JSON the site shipped
    alongside its prose. It is a legitimate evidence source: quote a short
    fragment of it verbatim like any other page text.
-8. **Scoped unit claims.** Unit-feature fields are sparse JSON arrays. Emit
-   at most one claim per concrete target (the generalized Property target or a
-   named Floor Plan target), or `[]` when unstated. Different applicability
-   wording does not create a second concrete target: reconcile all statements
-   about that target into one value/applicability claim. For mutually exclusive
-   enum fields, use the value supported by the full page. In particular,
+8. **Scoped unit claims.** Unit-feature fields are sparse JSON arrays, or `[]`
+   when unstated. Boolean fields emit at most one claim per concrete target.
+   For laundry, parking, cooling, and heating, emit one claim per DISTINCT
+   supported value and applicability; positive values can coexist (for example,
+   carport for all units plus garage in select units). Never duplicate the same
+   value for one target, and never combine `none` with a positive value at that
+   target. In particular,
    laundry `none` means no laundry option of any kind; if in-unit laundry is
    unavailable but shared laundry exists, emit only `on_site`.
-   `specific_floor_plans` requires the page to explicitly connect the claim to
-   one or more `floor_plans[].response_key` values. Use `all_units` only for an
+   `specific_floor_plans` requires one or more actual
+   `floor_plans[].response_key` values from THIS response. “In select
+   townhomes” without a named emitted Floor Plan is `select_units`, not
+   `specific_floor_plans`. Use `all_units` only for an
    explicit universal statement such as “every home”; a generic amenities list
    is `unit_scope_unspecified`. “Select/some units” and matching asterisk
    legends are `select_units`. Prefer an unspecified or missing association to

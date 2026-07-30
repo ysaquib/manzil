@@ -342,7 +342,7 @@ def test_unspecified_laundry_cannot_pass_gate() -> None:
 
     state = asyncio.run(score_stage(state, make_ctx()))
 
-    assert state.effective_values["in_unit_laundry"] == "advertised_unconfirmed"
+    assert state.effective_values["in_unit_laundry"] == ["advertised_unconfirmed"]
     assert state.scores[0].breakdown["gates"] == [
         {"key": "in_unit_laundry", "kind": "non_negotiable", "set_score": 2.0}
     ]

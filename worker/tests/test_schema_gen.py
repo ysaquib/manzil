@@ -347,8 +347,9 @@ def test_scoped_claim_requires_valid_source_local_target() -> None:
     assert parsed.dishwasher[0].floor_plan_refs == ["a1"]
 
     payload["dishwasher"][0]["floor_plan_refs"] = ["invented"]
-    with pytest.raises(ValidationError, match="unknown Source-local"):
-        schema.model_validate(payload)
+    normalized = schema.model_validate(payload)
+    assert normalized.dishwasher[0].floor_plan_refs == []
+    assert normalized.dishwasher[0].applicability == "unit_scope_unspecified"
 
 
 def test_sc6_presence_and_sc7_material_claims_share_the_scoped_contract() -> None:
@@ -403,7 +404,7 @@ def test_scoped_claim_rejects_universal_scope_with_refs() -> None:
         build_extraction_schema().model_validate(payload)
 
 
-def test_scoped_claim_rejects_two_values_for_same_concrete_target() -> None:
+def test_typed_scoped_claim_accepts_distinct_values_for_same_concrete_target() -> None:
     claim = {
         "value": "in_unit",
         "confidence": "high",
@@ -412,7 +413,73 @@ def test_scoped_claim_rejects_two_values_for_same_concrete_target() -> None:
         "floor_plan_refs": [],
     }
     payload = extraction_payload(in_unit_laundry=[claim, {**claim, "value": "on_site"}])
-    with pytest.raises(ValidationError, match="one value per concrete target"):
+    parsed = build_extraction_schema().model_validate(payload)
+    assert [item.value for item in parsed.in_unit_laundry] == ["in_unit", "on_site"]
+
+
+def test_flooring_sets_with_distinct_scopes_can_coexist() -> None:
+    payload = extraction_payload(
+        flooring_materials=[
+            {
+                "value": ["vinyl"],
+                "confidence": "high",
+                "evidence_quote": "wood-style vinyl flooring",
+                "applicability": "all_units",
+                "floor_plan_refs": [],
+            },
+            {
+                "value": ["hardwood", "carpet"],
+                "confidence": "high",
+                "evidence_quote": "Hardwood Floors … Carpet",
+                "applicability": "unit_scope_unspecified",
+                "floor_plan_refs": [],
+            },
+        ]
+    )
+
+    parsed = build_extraction_schema().model_validate(payload)
+
+    assert [claim.value for claim in parsed.flooring_materials] == [
+        ["vinyl"],
+        ["hardwood", "carpet"],
+    ]
+
+
+def test_malformed_exact_select_wording_normalizes_without_inventing_ref() -> None:
+    payload = extraction_payload(
+        floor_plans=[{"response_key": "a1", "plan_name": "A1"}],
+        fireplace=[
+            {
+                "value": True,
+                "confidence": "high",
+                "evidence_quote": "Fireplace (in Select Townhomes)",
+                "applicability": "specific_floor_plans",
+                "floor_plan_refs": [],
+            }
+        ],
+    )
+
+    parsed = build_extraction_schema().model_validate(payload)
+
+    assert parsed.fireplace[0].applicability == "select_units"
+    assert parsed.fireplace[0].floor_plan_refs == []
+
+
+def test_typed_none_cannot_coexist_with_positive_at_same_target() -> None:
+    claim = {
+        "confidence": "high",
+        "evidence_quote": "Parking details",
+        "applicability": "all_units",
+        "floor_plan_refs": [],
+    }
+    payload = extraction_payload(
+        parking=[
+            {**claim, "value": "carport"},
+            {**claim, "value": "none"},
+        ]
+    )
+
+    with pytest.raises(ValidationError, match="cannot coexist"):
         build_extraction_schema().model_validate(payload)
 
 

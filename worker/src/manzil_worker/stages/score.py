@@ -136,6 +136,7 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
                 else claim.floor_plan_id
             ),
             applicability=claim.applicability,
+            claim_variant=claim.claim_variant,
             origin_key=claim.origin_key,
             resolution_rule=claim.resolution_rule,
         )
@@ -224,7 +225,13 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
                     min_confidence=ctx.min_confidence,
                     presence_like_keys=frozenset({"heating_type"}),
                 ).get("heating_type")
-                plan_heating = heating_value if heating_value in {"gas", "electric"} else None
+                plan_heating = (
+                    heating_value[0]
+                    if isinstance(heating_value, list)
+                    and len(heating_value) == 1
+                    and heating_value[0] in {"gas", "electric"}
+                    else None
+                )
                 composition = compose_all_in(
                     rent=rent,
                     pet_add=pet_add,

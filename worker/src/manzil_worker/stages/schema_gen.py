@@ -17,9 +17,15 @@ zero tools (§16).
 from __future__ import annotations
 
 import json
+import re
 from typing import Annotated, Any, Literal
 
-from manzil_shared.catalog import CATALOG, SCOPED_UNIT_CLAIM_KEYS
+import structlog
+from manzil_shared.catalog import (
+    CATALOG,
+    MULTI_CLAIM_IDENTITY_KEYS,
+    SCOPED_UNIT_CLAIM_KEYS,
+)
 from manzil_shared.models import CatalogEntry, Confidence, UnitApplicability
 from pydantic import (
     AfterValidator,
@@ -44,6 +50,11 @@ from manzil_worker.state import (
 
 # Composed by the pipeline, never extracted from the page (§9.5).
 COMPOSED_KEYS = frozenset({"all_in_monthly", "estimated_move_in_cost"})
+log = structlog.get_logger()
+_SELECT_SCOPE_RE = re.compile(
+    r"\b(select(?:ed)?|some|certain|var(?:y|ies) by)\b",
+    re.IGNORECASE,
+)
 
 
 def _maybe_decode_container(data: Any) -> Any:
@@ -137,6 +148,63 @@ def _normalize_top_level(cls: type[BaseModel], data: Any) -> Any:
             normalized["floor_plans"] = [
                 plan for plan in normalized["floor_plans"] if plan is not None
             ]
+        known_refs = {
+            plan.get("response_key")
+            for plan in normalized.get("floor_plans", [])
+            if isinstance(plan, dict) and isinstance(plan.get("response_key"), str)
+        }
+        for key in (*SCOPED_UNIT_CLAIM_KEYS, "heating"):
+            claims = normalized.get(key)
+            if not isinstance(claims, list):
+                continue
+            for claim in claims:
+                if (
+                    not isinstance(claim, dict)
+                    or claim.get("applicability") != "specific_floor_plans"
+                ):
+                    continue
+                supplied_refs = claim.get("floor_plan_refs")
+                valid_refs = (
+                    [ref for ref in supplied_refs if isinstance(ref, str) and ref in known_refs]
+                    if isinstance(supplied_refs, list)
+                    else []
+                )
+                if valid_refs:
+                    if valid_refs != supplied_refs:
+                        invalid_refs = [
+                            repr(ref)
+                            for ref in (supplied_refs or [])
+                            if not isinstance(ref, str) or ref not in known_refs
+                        ]
+                        log.warning(
+                            "extract_scope_refs_normalized",
+                            criterion_key=key,
+                            invalid_refs=invalid_refs,
+                            normalized_applicability="specific_floor_plans",
+                        )
+                    claim["floor_plan_refs"] = valid_refs
+                    continue
+                evidence = claim.get("evidence_quote")
+                normalized_scope = (
+                    "select_units"
+                    if isinstance(evidence, str) and _SELECT_SCOPE_RE.search(evidence)
+                    else "unit_scope_unspecified"
+                )
+                log.warning(
+                    "extract_scope_normalized",
+                    criterion_key=key,
+                    invalid_refs=(
+                        [repr(ref) for ref in supplied_refs]
+                        if isinstance(supplied_refs, list)
+                        else [repr(supplied_refs)]
+                        if supplied_refs is not None
+                        else []
+                    ),
+                    original_applicability="specific_floor_plans",
+                    normalized_applicability=normalized_scope,
+                )
+                claim["applicability"] = normalized_scope
+                claim["floor_plan_refs"] = []
         return normalized
     return data
 
@@ -152,7 +220,8 @@ def _validate_scoped_refs(self: BaseModel) -> BaseModel:
         ("heating", getattr(self, "heating", []))
     ]
     for criterion_key, claims in claim_lists:
-        seen_targets: set[str | None] = set()
+        seen_claims: set[tuple[str | None, str]] = set()
+        values_by_target: dict[str | None, set[str]] = {}
         for claim in claims:
             exact = claim.applicability is UnitApplicability.SPECIFIC_FLOOR_PLANS
             if exact and not claim.floor_plan_refs:
@@ -166,22 +235,46 @@ def _validate_scoped_refs(self: BaseModel) -> BaseModel:
                     + ", ".join(sorted(unknown))
                 )
             targets: list[str | None] = claim.floor_plan_refs or [None]
-            duplicates = seen_targets.intersection(targets)
+            value_key = json.dumps(claim.value, sort_keys=True, separators=(",", ":"))
+            identities = {(target, value_key) for target in targets}
+            duplicates = seen_claims.intersection(identities)
             if duplicates:
-                rendered = ", ".join("<generalized>" if ref is None else ref for ref in duplicates)
-                correction = (
-                    f"{criterion_key} may emit only one value per concrete target: "
-                    f"{rendered}. Reconcile all page statements about that target "
-                    "into one value/applicability claim."
+                rendered = ", ".join(
+                    "<generalized>" if ref is None else ref for ref, _value in duplicates
                 )
-                if criterion_key == "in_unit_laundry":
-                    correction += (
-                        " For in_unit_laundry, `none` means no laundry option of "
-                        "any kind; when in-unit laundry is unavailable but shared "
-                        "laundry exists, emit only `on_site`."
-                    )
+                correction = (
+                    f"{criterion_key} duplicated the same value for concrete target(s): "
+                    f"{rendered}. Emit each distinct value once per target."
+                )
                 raise ValueError(correction)
-            seen_targets.update(targets)
+            if criterion_key not in MULTI_CLAIM_IDENTITY_KEYS:
+                occupied = {
+                    target
+                    for target in targets
+                    if any(existing_target == target for existing_target, _ in seen_claims)
+                }
+                if occupied:
+                    rendered = ", ".join(
+                        "<generalized>" if ref is None else ref for ref in occupied
+                    )
+                    raise ValueError(
+                        f"{criterion_key} may emit only one value per concrete target: {rendered}"
+                    )
+            for target in targets:
+                existing_values = values_by_target.setdefault(target, set())
+                none_key = json.dumps("none")
+                if claim.value == "none" and any(value != none_key for value in existing_values):
+                    raise ValueError(
+                        f"{criterion_key} none cannot coexist with a positive value "
+                        "at the same concrete target"
+                    )
+                if claim.value != "none" and none_key in existing_values:
+                    raise ValueError(
+                        f"{criterion_key} positive value cannot coexist with none "
+                        "at the same concrete target"
+                    )
+                existing_values.add(value_key)
+            seen_claims.update(identities)
     return self
 
 
@@ -296,8 +389,6 @@ def scoped_claim_model(entry: CatalogEntry) -> type[BaseModel]:
         if len(refs) != len(set(refs)):
             raise ValueError("floor_plan_refs must contain unique values")
         exact = self.applicability is UnitApplicability.SPECIFIC_FLOOR_PLANS
-        if exact and not refs:
-            raise ValueError("specific_floor_plans claim requires floor_plan_refs")
         if not exact and refs:
             raise ValueError("only specific_floor_plans claims may carry floor_plan_refs")
         return self

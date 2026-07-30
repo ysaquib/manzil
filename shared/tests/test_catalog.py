@@ -188,44 +188,32 @@ def test_committed_seed_sql_is_current() -> None:
     )
 
 
-def test_scoped_unit_catalog_migration_is_generated_from_catalog() -> None:
-    """P3-SC4's six-key sync is generator output, never hand-edited.
-
-    The preceding full sync is frozen history. This tranche is intentionally
-    narrow so the scoped schema change does not silently rule unrelated
-    pre-existing Catalog/seed drift.
-    """
-    keys = [
-        "patio_balcony",
-        "private_entry",
-        "in_unit_laundry",
-        "parking",
-        "cooling",
-        "dishwasher",
-    ]
+def test_scoped_unit_catalog_migration_remains_frozen_history() -> None:
     migration = (
         REPO_ROOT / "supabase" / "migrations" / "20260806000000_scoped_unit_claim_values.sql"
     ).read_text()
-    current_laundry_hint = next(
-        entry.extraction_hint for entry in CATALOG if entry.key == "in_unit_laundry"
-    )
-    assert migration == generate_catalog_sync_sql(*keys).replace(
-        current_laundry_hint,
-        LEGACY_LAUNDRY_HINT,
-    ).replace(
-        "-- P3-SC3 first Property/Unit type tranche; idempotent on hosted and local databases.",
-        SCOPED_UNIT_HEADER,
-    )
+    assert SCOPED_UNIT_HEADER in migration
+    assert LEGACY_LAUNDRY_HINT in migration
+    assert '"op": "eq", "value": "garage"' in migration
 
 
-def test_laundry_guidance_migration_is_generated_from_catalog() -> None:
+def test_laundry_guidance_migration_remains_frozen_history() -> None:
     migration = (
         REPO_ROOT / "supabase" / "migrations" / "20260809000000_laundry_extraction_guidance.sql"
     ).read_text()
-    assert migration == generate_catalog_sync_sql("in_unit_laundry").replace(
-        "-- P3-SC3 first Property/Unit type tranche; idempotent on hosted and local databases.",
-        LAUNDRY_GUIDANCE_HEADER,
-    )
+    assert LAUNDRY_GUIDANCE_HEADER in migration
+    assert "emit the best available mode once per concrete target" in migration
+
+
+def test_multi_value_scoped_migration_updates_catalog_and_rubrics() -> None:
+    migration = (
+        REPO_ROOT / "supabase" / "migrations" / "20260815000000_multi_value_scoped_claims.sql"
+    ).read_text()
+    assert "add column claim_variant text" in migration
+    assert "'in_unit_laundry', 'parking', 'cooling'" in migration
+    assert "'op', 'contains_any'" in migration
+    assert "set rubric_version = rubric_version + 1" in migration
+    assert "insert into jobs (hunt_id, type, state, payload)" in migration
 
 
 def test_sc6_sc7_catalog_migration_is_generated_from_catalog() -> None:
