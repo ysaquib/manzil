@@ -5,7 +5,7 @@
 // unit-tested — JobCard/PipelineTrack only render the model it returns.
 import type { Job, JobState } from "./api";
 
-export type PhaseKey = "prepare" | "fetch" | "read" | "verify" | "score";
+export type PhaseKey = "prepare" | "fetch" | "read" | "verify" | "inspect" | "finalize";
 export type PhaseStatusKind = "done" | "active" | "pending" | "skipped";
 export type PhaseTone = "running" | "waiting" | "failed" | "cancelled";
 
@@ -35,14 +35,15 @@ export interface PipelineModel {
   substeps: SubSteps | null;
 }
 
-export const PHASE_ORDER: PhaseKey[] = ["prepare", "fetch", "read", "verify", "score"];
+export const PHASE_ORDER: PhaseKey[] = ["prepare", "fetch", "read", "verify", "inspect", "finalize"];
 
 const PHASE_LABEL: Record<PhaseKey, string> = {
   prepare: "Prepare",
   fetch: "Fetch",
   read: "Read",
   verify: "Verify",
-  score: "Score",
+  inspect: "Inspect",
+  finalize: "Finalize",
 };
 
 // Gerund used to build both the running caption ("Reading the listing…") and
@@ -52,7 +53,8 @@ const PHASE_GERUND: Record<PhaseKey, string> = {
   fetch: "fetching the page",
   read: "reading the listing",
   verify: "verifying details",
-  score: "scoring",
+  inspect: "inspecting images",
+  finalize: "finalizing",
 };
 
 // The internal stages of each phase, in run order (DESIGN §2.1 INGEST_STAGES).
@@ -61,8 +63,9 @@ const PHASE_STAGES: Record<PhaseKey, string[]> = {
   prepare: ["PLAN", "VALIDATE_URL"],
   fetch: ["FETCH", "VALIDATE"],
   read: ["EXTRACT", "DEDUPE", "DISCOVER"],
-  verify: ["VERIFY", "RECONCILE", "IMAGE_FETCH", "IMAGE_CLASSIFY", "VISION", "ENRICH"],
-  score: ["SCORE"],
+  verify: ["VERIFY", "RECONCILE"],
+  inspect: ["IMAGE_FETCH", "IMAGE_CLASSIFY", "VISION"],
+  finalize: ["ENRICH", "SCORE"],
 };
 
 // Each internal stage (uppercased) → its friendly phase. Legacy lowercase names
