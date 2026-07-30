@@ -18,12 +18,14 @@ export function OverrideControl({
   currentValue,
   factScope,
   floorPlanId,
+  className,
 }: {
   criterionKey: string;
   schema: ValueSchema | undefined;
   currentValue: unknown;
   factScope: "property" | "floor_plan" | "mixed" | "composed" | undefined;
   floorPlanId: string | null;
+  className?: string;
 }) {
   const { draftOverrides, setDraftOverride } = useListingDetailDraft();
   const [opened, setOpened] = useState(false);
@@ -37,7 +39,10 @@ export function OverrideControl({
     if (draftEntry) {
       const seed = draftEntry.value;
       setValue(
-        typeof seed === "number" || typeof seed === "boolean" || typeof seed === "string"
+        typeof seed === "number" ||
+          typeof seed === "boolean" ||
+          typeof seed === "string" ||
+          Array.isArray(seed)
           ? seed
           : null,
       );
@@ -46,7 +51,10 @@ export function OverrideControl({
     } else {
       const seed = currentValue;
       setValue(
-        typeof seed === "number" || typeof seed === "boolean" || typeof seed === "string"
+        typeof seed === "number" ||
+          typeof seed === "boolean" ||
+          typeof seed === "string" ||
+          Array.isArray(seed)
           ? seed
           : null,
       );
@@ -76,6 +84,7 @@ export function OverrideControl({
             color="gray"
             size="sm"
             variant="subtle"
+            className={className}
             onClick={open}
             aria-label={`override ${criterionKey}`}
           >

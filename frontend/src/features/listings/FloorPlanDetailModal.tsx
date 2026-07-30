@@ -134,7 +134,7 @@ function AmenityGroup({
       </Group>
       <Group gap={6}>
         {facts.map((fact) => {
-          const selected = openKey === fact.key;
+          const selected = openKey === fact.id;
           const typed =
             Array.isArray(fact.value) ||
             (typeof fact.value === "string" &&
@@ -143,7 +143,7 @@ function AmenityGroup({
               fact.value !== "advertised_unconfirmed");
           return (
             <Box
-              key={fact.key}
+              key={fact.id}
               className={`${classes.chip} ${selected ? classes.chipSelected : ""}`}
               data-state={state}
             >
@@ -165,7 +165,7 @@ function AmenityGroup({
                 className={classes.chipEvidence}
                 aria-expanded={selected}
                 aria-label={`Evidence for ${fact.label}`}
-                onClick={() => onToggle(fact.key)}
+                onClick={() => onToggle(fact.id)}
               >
                 <IconInfoCircle size={14} stroke={2} />
               </UnstyledButton>
@@ -229,7 +229,7 @@ export function FloorPlanDetailModal({
 
   const amenities = floorPlanAmenities(catalog, extractions, overrides, plan.id);
   const groups = groupAmenities(amenities);
-  const openFact = amenities.find((fact) => fact.key === openEvidence) ?? null;
+  const openFact = amenities.find((fact) => fact.id === openEvidence) ?? null;
   const source = sources.find((row) => row.id === plan.source_id) ?? null;
   const planUrl = plan.detail_url ?? source?.url ?? null;
   const sourceDomain = source?.site_domain ?? "the source";
