@@ -239,6 +239,9 @@ class SourceState(BaseModel):
     image_urls: list[str] = Field(default_factory=list)
     image_candidates: list[ImageCandidateIn] = Field(default_factory=list)
     authoritative_extraction: bool = False
+    # P3-12: set only on refresh fetches after comparing with the durable
+    # pre-fetch hash. None means this was not a hash-gated refresh Source.
+    content_changed: bool | None = None
 
 
 class ImageCandidateIn(BaseModel):
@@ -346,7 +349,17 @@ class SourceFreshness(BaseModel):
 
     cleaned_text_hash: str | None = None
     cleaned_text: str = ""
+    image_urls: list[str] = Field(default_factory=list)
     last_success_at: datetime | None = None
+
+
+class RefreshSource(BaseModel):
+    """One durable Source selected for a Listing refresh."""
+
+    source_id: UUID
+    url: str
+    cleaned_text_hash: str | None = None
+    required_tier: int = 1
     image_urls: list[str] = Field(default_factory=list)
 
 
@@ -487,6 +500,9 @@ class RunState(BaseModel):
     mode: Literal["workflow", "agents"] = "workflow"
     url: str
     source_policy: str = "tiers_1_2_3"  # §10.7; read by PLAN + DISCOVER (P3), inert in Phase 0
+    refresh_fields: list[str] = Field(default_factory=list)
+    custom_criterion_keys: list[str] = Field(default_factory=list)
+    prior_source_hashes: dict[str, str] = Field(default_factory=dict)
     hunt_listing_id: UUID | None = None  # None in Phase 0 CLI runs
     # §10.4 manifest (PLAN stage lands P3-2). Optional-with-default so pre-P3
     # RunState snapshots and recorded fixtures (plan absent/null) keep validating.
@@ -519,6 +535,7 @@ class RunState(BaseModel):
     vision_targets: dict[str, list[str]] = Field(default_factory=dict)
     source_claims: list[SourceClaim] = Field(default_factory=list)
     resolved_claims: list[SourceClaim] = Field(default_factory=list)
+    custom_claims: list[SourceClaim] = Field(default_factory=list)
     floor_plans: list[FloorPlanIn] = Field(default_factory=list)
     property_identity: PropertyIdentityIn | None = None
     pet_costs: PetCostsIn | None = None

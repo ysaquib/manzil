@@ -93,6 +93,7 @@ STAGE_COST_ESTIMATES_USD = {
     "VERIFY": 0.01,
     "RECONCILE": 0.005,
     "ENRICH": 0.005,  # one small review-synthesis call; Maps calls carry no LLM cost
+    "CUSTOM_MATCH": 0.005,  # per enabled custom Criterion; PLAN applies the multiplier
     "SCORE": 0.0,
 }
 
@@ -112,7 +113,13 @@ CHECKPOINT_TIMEOUT_HOURS = 24
 # Scheduler tick (P3-9 lands the scaffold; P3-11/P3-12 add duties): how often
 # the worker loop runs its scheduled duties. The first duty is the
 # utility-baselines sweep (§9.5, §14: 120-day metro TTL).
-SCHEDULER_TICK_SECONDS = 60.0
+SCHEDULER_TICK_SECONDS = 300.0
+REFRESH_TTL_HOURS = {
+    "pricing": 24,
+    "listing_details": 14 * 24,
+    "images": 30 * 24,
+    "reviews": 30 * 24,
+}
 UTILITY_BASELINE_TTL_DAYS = 120
 # A metro whose baselines pass failed is not retried before this cooldown —
 # without it a persistently failing pass would fire one live LLM call per tick.

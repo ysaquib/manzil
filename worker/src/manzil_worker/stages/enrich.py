@@ -35,7 +35,7 @@ from manzil_worker.enrich.maps import MapsError
 from manzil_worker.llm.config import model_for_stage
 from manzil_worker.llm.prompt_loader import load_prompt
 from manzil_worker.stages.base import CommuteMinutes, NearbyPlaces, StageCtx
-from manzil_worker.state import PropertyContactIn, RunState, SourceClaim
+from manzil_worker.state import PropertyContactIn, RunState, SourceClaim, StageWarning
 
 log = structlog.get_logger()
 
@@ -102,31 +102,64 @@ async def enrich_stage(state: RunState, ctx: StageCtx) -> RunState:
     geocode = state.geocode
     if geocode is None:
         log.info("enrich_skipped_no_geocode", job_id=str(state.job_id), stage="enrich")
+        state.replace_warnings(
+            "ENRICH",
+            [
+                StageWarning(
+                    stage="ENRICH",
+                    code="enrich_no_geocode",
+                    message=(
+                        "Location and review refresh skipped because the Property has no geocode."
+                    ),
+                )
+            ],
+        )
         return state
 
+    warnings: list[StageWarning] = []
+    requested = set(state.refresh_fields)
+    run_location = not requested or "location" in requested
+    run_reviews = not requested or "reviews" in requested
+
     # grocery_proximity — Maps only, no LLM.
-    try:
-        found = await nearest_grocery_minutes(
-            geocode.lat,
-            geocode.lng,
-            ctx.proximity_mode,
-            nearby_places=ctx.nearby_places,
-            commute_minutes=ctx.commute_minutes,
-        )
-    except MapsError as error:
-        log.warning("enrich_grocery_failed", job_id=str(state.job_id), error=str(error))
-        found = None
-    if found is not None:
-        minutes, place_name = found
-        state.source_claims.append(grocery_extraction(minutes, place_name, ctx.proximity_mode))
+    if run_location:
+        try:
+            found = await nearest_grocery_minutes(
+                geocode.lat,
+                geocode.lng,
+                ctx.proximity_mode,
+                nearby_places=ctx.nearby_places,
+                commute_minutes=ctx.commute_minutes,
+            )
+        except MapsError as error:
+            log.warning("enrich_grocery_failed", job_id=str(state.job_id), error=str(error))
+            found = None
+            warnings.append(
+                StageWarning(
+                    stage="ENRICH",
+                    code="location_refresh_failed",
+                    message="Location refresh could not reach Google Maps.",
+                )
+            )
+        if found is not None:
+            minutes, place_name = found
+            state.source_claims.append(grocery_extraction(minutes, place_name, ctx.proximity_mode))
 
     # management_reviews — ratings stage 1 (§10.12): one Place Details call; the
     # summary synthesis fires only when Google returned review text.
-    try:
-        details = await ctx.place_details(geocode.place_id)
-    except MapsError as error:
-        log.warning("enrich_reviews_failed", job_id=str(state.job_id), error=str(error))
-        details = None
+    details = None
+    if run_reviews:
+        try:
+            details = await ctx.place_details(geocode.place_id)
+        except MapsError as error:
+            log.warning("enrich_reviews_failed", job_id=str(state.job_id), error=str(error))
+            warnings.append(
+                StageWarning(
+                    stage="ENRICH",
+                    code="reviews_refresh_failed",
+                    message="Review refresh could not reach Google Places.",
+                )
+            )
     # P3-21 rung 2: Places contact rides on the same call. Captured independently
     # of the rating gate below — a property can have a listed phone and no rating.
     # Stored raw here; normalization and the provenance guards run at persist.
@@ -169,4 +202,5 @@ async def enrich_stage(state: RunState, ctx: StageCtx) -> RunState:
         stage="enrich",
         note="location_safety awaits the P3-17 module; value arrives via override",
     )
+    state.replace_warnings("ENRICH", warnings)
     return state

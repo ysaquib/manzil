@@ -19,7 +19,14 @@ from manzil_worker.runner import INGEST_STAGE_NAMES, STAGE_REGISTRY, run_job
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.fetch import fetch_stage
 from manzil_worker.stages.plan import plan_stage
-from manzil_worker.state import PlanManifest, RunState, SourceFreshness
+from manzil_worker.state import (
+    FloorPlanIn,
+    PlanManifest,
+    RefreshSource,
+    RunState,
+    SourceFreshness,
+    SourceState,
+)
 from worker_helpers import PAGES, FakeFetcher
 
 URL = "https://maplecourt.test/floorplans"
@@ -39,6 +46,7 @@ LIVE_STAGES = [
     "IMAGE_CLASSIFY",
     "VISION",
     "ENRICH",
+    "CUSTOM_MATCH",
     "SCORE",
 ]
 
@@ -52,6 +60,13 @@ def _state(source_policy: str = "tiers_1_2_3") -> RunState:
 def _fresh_lookup(row: SourceFreshness | None):  # type: ignore[no-untyped-def]
     async def lookup(property_id, url):  # type: ignore[no-untyped-def]
         return row
+
+    return lookup
+
+
+def _refresh_lookup(rows: list[RefreshSource]):  # type: ignore[no-untyped-def]
+    async def lookup(hunt_listing_id, property_id, source_policy):  # type: ignore[no-untyped-def]
+        return rows
 
     return lookup
 
@@ -136,6 +151,129 @@ def test_manifest_retry_trigger() -> None:
 
     assert state.plan is not None
     assert state.plan.trigger == "user:retry"
+
+
+def test_refresh_pricing_manifest_uses_contributing_sources() -> None:
+    listing_id, property_id = uuid4(), uuid4()
+    state = RunState(
+        job_id=uuid4(),
+        job_type=JobType.REFRESH,
+        url=URL,
+        hunt_listing_id=listing_id,
+        property_id=property_id,
+        refresh_fields=["pricing"],
+    )
+    sources = [
+        RefreshSource(
+            source_id=uuid4(),
+            url=URL,
+            cleaned_text_hash="old-a",
+            required_tier=1,
+        ),
+        RefreshSource(
+            source_id=uuid4(),
+            url="https://sibling.test/maple",
+            cleaned_text_hash="old-b",
+            required_tier=2,
+        ),
+    ]
+    out = asyncio.run(plan_stage(state, StageCtx(refresh_source_lookup=_refresh_lookup(sources))))
+    assert out.plan is not None
+    assert out.plan.stages == ["PLAN", "FETCH", "EXTRACT", "VERIFY", "RECONCILE", "SCORE"]
+    assert [source.url for source in out.plan.sources] == [source.url for source in sources]
+    assert out.prior_source_hashes == {URL: "old-a", sources[1].url: "old-b"}
+
+
+def test_custom_backfill_uses_cached_evidence_without_fetching() -> None:
+    listing_id, property_id = uuid4(), uuid4()
+    custom_key = f"custom:{uuid4()}"
+    cached = SourceState(url=URL, cleaned_text="Roof deck closes at 10 PM.")
+    state = RunState(
+        job_id=uuid4(),
+        job_type=JobType.REFRESH,
+        url=URL,
+        hunt_listing_id=listing_id,
+        property_id=property_id,
+        custom_criterion_keys=[custom_key],
+        sources=[
+            cached,
+            SourceState(url="https://unselected.test/maple", cleaned_text="stale sibling"),
+        ],
+        floor_plans=[
+            FloorPlanIn(response_key="selected", source_url=URL),
+            FloorPlanIn(
+                response_key="unselected",
+                source_url="https://unselected.test/maple",
+            ),
+        ],
+    )
+    source = RefreshSource(
+        source_id=uuid4(),
+        url=URL,
+        cleaned_text_hash="old-a",
+        required_tier=1,
+    )
+
+    out = asyncio.run(
+        plan_stage(state, StageCtx(refresh_source_lookup=_refresh_lookup([source])))
+    )
+
+    assert out.plan is not None
+    assert out.plan.stages == ["PLAN", "CUSTOM_MATCH", "SCORE"]
+    assert out.plan.sources[0].action == "skip"
+    assert out.plan.sources[0].why == "custom_match_uses_cached_evidence"
+    assert out.sources == [cached]
+    assert [plan.response_key for plan in out.floor_plans] == ["selected"]
+
+
+def test_unchanged_pricing_fetch_hash_gates_paid_stages() -> None:
+    body = (PAGES / "e2e_listing.html").read_text()
+    listing_id, property_id = uuid4(), uuid4()
+    state = RunState(
+        job_id=uuid4(),
+        job_type=JobType.REFRESH,
+        url=URL,
+        hunt_listing_id=listing_id,
+        property_id=property_id,
+        refresh_fields=["pricing"],
+    )
+    fetcher = FakeFetcher(1, body)
+    # First derive the cleaner's exact hash using the ordinary fetch path.
+    baseline = (
+        asyncio.run(
+            fetch_stage(
+                _state(),
+                StageCtx(registry=InMemoryRegistry(), fetchers={1: fetcher}),
+            )
+        )
+        .sources[0]
+        .cleaned_hash
+    )
+    sources = [
+        RefreshSource(
+            source_id=uuid4(),
+            url=URL,
+            cleaned_text_hash=baseline,
+            required_tier=1,
+        )
+    ]
+    planned = asyncio.run(
+        plan_stage(state, StageCtx(refresh_source_lookup=_refresh_lookup(sources)))
+    )
+    out = asyncio.run(
+        fetch_stage(
+            planned,
+            StageCtx(registry=InMemoryRegistry(), fetchers={1: FakeFetcher(1, body)}),
+        )
+    )
+    assert out.plan is not None
+    assert out.plan.skipped == {
+        "EXTRACT": "content_hash_unchanged",
+        "VERIFY": "content_hash_unchanged",
+        "RECONCILE": "content_hash_unchanged",
+        "CUSTOM_MATCH": "content_hash_unchanged",
+        "SCORE": "content_hash_unchanged",
+    }
 
 
 # ── FETCH honors the skip ────────────────────────────────────────────────────

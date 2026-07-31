@@ -23,7 +23,13 @@ if TYPE_CHECKING:
     from manzil_worker.enrich.images import DownloadImage, ImageObjectStore
     from manzil_worker.fetching.registry import AdapterRegistry
     from manzil_worker.fetching.tiers import Fetcher
-    from manzil_worker.state import DedupeCandidate, GeocodeIn, RunState, SourceFreshness
+    from manzil_worker.state import (
+        DedupeCandidate,
+        GeocodeIn,
+        RefreshSource,
+        RunState,
+        SourceFreshness,
+    )
 
 CallStructured = Callable[[str, type[Any], str], Awaitable[Any]]
 CallVision = Callable[[str, type[Any], list[Any]], Awaitable[Any]]
@@ -33,6 +39,7 @@ CallAgent = Callable[[str, str, list[Any], int], Awaitable[Any]]
 # persisted source's freshness inputs, or None when no row exists. Injected like
 # `call_structured` so PLAN reaches Postgres in the worker but fakes without a DB.
 FreshSourceLookup = Callable[[UUID | None, str], Awaitable["SourceFreshness | None"]]
+RefreshSourceLookup = Callable[[UUID | None, UUID | None, str], Awaitable[list["RefreshSource"]]]
 
 # DEDUPE's DB seam (P3-4): the existing `properties` rows the incoming identity is
 # compared against (self excluded by the caller). A dumb read, injected like
@@ -67,6 +74,12 @@ async def _no_fresh_source(property_id: UUID | None, url: str) -> SourceFreshnes
     """Default lookup: no database wired (CLI / unit tests) → nothing is fresh, so
     PLAN always plans `action: fetch`."""
     return None
+
+
+async def _no_refresh_sources(
+    hunt_listing_id: UUID | None, property_id: UUID | None, source_policy: str
+) -> list[RefreshSource]:
+    return []
 
 
 async def _no_dedupe_candidates() -> list[DedupeCandidate]:
@@ -176,6 +189,7 @@ class StageCtx:
     # default returns None so non-DB runs never skip. `plan_trigger` is the §10.4
     # manifest trigger (`user:submit` new / `user:retry` manual retry).
     fresh_source_lookup: FreshSourceLookup = _no_fresh_source
+    refresh_source_lookup: RefreshSourceLookup = _no_refresh_sources
     plan_trigger: str = "user:submit"
     # DEDUPE inputs (P3-4). `dedupe_candidates` reads existing `properties`;
     # `geocode_address` geocodes the extracted address as a plain call (no tools).

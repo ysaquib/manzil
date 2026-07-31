@@ -103,6 +103,20 @@ def conservative_rent(plan: FloorPlanIn) -> float | None:
 
 
 async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
+    if state.job_type.value == "refresh" and state.custom_criterion_keys:
+        # Terminal projection persists the Hunt-scoped claims and invokes the
+        # database-backed rescore resolver, which also has Catalog facts and Overrides.
+        return state
+    # ENRICH-only refreshes persist their new API-derived facts and reuse the
+    # database-backed rescore seam in the terminal projection. That seam owns
+    # current Floor Plan IDs, Overrides, fees, and utility corrections; trying
+    # to rebuild them from a page-less RunState would create a second resolver.
+    if (
+        state.job_type.value == "refresh"
+        and set(state.refresh_fields) <= {"reviews", "location"}
+        and not state.floor_plans
+    ):
+        return state
     if not state.resolved_claims:
         state.resolved_claims = [
             claim.model_copy(
@@ -140,7 +154,7 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
             origin_key=claim.origin_key,
             resolution_rule=claim.resolution_rule,
         )
-        for claim in state.resolved_claims
+        for claim in [*state.resolved_claims, *state.custom_claims]
     ]
 
     # §9.5 v1: pet rent folds into all_in_monthly. Counts are hunt settings (ctx);
