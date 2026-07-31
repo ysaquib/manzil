@@ -27,6 +27,7 @@ from manzil_shared.models import JobState
 
 from manzil_worker.llm.client import RunContext, cost_tally, run_context
 from manzil_worker.stages.base import Stage, StageCtx
+from manzil_worker.stages.custom_match import custom_match_stage
 from manzil_worker.stages.dedupe import dedupe_stage
 from manzil_worker.stages.discover import discover_stage
 from manzil_worker.stages.enrich import enrich_stage
@@ -85,9 +86,27 @@ INGEST_STAGES: list[tuple[str, Stage]] = [
     # ENRICH sits downstream of VERIFY (§10.1): its values are API-derived, so
     # the page-evidence audit must never run on them.
     ("ENRICH", enrich_stage),
+    ("CUSTOM_MATCH", custom_match_stage),
     ("SCORE", score_stage),
 ]
 INGEST_STAGE_NAMES: list[str] = [name for name, _ in INGEST_STAGES]
+
+# Fresh refresh Jobs enter through PLAN, which replaces this bootstrap walk
+# with the class-derived manifest before any paid Stage runs.
+REFRESH_STAGES: list[tuple[str, Stage]] = [
+    ("PLAN", plan_stage),
+    ("FETCH", fetch_stage),
+    ("EXTRACT", extract_stage),
+    ("VERIFY", verify_stage),
+    ("RECONCILE", reconcile_stage),
+    ("IMAGE_FETCH", image_fetch_stage),
+    ("IMAGE_CLASSIFY", image_classify_stage),
+    ("VISION", vision_stage),
+    ("ENRICH", enrich_stage),
+    ("CUSTOM_MATCH", custom_match_stage),
+    ("SCORE", score_stage),
+]
+REFRESH_STAGE_NAMES = [name for name, _ in REFRESH_STAGES]
 
 # name -> callable, for resolving a manifest's `stages` on resume. All stages a
 # manifest can name live here (ingest today; later waves extend it).

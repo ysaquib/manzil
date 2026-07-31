@@ -397,7 +397,7 @@ def _maybe_raise_confirm_value(state: RunState, ctx: StageCtx) -> None:
         if meets_confidence(extraction.confidence, ctx.min_confidence):
             continue
         label = criterion.catalog_key or str(
-            (criterion.custom_def or {}).get("label", flag.criterion_key)
+            criterion.custom_def.label if criterion.custom_def is not None else flag.criterion_key
         )
         prompt = CheckpointPrompt(
             kind=CheckpointKind.CONFIRM_VALUE,

@@ -64,11 +64,7 @@ async def _fetch_one(state: RunState, ctx: StageCtx, url: str) -> SourceState:
         else []
     )
     round_kind = next(
-        (
-            round_.kind
-            for round_ in rounds
-            if any(entry.url == url for entry in round_.sources)
-        ),
+        (round_.kind for round_ in rounds if any(entry.url == url for entry in round_.sources)),
         None,
     )
     source = SourceState(
@@ -82,11 +78,7 @@ async def _fetch_one(state: RunState, ctx: StageCtx, url: str) -> SourceState:
         role=(
             existing.role
             if existing is not None
-            else (
-                "submitted"
-                if url == state.url
-                else (round_kind or "baseline")
-            )
+            else ("submitted" if url == state.url else (round_kind or "baseline"))
         ),
         tier_used=ladder.result.tier,
         fetched_at=datetime.now(UTC),
@@ -96,6 +88,13 @@ async def _fetch_one(state: RunState, ctx: StageCtx, url: str) -> SourceState:
         fee_tables_found=ladder.cleaned.fee_tables_found,
         image_urls=[image.url for image in discovered_images],
         image_candidates=[image.__dict__ for image in discovered_images],
+        content_changed=(
+            ladder.cleaned.text_hash != state.prior_source_hashes[url]
+            if url in state.prior_source_hashes
+            else True
+        )
+        if state.job_type.value == "refresh"
+        else None,
     )
     log.info(
         "fetched",
@@ -163,4 +162,22 @@ async def fetch_stage(state: RunState, ctx: StageCtx) -> RunState:
             state.sources[state.sources.index(existing)] = fetched
     if not any(source.outcome in _PROCEED and source.cleaned_text for source in state.sources):
         raise StageFatal("no Source in the slate was fetchable")
+    if (
+        state.job_type.value == "refresh"
+        and state.plan is not None
+        and set(state.refresh_fields) & {"pricing", "listing_details"}
+        and not set(state.refresh_fields) & {"images", "reviews", "location"}
+        and state.sources
+        and all(source.content_changed is False for source in state.sources)
+    ):
+        state.plan.skipped.update(
+            {
+                "EXTRACT": "content_hash_unchanged",
+                "VERIFY": "content_hash_unchanged",
+                "RECONCILE": "content_hash_unchanged",
+                "CUSTOM_MATCH": "content_hash_unchanged",
+            }
+        )
+        if not set(state.refresh_fields) & {"images", "reviews", "location"}:
+            state.plan.skipped["SCORE"] = "content_hash_unchanged"
     return state

@@ -24,15 +24,17 @@ import json
 import os
 import socket
 from collections.abc import Awaitable, Callable
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 import structlog
 from manzil_shared.config import (
+    CHECKPOINT_TIMEOUT_HOURS,
     JOB_ORPHAN_AFTER_SECONDS,
     MANZIL_JOB_MAX_ATTEMPTS,
+    REFRESH_TTL_HOURS,
     SCHEDULER_TICK_SECONDS,
     UTILITY_BASELINE_RETRY_SECONDS,
     WORKER_IDLE_BACKOFF_SECONDS,
@@ -47,6 +49,7 @@ from manzil_shared.models import (
     UnitApplicability,
 )
 
+from manzil_worker.discovery_sources import source_metadata
 from manzil_worker.enrich.contacts import (
     ContactProvenance,
     ContactRecord,
@@ -62,6 +65,8 @@ from manzil_worker.runner import (
     INGEST_STAGES,
     PHASE0_STAGE_NAMES,
     PHASE0_STAGES,
+    REFRESH_STAGE_NAMES,
+    REFRESH_STAGES,
     run_job,
 )
 from manzil_worker.scoped_facts import (
@@ -75,12 +80,15 @@ from manzil_worker.stages.rescore import rescore_hunt
 from manzil_worker.state import (
     DedupeCandidate,
     FloorPlanIn,
+    GeocodeIn,
     PlanManifest,
     PlanSource,
     PropertyIdentityIn,
+    RefreshSource,
     RunState,
     SourceClaim,
     SourceFreshness,
+    SourceState,
 )
 
 if TYPE_CHECKING:
@@ -94,6 +102,7 @@ if TYPE_CHECKING:
         FreshSourceLookup,
         GeocodeAddress,
         NearbyPlaces,
+        RefreshSourceLookup,
     )
 
 log = structlog.get_logger()
@@ -253,6 +262,7 @@ def _build_run_state(job: asyncpg.Record) -> RunState:
             url=payload["url"],
             hunt_listing_id=job["hunt_listing_id"],
             source_policy=payload.get("source_policy", "tiers_1_2_3"),
+            custom_criterion_keys=payload.get("custom_criterion_keys", []),
         )
     if payload.get("checkpoint_answer"):
         state.checkpoint_answer = payload["checkpoint_answer"]
@@ -261,10 +271,17 @@ def _build_run_state(job: asyncpg.Record) -> RunState:
 
 # ── ingest dispatch ──────────────────────────────────────────────────────────
 
+_PROCESS_FETCHERS: dict[int, Fetcher] | None = None
+
 
 def _default_fetchers() -> dict[int, Fetcher]:
     """Real fetch ladder (mirrors the CLI): tier 1 always, tier 2 browser, tier 3
-    unblocker only when a provider key is configured."""
+    unblocker only when a provider key is configured. The instances are shared
+    for the process lifetime so Tier 2's per-domain politeness lock covers Jobs,
+    not merely Sources within one Job."""
+    global _PROCESS_FETCHERS
+    if _PROCESS_FETCHERS is not None:
+        return _PROCESS_FETCHERS
     from manzil_worker.fetching.tier3 import Tier3Fetcher, tier3_configured
     from manzil_worker.fetching.tiers import Tier1Fetcher, Tier2Fetcher
 
@@ -273,7 +290,8 @@ def _default_fetchers() -> dict[int, Fetcher]:
         fetchers[3] = Tier3Fetcher()
     else:
         log.info("tier3_off_ladder", reason="no unblocker provider key in os.environ")
-    return fetchers
+    _PROCESS_FETCHERS = fetchers
+    return _PROCESS_FETCHERS
 
 
 async def _persist_discovery_results(
@@ -526,9 +544,40 @@ async def _persist_ingest_results(
     plans are found the marker is cleared, so the state reverses on refresh."""
 
     source = next(item for item in state.sources if item.url == state.url)
-    source_ids_by_url: dict[str, UUID] = {}
-    source_official_by_url: dict[str, bool] = {}
+    source_ids_by_url: dict[str, UUID] = {
+        row["url"]: row["id"]
+        for row in await conn.fetch(
+            "select id, url from property_sources where property_id = $1",
+            property_id,
+        )
+    }
+    source_official_by_url: dict[str, bool] = {
+        row["url"]: row["is_official"]
+        for row in await conn.fetch(
+            "select url, is_official from property_sources where property_id = $1",
+            property_id,
+        )
+    }
     for fetched_source in state.sources:
+        # PLAN may preload an already-persisted Source for a hash-fresh skip.
+        # Keep that row untouched. Synthetic/replay states historically omit
+        # fetched_at, however, so a Source with no persisted identity still
+        # needs the normal upsert.
+        planned = (
+            next(
+                (item for item in state.plan.sources if item.url == fetched_source.url),
+                None,
+            )
+            if state.plan is not None
+            else None
+        )
+        if (
+            fetched_source.fetched_at is None
+            and fetched_source.url in source_ids_by_url
+            and planned is not None
+            and planned.action == "skip"
+        ):
+            continue
         source_row = await conn.fetchrow(
             """
             insert into property_sources
@@ -555,6 +604,15 @@ async def _persist_ingest_results(
         source_ids_by_url[fetched_source.url] = source_row["id"]
         source_official_by_url[fetched_source.url] = source_row["is_official"]
     source_id = source_ids_by_url[source.url]
+    await conn.execute(
+        """
+        update hunt_listings
+        set submitted_source_id = coalesce(submitted_source_id, $2)
+        where id = $1
+        """,
+        hunt_listing_id,
+        source_id,
+    )
     # The persisted flag, not this run's: DISCOVER may have already marked the URL
     # official, and the upsert ORs the two. P3-21 reads it to rank the page's
     # contact block as the official-site rung rather than a plain listing.
@@ -769,9 +827,7 @@ async def _persist_ingest_results(
             linked_pairs.add((floor_plan_id, property_image_id))
             context = image.discovery_context
             method = (
-                "source_native_id"
-                if context.get("source_native_plan_id")
-                else "containing_card"
+                "source_native_id" if context.get("source_native_plan_id") else "containing_card"
             )
             current_link = await conn.fetchval(
                 """
@@ -878,18 +934,13 @@ async def _persist_ingest_results(
             )
     if state.source_results:
         page_candidates = [
-            claim
-            for result in state.source_results
-            for claim in result.source_claims
+            claim for result in state.source_results for claim in result.source_claims
         ]
         candidate_groups = {claim.claim_group_id for claim in page_candidates}
         page_resolutions = [
             claim
             for claim in state.resolved_claims
-            if any(
-                group_id in candidate_groups
-                for group_id in claim.candidate_claim_group_ids
-            )
+            if any(group_id in candidate_groups for group_id in claim.candidate_claim_group_ids)
         ]
         await persist_reconciled_claims(
             conn,
@@ -901,15 +952,11 @@ async def _persist_ingest_results(
             source_ids_by_url=source_ids_by_url,
             floor_plan_ids_by_source_ref=floor_plan_ids_by_source_ref,
             authoritative_source_urls=(
-                source.url
-                for source in state.sources
-                if source.authoritative_extraction
+                source.url for source in state.sources if source.authoritative_extraction
             ),
         )
         non_page_claims = [
-            claim
-            for claim in state.resolved_claims
-            if claim not in page_resolutions
+            claim for claim in state.resolved_claims if claim not in page_resolutions
         ]
         if non_page_claims:
             await persist_single_source_claims(
@@ -934,6 +981,33 @@ async def _persist_ingest_results(
             claims=[*state.source_claims, *_auxiliary_claims(state, source.url)],
             floor_plan_ids_by_ref=floor_plan_ids_by_ref,
             authoritative=source.authoritative_extraction,
+        )
+    hunt_id = await conn.fetchval(
+        "select hunt_id from hunt_listings where id = $1", hunt_listing_id
+    )
+    for claim in state.custom_claims:
+        claim_floor_plan_id = claim.floor_plan_id
+        if claim_floor_plan_id is None and claim.floor_plan_ref is not None:
+            claim_floor_plan_id = floor_plan_ids_by_source_ref.get(
+                (claim.source_id or source.url, claim.floor_plan_ref)
+            )
+        await append_candidate_resolution(
+            conn,
+            property_id=property_id,
+            hunt_id=hunt_id,
+            criterion_key=claim.criterion_key,
+            value=claim.value,
+            confidence=claim.confidence,
+            evidence_quote=claim.evidence_quote,
+            source_id=source_ids_by_url.get(claim.source_id or ""),
+            origin_key=claim.origin_key or f"custom_match:{claim.criterion_key}",
+            target_scope=claim.target_scope,
+            floor_plan_id=claim_floor_plan_id,
+            applicability=claim.applicability,
+            claim_group_id=claim.claim_group_id,
+            model=claim.model,
+            job_id=persisted_job_id,
+            resolution_rule=claim.resolution_rule or "custom_match",
         )
     for claim in state.source_claims:
         if not claim.image_hashes or not claim.resolution_rule:
@@ -1083,6 +1157,18 @@ async def _persist_ingest_results(
                 Decimal(str(fee.amount)),
                 one_time.evidence_quote,
             )
+    if state.job_type is JobType.INGEST:
+        initialized_classes = ["pricing", "listing_details"]
+        if state.image_fetch_completed:
+            initialized_classes.append("images")
+        if state.plan is not None and "ENRICH" in state.plan.stages:
+            initialized_classes.extend(_successful_refresh_fields(state, ["reviews", "location"]))
+        await _mark_refresh_classes_current(
+            conn,
+            hunt_listing_id=hunt_listing_id,
+            job_id=persisted_job_id,
+            fields=initialized_classes,
+        )
     if not scorable:
         # No available floor plans, even after extraction/cross-validation — a
         # legitimate "no availability" result (§8.2), not an error. The source and
@@ -1275,16 +1361,12 @@ def make_ingest_dispatcher(
 
         settings = json.loads(listing["settings"]) if listing["settings"] else {}
         min_confidence = Confidence(settings.get("min_confidence", "medium"))
-        min_vision_confidence = Confidence(
-            settings.get("min_vision_confidence", "low")
-        )
+        min_vision_confidence = Confidence(settings.get("min_vision_confidence", "low"))
         cats = int(settings.get("cats", 0))
         dogs = int(settings.get("dogs", 0))
         proximity_mode = str(settings.get("proximity_mode", "driving"))
         cost_estimate_mode = str(settings.get("cost_estimate_mode", "conservative"))
-        generalized_vision_policy = str(
-            settings.get("generalized_vision_policy", "full_rubric")
-        )
+        generalized_vision_policy = str(settings.get("generalized_vision_policy", "full_rubric"))
         occupants = int(settings.get("occupants", 1))
 
         payload = json.loads(job["payload"])
@@ -1419,12 +1501,95 @@ def _make_fresh_source_lookup(pool: asyncpg.Pool) -> FreshSourceLookup:
     return lookup
 
 
+def _policy_max_tier(source_policy: str) -> int:
+    return {
+        "trust_link": 0,
+        "tier_1": 1,
+        "tier_1_plus_official": 1,
+        "tiers_1_2": 2,
+        "tiers_1_2_3": 3,
+    }.get(source_policy, 3)
+
+
+def _make_refresh_source_lookup(pool: asyncpg.Pool) -> RefreshSourceLookup:
+    """Select the submitted Source plus current contributing Sources.
+
+    Current candidates/Floor Plans define contribution. The submitted Source is
+    permanent even under `trust_link`; other Sources obey the current policy's
+    tier cap. Census Syndication Families are collapsed by freshness.
+    """
+
+    async def lookup(
+        hunt_listing_id: UUID | None, property_id: UUID | None, source_policy: str
+    ) -> list[RefreshSource]:
+        if hunt_listing_id is None or property_id is None:
+            return []
+        rows = await pool.fetch(
+            """
+            select ps.id, ps.url, ps.site_domain, ps.is_official,
+                   ps.cleaned_text_hash, ps.image_urls,
+                   coalesce(far.required_tier, 1) as required_tier,
+                   ps.last_success_at,
+                   (ps.id = hl.submitted_source_id) as submitted,
+                   (
+                     exists (
+                       select 1 from current_extraction_candidates c
+                       where c.property_id = hl.property_id and c.source_id = ps.id
+                     )
+                     or exists (
+                       select 1 from floor_plans fp
+                       where fp.property_id = hl.property_id
+                         and fp.source_id = ps.id and fp.is_current
+                     )
+                   ) as contributing
+            from hunt_listings hl
+            join property_sources ps on ps.property_id = hl.property_id
+            left join fetch_adapter_registry far on far.site_domain = ps.site_domain
+            where hl.id = $1 and hl.property_id = $2
+            order by (ps.id = hl.submitted_source_id) desc,
+                     ps.last_success_at desc nulls last, ps.id
+            """,
+            hunt_listing_id,
+            property_id,
+        )
+        max_tier = _policy_max_tier(source_policy)
+        selected: list[RefreshSource] = []
+        seen_families: set[str] = set()
+        for row in rows:
+            submitted = bool(row["submitted"])
+            domain = str(row["site_domain"])
+            metadata = source_metadata(domain, int(row["required_tier"]))
+            if not submitted and source_policy == "trust_link":
+                continue
+            if not submitted and not row["contributing"]:
+                continue
+            official_carveout = bool(row["is_official"]) and source_policy == "tier_1_plus_official"
+            if not submitted and metadata.census_tier > max_tier and not official_carveout:
+                continue
+            if not submitted and metadata.syndication_family in seen_families:
+                continue
+            seen_families.add(metadata.syndication_family)
+            image_urls = row["image_urls"]
+            if isinstance(image_urls, str):
+                image_urls = json.loads(image_urls)
+            selected.append(
+                RefreshSource(
+                    source_id=row["id"],
+                    url=row["url"],
+                    cleaned_text_hash=row["cleaned_text_hash"],
+                    required_tier=metadata.census_tier,
+                    image_urls=image_urls or [],
+                )
+            )
+        return selected
+
+    return lookup
+
+
 def _make_utility_baselines_lookup(pool: asyncpg.Pool):  # type: ignore[no-untyped-def]
     """SCORE's §9.5 baselines seam: BaselineSet for one locality + beds bucket."""
 
-    async def lookup(
-        city: str | None, state: str | None, county: str | None, bucket: int
-    ):
+    async def lookup(city: str | None, state: str | None, county: str | None, bucket: int):
         from manzil_worker.enrich.utility_baselines import baselines_for_property_locality
 
         async with pool.acquire() as conn:
@@ -1496,15 +1661,11 @@ def make_rescore_dispatcher() -> Dispatcher:
 
         settings = json.loads(hunt["settings"]) if hunt["settings"] else {}
         min_confidence = Confidence(settings.get("min_confidence", "medium"))
-        min_vision_confidence = Confidence(
-            settings.get("min_vision_confidence", "low")
-        )
+        min_vision_confidence = Confidence(settings.get("min_vision_confidence", "low"))
         cats = int(settings.get("cats", 0))
         dogs = int(settings.get("dogs", 0))
         cost_estimate_mode = str(settings.get("cost_estimate_mode", "conservative"))
-        generalized_vision_policy = str(
-            settings.get("generalized_vision_policy", "full_rubric")
-        )
+        generalized_vision_policy = str(settings.get("generalized_vision_policy", "full_rubric"))
         occupants = int(settings.get("occupants", 1))
 
         try:
@@ -1604,15 +1765,11 @@ def make_enrich_refresh_dispatcher(
         settings = json.loads(hunt["settings"]) if hunt["settings"] else {}
         proximity_mode = str(settings.get("proximity_mode", "driving"))
         min_confidence = Confidence(settings.get("min_confidence", "medium"))
-        min_vision_confidence = Confidence(
-            settings.get("min_vision_confidence", "low")
-        )
+        min_vision_confidence = Confidence(settings.get("min_vision_confidence", "low"))
         cats = int(settings.get("cats", 0))
         dogs = int(settings.get("dogs", 0))
         cost_estimate_mode = str(settings.get("cost_estimate_mode", "conservative"))
-        generalized_vision_policy = str(
-            settings.get("generalized_vision_policy", "full_rubric")
-        )
+        generalized_vision_policy = str(settings.get("generalized_vision_policy", "full_rubric"))
         occupants = int(settings.get("occupants", 1))
 
         try:
@@ -1809,6 +1966,446 @@ def make_discover_refresh_dispatcher(
     return dispatch
 
 
+async def _mark_refresh_classes_current(
+    conn: asyncpg.Connection,
+    *,
+    hunt_listing_id: UUID,
+    job_id: UUID,
+    fields: list[str],
+) -> None:
+    classes = set(fields)
+    # A complete page check uses the full Catalog whenever bytes changed, so
+    # either text class proves both text classes current.
+    if classes & {"pricing", "listing_details", "images"}:
+        classes.update({"pricing", "listing_details"})
+    for refresh_class in sorted(classes):
+        await conn.execute(
+            """
+            insert into hunt_listing_refresh_status
+                (hunt_listing_id, refresh_class, last_success_at, producer_job_id)
+            values ($1, $2, now(), $3)
+            on conflict (hunt_listing_id, refresh_class) do update set
+                last_success_at = excluded.last_success_at,
+                producer_job_id = excluded.producer_job_id
+            """,
+            hunt_listing_id,
+            refresh_class,
+            job_id,
+        )
+
+
+def _successful_refresh_fields(state: RunState, fields: list[str]) -> list[str]:
+    failed_codes = {warning.code for warning in state.warnings if warning.stage == "ENRICH"}
+    failed_classes: set[str] = set()
+    if "enrich_no_geocode" in failed_codes:
+        failed_classes.update({"location", "reviews"})
+    if "location_refresh_failed" in failed_codes:
+        failed_classes.add("location")
+    if "reviews_refresh_failed" in failed_codes:
+        failed_classes.add("reviews")
+    return [field for field in fields if field not in failed_classes]
+
+
+async def _persist_unchanged_text_refresh(
+    conn: asyncpg.Connection,
+    *,
+    hunt_listing_id: UUID,
+    property_id: UUID,
+    job_id: UUID,
+    state: RunState,
+) -> None:
+    for source in state.sources:
+        await conn.execute(
+            """
+            update property_sources set
+                cleaned_text_hash = $3,
+                cleaned_text = $4,
+                image_urls = $5::jsonb,
+                last_fetched_at = $6,
+                last_success_at = $6
+            where property_id = $1 and url = $2
+            """,
+            property_id,
+            source.url,
+            source.cleaned_hash,
+            source.cleaned_text,
+            json.dumps(source.image_urls),
+            source.fetched_at,
+        )
+    await _mark_refresh_classes_current(
+        conn,
+        hunt_listing_id=hunt_listing_id,
+        job_id=job_id,
+        fields=_successful_refresh_fields(state, state.refresh_fields),
+    )
+
+
+async def _persist_enrich_only_refresh(
+    conn: asyncpg.Connection,
+    *,
+    hunt_listing_id: UUID,
+    property_id: UUID,
+    job_id: UUID,
+    state: RunState,
+    rubric: list[RubricCriterion],
+    rubric_version: int,
+    settings: dict[str, Any],
+) -> None:
+    for claim in state.source_claims:
+        await append_candidate_resolution(
+            conn,
+            property_id=property_id,
+            hunt_id=None,
+            criterion_key=claim.criterion_key,
+            value=claim.value,
+            confidence=claim.confidence,
+            evidence_quote=claim.evidence_quote,
+            source_id=None,
+            origin_key=claim.source_id or f"refresh:{claim.criterion_key}",
+            target_scope=claim.target_scope,
+            floor_plan_id=claim.floor_plan_id,
+            applicability=claim.applicability,
+            claim_group_id=claim.claim_group_id,
+            model=claim.model,
+            job_id=job_id,
+            resolution_rule="single_source",
+        )
+    submitted_source_id = await conn.fetchval(
+        "select submitted_source_id from hunt_listings where id = $1",
+        hunt_listing_id,
+    )
+    if submitted_source_id is not None:
+        await _persist_property_contacts(
+            conn,
+            property_id=property_id,
+            source_id=submitted_source_id,
+            source_is_official=False,
+            state=state,
+        )
+    await rescore_hunt(
+        conn,
+        hunt_id=UUID(
+            str(
+                await conn.fetchval(
+                    "select hunt_id from hunt_listings where id = $1", hunt_listing_id
+                )
+            )
+        ),
+        rubric=rubric,
+        rubric_version=rubric_version,
+        min_confidence=Confidence(settings.get("min_confidence", "medium")),
+        min_vision_confidence=Confidence(settings.get("min_vision_confidence", "low")),
+        cats=int(settings.get("cats", 0)),
+        dogs=int(settings.get("dogs", 0)),
+        cost_estimate_mode=str(settings.get("cost_estimate_mode", "conservative")),
+        generalized_vision_policy=str(settings.get("generalized_vision_policy", "full_rubric")),
+        occupants=int(settings.get("occupants", 1)),
+    )
+    await _mark_refresh_classes_current(
+        conn,
+        hunt_listing_id=hunt_listing_id,
+        job_id=job_id,
+        fields=_successful_refresh_fields(state, state.refresh_fields),
+    )
+
+
+async def _persist_custom_only_refresh(
+    conn: asyncpg.Connection,
+    *,
+    hunt_listing_id: UUID,
+    property_id: UUID,
+    job_id: UUID,
+    state: RunState,
+    rubric: list[RubricCriterion],
+    rubric_version: int,
+    settings: dict[str, Any],
+) -> None:
+    hunt_id = await conn.fetchval(
+        "select hunt_id from hunt_listings where id = $1", hunt_listing_id
+    )
+    source_ids = {
+        row["url"]: row["id"]
+        for row in await conn.fetch(
+            "select id, url from property_sources where property_id = $1", property_id
+        )
+    }
+    floor_plan_ids = {
+        (row["url"], str(row["id"])): row["id"]
+        for row in await conn.fetch(
+            """
+            select fp.id, ps.url
+            from floor_plans fp
+            join property_sources ps on ps.id = fp.source_id
+            where fp.property_id = $1 and fp.is_current
+            """,
+            property_id,
+        )
+    }
+    for claim in state.custom_claims:
+        floor_plan_id = claim.floor_plan_id
+        if floor_plan_id is None and claim.floor_plan_ref is not None:
+            floor_plan_id = floor_plan_ids.get(
+                (claim.source_id or state.url, claim.floor_plan_ref)
+            )
+        await append_candidate_resolution(
+            conn,
+            property_id=property_id,
+            hunt_id=hunt_id,
+            criterion_key=claim.criterion_key,
+            value=claim.value,
+            confidence=claim.confidence,
+            evidence_quote=claim.evidence_quote,
+            source_id=source_ids.get(claim.source_id or ""),
+            origin_key=claim.origin_key or f"custom_match:{claim.criterion_key}",
+            target_scope=claim.target_scope,
+            floor_plan_id=floor_plan_id,
+            applicability=claim.applicability,
+            claim_group_id=claim.claim_group_id,
+            model=claim.model,
+            job_id=job_id,
+            resolution_rule=claim.resolution_rule or "custom_match",
+        )
+    await rescore_hunt(
+        conn,
+        hunt_id=hunt_id,
+        rubric=rubric,
+        rubric_version=rubric_version,
+        min_confidence=Confidence(settings.get("min_confidence", "medium")),
+        min_vision_confidence=Confidence(settings.get("min_vision_confidence", "low")),
+        cats=int(settings.get("cats", 0)),
+        dogs=int(settings.get("dogs", 0)),
+        cost_estimate_mode=str(settings.get("cost_estimate_mode", "conservative")),
+        generalized_vision_policy=str(settings.get("generalized_vision_policy", "full_rubric")),
+        occupants=int(settings.get("occupants", 1)),
+    )
+
+
+def make_class_refresh_dispatcher(
+    *,
+    dsn: str | None,
+    fetchers_factory: FetchersFactory,
+    call_structured: CallStructured | None = None,
+    call_agent: CallAgent | None = None,
+) -> Dispatcher:
+    """P3-12 planner-driven Listing refresh."""
+
+    async def dispatch(pool: asyncpg.Pool, job: asyncpg.Record) -> None:
+        job_id: UUID = job["id"]
+        if job["hunt_listing_id"] is None:
+            await _mark_failed(pool, job_id, "refresh: job has no hunt_listing_id")
+            return
+        payload = json.loads(job["payload"])
+        fields = payload.get("fields")
+        custom_scope = payload.get("scope") == "custom_match"
+        custom_keys = payload.get("custom_criterion_keys")
+        if not custom_scope and (
+            payload.get("scope") != "classes" or not isinstance(fields, list) or not fields
+        ):
+            await _mark_failed(pool, job_id, "refresh: invalid class scope")
+            return
+        if custom_scope and (
+            not isinstance(custom_keys, list)
+            or not custom_keys
+            or not all(isinstance(key, str) for key in custom_keys)
+        ):
+            await _mark_failed(pool, job_id, "refresh: invalid custom_match scope")
+            return
+        async with pool.acquire() as conn:
+            listing = await conn.fetchrow(
+                """
+                select hl.property_id, hl.hunt_id, hl.source_policy,
+                       h.settings, h.rubric_version,
+                       p.name, p.canonical_address, p.official_url,
+                       p.place_id, p.lat, p.lng, p.city, p.state, p.county
+                from hunt_listings hl
+                join hunts h on h.id = hl.hunt_id
+                join properties p on p.id = hl.property_id
+                where hl.id = $1 and hl.status = 'active'
+                """,
+                job["hunt_listing_id"],
+            )
+            if listing is None:
+                await _mark_failed(pool, job_id, "refresh: active Listing not found")
+                return
+            rubric = await _load_rubric(conn, listing["hunt_id"])
+            cached_sources = []
+            cached_plans = []
+            if custom_scope:
+                cached_sources = await conn.fetch(
+                    """
+                    select url, cleaned_text, cleaned_text_hash, image_urls
+                    from property_sources
+                    where property_id = $1 and last_success_at is not null
+                    order by last_success_at desc
+                    """,
+                    listing["property_id"],
+                )
+                cached_plans = await conn.fetch(
+                    """
+                    select fp.*, ps.url as source_url
+                    from floor_plans fp join property_sources ps on ps.id = fp.source_id
+                    where fp.property_id = $1 and fp.is_current
+                    order by fp.first_seen_at, fp.id
+                    """,
+                    listing["property_id"],
+                )
+        settings = json.loads(listing["settings"]) if listing["settings"] else {}
+        resumed = payload.get("run_state") is not None
+        state = _build_run_state(job)
+        state.property_id = state.property_id or listing["property_id"]
+        state.source_policy = str(listing["source_policy"])
+        state.refresh_fields = (
+            [] if custom_scope else list(dict.fromkeys(str(field) for field in fields))
+        )
+        state.custom_criterion_keys = list(custom_keys or [])
+        if custom_scope and not resumed:
+            state.sources = [
+                SourceState(
+                    url=row["url"],
+                    cleaned_text=row["cleaned_text"] or "",
+                    cleaned_hash=row["cleaned_text_hash"] or "",
+                    image_urls=list(
+                        json.loads(row["image_urls"])
+                        if isinstance(row["image_urls"], str)
+                        else (row["image_urls"] or [])
+                    ),
+                )
+                for row in cached_sources
+            ]
+            state.floor_plans = [
+                FloorPlanIn(
+                    response_key=str(row["id"]),
+                    source_url=row["source_url"],
+                    source_native_id=row["source_native_id"],
+                    detail_url=row["detail_url"],
+                    plan_name=row["plan_name"],
+                    beds=row["beds"],
+                    baths=float(row["baths"]) if row["baths"] is not None else None,
+                    unit_types=list(
+                        json.loads(row["unit_types"])
+                        if isinstance(row["unit_types"], str)
+                        else (row["unit_types"] or [])
+                    ),
+                    sqft_min=row["sqft_min"],
+                    sqft_max=row["sqft_max"],
+                    rent_min=float(row["rent_min"]) if row["rent_min"] is not None else None,
+                    rent_max=float(row["rent_max"]) if row["rent_max"] is not None else None,
+                    deposit=float(row["deposit"]) if row["deposit"] is not None else None,
+                    availability_date=(
+                        row["availability_date"].isoformat()
+                        if row["availability_date"] is not None
+                        else None
+                    ),
+                )
+                for row in cached_plans
+            ]
+            state.property_identity = PropertyIdentityIn(
+                name=listing["name"],
+                address=listing["canonical_address"],
+                official_url=listing["official_url"],
+            )
+        if state.geocode is None and listing["place_id"] and listing["lat"] is not None:
+            state.geocode = GeocodeIn(
+                place_id=listing["place_id"],
+                lat=float(listing["lat"]),
+                lng=float(listing["lng"]),
+                city=listing["city"],
+                state=listing["state"],
+                county=listing["county"],
+            )
+
+        enrich_only = set(state.refresh_fields) <= {"reviews", "location"}
+
+        async def project(conn: asyncpg.Connection, done_state: RunState) -> None:
+            if custom_scope:
+                await _persist_custom_only_refresh(
+                    conn,
+                    hunt_listing_id=job["hunt_listing_id"],
+                    property_id=listing["property_id"],
+                    job_id=job_id,
+                    state=done_state,
+                    rubric=rubric,
+                    rubric_version=listing["rubric_version"],
+                    settings=settings,
+                )
+                return
+            if enrich_only:
+                await _persist_enrich_only_refresh(
+                    conn,
+                    hunt_listing_id=job["hunt_listing_id"],
+                    property_id=listing["property_id"],
+                    job_id=job_id,
+                    state=done_state,
+                    rubric=rubric,
+                    rubric_version=listing["rubric_version"],
+                    settings=settings,
+                )
+                return
+            unchanged_text_only = (
+                set(done_state.refresh_fields) <= {"pricing", "listing_details"}
+                and done_state.sources
+                and all(source.content_changed is False for source in done_state.sources)
+            )
+            if unchanged_text_only:
+                await _persist_unchanged_text_refresh(
+                    conn,
+                    hunt_listing_id=job["hunt_listing_id"],
+                    property_id=listing["property_id"],
+                    job_id=job_id,
+                    state=done_state,
+                )
+                return
+            await _persist_ingest_results(
+                conn,
+                hunt_listing_id=job["hunt_listing_id"],
+                property_id=listing["property_id"],
+                rubric_version=listing["rubric_version"],
+                state=done_state,
+            )
+            await _mark_refresh_classes_current(
+                conn,
+                hunt_listing_id=job["hunt_listing_id"],
+                job_id=job_id,
+                fields=_successful_refresh_fields(done_state, done_state.refresh_fields),
+            )
+
+        stage_names = list(state.plan.stages) if state.plan is not None else REFRESH_STAGE_NAMES
+        persistence = PostgresPersistence(
+            pool, job_id, stage_names, start_cursor=state.cursor, on_done=project
+        )
+        registry = PostgresRegistry(dsn) if dsn else InMemoryRegistry()
+        ctx = StageCtx(
+            fetchers=fetchers_factory(),
+            registry=registry,
+            rubric=rubric,
+            reconcile_rubric_lookup=_make_reconcile_rubric_lookup(pool),
+            rubric_version=listing["rubric_version"],
+            min_confidence=Confidence(settings.get("min_confidence", "medium")),
+            min_vision_confidence=Confidence(settings.get("min_vision_confidence", "low")),
+            cats=int(settings.get("cats", 0)),
+            dogs=int(settings.get("dogs", 0)),
+            proximity_mode=str(settings.get("proximity_mode", "driving")),
+            cost_estimate_mode=str(settings.get("cost_estimate_mode", "conservative")),
+            generalized_vision_policy=str(settings.get("generalized_vision_policy", "full_rubric")),
+            occupants=int(settings.get("occupants", 1)),
+            utility_baselines_lookup=_make_utility_baselines_lookup(pool),
+            persistence=persistence,
+            refresh_source_lookup=_make_refresh_source_lookup(pool),
+            image_store=SupabaseImageStore.from_env(),
+            existing_image_hashes=_make_existing_image_hashes(pool),
+            existing_image_classifications=_make_existing_image_classifications(pool),
+            tool_event_sink=make_tool_event_sink(pool, job_id),
+            plan_trigger=(
+                "user:retry" if resumed else str(payload.get("trigger") or "user:refresh")
+            ),
+            **({} if call_structured is None else {"call_structured": call_structured}),
+            **({} if call_agent is None else {"call_agent": call_agent}),
+        )
+        await run_job(state, ctx, REFRESH_STAGES)
+
+    return dispatch
+
+
 def make_refresh_dispatcher(
     *,
     dsn: str | None,
@@ -1824,10 +2421,18 @@ def make_refresh_dispatcher(
         call_structured=call_structured,
         call_agent=call_agent,
     )
+    classes = make_class_refresh_dispatcher(
+        dsn=dsn,
+        fetchers_factory=fetchers_factory,
+        call_structured=call_structured,
+        call_agent=call_agent,
+    )
 
     async def dispatch(pool: asyncpg.Pool, job: asyncpg.Record) -> None:
         payload = json.loads(job["payload"])
-        if payload.get("scope") == "discover":
+        if payload.get("scope") in {"classes", "custom_match"}:
+            await classes(pool, job)
+        elif payload.get("scope") == "discover":
             await discover(pool, job)
         else:
             await enrich(pool, job)
@@ -1932,9 +2537,7 @@ async def _run_region_baselines(pool: asyncpg.Pool, region) -> None:
                 await refresh_region_baselines(conn, region)
                 await _enqueue_rescores_for_region(conn, region)
             finally:
-                await conn.fetchval(
-                    "select pg_advisory_unlock(hashtext($1))", region.lock_key()
-                )
+                await conn.fetchval("select pg_advisory_unlock(hashtext($1))", region.lock_key())
     except Exception as error:
         log.warning(
             "utility_baselines_failed",
@@ -1963,6 +2566,192 @@ async def utility_baselines_tick(pool: asyncpg.Pool) -> None:
         task = asyncio.create_task(_run_region_baselines(pool, region))
         _BASELINE_TASKS[key] = task
         task.add_done_callback(lambda _t, k=key: _BASELINE_TASKS.pop(k, None))
+
+
+async def checkpoint_timeout_tick(pool: asyncpg.Pool) -> None:
+    """Apply declared defaults to checkpoints that have waited 24 hours.
+
+    The pre-default snapshot is retained on the original Job so a later human
+    answer can create a correction Job from the same durable Stage boundary.
+    The completed Job itself is never rewound or rewritten into a new history.
+    """
+    async with pool.acquire() as conn, conn.transaction():
+        locked = await conn.fetchval(
+            "select pg_try_advisory_xact_lock(hashtext('manzil:p3-11:checkpoint-timeout'))"
+        )
+        if not locked:
+            return
+        rows = await conn.fetch(
+            """
+            select j.id, j.current_stage, j.payload
+            from jobs j
+            join lateral (
+                select max(e.at) as asked_at
+                from job_events e
+                where e.job_id = j.id and e.event = 'checkpoint_asked'
+            ) asked on asked.asked_at is not null
+            where j.state = 'waiting_user'
+              and asked.asked_at <= now() - make_interval(hours => $1)
+            order by asked.asked_at, j.id
+            for update of j skip locked
+            """,
+            CHECKPOINT_TIMEOUT_HOURS,
+        )
+        for row in rows:
+            payload = row["payload"]
+            payload = json.loads(payload) if isinstance(payload, str) else dict(payload or {})
+            run_state = payload.get("run_state")
+            if not isinstance(run_state, dict):
+                continue
+            prompt = run_state.get("checkpoint")
+            if not isinstance(prompt, dict):
+                continue
+            default = prompt.get("default")
+            options = prompt.get("options")
+            if (
+                not isinstance(default, str)
+                or not isinstance(options, list)
+                or default not in options
+            ):
+                log.warning(
+                    "checkpoint_timeout_invalid_prompt",
+                    job_id=str(row["id"]),
+                    default=default,
+                )
+                continue
+
+            resolved_at = datetime.now(UTC).isoformat()
+            snapshot = json.loads(json.dumps(run_state))
+            answer = {"choice": default, "context_ref": prompt.get("context_ref")}
+            payload["auto_resolved_checkpoint"] = {
+                "prompt": prompt,
+                "answer": answer,
+                "resolved_at": resolved_at,
+                "snapshot": snapshot,
+            }
+            payload["checkpoint_answer"] = answer
+            run_state["status"] = "running"
+            run_state["checkpoint"] = None
+            payload["run_state"] = run_state
+
+            await conn.execute(
+                """
+                update jobs set
+                    state = 'queued',
+                    payload = $2::jsonb,
+                    locked_by = null,
+                    locked_at = null,
+                    finished_at = null
+                where id = $1
+                """,
+                row["id"],
+                json.dumps(payload),
+            )
+            await conn.execute(
+                """
+                insert into job_events (job_id, stage, event, detail)
+                values ($1, $2, 'checkpoint_auto_resolved', $3::jsonb)
+                """,
+                row["id"],
+                row["current_stage"] or prompt.get("kind") or "checkpoint",
+                json.dumps(
+                    {
+                        "answer": {"choice": default},
+                        "kind": prompt.get("kind"),
+                        "question": prompt.get("question"),
+                    }
+                ),
+            )
+
+
+async def refresh_ttl_tick(pool: asyncpg.Pool) -> None:
+    """Enqueue one class-combined refresh per due active Listing."""
+    async with pool.acquire() as conn, conn.transaction():
+        locked = await conn.fetchval(
+            "select pg_try_advisory_xact_lock(hashtext('manzil:p3-12:ttl-refresh'))"
+        )
+        if not locked:
+            return
+        rows = await conn.fetch(
+            """
+            select hl.id, hl.hunt_id, ps.url,
+                   coalesce(
+                     jsonb_object_agg(
+                       hrs.refresh_class, hrs.last_success_at
+                     ) filter (where hrs.refresh_class is not null),
+                     '{}'::jsonb
+                   ) as freshness,
+                   exists (
+                     select 1 from rubric_criteria rc
+                     join criteria_catalog cc on cc.key = rc.catalog_key
+                     where rc.hunt_id = hl.hunt_id and rc.enabled
+                       and cc.refresh_class = 'images'
+                   ) as needs_images,
+                   exists (
+                     select 1 from rubric_criteria rc
+                     join criteria_catalog cc on cc.key = rc.catalog_key
+                     where rc.hunt_id = hl.hunt_id and rc.enabled
+                       and cc.refresh_class = 'reviews'
+                   ) as needs_reviews
+            from hunt_listings hl
+            join property_sources ps on ps.id = hl.submitted_source_id
+            left join hunt_listing_refresh_status hrs on hrs.hunt_listing_id = hl.id
+            where hl.status = 'active'
+              and not exists (
+                select 1 from jobs j
+                where j.hunt_listing_id = hl.id
+                  and j.state in ('queued', 'running', 'waiting_user')
+                  and j.type in ('ingest', 'refresh')
+              )
+            group by hl.id, hl.hunt_id, ps.url
+            order by hl.created_at
+            """
+        )
+        now = datetime.now(UTC)
+        for row in rows:
+            raw = row["freshness"]
+            freshness = json.loads(raw) if isinstance(raw, str) else dict(raw or {})
+            relevant = ["pricing", "listing_details"]
+            if row["needs_images"]:
+                relevant.append("images")
+            if row["needs_reviews"]:
+                relevant.append("reviews")
+            due = []
+            for refresh_class in relevant:
+                last = freshness.get(refresh_class)
+                if isinstance(last, str):
+                    last = datetime.fromisoformat(last.replace("Z", "+00:00"))
+                ttl = timedelta(hours=REFRESH_TTL_HOURS[refresh_class])
+                if last is None or last <= now - ttl:
+                    due.append(refresh_class)
+            if not due:
+                continue
+            await conn.execute(
+                """
+                insert into jobs
+                    (hunt_id, hunt_listing_id, type, state, payload)
+                values ($1, $2, 'refresh', 'queued', $3::jsonb)
+                """,
+                row["hunt_id"],
+                row["id"],
+                json.dumps(
+                    {
+                        "url": row["url"],
+                        "scope": "classes",
+                        "fields": due,
+                        "trigger": f"ttl:{','.join(due)}",
+                        "hunt_id": str(row["hunt_id"]),
+                        "listing_id": str(row["id"]),
+                    }
+                ),
+            )
+
+
+async def scheduler_tick(pool: asyncpg.Pool) -> None:
+    """Compose all currently landed scheduler duties."""
+    await checkpoint_timeout_tick(pool)
+    await utility_baselines_tick(pool)
+    await refresh_ttl_tick(pool)
 
 
 async def run_worker_loop(

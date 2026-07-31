@@ -122,6 +122,7 @@ def test_no_geocode_skips_everything() -> None:
     state.geocode = None
     out = asyncio.run(enrich_stage(state, seams.ctx()))
     assert out.source_claims == []
+    assert {warning.code for warning in out.warnings} == {"enrich_no_geocode"}
     assert seams.nearby_calls == [] and seams.details_calls == []
 
 
@@ -130,6 +131,7 @@ def test_nearby_maps_error_skips_grocery_but_not_reviews() -> None:
     out = asyncio.run(enrich_stage(_state(), seams.ctx()))
     assert "grocery_proximity" not in _claims(out)
     assert "management_reviews" in _claims(out)
+    assert {warning.code for warning in out.warnings} == {"location_refresh_failed"}
 
 
 def test_details_maps_error_skips_reviews_but_not_grocery() -> None:
@@ -137,6 +139,7 @@ def test_details_maps_error_skips_reviews_but_not_grocery() -> None:
     out = asyncio.run(enrich_stage(_state(), seams.ctx()))
     assert "grocery_proximity" in _claims(out)
     assert "management_reviews" not in _claims(out)
+    assert {warning.code for warning in out.warnings} == {"reviews_refresh_failed"}
 
 
 def test_rating_without_review_text_records_rating_with_zero_llm_spend() -> None:

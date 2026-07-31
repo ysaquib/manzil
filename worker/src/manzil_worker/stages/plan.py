@@ -25,6 +25,7 @@ from datetime import UTC, datetime, timedelta
 
 import structlog
 from manzil_shared.config import PLAN_FRESH_TTL_HOURS, STAGE_COST_ESTIMATES_USD
+from manzil_shared.errors import StageFatal
 from manzil_shared.models import FetchOutcome
 from pydantic import BaseModel
 
@@ -80,10 +81,14 @@ async def rank_discovered_sources(
     return [by_url[url] for url in ranked.ordered_urls]
 
 
-def _est_cost(stages: list[str], skipped: dict[str, str]) -> float:
+def _est_cost(stages: list[str], skipped: dict[str, str], *, custom_criteria: int = 0) -> float:
     """Sum flat per-stage estimates over the manifest's non-skipped stages
     (DESIGN §10.4/§2.7). Rounded so the estimate is a clean, comparable figure."""
-    total = sum(STAGE_COST_ESTIMATES_USD.get(name, 0.0) for name in stages if name not in skipped)
+    total = sum(
+        STAGE_COST_ESTIMATES_USD.get(name, 0.0) * (custom_criteria if name == "CUSTOM_MATCH" else 1)
+        for name in stages
+        if name not in skipped
+    )
     return round(total, 4)
 
 
@@ -93,6 +98,11 @@ async def plan_stage(state: RunState, ctx: StageCtx) -> RunState:
     names verbatim. IMAGE_FETCH and approved-profile VISION are live, and
     not-yet-landed stages are absent."""
     from manzil_worker.runner import INGEST_STAGE_NAMES
+
+    if state.job_type.value == "refresh" and (
+        state.refresh_fields or state.custom_criterion_keys
+    ):
+        return await _plan_refresh(state, ctx)
 
     fresh = await ctx.fresh_source_lookup(state.property_id, state.url)
     is_fresh = (
@@ -138,7 +148,11 @@ async def plan_stage(state: RunState, ctx: StageCtx) -> RunState:
         sources=[source_entry],
         stages=stages,
         skipped=skipped,
-        est_cost_usd=_est_cost(stages, skipped),
+        est_cost_usd=_est_cost(
+            stages,
+            skipped,
+            custom_criteria=sum(criterion.custom_def is not None for criterion in ctx.rubric),
+        ),
     )
     log.info(
         "planned",
@@ -147,5 +161,121 @@ async def plan_stage(state: RunState, ctx: StageCtx) -> RunState:
         action=source_entry.action,
         source_policy=state.source_policy,
         est_cost_usd=state.plan.est_cost_usd,
+    )
+    return state
+
+
+async def _plan_refresh(state: RunState, ctx: StageCtx) -> RunState:
+    """Build a deterministic refresh manifest from durable contributing Sources."""
+    sources = await ctx.refresh_source_lookup(
+        state.hunt_listing_id, state.property_id, state.source_policy
+    )
+    if not sources:
+        raise StageFatal("refresh has no submitted or contributing Sources")
+
+    state.url = sources[0].url
+    state.slate_urls = [source.url for source in sources]
+    state.prior_source_hashes = {
+        source.url: source.cleaned_text_hash
+        for source in sources
+        if source.cleaned_text_hash is not None
+    }
+    if state.custom_criterion_keys:
+        # A custom-only refresh is deliberately fetch-free. The dispatcher
+        # preloads the current cleaned Source text and Floor Plans; preserve
+        # that evidence instead of replacing it with an empty placeholder.
+        # Still enforce the contributing Slate selected above: a stale known
+        # sibling outside the current Source Policy must not become evidence.
+        selected_urls = {source.url for source in sources}
+        state.sources = [source for source in state.sources if source.url in selected_urls]
+        state.floor_plans = [
+            plan for plan in state.floor_plans if (plan.source_url or state.url) in selected_urls
+        ]
+        if not state.sources:
+            state.sources = [SourceState(url=sources[0].url)]
+        stages = ["PLAN", "CUSTOM_MATCH", "SCORE"]
+        state.plan = PlanManifest(
+            job_type=state.job_type.value,
+            trigger=ctx.plan_trigger,
+            source_policy=state.source_policy,
+            sources=[
+                PlanSource(
+                    source_id=str(source.source_id),
+                    url=source.url,
+                    action="skip",
+                    why="custom_match_uses_cached_evidence",
+                )
+                for source in sources
+            ],
+            stages=stages,
+            skipped={},
+            est_cost_usd=_est_cost(stages, {}, custom_criteria=len(state.custom_criterion_keys)),
+        )
+        return state
+
+    fields = set(state.refresh_fields)
+    text = bool(fields & {"pricing", "listing_details"})
+    images = "images" in fields
+    enrich = bool(fields & {"reviews", "location"})
+    # Image discovery is page-derived. Refreshing that class therefore also
+    # re-runs the full Catalog extraction over the newly fetched bytes so image
+    # persistence cannot accidentally retire every current Floor Plan by
+    # projecting an image-only state with no plans.
+    page_projection = text or images
+    if not text and not images:
+        state.sources = [
+            SourceState(
+                url=sources[0].url,
+                image_urls=sources[0].image_urls,
+            )
+        ]
+    stages = ["PLAN"]
+    if text or images:
+        stages.append("FETCH")
+    if page_projection:
+        stages.extend(["EXTRACT", "VERIFY", "RECONCILE"])
+    if images:
+        stages.extend(["IMAGE_FETCH", "IMAGE_CLASSIFY", "VISION"])
+    if enrich:
+        stages.append("ENRICH")
+    custom_defs = [
+        criterion.custom_def for criterion in ctx.rubric if criterion.custom_def is not None
+    ]
+    custom_count = sum(
+        1
+        for custom in custom_defs
+        if (custom.requires_tool is None and "listing_details" in fields)
+        or (
+            custom.requires_tool is not None
+            and custom.requires_tool.value == "maps"
+            and "location" in fields
+        )
+    )
+    if custom_count:
+        stages.append("CUSTOM_MATCH")
+    if text or images or enrich:
+        stages.append("SCORE")
+
+    plan_sources = [
+        PlanSource(
+            source_id=str(source.source_id),
+            url=source.url,
+            action="fetch" if text or images else "skip",
+            tier=source.required_tier if text or images else None,
+            why=None if text or images else "refresh_class_does_not_fetch_pages",
+        )
+        for source in sources
+    ]
+    skipped = (
+        {} if vision_references_ready() else ({"VISION": "missing_reference_set"} if images else {})
+    )
+    state.plan = PlanManifest(
+        job_type=state.job_type.value,
+        trigger=ctx.plan_trigger,
+        source_policy=state.source_policy,
+        sources=plan_sources,
+        stages=stages,
+        skipped=skipped,
+        est_cost_usd=_est_cost(stages, skipped, custom_criteria=custom_count),
     )
     return state
