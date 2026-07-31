@@ -32,8 +32,10 @@ import {
   IconCashBanknote,
   IconCashBanknoteMoveBack,
   IconCashBanknoteOff,
+  IconCheck,
   IconCircleCheck,
   IconPencil,
+  IconX,
 } from "@tabler/icons-react";
 import { useState, type ReactNode } from "react";
 
@@ -44,6 +46,7 @@ import { REVERT_NOTE } from "./overrides";
 import { effectiveUtilitiesIncluded } from "./utilitiesIncluded";
 import { basisLabel, feeForSlot, type Household } from "./oneTimeFees";
 import {
+  FEE_SLOTS,
   MONTHLY_FEE_SLOTS,
   MOVE_IN_LINE_LABELS,
   ONE_TIME_FEE_SLOTS,
@@ -57,6 +60,8 @@ import {
 } from "./types";
 import { memberDisplayName } from "../collaboration/memberDisplay";
 import type { HuntMember } from "../collaboration/api";
+import { useDecideFeeProposal } from "../visits/api";
+import type { VisitFeeProposal } from "../visits/types";
 
 const STATE_CLASS: Record<string, string> = {
   actual: drawer.stateDotActual,
@@ -880,6 +885,108 @@ function TotalRow({
   );
 }
 
+
+/**
+ * Figures confirmed on a tour, offered to this Listing (VC-7, DESIGN §9.7).
+ *
+ * Rendered with the **staged-override presentation** an unsaved manual edit
+ * already uses — the hatched row and dashed dot — because that is exactly what
+ * this is: a value someone is proposing, not one the Listing holds.
+ *
+ * These rows are the **single sanctioned exception to the one-icon action
+ * slot** (§13.2): accept and reject are both primary, and neither may hide
+ * behind a hover. Everywhere else the pencil/revert slot stays single.
+ */
+function VisitProposalRows({
+  proposals,
+  huntId,
+  memberNames,
+  canDecide,
+}: {
+  proposals: VisitFeeProposal[];
+  huntId: string;
+  memberNames?: Map<string, string>;
+  canDecide: boolean;
+}) {
+  const decide = useDecideFeeProposal(huntId);
+  if (proposals.length === 0) return null;
+
+  return (
+    <>
+      <SectionLabel>Confirmed on a visit</SectionLabel>
+      {proposals.map((proposal) => {
+        const who = memberNames?.get(proposal.created_by);
+        return (
+          <CostRow
+            key={proposal.id}
+            label={proposalLabel(proposal)}
+            state="manual"
+            testId={`proposal-${proposal.target_key}`}
+            amount={Number(proposal.amount)}
+            pending
+            subline={
+              who ? `${who} confirmed this on a tour` : "Confirmed on a tour"
+            }
+            action={
+              canDecide ? (
+                <Group gap={2} wrap="nowrap">
+                  <Tooltip label="Accept — writes this to the listing">
+                    <ActionIcon
+                      size="sm"
+                      variant="subtle"
+                      color="sage"
+                      aria-label={`accept ${proposalLabel(proposal)}`}
+                      disabled={decide.isPending}
+                      onClick={() =>
+                        decide.mutate({
+                          visitId: proposal.visit_id,
+                          proposalId: proposal.id,
+                          action: "accept",
+                        })
+                      }
+                    >
+                      <IconCheck size={14} stroke={1.8} />
+                    </ActionIcon>
+                  </Tooltip>
+                  <Tooltip label="Reject — the visit keeps its own figure">
+                    <ActionIcon
+                      size="sm"
+                      variant="subtle"
+                      color="gray"
+                      aria-label={`reject ${proposalLabel(proposal)}`}
+                      disabled={decide.isPending}
+                      onClick={() =>
+                        decide.mutate({
+                          visitId: proposal.visit_id,
+                          proposalId: proposal.id,
+                          action: "reject",
+                        })
+                      }
+                    >
+                      <IconX size={14} stroke={1.8} />
+                    </ActionIcon>
+                  </Tooltip>
+                </Group>
+              ) : undefined
+            }
+          />
+        );
+      })}
+    </>
+  );
+}
+
+/** A proposal's row label, in the vocabulary the rest of the section uses. */
+export function proposalLabel(proposal: VisitFeeProposal): string {
+  if (proposal.target === "override") {
+    return proposal.target_key === "base_rent" ? "Base rent" : "All-in monthly";
+  }
+  return (
+    FEE_SLOTS.find((entry) => entry.slot === proposal.target_key)?.label ??
+    proposal.target_key.replaceAll("_", " ")
+  );
+}
+
 export function CostAndFees({
   composition,
   moveIn = null,
@@ -893,6 +1000,9 @@ export function CostAndFees({
   utilityOverrides = [],
   allInOverridden = false,
   floorPlanId = null,
+  proposals = [],
+  huntId = "",
+  canDecideProposals = false,
 }: {
   composition: AllInComponents | null;
   moveIn?: MoveInComponents | null;
@@ -906,6 +1016,11 @@ export function CostAndFees({
   utilityOverrides?: UtilityOverride[];
   allInOverridden?: boolean;
   floorPlanId?: string | null;
+  /** Pending Fee Proposals addressed to this Listing (VC-7). */
+  proposals?: VisitFeeProposal[];
+  huntId?: string;
+  /** Deciding is a cost write, so it follows the Override permission (§4.2). */
+  canDecideProposals?: boolean;
 }) {
   const { draftUtilities } = useListingDetailDraft();
   const bySlot = new Map(fees.map((entry) => [entry.fee_slot, entry]));
@@ -993,6 +1108,12 @@ export function CostAndFees({
         </Text>
       ) : (
         <>
+          <VisitProposalRows
+            proposals={proposals}
+            huntId={huntId}
+            memberNames={memberNames}
+            canDecide={canDecideProposals}
+          />
           <SectionLabel first>Monthly</SectionLabel>
           <RentRow amount={rent?.amount ?? null} floorPlanId={floorPlanId} />
           {looseFees.map((component) => (

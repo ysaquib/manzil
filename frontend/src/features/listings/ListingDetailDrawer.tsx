@@ -26,8 +26,12 @@ import { ProblematicBadge } from "../../components/badges/ListingBadges";
 import { CommentsSection } from "../collaboration/CommentsSection";
 import { RatingControl } from "../collaboration/RatingControl";
 import { useCurrentMember, useMembers } from "../collaboration/api";
+import { useListingFeeProposals } from "../visits/api";
+import { ListingVisits } from "../visits/ListingVisits";
 import { memberDisplayNameMap } from "../collaboration/memberDisplay";
 import { useHunt } from "../hunts/api";
+import { AutoResolvedCheckpointReview } from "../jobs/AutoResolvedCheckpointReview";
+import type { Job } from "../jobs/api";
 import { ListingLocationMap } from "../map/ListingLocationMap";
 import { useCatalog } from "../rubric/api";
 import { activeOverrides, extractionForFloorPlan } from "./overrides";
@@ -88,6 +92,9 @@ export function ListingDetailDrawer({
   onClose,
   onExited,
   filters = DEFAULT_OVERVIEW_FILTERS,
+  jobs = [],
+  answeringCheckpoint = false,
+  onAnswerCheckpoint,
 }: {
   huntId: string;
   selection: DrawerSelection | null;
@@ -95,6 +102,9 @@ export function ListingDetailDrawer({
   onClose: () => void;
   onExited?: () => void;
   filters?: OverviewFilterState;
+  jobs?: Job[];
+  answeringCheckpoint?: boolean;
+  onAnswerCheckpoint?: (jobId: string, choice: string, text?: string) => void;
 }) {
   const isMobile = useMediaQuery("(max-width: 48em)");
   const onCloseRef = useRef(onClose);
@@ -124,6 +134,9 @@ export function ListingDetailDrawer({
             onClose={onClose}
             setCloseHandler={setCloseHandler}
             filters={filters}
+            jobs={jobs}
+            answeringCheckpoint={answeringCheckpoint}
+            onAnswerCheckpoint={onAnswerCheckpoint}
           />
         ) : null}
       </Drawer.Content>
@@ -139,6 +152,9 @@ function SelectionGate({
   onClose,
   setCloseHandler,
   filters,
+  jobs,
+  answeringCheckpoint,
+  onAnswerCheckpoint,
 }: {
   huntId: string;
   selection: DrawerSelection;
@@ -147,6 +163,9 @@ function SelectionGate({
   onClose: () => void;
   setCloseHandler: (fn: () => void) => void;
   filters: OverviewFilterState;
+  jobs: Job[];
+  answeringCheckpoint: boolean;
+  onAnswerCheckpoint?: (jobId: string, choice: string, text?: string) => void;
 }) {
   const { data: listings, isLoading: listingsLoading } = useListings(huntId);
   const { listing } = resolveRow(listings ?? [], selection.listingId, selection.groupKey);
@@ -179,6 +198,9 @@ function SelectionGate({
         onClose={onClose}
         setCloseHandler={setCloseHandler}
         filters={filters}
+        jobs={jobs}
+        answeringCheckpoint={answeringCheckpoint}
+        onAnswerCheckpoint={onAnswerCheckpoint}
       />
     </ListingDetailDraftProvider>
   );
@@ -192,6 +214,9 @@ function DrawerShell({
   onClose,
   setCloseHandler,
   filters,
+  jobs,
+  answeringCheckpoint,
+  onAnswerCheckpoint,
 }: {
   huntId: string;
   selection: DrawerSelection;
@@ -200,6 +225,9 @@ function DrawerShell({
   onClose: () => void;
   setCloseHandler: (fn: () => void) => void;
   filters: OverviewFilterState;
+  jobs: Job[];
+  answeringCheckpoint: boolean;
+  onAnswerCheckpoint?: (jobId: string, choice: string, text?: string) => void;
 }) {
   const { draftPins, setDraftPin, isDirty, saving, saveAll, resetDraft } = useListingDetailDraft();
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
@@ -239,6 +267,8 @@ function DrawerShell({
   );
   const { data: members = [] } = useMembers(huntId);
   const { data: currentMember } = useCurrentMember(huntId);
+  // Figures confirmed on a tour and offered to this Listing (VC-7).
+  const { data: feeProposals } = useListingFeeProposals(listing?.id);
   const { data: hunt } = useHunt(huntId);
   // Household settings drive the per-person / per-pet move-in estimate (§9.5).
   const household = {
@@ -247,6 +277,12 @@ function DrawerShell({
     dogs: Number(hunt?.settings.dogs ?? 0),
   };
   const memberNames = memberDisplayNameMap(members);
+  const autoResolvedJob = jobs.find(
+    (job) =>
+      job.hunt_listing_id === listing?.id &&
+      job.auto_resolved_checkpoint &&
+      !job.auto_resolved_checkpoint.corrected_at,
+  );
 
   useEffect(() => {
     setCloseHandler(() => {
@@ -367,6 +403,23 @@ function DrawerShell({
           />
 
           <Stack gap="md" pt="md" pb="xl">
+            {autoResolvedJob?.auto_resolved_checkpoint && (
+              <SectionCard title="Review auto-resolved checkpoint">
+                <AutoResolvedCheckpointReview
+                  checkpoint={autoResolvedJob.auto_resolved_checkpoint}
+                  canAnswer={
+                    currentMember?.role === "owner" ||
+                    currentMember?.role === "curator" ||
+                    currentMember?.user_id === listing.added_by
+                  }
+                  answering={answeringCheckpoint}
+                  onAnswer={(choice, text) =>
+                    onAnswerCheckpoint?.(autoResolvedJob.id, choice, text)
+                  }
+                />
+              </SectionCard>
+            )}
+
             <SectionCard
               title="Why this score"
               hint={score ? `${score.breakdown.criteria.length} criteria` : undefined}
@@ -420,6 +473,15 @@ function DrawerShell({
                   "all_in_monthly",
                 )}
                 floorPlanId={displayFloorPlanId}
+                huntId={huntId}
+                proposals={feeProposals ?? []}
+                // Deciding is a cost write, so it follows the Override
+                // permission (§4.2) — the same rule the API and RLS enforce.
+                canDecideProposals={
+                  currentMember?.role === "owner" ||
+                  currentMember?.role === "curator" ||
+                  currentMember?.user_id === listing.added_by
+                }
               />
             </SectionCard>
 
@@ -452,6 +514,18 @@ function DrawerShell({
                 <UnmatchedDiagrams images={images ?? []} />
               </SectionCard>
             )}
+
+            {/* Visits sit beside the scored record, never inside it (§9.7):
+                the whole point of the tour is that it is a different kind of
+                evidence. This is also where a described unit that matches no
+                advertised Unit Group stays visible. */}
+            <SectionCard title="Visits">
+              <ListingVisits
+                huntId={huntId}
+                propertyId={listing.property_id}
+                huntListingId={listing.id}
+              />
+            </SectionCard>
 
             <SectionCard title="Notes & ratings">
               <Stack gap="md">

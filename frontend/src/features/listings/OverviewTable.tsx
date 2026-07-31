@@ -41,26 +41,36 @@ import {
   IconDotsVertical,
   IconExternalLink,
   IconEye,
+  IconRefresh,
 } from "@tabler/icons-react";
 import { useEffect, useRef, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 import { AllInCell } from "./AllInCost";
-import { ProblematicBadge, SingleSourceBadge } from "../../components/badges/ListingBadges";
+import {
+  AutoResolvedBadge,
+  ProblematicBadge,
+  SingleSourceBadge,
+  StaleBadge,
+} from "../../components/badges/ListingBadges";
 import { COMPARE_LIMIT, rowEntry, useCompareSet } from "./compareSet";
 import { CurationCell } from "./StatusChip";
 import { propertyLocationLabel } from "./locality";
 import { RatingSummary } from "../collaboration/RatingSummary";
 import { RowMarker } from "./RowMarker";
 import { ScoreCell } from "./ScoreCell";
+import { visitScoreKey } from "../visits/api";
+import { VisitScoreCell } from "../visits/VisitScoreCell";
+import type { VisitUnitGroupScore } from "../visits/types";
 import { useComments, useCurrentMember, useMembers, useRatings } from "../collaboration/api";
-import { usePatchUnitGroupState } from "./api";
+import { usePatchUnitGroupState, useRefreshListing } from "./api";
 import {
   pipelineErrorWasTruncated,
   pipelineFailureLabel,
   type RowPipeline,
 } from "./rowState";
 import type { InterestStatus } from "./types";
+import type { RefreshClass } from "./types";
 import {
   allInValue,
   earliestAvailability,
@@ -151,7 +161,7 @@ export function TableDensityMenu({
 // Column visibility (m11): the optional columns and their defaults. Score,
 // Property and the row menu are always on.
 export type OverviewColumnKey =
-  | "sqft" | "allIn" | "curation" | "people"
+  | "sqft" | "allIn" | "curation" | "people" | "visit"
   | "city" | "available" | "deposit" | "added" | "rent";
 
 export const COLUMN_OPTIONS: { key: OverviewColumnKey; label: string; defaultVisible: boolean }[] = [
@@ -160,6 +170,9 @@ export const COLUMN_OPTIONS: { key: OverviewColumnKey; label: string; defaultVis
   { key: "rent", label: "Rent", defaultVisible: true },
   { key: "curation", label: "Status", defaultVisible: true },
   { key: "people", label: "People", defaultVisible: true },
+  // On by default: a tour is expensive to do and the whole point is that it
+  // sits next to Fit where the comparison is unavoidable.
+  { key: "visit", label: "Visit", defaultVisible: true },
   { key: "city", label: "City", defaultVisible: false },
   { key: "available", label: "Available", defaultVisible: false },
   { key: "deposit", label: "Deposit", defaultVisible: false },
@@ -216,7 +229,7 @@ const GROUPS: { label: string; columns: OverviewColumnKey[] }[] = [
   { label: "Timing", columns: ["available", "added"] },
   { label: "Place", columns: ["city"] },
   { label: "Curation", columns: ["curation"] },
-  { label: "People", columns: ["people"] },
+  { label: "People", columns: ["people", "visit"] },
 ];
 
 export interface OverviewTableProps {
@@ -231,10 +244,14 @@ export interface OverviewTableProps {
   /** Pipeline state per row key, from rowState.ts; absent when the row is idle. */
   pipeline?: Map<string, RowPipeline>;
   problematicPropertyIds?: Set<string>;
+  staleClassesByListing?: Map<string, RefreshClass[]>;
+  autoResolvedListingIds?: Set<string>;
   /** Bulk selection (m6): selected row keys; omit to hide the checkbox column. */
   selectedKeys?: Set<string>;
   onToggleRow?: (key: string) => void;
   onToggleAll?: () => void;
+  /** Visit roll-up by `visitScoreKey(listingId, unitGroupKey)` (VC-8). */
+  visitScores?: Map<string, VisitUnitGroupScore>;
 }
 
 function PeopleCell({
@@ -305,6 +322,11 @@ function RowActionsMenu({
   const entry = rowEntry(row);
   const inCompare = compare.has(entry);
   const compareBlocked = entry === null || (compare.isFull && !inCompare);
+  const { data: currentMember } = useCurrentMember(huntId);
+  const refresh = useRefreshListing(huntId);
+  const canRefresh =
+    currentMember?.role === "owner" ||
+    currentMember?.user_id === row.listing.added_by;
 
   const copy = async (label: string, value: string) => {
     await navigator.clipboard.writeText(value);
@@ -353,6 +375,24 @@ function RowActionsMenu({
             Open listing page
           </Menu.Item>
         )}
+        <Menu.Item
+          leftSection={<IconRefresh size={14} stroke={1.5} />}
+          disabled={!canRefresh || refresh.isPending}
+          onClick={() =>
+            refresh.mutate(
+              { listingId: row.listing.id },
+              {
+                onSuccess: () =>
+                  notifications.show({
+                    message: `${property.name} refresh queued`,
+                    color: "green",
+                  }),
+              },
+            )
+          }
+        >
+          Refresh data
+        </Menu.Item>
         <Menu.Item
           leftSection={<IconCopy size={14} stroke={1.5} />}
           onClick={() => void copy("Address", property.canonical_address)}
@@ -432,9 +472,12 @@ export function OverviewTable({
   columns = DEFAULT_OVERVIEW_COLUMNS,
   pipeline,
   problematicPropertyIds,
+  staleClassesByListing,
+  autoResolvedListingIds,
   selectedKeys,
   onToggleRow,
   onToggleAll,
+  visitScores,
 }: OverviewTableProps) {
   const spacing = DENSITY_SPACING[density];
   const show = (key: OverviewColumnKey) => columns.includes(key);
@@ -547,6 +590,7 @@ export function OverviewTable({
               </Table.Th>
             )}
             {show("people") && <Table.Th className={cellClass("people")}>People</Table.Th>}
+            {show("visit") && <Table.Th className={cellClass("visit")}>Visit</Table.Th>}
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -611,6 +655,14 @@ export function OverviewTable({
                         )}
                         {problematicPropertyIds?.has(row.listing.property_id) && !state && (
                           <ProblematicBadge />
+                        )}
+                        {autoResolvedListingIds?.has(row.listing.id) && !state && (
+                          <AutoResolvedBadge />
+                        )}
+                        {!state && (
+                          <StaleBadge
+                            classes={staleClassesByListing?.get(row.listing.id) ?? []}
+                          />
                         )}
                       </Group>
                       {state ? (
@@ -716,6 +768,14 @@ export function OverviewTable({
                       listingId={row.listing.id}
                       huntId={huntId}
                       unitGroupKey={group?.key ?? null}
+                    />
+                  ),
+                )}
+                {cell(
+                  "visit",
+                  blank ? EM_DASH : (
+                    <VisitScoreCell
+                      entry={visitScores?.get(visitScoreKey(row.listing.id, group?.key ?? null))}
                     />
                   ),
                 )}

@@ -1,0 +1,26 @@
+/* One ledger line: label on the left, the offer control on the right. A grid
+   rather than a flex row so a long label wraps without ever squeezing the
+   input — on a phone that input is what your thumb is aiming at. */
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--mantine-spacing-sm);
+  padding: var(--mantine-spacing-xs) 0;
+  border-top: 1px solid var(--mantine-color-default-border);
+}
+
+.row:first-of-type {
+  border-top: none;
+}
+
+.label {
+  min-width: 0;
+}
+
+/* A standing offer reads as staged, not settled — the same manual-edit hue the
+   drawer's pending rows use, so the two surfaces agree about what "offered"
+   looks like. */
+.proposed {
+  border: 1px dashed var(--mantine-color-manual-6);
+  background: transparent;
+}
