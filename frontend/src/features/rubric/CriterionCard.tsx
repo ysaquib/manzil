@@ -27,7 +27,14 @@ import {
   Text,
   Tooltip,
 } from "@mantine/core";
-import { IconBan, IconHelpCircle, IconInfoCircle, IconPlus, IconX } from "@tabler/icons-react";
+import {
+  IconBan,
+  IconHelpCircle,
+  IconInfoCircle,
+  IconPlus,
+  IconTrash,
+  IconX,
+} from "@tabler/icons-react";
 
 import type { RubricOption } from "../../lib/contracts";
 import type { CatalogEntry, RubricCriterion } from "./api";
@@ -235,10 +242,12 @@ export function CriterionCard({
   criterion,
   entry,
   onChange,
+  onRemove,
 }: {
   criterion: RubricCriterion;
   entry: CatalogEntry;
   onChange: (criterion: RubricCriterion) => void;
+  onRemove?: () => void;
 }) {
   const isBonus = deriveIsBonus(criterion.options, criterion.unknown_delta);
   const isBoolean = entry.value_schema.type === "boolean";
@@ -274,6 +283,19 @@ export function CriterionCard({
           {isBonus && criterion.enabled && <BonusMark />}
           {criterion.non_negotiable !== null && criterion.enabled && (
             <GateMark setScore={criterion.non_negotiable.set_score} />
+          )}
+          {onRemove && (
+            <Tooltip label="Remove custom criterion" openDelay={300}>
+              <ActionIcon
+                color="gray"
+                size="xs"
+                variant="subtle"
+                aria-label={`remove ${entry.label}`}
+                onClick={onRemove}
+              >
+                <IconTrash size={14} stroke={1.5} />
+              </ActionIcon>
+            </Tooltip>
           )}
         </Group>
 

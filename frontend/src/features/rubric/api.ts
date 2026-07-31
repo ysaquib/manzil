@@ -26,13 +26,34 @@ export interface RubricCriterion {
   id?: string;
   hunt_id?: string;
   catalog_key: string | null;
-  custom_def: Record<string, unknown> | null;
+  custom_def: CustomCriterionDef | null;
   enabled: boolean;
   options: RubricOption[];
   unknown_delta: number;
   non_negotiable: NonNegotiable | null;
   is_bonus: boolean;
   position: number;
+}
+
+export type CustomRoute = null | "maps" | "vision" | "web_search";
+
+export interface CustomCriterionDef {
+  schema_version: 1;
+  key: string;
+  label: string;
+  description: string;
+  fact_scope: "property" | "floor_plan";
+  value_schema: ValueSchema;
+  requires_tool: CustomRoute;
+  refresh_class: "listing_details" | "location";
+  routing_confirmed: boolean;
+}
+
+export interface CustomRoutingResponse {
+  key: string;
+  suggested_requires_tool: CustomRoute;
+  reason: string;
+  supported: boolean;
 }
 
 export function useCatalog(domain: "rent" | "buy" = "rent") {
@@ -81,5 +102,15 @@ export function usePutRubric(huntId: string) {
       void qc.invalidateQueries({ queryKey: ["hunt_listings", huntId] });
       void qc.invalidateQueries({ queryKey: ["jobs", huntId] });
     },
+  });
+}
+
+export function useClassifyCustomRouting(huntId: string) {
+  return useMutation({
+    mutationFn: (body: { label: string; description: string }) =>
+      apiFetch<CustomRoutingResponse>(`/v1/hunts/${huntId}/rubric/custom-routing`, {
+        method: "POST",
+        body,
+      }),
   });
 }

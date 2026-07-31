@@ -10,3 +10,8 @@ from manzil_api.exceptions import ManzilAPIError
 class InvalidRubricOption(ManzilAPIError):
     status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
     code = "invalid_rubric_option"
+
+
+class RoutingUnavailable(ManzilAPIError):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    code = "custom_routing_unavailable"

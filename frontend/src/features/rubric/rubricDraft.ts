@@ -39,7 +39,7 @@ export function initDraft(
   const existingByKey = new Map(
     existing.filter((c) => c.catalog_key !== null).map((c) => [c.catalog_key as string, c]),
   );
-  return catalog.map((entry, index) => {
+  const catalogDraft = catalog.map((entry, index) => {
     const saved = existingByKey.get(entry.key);
     if (saved) {
       return {
@@ -60,6 +60,14 @@ export function initDraft(
       position: index,
     };
   });
+  const custom = existing
+    .filter((criterion) => criterion.custom_def !== null)
+    .map((criterion, index) => ({
+      ...criterion,
+      position: catalog.length + index,
+      options: criterion.options.map(normalizeRubricOption),
+    }));
+  return [...catalogDraft, ...custom];
 }
 
 function typeMatches(value: unknown, schema: ValueSchema): boolean {
@@ -213,18 +221,23 @@ export function validateDraft(
   const schemaByKey = new Map(catalog.map((entry) => [entry.key, entry.value_schema]));
   const issues: CriterionIssue[] = [];
   for (const criterion of draft) {
-    if (!criterion.enabled || criterion.catalog_key === null) continue;
-    const schema = schemaByKey.get(criterion.catalog_key);
+    if (!criterion.enabled) continue;
+    const key = criterion.catalog_key ?? criterion.custom_def?.key;
+    if (!key) continue;
+    const schema =
+      criterion.catalog_key !== null
+        ? schemaByKey.get(criterion.catalog_key)
+        : criterion.custom_def?.value_schema;
     if (!schema) continue;
     if (criterion.options.length === 0) {
-      issues.push({ catalogKey: criterion.catalog_key, message: "no options defined" });
+      issues.push({ catalogKey: key, message: "no options defined" });
       continue;
     }
     criterion.options.forEach((option, index) => {
       const error = validateMatch(option.match, schema);
       if (error) {
         issues.push({
-          catalogKey: criterion.catalog_key as string,
+          catalogKey: key,
           message: `option ${index + 1}: ${error}`,
         });
       }
