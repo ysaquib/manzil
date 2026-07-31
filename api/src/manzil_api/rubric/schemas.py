@@ -4,16 +4,15 @@ row + rubric-option contract. Options are validated against the catalog
 
 from __future__ import annotations
 
-from typing import Any
 from uuid import UUID
 
-from manzil_shared.models import NonNegotiable, RubricOption
+from manzil_shared.models import CustomCriterionDef, NonNegotiable, RequiresTool, RubricOption
 from pydantic import BaseModel, Field
 
 
 class RubricCriterionIn(BaseModel):
     catalog_key: str | None = None
-    custom_def: dict[str, Any] | None = None
+    custom_def: CustomCriterionDef | None = None
     enabled: bool = True
     options: list[RubricOption] = Field(default_factory=list)
     unknown_delta: float = 0
@@ -29,3 +28,15 @@ class RubricCriterionOut(RubricCriterionIn):
 
 class RubricPut(BaseModel):
     criteria: list[RubricCriterionIn]
+
+
+class CustomRoutingRequest(BaseModel):
+    label: str = Field(min_length=1, max_length=80)
+    description: str = Field(min_length=1, max_length=500)
+
+
+class CustomRoutingResponse(BaseModel):
+    key: str
+    suggested_requires_tool: RequiresTool | None
+    reason: str
+    supported: bool

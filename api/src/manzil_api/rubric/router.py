@@ -6,10 +6,15 @@ from uuid import UUID
 
 from fastapi import APIRouter
 
-from manzil_api.dependencies import UserClient
+from manzil_api.dependencies import CurrentUser, UserClient
 from manzil_api.hunts.dependencies import MemberHunt, OwnedHunt
 from manzil_api.rubric import service
-from manzil_api.rubric.schemas import RubricCriterionOut, RubricPut
+from manzil_api.rubric.schemas import (
+    CustomRoutingRequest,
+    CustomRoutingResponse,
+    RubricCriterionOut,
+    RubricPut,
+)
 
 router = APIRouter(tags=["rubric"])
 
@@ -26,3 +31,16 @@ async def put_rubric(
     hunt_id: UUID, body: RubricPut, hunt: OwnedHunt, client: UserClient
 ) -> list[RubricCriterionOut]:
     return await service.put_rubric(client, hunt_id, body)
+
+
+@router.post(
+    "/hunts/{hunt_id}/rubric/custom-routing",
+    response_model=CustomRoutingResponse,
+)
+async def classify_custom_routing(
+    hunt_id: UUID,
+    body: CustomRoutingRequest,
+    hunt: OwnedHunt,
+    user: CurrentUser,
+) -> CustomRoutingResponse:
+    return await service.classify_custom_routing(hunt_id, user.id, body)

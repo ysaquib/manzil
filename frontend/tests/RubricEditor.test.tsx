@@ -3,10 +3,14 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mutate } = vi.hoisted(() => ({ mutate: vi.fn() }));
+const { mutate, classifyMutate } = vi.hoisted(() => ({
+  mutate: vi.fn(),
+  classifyMutate: vi.fn(),
+}));
 
 vi.mock("../src/features/rubric/api", () => ({
   usePutRubric: () => ({ mutate, isPending: false }),
+  useClassifyCustomRouting: () => ({ mutate: classifyMutate, isPending: false }),
 }));
 
 import type { CatalogEntry, RubricCriterion } from "../src/features/rubric/api";
@@ -58,7 +62,10 @@ function renderEditor() {
 }
 
 describe("RubricEditor", () => {
-  beforeEach(() => mutate.mockClear());
+  beforeEach(() => {
+    mutate.mockClear();
+    classifyMutate.mockClear();
+  });
 
   it("cards the scored criteria and offers the rest as add-pills", () => {
     renderEditor();
@@ -105,6 +112,44 @@ describe("RubricEditor", () => {
       ["sqft", true, 1],
       ["parking", false, 2],
     ]);
+  });
+
+  it("confirms routing before adding a custom criterion", async () => {
+    classifyMutate.mockImplementation(
+      (
+        _body: unknown,
+        callbacks: {
+          onSuccess: (result: {
+            key: string;
+            suggested_requires_tool: null;
+            reason: string;
+            supported: boolean;
+          }) => void;
+        },
+      ) =>
+        callbacks.onSuccess({
+          key: "custom:12345678-1234-1234-1234-123456789abc",
+          suggested_requires_tool: null,
+          reason: "The listing text can answer this.",
+          supported: true,
+        }),
+    );
+    renderEditor();
+
+    await userEvent.click(screen.getByRole("button", { name: "Add custom criterion" }));
+    await userEvent.type(await screen.findByLabelText("Name"), "Quiet hours");
+    await userEvent.type(
+      screen.getByLabelText("What should Manzil determine?"),
+      "Whether the listing states quiet hours.",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Suggest routing" }));
+
+    expect(classifyMutate).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("The listing text can answer this.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Confirm and add" }));
+
+    expect(screen.getByLabelText("enable Quiet hours")).toBeChecked();
+    expect(screen.getByText("2 of 4 criteria enabled")).toBeInTheDocument();
   });
 
   it("warns when objective flooring materials and subjective quality are both enabled", () => {

@@ -9,14 +9,16 @@ import {
   Stack,
   Text,
 } from "@mantine/core";
-import { IconDeviceFloppy } from "@tabler/icons-react";
+import { IconDeviceFloppy, IconPlus } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import { useState } from "react";
 
 import { PageHeader } from "../../components/PageHeader";
 import { ApiError } from "../../lib/apiClient";
-import type { CatalogEntry, RubricCriterion } from "./api";
+import type { CatalogEntry, CustomCriterionDef, RubricCriterion } from "./api";
 import { usePutRubric } from "./api";
+import { CustomCriterionModal } from "./CustomCriterionModal";
+import { criterionKey, customCatalogEntry } from "./customCriterion";
 import { CriterionCard } from "./CriterionCard";
 import { CriterionGroupHeader } from "./CriterionGroupHeader";
 import { CriterionPicker } from "./CriterionPicker";
@@ -46,17 +48,31 @@ export function RubricEditor({
   const putRubric = usePutRubric(huntId);
   const [draft, setDraft] = useState<RubricCriterion[]>(() => initDraft(catalog, saved));
   const [discardOpen, setDiscardOpen] = useState(false);
+  const [customOpen, setCustomOpen] = useState(false);
 
-  const entryByKey = new Map(catalog.map((e) => [e.key, e]));
+  const customCriteria = draft.filter(
+    (criterion): criterion is RubricCriterion & { custom_def: CustomCriterionDef } =>
+      criterion.custom_def !== null,
+  );
+  const customEntries = customCriteria.map((criterion) =>
+    customCatalogEntry(criterion.custom_def),
+  );
+  const entryByKey = new Map([...catalog, ...customEntries].map((e) => [e.key, e]));
   const issues = validateDraft(draft, catalog);
   const warnings = overlapWarnings(draft, catalog);
   const enabledCount = draft.filter((c) => c.enabled).length;
   const criterionByKey = new Map(
-    draft.filter((criterion) => criterion.catalog_key !== null).map((criterion) => [criterion.catalog_key, criterion]),
+    draft
+      .map((criterion) => [criterionKey(criterion), criterion] as const)
+      .filter((entry): entry is readonly [string, RubricCriterion] => entry[0] !== null),
   );
 
   const setCriterion = (next: RubricCriterion) =>
-    setDraft((prev) => prev.map((c) => (c.catalog_key === next.catalog_key ? next : c)));
+    setDraft((prev) =>
+      prev.map((criterion) =>
+        criterionKey(criterion) === criterionKey(next) ? next : criterion,
+      ),
+    );
 
   const save = () =>
     putRubric.mutate(draftToPayload(draft), {
@@ -169,6 +185,56 @@ export function RubricEditor({
           </Stack>
         );
       })}
+
+      <Stack gap="sm">
+        <CriterionGroupHeader
+          label="Custom"
+          category="custom"
+          count={`${customCriteria.filter((criterion) => criterion.enabled).length} scored`}
+        />
+        <SimpleGrid
+          cols={{ base: 1, md: 2, lg: 3 }}
+          spacing="md"
+          style={{ alignItems: "start" }}
+        >
+          {customCriteria.map((criterion) => {
+            const custom = criterion.custom_def;
+            return (
+              <CriterionCard
+                key={custom.key}
+                criterion={criterion}
+                entry={customCatalogEntry(custom)}
+                onChange={setCriterion}
+                onRemove={() =>
+                  setDraft((current) =>
+                    current.filter((item) => criterionKey(item) !== custom.key),
+                  )
+                }
+              />
+            );
+          })}
+        </SimpleGrid>
+        <Button
+          variant="light"
+          w="fit-content"
+          leftSection={<IconPlus size={16} stroke={1.5} />}
+          onClick={() => setCustomOpen(true)}
+        >
+          Add custom criterion
+        </Button>
+      </Stack>
+
+      <CustomCriterionModal
+        huntId={huntId}
+        opened={customOpen}
+        onClose={() => setCustomOpen(false)}
+        onAdd={(criterion) =>
+          setDraft((current) => [
+            ...current,
+            { ...criterion, position: current.length },
+          ])
+        }
+      />
 
       <Modal opened={discardOpen} onClose={() => setDiscardOpen(false)} title="Discard changes?">
         <Stack>

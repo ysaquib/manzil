@@ -95,6 +95,36 @@ describe("initDraft", () => {
     expect(draft[0].enabled).toBe(true);
     expect(draft[0].options[0].delta).toBe(2);
   });
+
+  it("keeps Hunt-scoped custom criteria after the catalog entries", () => {
+    const custom: RubricCriterion = {
+      catalog_key: null,
+      custom_def: {
+        schema_version: 1,
+        key: "custom:12345678-1234-1234-1234-123456789abc",
+        label: "Quiet hours",
+        description: "Whether quiet hours are stated.",
+        fact_scope: "property",
+        value_schema: { type: "boolean" },
+        requires_tool: null,
+        refresh_class: "listing_details",
+        routing_confirmed: true,
+      },
+      enabled: true,
+      options: [
+        { match: { op: "bool", value: true }, delta: 1, dealbreaker_set_score: null },
+      ],
+      unknown_delta: 0,
+      non_negotiable: null,
+      is_bonus: true,
+      position: 0,
+    };
+
+    const draft = initDraft(catalog, [custom]);
+    expect(draft).toHaveLength(3);
+    expect(draft[2].custom_def?.key).toBe(custom.custom_def?.key);
+    expect(validateDraft(draft, catalog)).toEqual([]);
+  });
 });
 
 describe("validateMatch (mirrors the API's value_schema check)", () => {

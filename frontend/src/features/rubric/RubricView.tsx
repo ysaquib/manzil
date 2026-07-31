@@ -10,6 +10,7 @@ import type { CatalogEntry, RubricCriterion } from "./api";
 import { CriterionGroupHeader } from "./CriterionGroupHeader";
 import { CriterionViewCard } from "./CriterionViewCard";
 import { groupCatalog } from "./catalogGroups";
+import { customCatalogEntry } from "./customCriterion";
 
 export function RubricView({
   saved,
@@ -25,6 +26,9 @@ export function RubricView({
     enabled.filter((criterion) => criterion.catalog_key !== null).map((criterion) => [criterion.catalog_key, criterion]),
   );
   const enabledCatalog = catalog.filter((entry) => enabledByKey.has(entry.key));
+  const enabledCustom = enabled.filter(
+    (criterion) => criterion.custom_def !== null,
+  );
 
   if (enabled.length === 0) {
     return (
@@ -57,6 +61,32 @@ export function RubricView({
           </SimpleGrid>
         </Stack>
       ))}
+      {enabledCustom.length > 0 && (
+        <Stack gap="sm">
+          <CriterionGroupHeader
+            label="Custom"
+            category="custom"
+            count={`${enabledCustom.length} scored`}
+          />
+          <SimpleGrid
+            cols={{ base: 1, sm: 2, lg: 3, xl: 4 }}
+            spacing="md"
+            style={{ alignItems: "start" }}
+          >
+            {enabledCustom.map((criterion) => {
+              const custom = criterion.custom_def;
+              if (custom === null) return null;
+              return (
+                <CriterionViewCard
+                  key={custom.key}
+                  criterion={criterion}
+                  entry={customCatalogEntry(custom)}
+                />
+              );
+            })}
+          </SimpleGrid>
+        </Stack>
+      )}
     </Stack>
   );
 }
