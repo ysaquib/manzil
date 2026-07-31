@@ -23,6 +23,32 @@ class JobWarning(BaseModel):
     detail: dict[str, Any] = Field(default_factory=dict)
 
 
+class CheckpointEvidence(BaseModel):
+    """One compact piece of Source context for a checkpoint decision."""
+
+    value: Any = None
+    evidence_quote: str | None = None
+    source_url: str | None = None
+
+
+class CheckpointContext(BaseModel):
+    """Evidence and Source links shown instead of a stored page screenshot."""
+
+    source_url: str | None = None
+    evidence: list[CheckpointEvidence] = Field(default_factory=list)
+
+
+class AutoResolvedCheckpoint(BaseModel):
+    """Visible provenance for a default applied by the scheduler."""
+
+    prompt: CheckpointPrompt
+    answer: dict[str, Any]
+    resolved_at: datetime
+    context: CheckpointContext
+    corrected_at: datetime | None = None
+    correction_job_id: UUID | None = None
+
+
 class JobResponse(BaseModel):
     id: UUID
     hunt_listing_id: UUID | None
@@ -39,6 +65,8 @@ class JobResponse(BaseModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     checkpoint: CheckpointPrompt | None = None
+    checkpoint_context: CheckpointContext | None = None
+    auto_resolved_checkpoint: AutoResolvedCheckpoint | None = None
     warnings: list[JobWarning] = Field(default_factory=list)
 
 

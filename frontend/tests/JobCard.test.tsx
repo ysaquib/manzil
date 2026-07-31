@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { renderWithProviders } from "./testUtils";
 import { checkpointAnswer, type Job } from "../src/features/jobs/api";
+import { AutoResolvedCheckpointReview } from "../src/features/jobs/AutoResolvedCheckpointReview";
 import { CheckpointPromptCard } from "../src/features/jobs/CheckpointPromptCard";
 import { isCancellable, JobCard, STATE_COLOR } from "../src/features/jobs/JobCard";
 
@@ -77,10 +78,53 @@ describe("job state mapping", () => {
           options: ["yes", "no"],
           default: "yes",
         },
+        checkpoint_context: {
+          evidence: [
+            {
+              value: 2450,
+              evidence_quote: "$2,450 monthly rent",
+              source_url: "https://example.com/listing",
+            },
+          ],
+        },
       }),
     );
     expect(screen.getByText("Does $2,450 look right?")).toBeInTheDocument();
+    expect(screen.getByText("“$2,450 monthly rent”")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /example.com/ })).toHaveAttribute(
+      "href",
+      "https://example.com/listing",
+    );
     expect(screen.getByRole("button", { name: "yes" })).toBeInTheDocument();
+  });
+});
+
+describe("auto-resolved checkpoint review", () => {
+  it("shows the applied default and accepts a late correction", async () => {
+    const onAnswer = vi.fn();
+    renderWithProviders(
+      <AutoResolvedCheckpointReview
+        checkpoint={{
+          prompt: {
+            kind: "resolve_dispute",
+            question: "Which rent should be used?",
+            options: ["$2,400", "Leave unknown"],
+            default: "Leave unknown",
+          },
+          answer: { choice: "Leave unknown" },
+          resolved_at: "2026-07-30T12:00:00Z",
+          context: { evidence: [] },
+        }}
+        canAnswer
+        answering={false}
+        onAnswer={onAnswer}
+      />,
+    );
+    expect(screen.getByText(/Auto-resolved after 24 hours/)).toHaveTextContent(
+      "Leave unknown",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "$2,400" }));
+    expect(onAnswer).toHaveBeenCalledWith("$2,400");
   });
 });
 

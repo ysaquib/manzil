@@ -78,7 +78,12 @@ export function JobCard({
         <JobWarnings warnings={job.warnings} />
         {job.state === "waiting_user" && job.checkpoint && (
           <Paper withBorder p="sm" style={{ backgroundColor: "var(--mantine-color-yellow-light)" }}>
-            <CheckpointPromptCard prompt={job.checkpoint} onAnswer={onAnswer} answering={busy} />
+            <CheckpointPromptCard
+              prompt={job.checkpoint}
+              context={job.checkpoint_context}
+              onAnswer={onAnswer}
+              answering={busy}
+            />
           </Paper>
         )}
         {job.state === "failed" && (

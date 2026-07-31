@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from manzil_shared.models import CheckpointPrompt, JobState
@@ -17,7 +18,14 @@ from manzil_api.jobs.exceptions import (
     JobNotRetryable,
     NotJobOwner,
 )
-from manzil_api.jobs.schemas import CheckpointAnswer, JobResponse, JobWarning
+from manzil_api.jobs.schemas import (
+    AutoResolvedCheckpoint,
+    CheckpointAnswer,
+    CheckpointContext,
+    CheckpointEvidence,
+    JobResponse,
+    JobWarning,
+)
 from supabase import Client
 
 
@@ -37,17 +45,89 @@ def _parse_warnings(raw: Any) -> list[JobWarning]:
     return [JobWarning.model_validate(item) for item in raw if isinstance(item, dict)]
 
 
-def _row_to_response(row: dict[str, Any]) -> JobResponse:
+def _http_url(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    parsed = urlsplit(value)
+    return value if parsed.scheme in {"http", "https"} and parsed.netloc else None
+
+
+def _checkpoint_context(run_state: dict[str, Any], prompt: CheckpointPrompt) -> CheckpointContext:
+    source_url = _http_url(run_state.get("url"))
+    evidence: list[CheckpointEvidence] = []
+    claims: list[Any] = []
+    if prompt.kind.value == "resolve_dispute":
+        pending = run_state.get("pending_dispute")
+        if isinstance(pending, dict):
+            claims = pending.get("candidate_claims") or []
+    else:
+        claims = run_state.get("source_claims") or []
+
+    for claim in claims:
+        if not isinstance(claim, dict):
+            continue
+        if (
+            prompt.kind.value == "confirm_value"
+            and claim.get("criterion_key") != prompt.context_ref
+        ):
+            continue
+        claim_url = _http_url(claim.get("source_id")) or source_url
+        evidence.append(
+            CheckpointEvidence(
+                value=claim.get("value"),
+                evidence_quote=claim.get("evidence_quote"),
+                source_url=claim_url,
+            )
+        )
+    return CheckpointContext(source_url=source_url, evidence=evidence)
+
+
+def _auto_resolved_checkpoint(
+    payload: dict[str, Any], *, state: str | None
+) -> AutoResolvedCheckpoint | None:
+    # Do not invite a correction while the default is still moving through the
+    # pipeline; two concurrent projections could race. The provenance appears
+    # as soon as the original Job reaches a terminal boundary.
+    if state not in {JobState.DONE.value, JobState.FAILED.value}:
+        return None
+    raw = payload.get("auto_resolved_checkpoint")
+    if not isinstance(raw, dict):
+        return None
+    prompt_raw = raw.get("prompt")
+    snapshot = raw.get("snapshot")
+    answer = raw.get("answer")
+    resolved_at = raw.get("resolved_at")
+    if (
+        not isinstance(prompt_raw, dict)
+        or not isinstance(snapshot, dict)
+        or not isinstance(answer, dict)
+        or not isinstance(resolved_at, str)
+    ):
+        return None
+    prompt = CheckpointPrompt.model_validate(prompt_raw)
+    return AutoResolvedCheckpoint(
+        prompt=prompt,
+        answer=answer,
+        resolved_at=resolved_at,
+        context=_checkpoint_context(snapshot, prompt),
+        corrected_at=raw.get("corrected_at"),
+        correction_job_id=raw.get("correction_job_id"),
+    )
+
+
+def row_to_response(row: dict[str, Any]) -> JobResponse:
     payload = _parse_payload(row.get("payload"))
     run_state = payload.get("run_state") or {}
     stage_index = run_state.get("cursor")
     if not isinstance(stage_index, int):
         stage_index = None
     checkpoint = None
+    checkpoint_context = None
     if row.get("state") == JobState.WAITING_USER.value:
         cp = run_state.get("checkpoint")
         if cp is not None:
             checkpoint = CheckpointPrompt.model_validate(cp)
+            checkpoint_context = _checkpoint_context(run_state, checkpoint)
     return JobResponse(
         id=row["id"],
         hunt_listing_id=row.get("hunt_listing_id"),
@@ -63,6 +143,8 @@ def _row_to_response(row: dict[str, Any]) -> JobResponse:
         started_at=row.get("started_at"),
         finished_at=row.get("finished_at"),
         checkpoint=checkpoint,
+        checkpoint_context=checkpoint_context,
+        auto_resolved_checkpoint=_auto_resolved_checkpoint(payload, state=row.get("state")),
         warnings=_parse_warnings(row.get("warnings")),
     )
 
@@ -116,7 +198,7 @@ async def list_jobs(
         .order("created_at", desc=True)
         .order("id", desc=True)
     )
-    return [_row_to_response(row) for row in query.execute().data or []]
+    return [row_to_response(row) for row in query.execute().data or []]
 
 
 async def cancel_job(client: Client, job_id: UUID, user_id: str) -> JobResponse:
@@ -135,7 +217,7 @@ async def cancel_job(client: Client, job_id: UUID, user_id: str) -> JobResponse:
     ).eq("id", str(job_id)).execute()
     updated = await get_job_row(client, job_id)
     assert updated is not None
-    return _row_to_response(updated)
+    return row_to_response(updated)
 
 
 async def retry_job(client: Client, job_id: UUID, user_id: str) -> JobResponse:
@@ -157,7 +239,7 @@ async def retry_job(client: Client, job_id: UUID, user_id: str) -> JobResponse:
     ).eq("id", str(job_id)).execute()
     updated = await get_job_row(client, job_id)
     assert updated is not None
-    return _row_to_response(updated)
+    return row_to_response(updated)
 
 
 async def answer_checkpoint(
@@ -169,10 +251,28 @@ async def answer_checkpoint(
     role, own = await _job_access(client, row, user_id)
     if role == "member" and not own:
         raise InsufficientRole("Members may resolve checkpoints only on their own Listings")
-    if row["state"] != JobState.WAITING_USER.value:
-        raise InvalidCheckpointAnswer("Job is not waiting for a checkpoint answer")
 
     payload = _parse_payload(row.get("payload"))
+    auto_raw = payload.get("auto_resolved_checkpoint")
+    if row["state"] != JobState.WAITING_USER.value:
+        if not isinstance(auto_raw, dict):
+            raise InvalidCheckpointAnswer("Job is not waiting for a checkpoint answer")
+        prompt_raw = auto_raw.get("prompt")
+        if not isinstance(prompt_raw, dict):
+            raise InvalidCheckpointAnswer("Job has no auto-resolved checkpoint prompt")
+        prompt = CheckpointPrompt.model_validate(prompt_raw)
+        choice = body.answer.get("choice")
+        if not isinstance(choice, str) or choice not in prompt.options:
+            raise InvalidCheckpointAnswer(f"Answer must be one of {prompt.options}, got {choice!r}")
+        response = client.rpc(
+            "correct_auto_resolved_checkpoint",
+            {"p_job_id": str(job_id), "p_answer": body.answer},
+        ).execute()
+        corrected = (response.data or [None])[0]
+        if corrected is None:
+            raise RuntimeError("checkpoint correction returned no Job")
+        return row_to_response(corrected)
+
     run_state = payload.get("run_state") or {}
     cp_raw = run_state.get("checkpoint")
     if cp_raw is None:
@@ -196,10 +296,14 @@ async def answer_checkpoint(
         {
             "p_job_id": str(job_id),
             "p_payload": payload,
-            "p_detail": {"answer": body.answer},
+            "p_detail": {
+                "answer": body.answer,
+                "kind": prompt.kind.value,
+                "question": prompt.question,
+            },
         },
     ).execute()
     updated = (response.data or [None])[0]
     if updated is None:
         raise RuntimeError("checkpoint answer returned no Job")
-    return _row_to_response(updated)
+    return row_to_response(updated)
