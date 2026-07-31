@@ -1,0 +1,15 @@
+.cell {
+  /* Digits line up down the column even as the ×N suffix comes and goes. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* The star marks a human judgement rather than a computed one, so it stays
+   quiet — it is a label, not a rating widget. */
+.star {
+  color: var(--mantine-color-muted_ochre-6);
+  flex: none;
+}
+
+.count {
+  flex: none;
+}

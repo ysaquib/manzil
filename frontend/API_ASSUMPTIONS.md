@@ -17,19 +17,22 @@ declared at all · `implemented` = working · `no table` = table not yet in a mi
 | `PATCH /v1/hunts/{id}` | `usePatchHunt` (`features/hunts/api.ts`) | generated `HuntUpdate` | P1-5 | implemented |
 | `PATCH /v1/hunts/{id}/settings` | `usePatchHuntSettings` (`features/hunts/api.ts`) | generated `HuntSettingsPatch`; resolved client contract includes independent `min_confidence` (medium default) and `min_vision_confidence` (low default) | P1-5 / DESIGN v3.20 | implemented |
 | `PUT /v1/hunts/{id}/rubric` | `usePutRubric` (`features/rubric/api.ts`) | generated (shared §8.2 shape) | P1-5 | implemented |
+| `POST /v1/hunts/{id}/rubric/custom-routing` | `useClassifyCustomRouting` (`features/rubric/api.ts`) | generated `CustomRoutingRequest`/`CustomRoutingResponse`; Owner-only, one traced classification; response includes an opaque key, suggested route, reason, and whether v1 supports the route | P3-10 | implemented |
 | `POST /v1/hunts/{id}/listings` | `useCreateListing` (`features/listings/api.ts`) | generated `ListingCreate`/`ListingResponse` | P1-7 | implemented |
 | `DELETE /v1/listings/{id}` | *(no hook — superseded in the UI by the status patch below; endpoint kept)* | generated (204) | P1-7 | implemented |
 | `PATCH /v1/listings/{id}/status` | `usePatchListingStatus` (`features/listings/api.ts`) | generated `ListingStatusPatch`/`ListingResponse`; Owner-only archive/restore | m6/m7 (2026-07-19) | implemented |
 | `PATCH /v1/listings/{id}/pins` | `usePatchPins` (`features/listings/api.ts`) | generated `PinsPatch` | P1-11 mini-endpoint | implemented |
 | `PATCH /v1/listings/{id}/source-policy` | `usePatchSourcePolicy` (`features/listings/api.ts`) | generated `SourcePolicyPatch`/`ListingResponse`; Owner or submitter; relaxing atomically queues a `refresh(scope=discover)` Job | P3-5 | implemented |
+| `POST /v1/listings/{id}/refresh` | `useRefreshListing` (`features/listings/api.ts`) | generated `RefreshRequest`/`JobResponse`; omitted fields refresh every mutable class, explicit values are refresh-class tokens | P3-12 | implemented |
+| `POST /v1/hunts/{id}/refresh` | *(no frontend hook yet)* | generated `RefreshRequest`/`JobResponse[]`; Owner/Curator active-Listing fan-out | P3-12 | implemented |
 | `PATCH /v1/listings/{id}/unit-groups/{unit_group_key}/state` | `usePatchUnitGroupState` (`features/listings/api.ts`) | generated `UnitGroupStatePatch`/`UnitGroupStateResponse` | DESIGN v3.5 | implemented |
-| `GET /v1/hunts/{id}/jobs?state=…` | `useActiveJobs` (`features/jobs/api.ts`) — the one polled read, 3s | generated `JobResponse` + optional `checkpoint`; `started_at` drives elapsed time for running jobs; `stage_index` (manifest cursor from `payload.run_state.cursor`) drives pipeline progress on duplicate stages | P1-7 / P1-13 | implemented |
+| `GET /v1/hunts/{id}/jobs?state=…` | `useActiveJobs` / `useJobs` (`features/jobs/api.ts`) | generated `JobResponse` + optional `checkpoint`, `checkpoint_context`, and terminal `auto_resolved_checkpoint`; `started_at` drives elapsed time for running jobs; `stage_index` (manifest cursor from `payload.run_state.cursor`) drives pipeline progress on duplicate stages | P1-7 / P1-13 / P3-11 | implemented |
 
 `state` accepts repeated query params (`state=queued&state=running`) **and** a single
 comma-separated value (`state=queued,running,waiting_user`) — the form the Tasks tab polls.
 | `POST /v1/jobs/{id}/cancel` | `useCancelJob` (`features/jobs/api.ts`) | generated `JobResponse` | P1-7 | implemented |
 | `POST /v1/jobs/{id}/retry` | `useRetryJob` (`features/jobs/api.ts`) | generated `JobResponse` | P1-7 | implemented |
-| `POST /v1/jobs/{id}/checkpoint` | `useAnswerCheckpoint` (`features/jobs/api.ts`) | generated `CheckpointAnswer` | P1-7 | implemented |
+| `POST /v1/jobs/{id}/checkpoint` | `useAnswerCheckpoint` (`features/jobs/api.ts`) | generated `CheckpointAnswer`; a parked Job resumes in place, while a terminal auto-resolved Job returns a new correction Job from the retained checkpoint snapshot | P1-7 / P3-11 | implemented |
 | `POST /v1/listings/{id}/overrides` | `useCreateOverride` (`features/listings/api.ts`) | generated `OverrideCreate`/`OverrideResponse`; true-Property, all-units, or exact Floor Plan target; API and RLS reject cross-Property Floor Plans | P1-8 / P3-SC2 | implemented |
 | `PUT /v1/listings/{id}/fees/{slot}` | `useUpsertFee` (`features/listings/api.ts`) | generated `FeeEntryUpsert`/`FeeEntryResponse` | P1-8 | implemented |
 | `POST /v1/listings/{id}/comments` | `useCreateComment` (`features/collaboration/api.ts`) | generated `CommentCreate`/`CommentResponse`; optional `unit_group_key` | DESIGN v3.4 | implemented |
@@ -41,6 +44,71 @@ comma-separated value (`state=queued,running,waiting_user`) — the form the Tas
 | `POST /v1/invitation-links/{token}/join` | `useJoinInvitationLink` (`features/invites/api.ts`) | generated `InvitationLinkJoined` | P2-11 | implemented |
 | `PUT /v1/profile` | `/account/profile` (`auth/AccountPage.tsx`) | generated `ProfileUpsert`/`ProfileResponse`; optional `default_color` is omitted by onboarding and required when explicitly sent | DESIGN §13.1 / P3-16 | implemented |
 | `POST /v1/feedback` | `useSubmitFeedback` (`features/feedback/api.ts`) | generated `FeedbackCreate`/`FeedbackResponse`. Identity is server-side (`user_id` from the bearer token, `user_agent` from the request); `route` must be a site-relative path; a `hunt_id` the caller cannot read is a 403; the per-hour cap returns 429 `feedback_rate_limited`. **No read hook exists or can exist** — `feedback` has no `SELECT` policy for anyone, so the response confirms receipt rather than echoing the row | P3-16 | implemented |
+
+### Visits (VC-1 backend, VC-2 hooks)
+
+| Method & path | Hook (file) | Shape | Backing task | Status |
+|---|---|---|---|---|
+| `POST /v1/hunts/{id}/visits` | `useCreateVisit` (`features/visits/api.ts`) | generated `VisitCreate`/`VisitResponse`; any member; `units[]` created in the same call; `state` is a **computed** field, never sent; 422 `property_not_in_hunt` when the Property has no Listing here | VC-1 | implemented |
+| `PATCH /v1/visits/{id}` | `usePatchVisit` (`features/visits/api.ts`) | generated `VisitPatch`/`VisitResponse`; `action` ∈ `start \| end \| reopen \| cancel \| reinstate \| reschedule`. **`reopen`** clears `ended_at` and returns a completed Visit to in-progress — any member, since it continues the work rather than overriding a judgement; a cancelled Visit is 409 until reinstated, and `template_version` never changes. Timestamps are **server-clock** — the client never sends `started_at`. `cancel`/`reinstate` are creator-or-Owner (403 `cannot_cancel_visit`); an impossible transition is 409 `invalid_visit_transition` | VC-1 | implemented |
+| `DELETE /v1/visits/{id}` | `useDeleteVisit` (`features/visits/api.ts`) | generated (204); creator or Owner only | VC-1 | implemented |
+| `POST /v1/visits/{id}/units` | `useAddVisitUnit` (`features/visits/api.ts`) | generated `VisitUnitInput`/`VisitUnitResponse`; supply `floor_plan_id` **or** both `beds` and `baths`; `unit_group_key` is database-generated and read-only; duplicate label (case-insensitive) is 409 | VC-1 | implemented |
+| `PATCH /v1/visits/{id}/units/{unit_id}` | `usePatchVisitUnit` (`features/visits/api.ts`) | generated `VisitUnitPatch`/`VisitUnitResponse`; `label` and `display_order` only — a unit's shape is not editable in place | VC-1 | implemented |
+| `DELETE /v1/visits/{id}/units/{unit_id}` | `useDeleteVisitUnit` (`features/visits/api.ts`) | generated (204) | VC-1 | implemented |
+| `POST /v1/visits/{id}/custom-items` | `useCreateVisitCustomItem` (`features/visits/api.ts`) | generated `VisitCustomItemCreate`/`VisitCustomItemResponse`; per-Visit, always rendered as custom | VC-1 | implemented |
+| `POST /v1/visits/{id}/defects` | `useCreateVisitDefect` (`features/visits/api.ts`) | generated `VisitDefectCreate`/`VisitDefectResponse`. Only for something the checklist never asked about — most defects arrive by **promotion** from a failed Check. `visit_unit_id: null` means the **building**, not "unknown"; `severity` is nullable and starts unrated | VC-4 | implemented |
+| `PATCH /v1/visits/{id}/defects/{defect_id}` | `usePatchVisitDefect` (`features/visits/api.ts`) | generated `VisitDefectPatch`/`VisitDefectResponse`; any member may edit a defect they did not log — on a tour the phone-holder is often not the spotter | VC-4 | implemented |
+| `DELETE /v1/visits/{id}/defects/{defect_id}` | `useDeleteVisitDefect` (`features/visits/api.ts`) | generated (204). **Soft delete**, and the Check that promoted it keeps its answer — that a test failed and what the problem was are two separate records. A deleted defect is never resurrected by re-marking the Check | VC-4 | implemented |
+| `POST /v1/visits/{id}/fee-proposals` | `useCreateFeeProposal` (`features/visits/api.ts`) | generated `VisitFeeProposalCreate`/`VisitFeeProposalResponse`. **Any member may offer** — whoever walked the unit heard the number. `target` picks the accept path (`fee_slot` → `fee_checklist` upsert, `override` → `overrides` insert) and `target_key` is an allowlist of real fee slots / cost Criteria, so a typo is 422 rather than a fee line nothing renders. The Listing must belong to the Property that was toured (422 `listing_not_visited_property`). Re-confirming the same destination **updates the standing offer** rather than stacking a second | VC-7 | implemented |
+| `POST /v1/visits/{id}/fee-proposals/{pid}/decision` | `useDecideFeeProposal` (`features/visits/api.ts`) | generated `VisitFeeProposalDecision`. `accept` performs the **ordinary** cost write by delegating to the fee/override services, so the row is indistinguishable from a manual drawer edit (`value_state: manual`, real `entered_by`) and a base-rent acceptance is Floor-Plan scoped to the walked unit exactly as the drawer would be; `reject` writes only the decision and leaves the Visit's figure alone. Permission is the **Override** permission (§4.2), enforced by RLS and the delegated writer. Re-deciding is 409 `fee_proposal_already_decided` | VC-7 | implemented |
+| `DELETE /v1/visits/{id}/fee-proposals/{pid}` | `useWithdrawFeeProposal` (`features/visits/api.ts`) | generated (204). Author-only, pending-only — taking back an offer nobody has acted on | VC-7 | implemented |
+| **`PUT /v1/visits/{id}/entries`** | `useSaveVisitEntries` (`features/visits/api.ts`) — invalidates **both** `visit_entries` and `visit_defects`, because a Check marked a problem promotes into a defect | generated `VisitEntryBatch`/`VisitEntryResponse[]`. The **only** write path for answers and the shape VC-6's offline queue will flush. Append-only: clearing an answer sends `value: null`, which lands as that identity's tombstone. Scope comes from the **item**, not the caller — a property item carrying a `visit_unit_id` (or a unit item without one) is 422 `checklist_scope_mismatch`, never silently re-filed. A Question sends `answer_text`, never `value` (422 `checklist_value_not_allowed`). `owner_user_id` is server-set: the author for an Impression, null for everything else. Returns the resulting **current** values, not the inserted rows | VC-3 | implemented |
+
+There are deliberately **no GET routes**: Visit reads are continuously-rendered and Realtime-backed,
+so they belong to the direct-Supabase client per the two-client split. `PUT /v1/visits/{id}/entries`
+(the batched, `prev_entry_id`-carrying answer write) arrives with VC-3.
+
+Answer identity is `(item, unit, owner)` — `features/visits/entries.ts` owns it, and no caller
+re-derives it: getting it wrong merges two members' opinions or splits one member's answer across
+units. Visit **state is never read from a column** — `features/visits/visitState.ts` derives it from
+`started_at`/`ended_at`/`cancelled_at` on the client, exactly as `VisitResponse.state` does on the
+server. Realtime wiring landed with VC-5: `visits`, `visit_units`, `visit_entries`, `visit_defects`
+and `visit_custom_items` all invalidate from `lib/realtime.ts`, so another member's write appears
+without a reload. Presence is separate from that — `features/visits/usePresence.ts` holds one
+ref-counted channel per Visit, scoped to the Visit route rather than the hunt, and is display-only:
+nothing is ever stored through it and the checklist works with no signal at all.
+
+**Offline (VC-6).** `useSaveVisitEntries` no longer owns its own mutation function: it lives on the
+query client in `lib/offline.ts` under `SAVE_ENTRIES_KEY`, because a write restored from storage is
+rebuilt in a page where the hook's closure is gone. `visitId` therefore travels in the variables
+rather than being captured, and the same registration owns the `visit_entries` / `visit_defects` /
+`visit_entry_conflicts` invalidation. Persistence is narrowed to visit-scoped query keys so a cold
+start cannot resurrect stale listings or jobs, and only *paused* mutations are kept. Writes are
+optimistic; an optimistic row carries an `optimistic:` id and must never be sent as a
+`prev_entry_id`. Open forks read from the derived `visit_entry_conflicts` view
+(`useVisitEntryConflicts`); **resolution has no endpoint of its own** — it is an ordinary
+`PUT /v1/visits/{id}/entries` whose `prev_entry_id` is the chosen branch.
+
+**The Visit roll-up (VC-8)** is read from `visit_unit_group_scores`, a derived `security_invoker` view
+keyed `(hunt_listing_id, unit_group_key)`. It carries no `hunt_id` — RLS already scopes it to the
+caller's Hunts — so `useVisitUnitGroupScores` selects every row it is allowed to see and the client
+indexes it with `visitScoreKey(listingId, unitGroupKey)`. **The four roll-up rules live in the view,
+not in the client**: latest tour per door, best door per group, per-member-then-across averaging, and
+no row at all for a unit whose Unit Group the Property does not advertise. Nothing re-derives them.
+Because it is derived, `visits`, `visit_units` and `visit_entries` all invalidate it from
+`lib/realtime.ts`.
+
+**Fee Proposals (VC-7)** are read straight from `visit_fee_proposals` — `useVisitFeeProposals` for one
+Visit's ledger and `useListingFeeProposals` for the pending offers a drawer renders. `useDecideFeeProposal`
+takes the Visit in its *variables*, not the hook argument, because a Listing can carry offers from more
+than one tour; on an accepted decision it invalidates `fee_checklist`, `overrides` and `hunt_listings`
+— exactly what `useUpsertFee` and `useCreateOverride` invalidate, since accepting causes precisely those
+writes.
+
+Known gap: a queued write that flushes as the tab navigates can be restored and sent a second time,
+appending a duplicate history row. It cannot manufacture a conflict (identical branches are
+agreement), and the fix if it ever matters is a client-generated idempotency key with a unique
+index, which would change the API contract.
 
 Invitation Link responses carry an API-configured absolute `link`, but the frontend replaces its
 origin with `window.location.origin` before copying. Supabase Auth storage is origin-scoped, so a
@@ -66,6 +134,12 @@ origin that appears logged out.
 | `comments` for one Listing | `useComments` (`features/collaboration/api.ts`) | hand-typed `Comment`; nullable Unit Group scope + `edited_at` | exists (0002 + 20260724000000) |
 | `ratings` for one Listing | `useRatings` (`features/collaboration/api.ts`) | hand-typed `Rating`; filtered per Unit Group by row consumers | exists (0002 + 20260724000000) |
 | `listing_unit_group_states` for one Hunt | `useUnitGroupStates` (`features/listings/api.ts`) | hand-typed `UnitGroupState` | exists (20260725000000) |
+| `hunt_listing_refresh_status` for one Hunt | `useRefreshStatuses` (`features/listings/api.ts`) | hand-typed `RefreshStatus`; service-role success markers, member-readable through Listing membership | exists (20260816000000) |
+| `visits` (+ embedded `visit_units`, `properties`) for one Hunt, one Property, or one id | `useVisits`, `usePropertyVisits`, `useVisit` (`features/visits/api.ts`) | hand-typed `Visit`; **state is derived client-side** from `started_at`/`ended_at`/`cancelled_at` — there is no status column to read | exists (20260817000000) |
+| `visit_template_items` for the Visit's `template_version` | `useVisitTemplate` (`features/visits/api.ts`) — `staleTime: Infinity`, since it only changes by migration | hand-typed `VisitTemplateItem`; global read-only reference data like `criteria_catalog`. Section titles are **frontend copy** — the table carries `section_key` and a globally monotonic `display_order`, no section table | exists (20260817000000) + seed in migration |
+| `current_visit_entries` for one Visit | `useVisitEntries` (`features/visits/api.ts`) | hand-typed `VisitEntry`. The **view**, never `visit_entries` directly — it centralises the newest-per-`(visit, item, unit, owner)` rule, and is `security_invoker` so it keeps the base table's RLS | exists (20260819000000) |
+| `visit_defects` for one Visit (live rows only) | `useVisitDefects` (`features/visits/api.ts`) | hand-typed `VisitDefect`; the query filters `deleted_at is null`, so soft-deleted rows never surface | exists (20260820000000) |
+| `visit_custom_items` for one Visit | `useVisitCustomItems` (`features/visits/api.ts`) | hand-typed; per-Visit additions, rendered as custom | exists (20260817000000) |
 
 ## Resolved contract conflicts (2026-07-08 decisions, fixed 2026-07-09)
 

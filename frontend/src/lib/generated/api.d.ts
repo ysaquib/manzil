@@ -302,6 +302,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/hunts/{hunt_id}/rubric/custom-routing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Classify Custom Routing */
+        post: operations["classify_custom_routing_v1_hunts__hunt_id__rubric_custom_routing_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/hunts/{hunt_id}/listings": {
         parameters: {
             query?: never;
@@ -386,6 +403,40 @@ export interface paths {
         head?: never;
         /** Patch Source Policy */
         patch: operations["patch_source_policy_v1_listings__listing_id__source_policy_patch"];
+        trace?: never;
+    };
+    "/v1/listings/{listing_id}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh Listing */
+        post: operations["refresh_listing_v1_listings__listing_id__refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/hunts/{hunt_id}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh Hunt */
+        post: operations["refresh_hunt_v1_hunts__hunt_id__refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/listings/{listing_id}/unit-groups/{unit_group_key}/state": {
@@ -559,6 +610,245 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/hunts/{hunt_id}/visits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Visit
+         * @description Any member may create a Visit (DESIGN §4.2).
+         */
+        post: operations["create_visit_v1_hunts__hunt_id__visits_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/visits/{visit_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Visit */
+        delete: operations["delete_visit_v1_visits__visit_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Patch Visit
+         * @description Start, end, cancel, reinstate or reschedule.
+         *
+         *     Any member starts or ends; cancel and reinstate narrow to the creator or the
+         *     Hunt Owner, enforced here and by the `visits_enforce_update_rules` trigger.
+         */
+        patch: operations["patch_visit_v1_visits__visit_id__patch"];
+        trace?: never;
+    };
+    "/v1/visits/{visit_id}/units": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Visit Unit */
+        post: operations["add_visit_unit_v1_visits__visit_id__units_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/visits/{visit_id}/units/{unit_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Visit Unit */
+        delete: operations["delete_visit_unit_v1_visits__visit_id__units__unit_id__delete"];
+        options?: never;
+        head?: never;
+        /** Patch Visit Unit */
+        patch: operations["patch_visit_unit_v1_visits__visit_id__units__unit_id__patch"];
+        trace?: never;
+    };
+    "/v1/visits/{visit_id}/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save Visit Entries
+         * @description Append a batch of answers; returns the resulting **current** values.
+         *
+         *     The only write path for answers, and the shape the offline queue flushes.
+         *     Append-only, so clearing an answer means sending a null `value`. Scope comes
+         *     from the item, not the caller: a property item carrying a `visit_unit_id` is
+         *     a 422, never silently re-filed (DESIGN §9.7).
+         */
+        put: operations["save_visit_entries_v1_visits__visit_id__entries_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/visits/{visit_id}/defects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Visit Defect
+         * @description Log a problem found on the tour.
+         *
+         *     Most defects are not created here: marking a Check as a problem promotes one
+         *     automatically (DESIGN §9.7). This is the path for something the checklist
+         *     never asked about.
+         */
+        post: operations["create_visit_defect_v1_visits__visit_id__defects_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/visits/{visit_id}/defects/{defect_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Visit Defect
+         * @description Soft delete. The Check that promoted it keeps its answer — that a test
+         *     failed and what the problem was are two separate records.
+         */
+        delete: operations["delete_visit_defect_v1_visits__visit_id__defects__defect_id__delete"];
+        options?: never;
+        head?: never;
+        /** Patch Visit Defect */
+        patch: operations["patch_visit_defect_v1_visits__visit_id__defects__defect_id__patch"];
+        trace?: never;
+    };
+    "/v1/visits/{visit_id}/custom-items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Custom Item
+         * @description Per-Visit additions, always rendered as custom (DESIGN §9.7).
+         */
+        post: operations["create_custom_item_v1_visits__visit_id__custom_items_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/visits/{visit_id}/fee-proposals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Fee Proposal
+         * @description Offer a figure confirmed on the tour to one of the Property's Listings.
+         *
+         *     Nothing on the Listing changes here — this is the offer (DESIGN §9.7). Any
+         *     member may make one; deciding is the privileged half.
+         */
+        post: operations["create_fee_proposal_v1_visits__visit_id__fee_proposals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/visits/{visit_id}/fee-proposals/{proposal_id}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Decide Fee Proposal
+         * @description Accept or reject an offer.
+         *
+         *     Accepting performs the **ordinary** cost write — a `fee_checklist` upsert or
+         *     an `overrides` insert — so the result is indistinguishable from a human
+         *     typing it into the drawer. Rejecting records the decision and leaves the
+         *     Visit's own figure alone. Permission is the Override permission (§4.2),
+         *     enforced by RLS and by the delegated writer.
+         */
+        post: operations["decide_fee_proposal_v1_visits__visit_id__fee_proposals__proposal_id__decision_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/visits/{visit_id}/fee-proposals/{proposal_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Withdraw Fee Proposal
+         * @description Take back an offer nobody has decided yet. RLS restricts it to its author.
+         */
+        delete: operations["withdraw_fee_proposal_v1_visits__visit_id__fee_proposals__proposal_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/health": {
         parameters: {
             query?: never;
@@ -581,6 +871,27 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * AutoResolvedCheckpoint
+         * @description Visible provenance for a default applied by the scheduler.
+         */
+        AutoResolvedCheckpoint: {
+            prompt: components["schemas"]["CheckpointPrompt"];
+            /** Answer */
+            answer: {
+                [key: string]: unknown;
+            };
+            /**
+             * Resolved At
+             * Format: date-time
+             */
+            resolved_at: string;
+            context: components["schemas"]["CheckpointContext"];
+            /** Corrected At */
+            corrected_at?: string | null;
+            /** Correction Job Id */
+            correction_job_id?: string | null;
+        };
+        /**
          * CheckpointAnswer
          * @description Answer to a parked `waiting_user` checkpoint (DESIGN §10.10).
          */
@@ -589,6 +900,28 @@ export interface components {
             answer: {
                 [key: string]: unknown;
             };
+        };
+        /**
+         * CheckpointContext
+         * @description Evidence and Source links shown instead of a stored page screenshot.
+         */
+        CheckpointContext: {
+            /** Source Url */
+            source_url?: string | null;
+            /** Evidence */
+            evidence?: components["schemas"]["CheckpointEvidence"][];
+        };
+        /**
+         * CheckpointEvidence
+         * @description One compact piece of Source context for a checkpoint decision.
+         */
+        CheckpointEvidence: {
+            /** Value */
+            value?: unknown;
+            /** Evidence Quote */
+            evidence_quote?: string | null;
+            /** Source Url */
+            source_url?: string | null;
         };
         /**
          * CheckpointKind
@@ -652,6 +985,54 @@ export interface components {
         CommentUpdate: {
             /** Body */
             body: string;
+        };
+        /**
+         * CustomCriterionDef
+         * @description Versioned Hunt-scoped Criterion definition (DESIGN v3.35).
+         */
+        CustomCriterionDef: {
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Description */
+            description: string;
+            /**
+             * Fact Scope
+             * @enum {string}
+             */
+            fact_scope: "property" | "floor_plan";
+            /** Value Schema */
+            value_schema: {
+                [key: string]: unknown;
+            };
+            requires_tool?: components["schemas"]["RequiresTool"] | null;
+            refresh_class: components["schemas"]["RefreshClass"];
+            /** Routing Confirmed */
+            routing_confirmed: boolean;
+        };
+        /** CustomRoutingRequest */
+        CustomRoutingRequest: {
+            /** Label */
+            label: string;
+            /** Description */
+            description: string;
+        };
+        /** CustomRoutingResponse */
+        CustomRoutingResponse: {
+            /** Key */
+            key: string;
+            suggested_requires_tool: components["schemas"]["RequiresTool"] | null;
+            /** Reason */
+            reason: string;
+            /** Supported */
+            supported: boolean;
         };
         /** FeeEntryResponse */
         FeeEntryResponse: {
@@ -953,6 +1334,8 @@ export interface components {
             /** Finished At */
             finished_at?: string | null;
             checkpoint?: components["schemas"]["CheckpointPrompt"] | null;
+            checkpoint_context?: components["schemas"]["CheckpointContext"] | null;
+            auto_resolved_checkpoint?: components["schemas"]["AutoResolvedCheckpoint"] | null;
             /** Warnings */
             warnings?: components["schemas"]["JobWarning"][];
         };
@@ -1192,14 +1575,29 @@ export interface components {
             /** Rating */
             rating: number | string;
         };
+        /**
+         * RefreshClass
+         * @enum {string}
+         */
+        RefreshClass: "pricing" | "listing_details" | "images" | "reviews" | "location";
+        /**
+         * RefreshRequest
+         * @description P3-12 refresh-class selection. Omission means every mutable class.
+         */
+        RefreshRequest: {
+            /** Fields */
+            fields?: ("pricing" | "listing_details" | "images" | "reviews" | "location")[] | null;
+        };
+        /**
+         * RequiresTool
+         * @enum {string}
+         */
+        RequiresTool: "maps" | "vision" | "web_search";
         /** RubricCriterionIn */
         RubricCriterionIn: {
             /** Catalog Key */
             catalog_key?: string | null;
-            /** Custom Def */
-            custom_def?: {
-                [key: string]: unknown;
-            } | null;
+            custom_def?: components["schemas"]["CustomCriterionDef"] | null;
             /**
              * Enabled
              * @default true
@@ -1228,10 +1626,7 @@ export interface components {
         RubricCriterionOut: {
             /** Catalog Key */
             catalog_key?: string | null;
-            /** Custom Def */
-            custom_def?: {
-                [key: string]: unknown;
-            } | null;
+            custom_def?: components["schemas"]["CustomCriterionDef"] | null;
             /**
              * Enabled
              * @default true
@@ -1435,6 +1830,441 @@ export interface components {
          * @enum {string}
          */
         ValueState: "extracted" | "manual" | "estimated" | "unknown";
+        /** VisitCreate */
+        VisitCreate: {
+            /**
+             * Property Id
+             * Format: uuid
+             */
+            property_id: string;
+            /** Scheduled For */
+            scheduled_for?: string | null;
+            /** Prefilled From */
+            prefilled_from?: string | null;
+            /** Units */
+            units?: components["schemas"]["VisitUnitInput"][];
+        };
+        /** VisitCustomItemCreate */
+        VisitCustomItemCreate: {
+            /** Section Key */
+            section_key: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "fact" | "check" | "question" | "impression";
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: "property" | "unit";
+            /** Label */
+            label: string;
+        };
+        /** VisitCustomItemResponse */
+        VisitCustomItemResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Visit Id
+             * Format: uuid
+             */
+            visit_id: string;
+            /** Section Key */
+            section_key: string;
+            /** Kind */
+            kind: string;
+            /** Scope */
+            scope: string;
+            /** Label */
+            label: string;
+            /**
+             * Created By
+             * Format: uuid
+             */
+            created_by: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * VisitDefectCreate
+         * @description A problem found on the tour.
+         *
+         *     `visit_unit_id` is null for the building rather than for "unknown" — a
+         *     hallway defect belongs to the property, not to whichever unit happened to be
+         *     selected when it was logged.
+         */
+        VisitDefectCreate: {
+            /** Title */
+            title: string;
+            /** Visit Unit Id */
+            visit_unit_id?: string | null;
+            /** Note */
+            note?: string | null;
+            /** Severity */
+            severity?: number | null;
+            /**
+             * Promised In Writing
+             * @default false
+             */
+            promised_in_writing: boolean;
+            /** Resolution */
+            resolution?: string | null;
+        };
+        /** VisitDefectPatch */
+        VisitDefectPatch: {
+            /** Title */
+            title?: string | null;
+            /** Note */
+            note?: string | null;
+            /** Severity */
+            severity?: number | null;
+            /** Promised In Writing */
+            promised_in_writing?: boolean | null;
+            /** Resolution */
+            resolution?: string | null;
+        };
+        /** VisitDefectResponse */
+        VisitDefectResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Visit Id
+             * Format: uuid
+             */
+            visit_id: string;
+            /** Visit Unit Id */
+            visit_unit_id: string | null;
+            /** From Item Key */
+            from_item_key: string | null;
+            /** Title */
+            title: string;
+            /** Note */
+            note: string | null;
+            /** Severity */
+            severity: number | null;
+            /** Promised In Writing */
+            promised_in_writing: boolean;
+            /** Resolution */
+            resolution: string | null;
+            /**
+             * Created By
+             * Format: uuid
+             */
+            created_by: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Deleted At */
+            deleted_at: string | null;
+        };
+        /**
+         * VisitEntryBatch
+         * @description The sync-queue payload: one round trip carries a screenful of answers.
+         */
+        VisitEntryBatch: {
+            /** Entries */
+            entries: components["schemas"]["VisitEntryInput"][];
+        };
+        /**
+         * VisitEntryInput
+         * @description One answer.
+         *
+         *     `visit_unit_id` is not the caller's choice: the item's own scope decides
+         *     whether it carries one, and a mismatch is rejected rather than coerced
+         *     (DESIGN §9.7) — a property answer filed against a unit is the failure the
+         *     scope design exists to prevent.
+         */
+        VisitEntryInput: {
+            /** Item Key */
+            item_key: string;
+            /**
+             * Is Custom
+             * @default false
+             */
+            is_custom: boolean;
+            /** Visit Unit Id */
+            visit_unit_id?: string | null;
+            /** Value */
+            value?: unknown;
+            /** Answer Text */
+            answer_text?: string | null;
+            /** Note */
+            note?: string | null;
+            /** Prev Entry Id */
+            prev_entry_id?: string | null;
+        };
+        /** VisitEntryResponse */
+        VisitEntryResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Visit Id
+             * Format: uuid
+             */
+            visit_id: string;
+            /** Item Key */
+            item_key: string;
+            /** Is Custom */
+            is_custom: boolean;
+            /** Visit Unit Id */
+            visit_unit_id: string | null;
+            /** Owner User Id */
+            owner_user_id: string | null;
+            /**
+             * Author User Id
+             * Format: uuid
+             */
+            author_user_id: string;
+            /** Value */
+            value?: unknown;
+            /** Answer Text */
+            answer_text: string | null;
+            /** Note */
+            note: string | null;
+            /** Prev Entry Id */
+            prev_entry_id: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * VisitFeeProposalCreate
+         * @description A figure confirmed on the tour, offered to a Listing.
+         *
+         *     It is an offer, not a write: nothing on the Listing changes until somebody
+         *     with the cost-write permission accepts it (DESIGN §9.7).
+         */
+        VisitFeeProposalCreate: {
+            /**
+             * Hunt Listing Id
+             * Format: uuid
+             */
+            hunt_listing_id: string;
+            /** Visit Unit Id */
+            visit_unit_id?: string | null;
+            /**
+             * Target
+             * @enum {string}
+             */
+            target: "fee_slot" | "override";
+            /** Target Key */
+            target_key: string;
+            /** Amount */
+            amount: number;
+            /** Note */
+            note?: string | null;
+        };
+        /**
+         * VisitFeeProposalDecision
+         * @description Accept performs the ordinary human write; reject records only the decision.
+         */
+        VisitFeeProposalDecision: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "accept" | "reject";
+        };
+        /** VisitFeeProposalResponse */
+        VisitFeeProposalResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Visit Id
+             * Format: uuid
+             */
+            visit_id: string;
+            /** Visit Unit Id */
+            visit_unit_id: string | null;
+            /**
+             * Hunt Listing Id
+             * Format: uuid
+             */
+            hunt_listing_id: string;
+            /**
+             * Target
+             * @enum {string}
+             */
+            target: "fee_slot" | "override";
+            /** Target Key */
+            target_key: string;
+            /** Amount */
+            amount: number;
+            /** Note */
+            note: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "accepted" | "rejected";
+            /** Decided By */
+            decided_by: string | null;
+            /** Decided At */
+            decided_at: string | null;
+            /**
+             * Created By
+             * Format: uuid
+             */
+            created_by: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * VisitPatch
+         * @description Lifecycle transitions, expressed as the timestamps state derives from.
+         *
+         *     Deliberately actions rather than raw timestamps: `started_at` is the server's
+         *     clock, not the client's, so a phone with a skewed clock cannot record a tour
+         *     that started tomorrow.
+         */
+        VisitPatch: {
+            /** Action */
+            action?: ("start" | "end" | "reopen" | "cancel" | "reinstate" | "reschedule") | null;
+            /** Scheduled For */
+            scheduled_for?: string | null;
+            /** Cancel Reason */
+            cancel_reason?: string | null;
+        };
+        /** VisitResponse */
+        VisitResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Hunt Id
+             * Format: uuid
+             */
+            hunt_id: string;
+            /**
+             * Property Id
+             * Format: uuid
+             */
+            property_id: string;
+            /**
+             * Created By
+             * Format: uuid
+             */
+            created_by: string;
+            /** Scheduled For */
+            scheduled_for: string | null;
+            /** Started At */
+            started_at: string | null;
+            /** Ended At */
+            ended_at: string | null;
+            /** Cancelled At */
+            cancelled_at: string | null;
+            /** Cancel Reason */
+            cancel_reason: string | null;
+            /** Template Version */
+            template_version: number;
+            /** Prefilled From */
+            prefilled_from: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Units */
+            units?: components["schemas"]["VisitUnitResponse"][];
+            /**
+             * State
+             * @description Derived, never stored (DESIGN §9.7). Cancellation outranks everything:
+             *     a cancelled tour that had already started is still cancelled.
+             * @enum {string}
+             */
+            readonly state: "planned" | "in_progress" | "completed" | "cancelled";
+        };
+        /**
+         * VisitUnitInput
+         * @description One door you expect to walk through.
+         *
+         *     `label` is always human-supplied — there is no advertised unit list to pick
+         *     from (DESIGN §9.7). `floor_plan_id` links it to a marketed layout when it
+         *     maps to one; otherwise `beds`/`baths` describe it. Exactly one of the two
+         *     paths must be usable, which the service resolves into concrete beds/baths.
+         */
+        VisitUnitInput: {
+            /** Label */
+            label: string;
+            /** Floor Plan Id */
+            floor_plan_id?: string | null;
+            /** Beds */
+            beds?: number | null;
+            /** Baths */
+            baths?: number | string | null;
+            /**
+             * Display Order
+             * @default 0
+             */
+            display_order: number;
+        };
+        /** VisitUnitPatch */
+        VisitUnitPatch: {
+            /** Label */
+            label?: string | null;
+            /** Display Order */
+            display_order?: number | null;
+        };
+        /** VisitUnitResponse */
+        VisitUnitResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Visit Id
+             * Format: uuid
+             */
+            visit_id: string;
+            /** Label */
+            label: string;
+            /** Floor Plan Id */
+            floor_plan_id: string | null;
+            /** Beds */
+            beds: number;
+            /** Baths */
+            baths: number;
+            /** Unit Group Key */
+            unit_group_key: string;
+            /** Display Order */
+            display_order: number;
+            /**
+             * Created By
+             * Format: uuid
+             */
+            created_by: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -2283,6 +3113,41 @@ export interface operations {
             };
         };
     };
+    classify_custom_routing_v1_hunts__hunt_id__rubric_custom_routing_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomRoutingRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomRoutingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_listings_v1_hunts__hunt_id__listings_get: {
         parameters: {
             query?: never;
@@ -2470,6 +3335,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ListingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_listing_v1_listings__listing_id__refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_hunt_v1_hunts__hunt_id__refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobResponse"][];
                 };
             };
             /** @description Validation Error */
@@ -2830,6 +3765,478 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["FeedbackResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_visit_v1_hunts__hunt_id__visits_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VisitCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisitResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_visit_v1_visits__visit_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                visit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_visit_v1_visits__visit_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                visit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VisitPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisitResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_visit_unit_v1_visits__visit_id__units_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                visit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VisitUnitInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisitUnitResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_visit_unit_v1_visits__visit_id__units__unit_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                unit_id: string;
+                visit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_visit_unit_v1_visits__visit_id__units__unit_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                unit_id: string;
+                visit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VisitUnitPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisitUnitResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_visit_entries_v1_visits__visit_id__entries_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                visit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VisitEntryBatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisitEntryResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_visit_defect_v1_visits__visit_id__defects_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                visit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VisitDefectCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisitDefectResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_visit_defect_v1_visits__visit_id__defects__defect_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                defect_id: string;
+                visit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_visit_defect_v1_visits__visit_id__defects__defect_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                defect_id: string;
+                visit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VisitDefectPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisitDefectResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_custom_item_v1_visits__visit_id__custom_items_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                visit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VisitCustomItemCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisitCustomItemResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_fee_proposal_v1_visits__visit_id__fee_proposals_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                visit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VisitFeeProposalCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisitFeeProposalResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    decide_fee_proposal_v1_visits__visit_id__fee_proposals__proposal_id__decision_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: string;
+                visit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VisitFeeProposalDecision"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VisitFeeProposalResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    withdraw_fee_proposal_v1_visits__visit_id__fee_proposals__proposal_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: string;
+                visit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

@@ -24,14 +24,20 @@ import { useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { PageHeader } from "../../components/PageHeader";
-import { useJobs } from "../jobs/api";
+import { useAnswerCheckpoint, useJobs } from "../jobs/api";
+import { useVisitUnitGroupScores, visitScoreKey } from "../visits/api";
 import { jobsByListing, rowPipelineState, type RowPipeline } from "./rowState";
 import { OverviewRowList } from "./OverviewRowList";
 import { resolveSettings } from "../../lib/contracts";
 import { sentenceCase } from "../../lib/text";
 import { useHunt } from "../hunts/api";
 import { usePatchListingStatus, usePatchUnitGroupState } from "./api";
-import { useListings, useProblematicPropertyIds, useUnitGroupStates } from "./api";
+import {
+  useListings,
+  useProblematicPropertyIds,
+  useRefreshStatuses,
+  useUnitGroupStates,
+} from "./api";
 import { ArchivedListings } from "./ArchivedListings";
 import { COMPARE_LIMIT, rowEntry, useCompareSet } from "./compareSet";
 import { ListingDetailDrawer } from "./ListingDetailDrawer";
@@ -59,6 +65,7 @@ import { useOverviewFilters } from "./filterState";
 import { propertyLocationLabel } from "./locality";
 import { INTEREST_STATUSES, type InterestStatus } from "./types";
 import { SubmitUrlControl } from "./SubmitUrlControl";
+import { statusesByListing } from "./staleness";
 
 /** Listings to archive (single row action or bulk), driving the confirm modal. */
 interface ArchiveTarget {
@@ -71,6 +78,7 @@ export function OverviewPage() {
   const { data: hunt } = useHunt(huntId);
   const { data: listings, isLoading, error } = useListings(huntId);
   const { data: unitGroupStates = [] } = useUnitGroupStates(huntId);
+  const { data: refreshStatuses = [] } = useRefreshStatuses(huntId);
   const patchListingStatus = usePatchListingStatus(huntId);
   const patchState = usePatchUnitGroupState(huntId);
   const compare = useCompareSet(huntId);
@@ -95,6 +103,16 @@ export function OverviewPage() {
     key: "manzil:overview-density",
     defaultValue: "normal",
   });
+  // The Visit roll-up, indexed the way a row looks it up (VC-8).
+  const { data: visitScores = [] } = useVisitUnitGroupScores(huntId);
+  const visitScoreIndex = useMemo(
+    () => new Map(visitScores.map((entry) => [
+      visitScoreKey(entry.hunt_listing_id, entry.unit_group_key),
+      entry,
+    ])),
+    [visitScores],
+  );
+
   const [columns, setColumns] = useLocalStorage<OverviewColumnKey[]>({
     // v2: the column set gained `rent` in the 2026-07-26 redesign; a stored v1
     // array has no entry for it and would render the table without Rent.
@@ -129,10 +147,19 @@ export function OverviewPage() {
   const { data: problematicPropertyIds = new Set<string>() } = useProblematicPropertyIds(
     (listings ?? []).map((listing) => listing.property_id),
   );
+  const staleClassesByListing = useMemo(
+    () => statusesByListing(
+      refreshStatuses,
+      Date.now(),
+      (listings ?? []).map((listing) => listing.id),
+    ),
+    [refreshStatuses, listings],
+  );
 
   // Pipeline state per row (UI Decision Log 2026-07-26): a row still being
   // fetched, or whose last run failed, says so and hands off to Tasks.
   const { data: jobs = [] } = useJobs(huntId);
+  const answerCheckpoint = useAnswerCheckpoint(huntId);
   const pipeline = useMemo(() => {
     const byListing = jobsByListing(jobs);
     const map = new Map<string, RowPipeline>();
@@ -142,6 +169,19 @@ export function OverviewPage() {
     }
     return map;
   }, [jobs, allRows]);
+  const autoResolvedListingIds = useMemo(
+    () =>
+      new Set(
+        jobs.flatMap((job) =>
+          job.hunt_listing_id &&
+          job.auto_resolved_checkpoint &&
+          !job.auto_resolved_checkpoint.corrected_at
+            ? [job.hunt_listing_id]
+            : [],
+        ),
+      ),
+    [jobs],
+  );
   const cities = [...new Set((listings ?? []).map((listing) => propertyLocationLabel(listing.property)))]
     .sort((a, b) => a.localeCompare(b));
 
@@ -359,6 +399,8 @@ export function OverviewPage() {
             rows={rows}
             pipeline={pipeline}
             problematicPropertyIds={problematicPropertyIds}
+            staleClassesByListing={staleClassesByListing}
+            autoResolvedListingIds={autoResolvedListingIds}
             onOpen={openDrawer}
             onArchive={archiveRow}
           />
@@ -371,12 +413,15 @@ export function OverviewPage() {
             columns={columns}
             pipeline={pipeline}
             problematicPropertyIds={problematicPropertyIds}
+            staleClassesByListing={staleClassesByListing}
+            autoResolvedListingIds={autoResolvedListingIds}
             selectedKeys={selected}
             onToggleRow={toggleRow}
             onToggleAll={toggleAll}
             onSort={onSort}
             onOpen={openDrawer}
             onArchive={archiveRow}
+            visitScores={visitScoreIndex}
           />
         ))}
 
@@ -387,6 +432,11 @@ export function OverviewPage() {
         onClose={drawer.close}
         onExited={drawer.onExited}
         filters={filters}
+        jobs={jobs}
+        answeringCheckpoint={answerCheckpoint.isPending}
+        onAnswerCheckpoint={(jobId, choice, text) =>
+          answerCheckpoint.mutate({ jobId, choice, text })
+        }
       />
 
       <Modal
