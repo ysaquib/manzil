@@ -57,8 +57,8 @@ def criterion_key(criterion: RubricCriterion) -> str:
     key in `custom_def["key"]` (§8.2)."""
     if criterion.catalog_key is not None:
         return criterion.catalog_key
-    if criterion.custom_def is not None and "key" in criterion.custom_def:
-        return str(criterion.custom_def["key"])
+    if criterion.custom_def is not None:
+        return criterion.custom_def.key
     raise ValueError("rubric criterion has neither catalog_key nor custom_def['key']")
 
 
