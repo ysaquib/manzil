@@ -1,0 +1,31 @@
+/* Visit state dot. A pulse is state-driven visual + keyframes, which UI_DESIGN
+   §3 puts in a co-located module rather than inline styles. */
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--visit-dot-color, var(--mantine-color-gray-6));
+  flex: none;
+}
+
+/* Only the live state moves, so the movement carries meaning. */
+.dot[data-live="true"] {
+  animation: visit-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes visit-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot[data-live="true"] {
+    animation: none;
+  }
+}

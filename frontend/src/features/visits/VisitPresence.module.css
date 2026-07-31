@@ -1,0 +1,14 @@
+/* Presence bar. Quiet by construction: a tinted strip, not an alert. */
+
+.bar {
+  padding: 6px 10px;
+  border-radius: var(--mantine-radius-sm);
+  background: var(--mantine-color-teal-light);
+  color: var(--mantine-color-teal-light-color);
+}
+
+/* A live ring, so "here now" reads at a glance without a second badge. */
+.live {
+  outline: 2px solid var(--mantine-color-teal-6);
+  outline-offset: 1px;
+}

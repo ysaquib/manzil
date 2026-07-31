@@ -23,6 +23,7 @@ import { useDisclosure, useMediaQuery } from "@mantine/hooks";
 import {
   IconArrowsLeftRight,
   IconChevronDown,
+  IconFlag,
   IconLayoutDashboard,
   IconListCheck,
   IconMap2,
@@ -46,6 +47,7 @@ const NAV = [
   { label: "Overview", to: "", icon: IconLayoutDashboard },
   { label: "Map", to: "map", icon: IconMap2 },
   { label: "Compare", to: "compare", icon: IconArrowsLeftRight },
+  { label: "Visits", to: "visits", icon: IconFlag },
   { label: "Rubric", to: "rubric", icon: IconScale },
   { label: "Tasks", to: "tasks", icon: IconListCheck },
   { label: "Settings", to: "settings", icon: IconSettings },

@@ -20,6 +20,9 @@ import { OverviewPage } from "../features/listings/OverviewPage";
 import { HuntMapPage } from "../features/map/HuntMapPage";
 import { TasksPage } from "../features/jobs/TasksPage";
 import { RubricPage } from "../features/rubric/RubricPage";
+import { VisitCreatePage } from "../features/visits/VisitCreatePage";
+import { VisitDetailPage } from "../features/visits/VisitDetailPage";
+import { VisitsPage } from "../features/visits/VisitsPage";
 
 const authenticatedRoute = (element: React.ReactNode) => <RequireAuth>{element}</RequireAuth>;
 const protectedRoute = (element: React.ReactNode) => authenticatedRoute(<RequireProfile>{element}</RequireProfile>);
@@ -54,6 +57,10 @@ export const router = createBrowserRouter([
       { index: true, element: <OverviewPage /> },
       { path: "map", element: <HuntMapPage /> },
       { path: "compare", element: <ComparePage /> },
+      // `visits/new` before `visits/:visitId` so the literal wins the match.
+      { path: "visits", element: <VisitsPage /> },
+      { path: "visits/new", element: <VisitCreatePage /> },
+      { path: "visits/:visitId", element: <VisitDetailPage /> },
       { path: "rubric", element: <RubricPage /> },
       { path: "tasks", element: <TasksPage /> },
       { path: "settings", element: <HuntSettingsPage /> },
