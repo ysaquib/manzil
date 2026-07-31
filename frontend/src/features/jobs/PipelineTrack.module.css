@@ -1,11 +1,11 @@
-/* Horizontal five-phase pipeline track for the job cards. Dots sit in equal grid
+/* Horizontal six-phase pipeline track for the job cards. Dots sit in equal grid
    columns so their labels line up beneath them; connectors are drawn from each
    dot's center back to the previous dot's center. On History cards the whole
    region is a button that expands the stage timeline. */
 
 .track {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   align-items: start;
   padding-top: 0.35rem;
 }

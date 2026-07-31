@@ -19,12 +19,34 @@ export interface JobWarning {
   detail?: Record<string, unknown>;
 }
 
+export interface CheckpointEvidence {
+  value?: unknown;
+  evidence_quote?: string | null;
+  source_url?: string | null;
+}
+
+export interface CheckpointContext {
+  source_url?: string | null;
+  evidence?: CheckpointEvidence[];
+}
+
+export interface AutoResolvedCheckpoint {
+  prompt: components["schemas"]["CheckpointPrompt"];
+  answer: Record<string, unknown>;
+  resolved_at: string;
+  context: CheckpointContext;
+  corrected_at?: string | null;
+  correction_job_id?: string | null;
+}
+
 // started_at, stage_index, and warnings are intersected until the next
 // `pnpm gen:api-types` run picks them up from the API's JobResponse.
 export type Job = components["schemas"]["JobResponse"] & {
   started_at?: string | null;
   stage_index?: number | null;
   warnings?: JobWarning[];
+  checkpoint_context?: CheckpointContext | null;
+  auto_resolved_checkpoint?: AutoResolvedCheckpoint | null;
 };
 
 export const ACTIVE_STATES = "queued,running,waiting_user";
