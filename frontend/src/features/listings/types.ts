@@ -44,6 +44,20 @@ export interface PropertySource {
   last_success_at: string | null;
 }
 
+export type RefreshClass =
+  | "pricing"
+  | "listing_details"
+  | "images"
+  | "reviews"
+  | "location";
+
+export interface RefreshStatus {
+  hunt_listing_id: string;
+  refresh_class: RefreshClass;
+  last_success_at: string;
+  producer_job_id: string | null;
+}
+
 export interface FloorPlan {
   id: string;
   property_id: string;

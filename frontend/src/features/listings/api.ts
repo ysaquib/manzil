@@ -12,6 +12,8 @@ import type {
   FeeEntry,
   Listing,
   Override,
+  RefreshClass,
+  RefreshStatus,
   ResolutionCandidate,
   UnitGroupState,
   UtilityName,
@@ -40,6 +42,39 @@ export function useListings(huntId: string) {
         .eq("status", "active");
       if (error) throw error;
       return (data ?? []) as unknown as Listing[];
+    },
+  });
+}
+
+export function useRefreshStatuses(huntId: string) {
+  return useQuery({
+    queryKey: ["hunt_listing_refresh_status", huntId],
+    queryFn: async (): Promise<RefreshStatus[]> => {
+      const { data, error } = await supabase
+        .from("hunt_listing_refresh_status")
+        .select("*, hunt_listing:hunt_listings!inner(hunt_id)")
+        .eq("hunt_listing.hunt_id", huntId);
+      if (error) throw error;
+      return (data ?? []).map((record) => {
+        const row = { ...record };
+        Reflect.deleteProperty(row, "hunt_listing");
+        return row;
+      }) as RefreshStatus[];
+    },
+  });
+}
+
+export function useRefreshListing(huntId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ listingId, fields }: { listingId: string; fields?: RefreshClass[] }) =>
+      apiFetch<components["schemas"]["JobResponse"]>(`/v1/listings/${listingId}/refresh`, {
+        method: "POST",
+        body: fields ? { fields } : {},
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["jobs", huntId] });
+      void qc.invalidateQueries({ queryKey: ["hunt_listing_refresh_status", huntId] });
     },
   });
 }

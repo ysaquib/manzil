@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 SourcePolicy = Literal["trust_link", "tier_1", "tiers_1_2", "tiers_1_2_3", "tier_1_plus_official"]
 InterestStatus = Literal[
@@ -61,6 +61,37 @@ class SourcePolicyPatch(BaseModel):
     """Change one Listing's cross-check policy (DESIGN §10.7, P3-5)."""
 
     source_policy: SourcePolicy
+
+
+RefreshClass = Literal["pricing", "listing_details", "images", "reviews", "location"]
+REFRESH_CLASS_ORDER: tuple[RefreshClass, ...] = (
+    "pricing",
+    "listing_details",
+    "images",
+    "reviews",
+    "location",
+)
+
+
+class RefreshRequest(BaseModel):
+    """P3-12 refresh-class selection. Omission means every mutable class."""
+
+    fields: list[RefreshClass] | None = None
+
+    @field_validator("fields")
+    @classmethod
+    def fields_are_non_empty(cls, value: list[RefreshClass] | None) -> list[RefreshClass] | None:
+        if value == []:
+            raise ValueError("fields must contain at least one refresh class")
+        return value
+
+    @classmethod
+    def normalized_fields(cls, fields: list[RefreshClass] | None) -> list[RefreshClass]:
+        selected: list[RefreshClass] = list(REFRESH_CLASS_ORDER[:-1] if fields is None else fields)
+        if not selected:
+            raise ValueError("fields must contain at least one refresh class")
+        chosen = set(selected)
+        return [refresh_class for refresh_class in REFRESH_CLASS_ORDER if refresh_class in chosen]
 
 
 class UnitGroupStatePatch(BaseModel):

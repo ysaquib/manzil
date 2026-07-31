@@ -1,12 +1,12 @@
 // Sources (P3-5, §13.2): retained links, fetch state, assurance badge, and the
 // Listing's editable Source Policy. Relaxing the policy queues DISCOVER.
-import { Anchor, Box, Group, Select, Stack, Text } from "@mantine/core";
+import { Anchor, Box, Button, Group, Select, Stack, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconExternalLink } from "@tabler/icons-react";
+import { IconExternalLink, IconRefresh } from "@tabler/icons-react";
 
 import { SingleSourceBadge } from "../../components/badges/ListingBadges";
 import { SOURCE_POLICIES, type SourcePolicy } from "../../lib/contracts";
-import { usePatchSourcePolicy } from "./api";
+import { usePatchSourcePolicy, useRefreshListing } from "./api";
 import classes from "./SourcesList.module.css";
 import type { PropertySource, SingleSourceReason } from "./types";
 
@@ -43,6 +43,7 @@ export function SourcesList({
   canEdit: boolean;
 }) {
   const patchPolicy = usePatchSourcePolicy(huntId);
+  const refresh = useRefreshListing(huntId);
   const changePolicy = (value: string | null) => {
     if (!value || value === sourcePolicy) return;
     patchPolicy.mutate(
@@ -116,6 +117,33 @@ export function SourcesList({
         allowDeselect={false}
         size="xs"
       />
+      <Button
+        variant="light"
+        size="xs"
+        leftSection={<IconRefresh size={14} stroke={1.5} />}
+        disabled={!canEdit}
+        loading={refresh.isPending}
+        onClick={() =>
+          refresh.mutate(
+            { listingId },
+            {
+              onSuccess: () =>
+                notifications.show({
+                  color: "green",
+                  message: "Refresh queued",
+                }),
+              onError: (error) =>
+                notifications.show({
+                  color: "red",
+                  title: "Could not refresh Listing",
+                  message: error instanceof Error ? error.message : "Try again.",
+                }),
+            },
+          )
+        }
+      >
+        Refresh data
+      </Button>
     </Stack>
   );
 }
