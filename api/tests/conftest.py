@@ -198,9 +198,37 @@ async def collab_hunt(db_pool, seeded_users):  # type: ignore[no-untyped-def]
             (property_ids[1]["id"], source_ids[1]["id"], "Owner One Bed", 1, 1),
         ],
     )
+    # Property and Floor Plan ids are exposed too: Visits (VC-1) hang off a
+    # Property rather than a Listing, and their same-Property guard needs a
+    # Floor Plan from each side to prove it denies the foreign one.
+    #
+    # `order by plan_name` matters: the Owner Property carries both a 2-bed and a
+    # 1-bed plan, so an unordered pick made `owner_plan_id` — and therefore the
+    # Unit Group key a visit derives from it — vary between runs. "Owner One Bed"
+    # sorts first, so `owner_plan_id` is deterministically the **1 bd / 1 ba**
+    # plan and its Unit Group key is "1-1".
+    plans = await db_pool.fetch(
+        """
+        select id, property_id, beds, baths, plan_name
+        from floor_plans
+        where property_id = any($1::uuid[])
+        order by property_id, plan_name
+        """,
+        [property_ids[0]["id"], property_ids[1]["id"]],
+    )
     yield {
         "hunt_id": str(hunt_id),
         "member_listing_id": str(member_listing),
         "owner_listing_id": str(owner_listing),
+        "member_property_id": str(property_ids[0]["id"]),
+        "owner_property_id": str(property_ids[1]["id"]),
+        # "Member Two Bed" — 2 bd / 1 ba, Unit Group key "2-1".
+        "member_plan_id": str(
+            next(p["id"] for p in plans if p["property_id"] == property_ids[0]["id"])
+        ),
+        # "Owner One Bed" — 1 bd / 1 ba, Unit Group key "1-1".
+        "owner_plan_id": str(
+            next(p["id"] for p in plans if p["property_id"] == property_ids[1]["id"])
+        ),
     }
     await db_pool.execute("delete from hunts where id = $1", hunt_id)
