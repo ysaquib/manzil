@@ -13,7 +13,7 @@ from enum import StrEnum
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # --- Enums (DESIGN §8.1) ---
 
@@ -214,6 +214,69 @@ class CatalogEntry(BaseModel):
     conflict_policy: ConflictPolicy = ConflictPolicy.STANDARD_LADDER
 
 
+class CustomCriterionDef(BaseModel):
+    """Versioned Hunt-scoped Criterion definition (DESIGN v3.35)."""
+
+    schema_version: Literal[1] = 1
+    key: str = Field(pattern=r"^custom:[0-9a-f]{8}-[0-9a-f-]{27}$")
+    label: str = Field(min_length=1, max_length=80)
+    description: str = Field(min_length=1, max_length=500)
+    fact_scope: Literal["property", "floor_plan"]
+    value_schema: dict[str, Any]
+    requires_tool: RequiresTool | None = None
+    refresh_class: RefreshClass
+    routing_confirmed: bool
+
+    @field_validator("label", "description")
+    @classmethod
+    def strip_text(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("must not be blank")
+        return stripped
+
+    @field_validator("value_schema")
+    @classmethod
+    def supported_value_schema(cls, schema: dict[str, Any]) -> dict[str, Any]:
+        schema_type = schema.get("type")
+        if schema_type == "boolean" and set(schema) == {"type"}:
+            return {"type": "boolean"}
+        if schema_type == "number" and set(schema) == {"type"}:
+            return {"type": "number"}
+        if schema_type == "string" and set(schema) == {"type", "enum"}:
+            values = schema.get("enum")
+            normalized = (
+                [item.strip() for item in values]
+                if isinstance(values, list) and all(isinstance(item, str) for item in values)
+                else []
+            )
+            if (
+                isinstance(values, list)
+                and 2 <= len(normalized) <= 20
+                and all(normalized)
+                and len(set(normalized)) == len(normalized)
+            ):
+                return {"type": "string", "enum": normalized}
+        raise ValueError("custom value_schema must be boolean, number, or a 2-20 value string enum")
+
+    @model_validator(mode="after")
+    def route_contract(self) -> CustomCriterionDef:
+        if not self.routing_confirmed:
+            raise ValueError("custom Criterion routing must be human-confirmed")
+        if self.requires_tool in (RequiresTool.VISION, RequiresTool.WEB_SEARCH):
+            raise ValueError(f"custom route {self.requires_tool.value!r} is deferred")
+        expected = (
+            RefreshClass.LOCATION
+            if self.requires_tool is RequiresTool.MAPS
+            else RefreshClass.LISTING_DETAILS
+        )
+        if self.refresh_class is not expected:
+            raise ValueError(f"refresh_class must be {expected.value!r} for this route")
+        if self.requires_tool is RequiresTool.MAPS and self.fact_scope != "property":
+            raise ValueError("Maps custom Criteria must be Property-scoped")
+        return self
+
+
 class NonNegotiable(BaseModel):
     """Criterion-level gate: if no acceptable option matched, score is SET (§3 Gate)."""
 
@@ -223,7 +286,7 @@ class NonNegotiable(BaseModel):
 class RubricCriterion(BaseModel):
     hunt_id: UUID
     catalog_key: str | None = None
-    custom_def: dict[str, Any] | None = None
+    custom_def: CustomCriterionDef | None = None
     enabled: bool = True
     options: list[RubricOption] = Field(default_factory=list)
     unknown_delta: float = 0.0
