@@ -27,7 +27,7 @@ import os
 # pin decision, not a bench result — do not change it without bench evidence,
 # and remember that every recording re-keys when it moves.
 WORKHORSE_MODEL = "google/gemini-3-flash-preview"
-TASTE_MODEL = "google/gemini-3.6-flash"
+TASTE_MODEL = "anthropic/claude-sonnet-4.6"
 
 # P0-14 model-pin (DESIGN §20 2026-07-21). The 10-listing bench (P0-13) ranked
 # gemini-3-flash-preview first for the EXTRACT/VERIFY pair: criterion accuracy
@@ -55,7 +55,9 @@ STAGE_MODELS: dict[str, str] = {
     "extract": EXTRACT_VERIFY_MODEL,  # P0-14 pin (DESIGN §20 2026-07-21)
     "verify": EXTRACT_VERIFY_MODEL,  # P0-14 pin; check 4 only, checks 1-3 are code
     "reconcile_equivalence": WORKHORSE_MODEL,
+    "custom_route": WORKHORSE_MODEL,
     "custom_match": WORKHORSE_MODEL,
+    "custom_match_location": WORKHORSE_MODEL,
     "enrich_reviews": WORKHORSE_MODEL,  # P3-8 ratings stage 1 review synthesis
     "utility_baselines": WORKHORSE_MODEL,  # P3-9 metro baselines pass (scheduler tick)
     "plan_assist": WORKHORSE_MODEL,
@@ -80,7 +82,7 @@ STAGE_MODELS: dict[str, str] = {
 #                           second, and last, allowed loop).
 STAGE_TOOLS: dict[str, tuple[str, ...]] = {
     "discover": ("fetch_page",),
-    "custom_match_location": ("geocode", "places_nearby", "commute_time", "fetch_page"),
+    "custom_match_location": ("geocode", "places_nearby", "commute_time"),
 }
 
 # Provider-hosted tools execute inside OpenRouter and therefore have no local
@@ -127,7 +129,9 @@ MODEL_PRICES: dict[str, tuple[float, float]] = {
     "google/gemini-3.1-flash-lite": (0.25, 1.50),
     "google/gemini-2.5-flash": (0.30, 2.50),
     "google/gemini-3-flash-preview": (0.50, 3.00),
-    "openai/gpt-5.6-luna": (1.00, 6.00),
+    # "openai/gpt-5.6-luna": (1.00, 6.00),
+    "openai/gpt-5.6-luna": (0.20, 1.20),
+    "openai/gpt-5.6-luna-pro": (0.20, 1.20),
 }
 
 # Cache economics differ per upstream family: Anthropic bills explicit cache
