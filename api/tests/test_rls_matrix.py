@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Literal
 from uuid import uuid4
 
@@ -127,6 +128,245 @@ async def test_rls_rejects_cross_property_floor_plan_override(
                 "applicability": "specific_floor_plans",
                 "value": True,
                 "user_id": seeded_users["owner"].user_id,
+            }
+        ).execute()
+
+
+VISIT_READ_MATRIX = [
+    MatrixCase("owner", "read_visit", "visit", True),
+    MatrixCase("curator", "read_visit", "visit", True),
+    MatrixCase("member", "read_visit", "visit", True),
+    MatrixCase("outsider", "read_visit", "visit", False),
+]
+
+
+def _seed_visit(seeded_users, collab_hunt, actor: Actor = "member") -> str:
+    identity = _identity(seeded_users, actor)
+    return (
+        identity.supabase.table("visits")
+        .insert(
+            {
+                "hunt_id": collab_hunt["hunt_id"],
+                "property_id": collab_hunt["owner_property_id"],
+                "created_by": identity.user_id,
+                "template_version": 1,
+            }
+        )
+        .execute()
+        .data[0]["id"]
+    )
+
+
+@pytest.mark.parametrize("case", VISIT_READ_MATRIX, ids=lambda c: c.actor)
+def test_rls_visit_visibility(case: MatrixCase, collab_hunt, seeded_users) -> None:
+    """VC-1: every member of the owning Hunt reads a Visit; nobody else does."""
+    visit_id = _seed_visit(seeded_users, collab_hunt)
+    rows = (
+        _identity(seeded_users, case.actor)
+        .supabase.table("visits")
+        .select("id")
+        .eq("id", visit_id)
+        .execute()
+        .data
+        or []
+    )
+    assert bool(rows) is case.allowed
+
+
+def test_rls_visit_units_inherit_their_visit_visibility(collab_hunt, seeded_users) -> None:
+    visit_id = _seed_visit(seeded_users, collab_hunt)
+    member = seeded_users["member"]
+    member.supabase.table("visit_units").insert(
+        {
+            "visit_id": visit_id,
+            "label": "4B",
+            "beds": 2,
+            "baths": 2,
+            "created_by": member.user_id,
+        }
+    ).execute()
+    assert (
+        seeded_users["curator"]
+        .supabase.table("visit_units")
+        .select("id")
+        .eq("visit_id", visit_id)
+        .execute()
+        .data
+    )
+    assert not (
+        seeded_users["outsider"]
+        .supabase.table("visit_units")
+        .select("id")
+        .eq("visit_id", visit_id)
+        .execute()
+        .data
+    )
+
+
+def test_rls_outsider_cannot_create_a_visit(collab_hunt, seeded_users) -> None:
+    outsider = seeded_users["outsider"]
+    with pytest.raises(APIError):
+        outsider.supabase.table("visits").insert(
+            {
+                "hunt_id": collab_hunt["hunt_id"],
+                "property_id": collab_hunt["owner_property_id"],
+                "created_by": outsider.user_id,
+                "template_version": 1,
+            }
+        ).execute()
+
+
+def test_rls_visit_cannot_be_created_under_another_users_identity(
+    collab_hunt, seeded_users
+) -> None:
+    """`created_by` is pinned to `auth.uid()`, so a member cannot forge authorship
+    and thereby hand themselves the creator-only cancel right."""
+    member = seeded_users["member"]
+    with pytest.raises(APIError):
+        member.supabase.table("visits").insert(
+            {
+                "hunt_id": collab_hunt["hunt_id"],
+                "property_id": collab_hunt["owner_property_id"],
+                "created_by": seeded_users["owner"].user_id,
+                "template_version": 1,
+            }
+        ).execute()
+
+
+@pytest.mark.asyncio
+async def test_rls_visit_requires_a_property_in_this_hunt(
+    collab_hunt, db_pool, seeded_users
+) -> None:
+    foreign_property = await db_pool.fetchval(
+        "insert into properties (name, canonical_address) "
+        "values ('Foreign', '77 Away') returning id"
+    )
+    try:
+        member = seeded_users["member"]
+        with pytest.raises(APIError):
+            member.supabase.table("visits").insert(
+                {
+                    "hunt_id": collab_hunt["hunt_id"],
+                    "property_id": str(foreign_property),
+                    "created_by": member.user_id,
+                    "template_version": 1,
+                }
+            ).execute()
+    finally:
+        await db_pool.execute("delete from properties where id = $1", foreign_property)
+
+
+def test_rls_rejects_cross_property_visit_unit_floor_plan(collab_hunt, seeded_users) -> None:
+    """A Visit Unit may only point at a Floor Plan of its own Visit's Property —
+    the same guard the cross-Property Override already carries."""
+    visit_id = _seed_visit(seeded_users, collab_hunt)
+    member = seeded_users["member"]
+    with pytest.raises(APIError):
+        member.supabase.table("visit_units").insert(
+            {
+                "visit_id": visit_id,
+                "label": "impossible",
+                "floor_plan_id": collab_hunt["member_plan_id"],  # belongs to the other Property
+                "beds": 2,
+                "baths": 2,
+                "created_by": member.user_id,
+            }
+        ).execute()
+
+
+def test_rls_cancel_narrows_to_creator_or_owner_at_the_database(collab_hunt, seeded_users) -> None:
+    """The narrowing lives in a trigger, not a policy, because it is a statement
+    about *which column changed*. Assert it holds against a direct write, not
+    only through the API."""
+    visit_id = _seed_visit(seeded_users, collab_hunt, actor="member")
+    stamp = "2026-08-01T12:00:00+00:00"
+
+    with pytest.raises(APIError):
+        seeded_users["curator"].supabase.table("visits").update({"cancelled_at": stamp}).eq(
+            "id", visit_id
+        ).execute()
+
+    # A Curator may still start the tour: only cancellation is narrowed.
+    started = (
+        seeded_users["curator"]
+        .supabase.table("visits")
+        .update({"started_at": stamp})
+        .eq("id", visit_id)
+        .execute()
+        .data
+    )
+    assert started and started[0]["started_at"] is not None
+
+    owner_cancel = (
+        seeded_users["owner"]
+        .supabase.table("visits")
+        .update({"cancelled_at": stamp})
+        .eq("id", visit_id)
+        .execute()
+        .data
+    )
+    assert owner_cancel and owner_cancel[0]["cancelled_at"] is not None
+
+
+def test_rls_visit_identity_columns_are_immutable(collab_hunt, seeded_users, db_pool) -> None:
+    visit_id = _seed_visit(seeded_users, collab_hunt)
+    member = seeded_users["member"]
+    with pytest.raises(APIError):
+        member.supabase.table("visits").update(
+            {"property_id": collab_hunt["member_property_id"]}
+        ).eq("id", visit_id).execute()
+    with pytest.raises(APIError):
+        member.supabase.table("visits").update({"template_version": 99}).eq(
+            "id", visit_id
+        ).execute()
+
+
+def test_rls_visit_delete_narrows_to_creator_or_owner(collab_hunt, seeded_users) -> None:
+    visit_id = _seed_visit(seeded_users, collab_hunt, actor="member")
+    # A Curator's delete matches no row rather than raising: RLS filters it out.
+    seeded_users["curator"].supabase.table("visits").delete().eq("id", visit_id).execute()
+    assert (
+        seeded_users["member"]
+        .supabase.table("visits")
+        .select("id")
+        .eq("id", visit_id)
+        .execute()
+        .data
+    )
+    seeded_users["member"].supabase.table("visits").delete().eq("id", visit_id).execute()
+    assert not (
+        seeded_users["member"]
+        .supabase.table("visits")
+        .select("id")
+        .eq("id", visit_id)
+        .execute()
+        .data
+    )
+
+
+def test_rls_template_is_readable_but_never_writable(seeded_users) -> None:
+    """Global reference data: any authenticated user reads it, no client writes it."""
+    member = seeded_users["member"]
+    assert member.supabase.table("visit_template_items").select("key").limit(1).execute().data
+    assert (
+        seeded_users["outsider"]
+        .supabase.table("visit_template_items")
+        .select("key")
+        .limit(1)
+        .execute()
+        .data
+    )
+    with pytest.raises(APIError):
+        member.supabase.table("visit_template_items").insert(
+            {
+                "key": "forged",
+                "version": 1,
+                "section_key": "kitchen",
+                "display_order": 9999,
+                "tier": "quick",
+                "kind": "check",
+                "scope": "unit",
+                "label": "Forged item",
             }
         ).execute()
 
@@ -337,6 +577,7 @@ async def test_job_own_vs_any_and_curator_checkpoint(
     collab_hunt,
     seeded_users,
     as_curator: AsyncClient,
+    as_member: AsyncClient,
 ) -> None:
     queued_job = await db_pool.fetchval(
         """insert into jobs (hunt_id, hunt_listing_id, type, state)
@@ -366,6 +607,38 @@ async def test_job_own_vs_any_and_curator_checkpoint(
         collab_hunt["owner_listing_id"],
         json.dumps(waiting_payload),
     )
+    auto_job_id = uuid4()
+    auto_snapshot = {
+        **waiting_payload["run_state"],
+        "job_id": str(auto_job_id),
+        "cursor": 4,
+    }
+    auto_payload = {
+        "url": "https://example.com",
+        "run_state": {**auto_snapshot, "status": "done", "checkpoint": None},
+        "auto_resolved_checkpoint": {
+            "prompt": prompt,
+            "answer": {"choice": "yes", "context_ref": None},
+            "resolved_at": datetime.now(UTC).isoformat(),
+            "snapshot": auto_snapshot,
+        },
+    }
+    auto_job = await db_pool.fetchval(
+        """insert into jobs
+               (id, hunt_id, hunt_listing_id, type, state, payload, finished_at)
+           values ($1, $2, $3, 'ingest', 'done', $4::jsonb, now()) returning id""",
+        auto_job_id,
+        collab_hunt["hunt_id"],
+        collab_hunt["owner_listing_id"],
+        json.dumps(auto_payload),
+    )
+    await db_pool.execute(
+        """
+        insert into job_events (job_id, stage, event)
+        values ($1, 'VERIFY', 'checkpoint_auto_resolved')
+        """,
+        auto_job,
+    )
     try:
         raw_cancel = (
             seeded_users["member"]
@@ -386,9 +659,24 @@ async def test_job_own_vs_any_and_curator_checkpoint(
         )
         assert checkpoint.status_code == 200
         assert checkpoint.json()["state"] == "queued"
+
+        denied_correction = await as_member.post(
+            f"/v1/jobs/{auto_job}/checkpoint",
+            json={"answer": {"choice": "no"}},
+        )
+        assert denied_correction.status_code == 403
+
+        correction = await as_curator.post(
+            f"/v1/jobs/{auto_job}/checkpoint",
+            json={"answer": {"choice": "no"}},
+        )
+        assert correction.status_code == 200
+        assert correction.json()["state"] == "queued"
+        assert correction.json()["id"] != str(auto_job)
     finally:
         await db_pool.execute(
-            "delete from jobs where id = any($1::uuid[])", [queued_job, waiting_job]
+            "delete from jobs where id = any($1::uuid[])",
+            [queued_job, waiting_job, auto_job],
         )
 
 
