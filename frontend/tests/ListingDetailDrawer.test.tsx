@@ -29,6 +29,7 @@ vi.mock("../src/features/listings/api", () => {
     useUpsertFee: mut,
     useUpsertUtilityOverride: mut,
     usePatchSourcePolicy: mut,
+    useRefreshListing: mut,
   };
 });
 
@@ -45,6 +46,17 @@ vi.mock("../src/features/collaboration/api", () => {
     useDeleteComment: mut,
   };
 });
+
+// The Cost & fees card now reads Fee Proposals (VC-7); this test isolates data
+// hooks by module, and an unmocked useQuery has no client here.
+vi.mock("../src/features/visits/api", () => ({
+  useListingFeeProposals: () => ({ data: [], isLoading: false }),
+  useDecideFeeProposal: () => ({ mutate: vi.fn(), isPending: false }),
+  // The Visits section (VC-8).
+  usePropertyVisits: () => ({ data: [], isLoading: false }),
+  useVisitUnitGroupScores: () => ({ data: [], isLoading: false }),
+  visitScoreKey: (listingId: string, groupKey: string | null) => `${listingId}:${groupKey ?? ""}`,
+}));
 
 vi.mock("../src/features/hunts/api", () => ({
   useHunt: () => ({ data: { settings: { occupants: 1, cats: 0, dogs: 0 } } }),

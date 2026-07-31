@@ -7,7 +7,8 @@ from uuid import UUID
 from fastapi import APIRouter, status
 
 from manzil_api.dependencies import CurrentUser, UserClient
-from manzil_api.hunts.dependencies import MemberHunt
+from manzil_api.hunts.dependencies import CuratedHunt, MemberHunt
+from manzil_api.jobs.schemas import JobResponse
 from manzil_api.listings import service
 from manzil_api.listings.dependencies import ValidListing
 from manzil_api.listings.schemas import (
@@ -15,6 +16,7 @@ from manzil_api.listings.schemas import (
     ListingResponse,
     ListingStatusPatch,
     PinsPatch,
+    RefreshRequest,
     SourcePolicyPatch,
     UnitGroupStatePatch,
     UnitGroupStateResponse,
@@ -89,6 +91,38 @@ async def patch_source_policy(
     client: UserClient,
 ) -> ListingResponse:
     return await service.patch_source_policy(client, listing, user.id, body)
+
+
+@router.post(
+    "/listings/{listing_id}/refresh",
+    response_model=JobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def refresh_listing(
+    listing_id: UUID,
+    body: RefreshRequest,
+    listing: ValidListing,
+    user: CurrentUser,
+    client: UserClient,
+) -> JobResponse:
+    return await service.enqueue_listing_refresh(
+        client, listing=listing, user_id=user.id, body=body
+    )
+
+
+@router.post(
+    "/hunts/{hunt_id}/refresh",
+    response_model=list[JobResponse],
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def refresh_hunt(
+    hunt_id: UUID,
+    body: RefreshRequest,
+    hunt: CuratedHunt,
+    user: CurrentUser,
+    client: UserClient,
+) -> list[JobResponse]:
+    return await service.enqueue_hunt_refresh(client, hunt_id=hunt_id, user_id=user.id, body=body)
 
 
 @router.patch(

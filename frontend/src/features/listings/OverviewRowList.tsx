@@ -41,7 +41,12 @@ import {
   type OverviewRow,
 } from "./overviewRows";
 import { sentenceCase } from "../../lib/text";
-import { ProblematicBadge } from "../../components/badges/ListingBadges";
+import {
+  AutoResolvedBadge,
+  ProblematicBadge,
+  StaleBadge,
+} from "../../components/badges/ListingBadges";
+import type { RefreshClass } from "./types";
 
 import classes from "./OverviewRowList.module.css";
 
@@ -179,6 +184,8 @@ function OverviewRowCard({
   onOpen,
   onArchive,
   problematic,
+  staleClasses,
+  autoResolved,
 }: {
   row: OverviewRow;
   huntId: string;
@@ -186,6 +193,8 @@ function OverviewRowCard({
   onOpen: (row: OverviewRow) => void;
   onArchive: (row: OverviewRow) => void;
   problematic: boolean;
+  staleClasses: RefreshClass[];
+  autoResolved: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const group = row.group;
@@ -263,6 +272,8 @@ function OverviewRowCard({
                 {row.listing.property.name}
               </Text>
               {problematic && <ProblematicBadge />}
+              {autoResolved && <AutoResolvedBadge />}
+              <StaleBadge classes={staleClasses} />
             </Box>
             <Group gap={6} wrap="nowrap" mt={2}>
               <Text size="xs" c="dimmed">
@@ -300,6 +311,8 @@ export function OverviewRowList({
   rows,
   pipeline,
   problematicPropertyIds,
+  staleClassesByListing,
+  autoResolvedListingIds,
   onOpen,
   onArchive,
 }: {
@@ -307,6 +320,8 @@ export function OverviewRowList({
   rows: OverviewRow[];
   pipeline?: Map<string, RowPipeline>;
   problematicPropertyIds?: Set<string>;
+  staleClassesByListing?: Map<string, RefreshClass[]>;
+  autoResolvedListingIds?: Set<string>;
   onOpen: (row: OverviewRow) => void;
   onArchive: (row: OverviewRow) => void;
 }) {
@@ -319,6 +334,8 @@ export function OverviewRowList({
           huntId={huntId}
           pipeline={pipeline?.get(rowKey(row)) ?? null}
           problematic={problematicPropertyIds?.has(row.listing.property_id) ?? false}
+          staleClasses={staleClassesByListing?.get(row.listing.id) ?? []}
+          autoResolved={autoResolvedListingIds?.has(row.listing.id) ?? false}
           onOpen={onOpen}
           onArchive={onArchive}
         />

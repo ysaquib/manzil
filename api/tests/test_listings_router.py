@@ -222,3 +222,116 @@ async def test_source_policy_edit_is_owner_or_submitter_only(
         json={"source_policy": "trust_link"},
     )
     assert other.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_listing_refresh_enqueues_and_coalesces_class_job(
+    collab_hunt, as_owner: AsyncClient, db_pool
+) -> None:
+    listing_id = collab_hunt["owner_listing_id"]
+    property_id = await db_pool.fetchval(
+        "select property_id from hunt_listings where id = $1", listing_id
+    )
+    source_id = await db_pool.fetchval(
+        """
+        insert into property_sources
+            (property_id, url, site_domain, cleaned_text_hash, last_success_at)
+        values ($1, $2, 'refresh.test', 'old', now())
+        returning id
+        """,
+        property_id,
+        f"https://refresh.test/{listing_id}",
+    )
+    await db_pool.execute(
+        "update hunt_listings set submitted_source_id = $2 where id = $1",
+        listing_id,
+        source_id,
+    )
+
+    first = await as_owner.post(
+        f"/v1/listings/{listing_id}/refresh",
+        json={"fields": ["pricing", "pricing"]},
+    )
+    assert first.status_code == 202
+    assert first.json()["type"] == "refresh"
+    second = await as_owner.post(
+        f"/v1/listings/{listing_id}/refresh",
+        json={"fields": ["pricing"]},
+    )
+    assert second.status_code == 202
+    assert second.json()["id"] == first.json()["id"]
+    payload = await db_pool.fetchval("select payload from jobs where id = $1", first.json()["id"])
+    if isinstance(payload, str):
+        payload = json.loads(payload)
+    assert payload["scope"] == "classes"
+    assert payload["fields"] == ["pricing"]
+
+    combined = await as_owner.post(
+        f"/v1/listings/{listing_id}/refresh",
+        json={"fields": ["listing_details", "pricing"]},
+    )
+    reordered = await as_owner.post(
+        f"/v1/listings/{listing_id}/refresh",
+        json={"fields": ["pricing", "listing_details"]},
+    )
+    assert reordered.json()["id"] == combined.json()["id"]
+
+
+@pytest.mark.asyncio
+async def test_listing_refresh_rejects_empty_fields(collab_hunt, as_owner: AsyncClient) -> None:
+    response = await as_owner.post(
+        f"/v1/listings/{collab_hunt['owner_listing_id']}/refresh",
+        json={"fields": []},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_curator_can_refresh_hunt_but_not_another_submitters_listing(
+    collab_hunt, as_curator: AsyncClient, db_pool
+) -> None:
+    listing_ids = [
+        collab_hunt["member_listing_id"],
+        collab_hunt["owner_listing_id"],
+    ]
+    await db_pool.execute(
+        """
+        update property_sources ps
+        set last_success_at = now()
+        from hunt_listings hl
+        where hl.property_id = ps.property_id
+          and hl.id = any($1::uuid[])
+        """,
+        listing_ids,
+    )
+    await db_pool.execute(
+        """
+        update hunt_listings hl
+        set submitted_source_id = ps.id
+        from property_sources ps
+        where ps.property_id = hl.property_id
+          and hl.id = any($1::uuid[])
+        """,
+        listing_ids,
+    )
+
+    direct = await as_curator.post(
+        f"/v1/listings/{collab_hunt['owner_listing_id']}/refresh",
+        json={"fields": ["pricing"]},
+    )
+    assert direct.status_code == 403
+
+    response = await as_curator.post(
+        f"/v1/hunts/{collab_hunt['hunt_id']}/refresh",
+        json={"fields": ["pricing"]},
+    )
+    assert response.status_code == 202
+    assert len(response.json()) == 2
+    queued = await db_pool.fetchval(
+        """
+        select count(*) from jobs
+        where hunt_id = $1 and type = 'refresh' and state = 'queued'
+        """,
+        collab_hunt["hunt_id"],
+    )
+    assert queued == 2

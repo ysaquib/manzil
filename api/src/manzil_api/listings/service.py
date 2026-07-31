@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlsplit
@@ -10,11 +11,15 @@ from uuid import UUID
 from manzil_worker.fetching.slug_hint import search_hint
 
 from manzil_api.hunts.exceptions import InsufficientRole
+from manzil_api.jobs.schemas import JobResponse
+from manzil_api.jobs.service import row_to_response
 from manzil_api.listings.schemas import (
     ListingCreate,
     ListingResponse,
     ListingStatusPatch,
     PinsPatch,
+    RefreshClass,
+    RefreshRequest,
     SourcePolicyPatch,
     UnitGroupStatePatch,
     UnitGroupStateResponse,
@@ -147,6 +152,125 @@ async def patch_source_policy(
     if row is None:
         raise RuntimeError("source policy update returned no Listing")
     return _to_response(row)
+
+
+def _json(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, str):
+        return json.loads(raw)
+    return raw or {}
+
+
+def _refresh_matches(row: dict[str, Any], fields: list[RefreshClass]) -> bool:
+    payload = _json(row.get("payload"))
+    return payload.get("scope") == "classes" and payload.get("fields") == fields
+
+
+def _submitted_url(client: Client, listing: dict[str, Any]) -> str:
+    source_id = listing.get("submitted_source_id")
+    query = client.table("property_sources").select("url")
+    if source_id:
+        rows = query.eq("id", source_id).limit(1).execute().data or []
+    else:
+        rows = (
+            query.eq("property_id", listing["property_id"])
+            .not_.is_("last_success_at", "null")
+            .order("last_success_at")
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+    if not rows:
+        raise RuntimeError("Listing has no successfully fetched submitted Source")
+    return str(rows[0]["url"])
+
+
+async def enqueue_listing_refresh(
+    client: Client,
+    *,
+    listing: dict[str, Any],
+    user_id: str,
+    body: RefreshRequest,
+    trigger: str = "user",
+    authorized_hunt_refresh: bool = False,
+) -> JobResponse:
+    """Create or coalesce one Listing-scoped refresh Job."""
+    if not authorized_hunt_refresh:
+        role = _role(client, listing["hunt_id"], user_id)
+        if role != "owner" and listing["added_by"] != user_id:
+            raise InsufficientRole("Only the Listing submitter or Hunt Owner may refresh it")
+    fields = RefreshRequest.normalized_fields(body.fields)
+    active = (
+        client.table("jobs")
+        .select("*")
+        .eq("hunt_listing_id", listing["id"])
+        .eq("type", "refresh")
+        .in_("state", ["queued", "running", "waiting_user"])
+        .order("created_at", desc=True)
+        .execute()
+        .data
+        or []
+    )
+    matching = next((row for row in active if _refresh_matches(row, fields)), None)
+    if matching is not None:
+        return row_to_response(matching)
+    payload = {
+        "url": _submitted_url(client, listing),
+        "scope": "classes",
+        "fields": fields,
+        "trigger": trigger,
+        "hunt_id": listing["hunt_id"],
+        "listing_id": listing["id"],
+    }
+    rows = (
+        client.table("jobs")
+        .insert(
+            {
+                "hunt_id": listing["hunt_id"],
+                "hunt_listing_id": listing["id"],
+                "type": "refresh",
+                "state": "queued",
+                "payload": payload,
+            }
+        )
+        .execute()
+        .data
+        or []
+    )
+    if not rows:
+        raise RuntimeError("refresh Job insert returned no row")
+    return row_to_response(rows[0])
+
+
+async def enqueue_hunt_refresh(
+    client: Client,
+    *,
+    hunt_id: UUID,
+    user_id: str,
+    body: RefreshRequest,
+) -> list[JobResponse]:
+    """Fan out one refresh Job per active Listing."""
+    listings = (
+        client.table("hunt_listings")
+        .select("*")
+        .eq("hunt_id", str(hunt_id))
+        .eq("status", "active")
+        .order("created_at")
+        .execute()
+        .data
+        or []
+    )
+    return [
+        await enqueue_listing_refresh(
+            client,
+            listing=listing,
+            user_id=user_id,
+            body=body,
+            trigger="user:hunt",
+            authorized_hunt_refresh=True,
+        )
+        for listing in listings
+    ]
 
 
 async def patch_unit_group_state(
