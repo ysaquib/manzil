@@ -63,8 +63,9 @@ is a hard invariant, not a default.
 RECONCILE ladder; VISION with the versioned reference set; Maps/reviews/safety
 ENRICH; utility-baselines job; custom-criteria routing; checkpoints complete
 (incl. the 24 h auto-resume sweep); refresh TTLs + content-hash gating; Compare
-view; mobile sheet polish; Tier-3 adapters **only as the Phase 0 census gate
-demands**; apartmentratings.com as ratings stage 2.
+view; hunt-wide filters (P3-18); map surfaces (P3-19); property contact
+retrieval (P3-21); mobile sheet polish; Tier-3 adapters **only as the Phase 0
+census gate demands**; apartmentratings.com as ratings stage 2.
 **Exit:** NFR1–NFR4 measured and met on the live hunt (measurement plan in §14).
 
 **Explicitly out of scope** (per AGENTS.md phase discipline — do not build):
@@ -170,8 +171,7 @@ queries answer "what is due", inserts/updates follow. `run_worker_loop`
 (`queue.py:581-629`) gains a `scheduler_tick()` called when the last tick is
 >5 min old (tunable `SCHEDULER_TICK_SECONDS` in `shared/config.py`, flat-caps
 convention). Duties arrive with their owning tasks: checkpoint 24 h sweep
-(P3-11, first consumer — builds the scaffold), TTL refresh scan (P3-12),
-utility-baseline 120 d job + 30 d screenshot retention cleanup (P3-9/P3-7).
+(P3-11), TTL refresh scan (P3-12), and the utility-baseline 120 d job (P3-9).
 Missed ticks catch up on restart; nothing is minute-critical.
 
 ### 2.5 Refresh jobs: "own" semantics extend, no schema change
@@ -216,20 +216,18 @@ write `single_source` **from RECONCILE**, per the 2026-07-09 audit note that
 the projection must not forward-implement it). Disputed values follow §10.6's
 final rung (ladder v2, §20 2026-07-13): conservative value stored `disputed`,
 candidates retained in jsonb, the listing derives the Problematic badge, and
-the gate-bearing case raises `resolve_dispute` — whose auto-resume default is
-DESIGN's **open question #1**: the first real dispute decides it, recorded in
-§20 (until then the sweep leaves `resolve_dispute` parked rather than guessing
-a default; `confirm_value`/`resolve_dedupe` defaults are declared per §10.10).
+the gate-bearing case raises `resolve_dispute`. DESIGN v3.21 settled its
+auto-resume default as `Leave unknown`, the only option that cannot satisfy a
+Gate; P3-11 applies it through the same sweep as the other declared defaults.
 
-### 2.9 Images and screenshots: Storage buckets, existing columns
+### 2.9 Images and checkpoint context
 
-P3-7 wires what the schema has waited for: `property_images` rows +
-`property_sources.image_urls`/`screenshot_path` (all present, unwired).
-Supabase Storage gains two buckets — `property-images` (WebP, ≤10/property,
-~1024 px) and `screenshots` (opportunistic tier-2 captures, 30 d retention via
-the §2.4 tick). Buckets are private; reads go through short-lived signed URLs
-minted by the API (RLS posture: images are global facts like extractions —
-readable by any authenticated member, written only by the worker).
+P3-7 wires `property_images` rows + `property_sources.image_urls`. The private
+`property-images` bucket uses short-lived signed URLs (RLS posture: images are
+global facts like Extractions — readable by authenticated Hunt members, written
+only by the worker). DESIGN v3.32 defers full-page checkpoint screenshots:
+P3-11 presents the extracted value, evidence quote, and Source link instead.
+The existing nullable `screenshot_path` remains reserved and unpopulated.
 
 ### 2.10 Frontend deltas already banked
 
@@ -260,8 +258,8 @@ Full task detail in §4–§13; every task below carries its what/why.
 | P3-7 ◐ | C | **Kitchen VISION live by Owner override;** flooring/bathroom disabled — owed external quality bench (`docs/p3-7-vision-guide.md`) | kitchen/flooring quality are rubric criteria only vision can score; reference anchoring is the consistency control (R6) |
 | P3-8 ◐ | C | **Landed 2026-07-18** — ENRICH proximity/commute/Places ratings; safety placeholder — ◐ pending one live Detroit-metro ENRICH run | location and reputation criteria are the remaining unscoreable catalog rows; Places is near-free and covers almost every complex |
 | P3-9 ◐ | C | **Landed 2026-07-18** — utility baselines tick + §9.5 all-in composition; first live baselines pass done — ◐ owed bench re-run after schema growth | the all-in number is the tool's core promise; winter-weighted estimates make unlisted utilities honest instead of invisible |
-| P3-10 | C | Custom criteria authoring + CUSTOM_MATCH dispatch | the catalog can't anticipate every hunt's dealbreaker; authoring-time routing keeps run-time dumb and cheap |
-| P3-11 | D | Checkpoints complete: screenshot UI, 24 h sweep, reopen/re-score | checkpoints only work if ignoring them costs nothing — auto-resume with a visible badge means nothing strands and nothing hides |
+| P3-10 ◐ | C | **Engineering landed 2026-07-30** (DESIGN v3.35 / IMPLEMENTATION 2.0.101); live Maps + text acceptance remains | the catalog can't anticipate every hunt's dealbreaker; authoring-time routing keeps run-time dumb and cheap |
+| P3-11 ✅ | D | **Landed 2026-07-30** (DESIGN v3.32 / IMPLEMENTATION 2.0.95): evidence/Source context, 24 h sweep, clay clock badge, immutable correction Job/re-score; screenshots deferred | checkpoints only work if ignoring them costs nothing — auto-resume with visible provenance means nothing strands and nothing hides |
 | P3-12 | D | Refresh: TTLs, hash gating, field-scoped partial, planner refresh mode | fresh data without re-paying extraction; hash gating is the single biggest cost lever after caching (§15) |
 | P3-13 ◐ | D | **Compare landed 2026-07-19** — remaining mobile bottom-sheet polish | FR9 — the decision endgame is comparing finalists, and it happens on phones |
 | P3-14 ⚠ | E | Tier-3 adapters per census verdict | spend on hostile domains only where the census proves inventory lives behind them |
@@ -275,7 +273,11 @@ Full task detail in §4–§13; every task below carries its what/why.
 | P3-SC7 ✅⚠ | SC | **Engineering landed 2026-07-29** — controlled flooring set + objective/subjective overlap warning; human per-Criterion bench remains | after P3-SC6 |
 | P3-SC8 ✅ | SC | **Landed 2026-07-28** — move-in composer + Cost & fees consolidation | estimated cash at move-in Criterion |
 | P3-16 | D | **Rescoped 2026-07-29** (DESIGN v3.27) — settings/account/chrome rework: one settings shell used twice, navbar-foot account cluster, feedback modal + admin-only table, Drawer deep links | the settings page had become a scroll with three save buttons and no unsaved state; the account surface lived outside the app's own navigation |
-| P3-22 ⚠ | — | **Deferred, specified 2026-07-29** (DESIGN §18, §20 v3.27) — notification system + attention indicators; §13.1 below | preferences without delivery are a promise the app can't keep, so the surface is designed and parked rather than shipped |
+| P3-17 ⚠ | E | **Gated, not started** (DESIGN §18, §20 2026-07-18) — location-safety module: A+–F grading from ARCGIS/open-data + police/FBI reports, SE Michigan first; §13 below | commercial safety APIs rejected on cost; P3-8's override-first placeholder ships without it; needs an explicit scoping ruling to start |
+| P3-18 ✅ | D | **Landed 2026-07-19** (DESIGN §20) — hunt-wide filters: `hunt_shared_filters`, Owner/Curator publish, seed-on-open, expanded predicate registry | one agreed starting view without locking anyone's exploration |
+| P3-19 ✅ | D | **Landed 2026-07-26** (DESIGN v3.14) — map surfaces: drawer Location card + hunt Map view at `/h/:huntId/map` | the hunt is a geography problem the table could only answer as text |
+| P3-21 ✅ | C | **Landed 2026-07-27** (DESIGN v3.17) — property contact: leasing phone + contact URL by provenance precedence (official → Places → listing) | the app could say a Property was worth calling but not how to call it |
+| P3-22 ⚠ | — | **Deferred, specified 2026-07-29** (DESIGN §18, §20 v3.27) — notification system + attention indicators; §13 below | preferences without delivery are a promise the app can't keep, so the surface is designed and parked rather than shipped |
 | P3-23 ⚠ | — | **Deferred, specified 2026-07-29** (DESIGN §18) — self-service account deletion, gated on transferring owned Hunts; email change declined outright | a Hunt always needs an Owner, so deletion is an ownership problem before it is a data problem |
 
 ---
@@ -482,7 +484,7 @@ kitchen quality benchmark — no accuracy claim until it runs. See
 `docs/p3-7-vision-guide.md` for rollout gates.
 
 **What/why:** download listing images (≤10, WebP, ~1024 px) into Storage,
-wire `property_images` + screenshot capture/retention (§2.9), and run the P4
+wire `property_images`, and run the P4
 vision call anchored by the versioned reference set — because
 `kitchen_quality`/`flooring_quality` are catalog criteria nothing else can
 score, and un-anchored vision ratings drift (R6).
@@ -492,9 +494,7 @@ score, and un-anchored vision ratings drift (R6).
 `call_vision` implemented (images as content blocks,
 same record/replay discipline — fixtures store image hashes, not bytes);
 reference set under `worker/prompts/vision_refs/` (versioned with the prompt;
-changing it is a reviewed migration: re-run, diff, accept); tier-2 fetcher
-writes `screenshot_path`; scheduler tick (once P3-11 lands the scaffold)
-deletes screenshots >30 d. Per-image detail → `property_images
+changing it is a reviewed migration: re-run, diff, accept). Per-image detail → `property_images
 .vision_assessment`; the aggregated per-criterion rating → `extractions` with
 contributing image paths as evidence. Frontend: drawer gains the image gallery
 with per-image assessments (§13.2).
@@ -586,11 +586,17 @@ rescores without any refetch; a fully-unknown utility contributes
 
 ## 12. P3-10 — Custom criteria authoring + dispatch (Wave C)
 
+> **Engineering landed 2026-07-30 ◐** (DESIGN v3.35 / IMPLEMENTATION
+> 2.0.101). The author-selected, versioned v1 contract ships page-text and
+> Property-only Maps acquisition, immediate cached-evidence backfill, and
+> hunt-scoped append-only provenance. VISION and web-search custom routes moved
+> to §18. One live commute custom and one live text custom remain before ✅.
+
 **What/why:** the §9.2 authoring flow — name → description → one cheap LLM
 routing classification (`requires_tool`) → **user confirms the routing with
 one click** → options like any criterion — and CUSTOM_MATCH's dumb dispatch
-(`null`→text, `maps`→ENRICH-style call, `vision`→vision pass,
-`web_search`→scoped search). Custom criteria are how the catalog stays small
+(`null`→text, `maps`→bounded location loop; `vision` and `web_search` are
+recognized but v1-deferred). Custom criteria are how the catalog stays small
 while every hunt's idiosyncratic dealbreaker (floor level, commute to a
 specific address) still scores; authoring-time confirmation is what catches
 misroutes when they're free to fix.
@@ -612,27 +618,36 @@ provably invisible to other hunts (existing RLS matrix case extends).
 
 ## 13. Wave D + E tasks
 
-### P3-11 — Checkpoints complete
+### P3-11 ✅ — Checkpoints complete (landed 2026-07-30)
 
-**What/why:** the checkpoint contract's second half — screenshot beside the
-buttons (path exists once P3-7 writes it), the 24 h auto-resume sweep (first
-scheduler-tick consumer, §2.4), the clock badge on auto-resolved rows, and
-reopen-with-re-score from the drawer. A checkpoint system where silence
-strands jobs punishes exactly the collaboration Phase 2 built; auto-resume
-with visible provenance means nothing waits on a vacation.
+> **Landed 2026-07-30** (DESIGN v3.32 / IMPLEMENTATION 2.0.95).
+
+**What/why:** the checkpoint contract's second half — extracted value/evidence/
+Source context beside the buttons, the 24 h auto-resume sweep (§2.4), the clock
+badge on auto-resolved rows, and reopen-with-re-score from the drawer. A
+checkpoint system where silence strands Jobs punishes exactly the collaboration
+Phase 2 built; auto-resume with visible provenance means nothing waits on a
+vacation. Full-page checkpoint screenshots are §18-deferred by DESIGN v3.32.
 
 Sweep semantics: `waiting_user` older than `CHECKPOINT_TIMEOUT_HOURS` (=24,
 tunable exists) → apply the prompt's declared `default`, write
-`checkpoint_auto_resolved` (event type already in the check constraint),
-re-queue. `resolve_dispute` is exempt until open question #1 is settled by
-the first real dispute (§2.8). Late answers replace the default and re-score.
-Frontend fills the `AutoResolvedBadge` slot; `CheckpointPromptCard` gains the
-screenshot (its line-3 comment has named this task since Phase 1).
-**Done when:** an ignored `confirm_value` auto-resolves at 24 h (clock badge,
-event row); reopening + answering re-scores; `resolve_dispute` provably does
-not auto-resolve.
+`checkpoint_auto_resolved` (event type already in the check constraint), retain
+the pre-default RunState snapshot, and re-queue. DESIGN v3.21 settled
+`resolve_dispute`'s declared default as `Leave unknown`, so all three kinds
+participate. A late answer creates a correction Job from the retained Stage
+boundary; the original Job and History remain immutable. Frontend fills the
+`AutoResolvedBadge` slot and `CheckpointPromptCard` gains compact evidence and
+Source context.
+**Done when:** an ignored checkpoint of every kind auto-resolves at 24 h
+(clock badge, event row); reopening + answering creates a correction Job that
+reaches SCORE; the original History remains intact.
 
 ### P3-12 — Refresh: TTLs, hash gating, field-scoped partial
+
+> **Landed 2026-07-30** (DESIGN v3.31 / IMPLEMENTATION 2.0.92): durable
+> per-Listing/class freshness, 24-hour pricing TTL, class-combined scheduler
+> fan-out, contributing-Slate refresh planning, hash-gated text work, API/RLS
+> permissions, and stale/refresh UI.
 
 **What/why:** the §14 machinery — TTL classes from the catalog's
 `refresh_class`, content-hash gating (unchanged `cleaned_text_hash` skips
@@ -645,11 +660,11 @@ steady state rounds to a fetch and a comparison.
 
 Refresh jobs honor the listing's persisted `source_policy` (§8.2) and the
 per-domain rate limiter on hunt-wide fan-out. Frontend fills the `StaleBadge`
-slot from `last_fetched_at` vs TTL class and adds refresh actions to the
+slot from durable per-class success markers and adds refresh actions to the
 drawer + table row menu.
 **Done when:** unchanged-page refresh costs a fetch + hash compare only
 (manifest proves it); `fields=pricing` refresh runs exactly
-FETCH(official)→EXTRACT→VERIFY→RECONCILE→SCORE; the stale badge appears when
+FETCH(contributing Slate)→EXTRACT→VERIFY→RECONCILE→SCORE; the stale badge appears when
 pricing TTL lapses and clears on refresh.
 
 ### P3-13 — Compare view + mobile polish
@@ -745,6 +760,140 @@ a cold load, a deleted target shows the gone-state and clears the param, and
 Back closes the Drawer rather than leaving the hunt; the RLS matrix gains a case
 proving a second signed-in user cannot read any `feedback` row; every surface
 works at 375 px with the header `UserMenu` fallback.
+
+### P3-17 ⚠ — Location-safety module (gated, deferred)
+
+**Status:** gated (DESIGN §18). Ruled 2026-07-18 when P3-8's `location_safety`
+was rescoped to an override-first A+–F placeholder; **needs an explicit
+scoping ruling to start**, exactly like P3-22. Never blocks P3-8 — the
+placeholder and override dropdown are the shipping path. Not an exit condition.
+
+**What/why:** the future producer behind the `location_safety` Catalog
+criterion. Grades a Property's location A+–F from public primary sources —
+ARCGIS/open-data crime layers, local police department reports, FBI UCR/NIBRS —
+rather than a commercial safety API (quoted in the hundreds of $/month; building
+beats buying at this scale, R8). When it lands, ENRICH swaps the placeholder for
+module output; the A+–F vocabulary, override path, and rubric options stay
+unchanged. May be scoped out as a **standalone project** this pipeline consumes
+as a data source.
+
+**Scope note:** implement for **SE Michigan first** with metro-by-metro
+expansion later. Non-covered metros continue to score unknown until the module
+covers them or a human override supplies a grade.
+
+**Done when:** a SE-Michigan bench property gets a sourced A+–F grade from the
+module through ENRICH; human overrides still win; non-covered metros still
+score unknown; no web-search synthesis or labeled guess enters the scoring path.
+
+### P3-18 ✅ — Hunt-wide filters (landed 2026-07-19)
+
+> **Landed 2026-07-19** (IMPLEMENTATION 2.0.65, DESIGN §20 2026-07-19).
+> Shipped alongside P3-13's compare half; the compare view itself is documented
+> under P3-13 above.
+
+**What/why:** a Hunt benefits from one agreed starting view without locking
+anyone's exploration. Filters are **view state, deliberately outside the
+pinned `settings` contract** — they are not scoring inputs and must not ride
+settings' bump-and-rescore edit semantics. Owner and Curator publish a shared
+filter set; every member's Overview **seeds from it on open**, then deviates
+freely. A badge distinguishes matching vs modified; publishing cleared filters
+retires the set.
+
+**Files:** migration `hunt_shared_filters` + RLS (member read, Owner/Curator
+write — curation precedent, like `listing_unit_group_states`);
+`PUT /v1/hunts/{id}/shared-filters` (`CuratedHunt` + RLS double-enforced
+upsert); `frontend/src/features/hunts/api.ts` (`useSharedFilters`,
+`usePublishSharedFilters`); Overview seed-on-open with touched/seeded refs so
+an early member interaction is never overwritten mid-session. Filter registry
+gains laundry, parking, pets, cooling, dishwasher, max-all-in, and available-by
+predicates reading the display plan's breakdown; unknown values always pass.
+
+**Forward compatibility:** stored filter objects are **sanitized on read**
+(unknown keys drop, missing keys default) so the registry can grow without
+migrations. Realtime is deliberately **not** on the §13.3 channel list —
+seed-on-open is not live-synced; others pick up a publish on next visit.
+
+**Done when:** publish as Curator seeds a second browser's Overview on open;
+a member sees the badge but no publish control; unknown values pass every new
+filter; clearing local filters stays local and never deletes the shared set.
+
+### P3-19 ✅ — Map surfaces (landed 2026-07-26)
+
+> **Landed 2026-07-26** (IMPLEMENTATION 2.0.77, DESIGN v3.14, Yusuf-directed).
+> Frontend only — no schema, API, scoring, or worker change.
+
+**What/why:** the hunt is a geography problem the app could only answer as a
+text address. Two surfaces: a drawer **Location** card ("where is this one") and
+a hunt **Map** view at `/h/:huntId/map` ("where are all of them relative to
+each other"). Both render through the **Google Maps JavaScript API** behind a
+**new, separate, HTTP-referrer-restricted** `VITE_GOOGLE_MAPS_API_KEY` — never
+the worker's server key. With the key unset each surface shows an explanatory
+placeholder and nothing else breaks; the maps are additive, never load-bearing.
+
+**Shape rulings:** **(a)** one pin is one Listing — a pin whose Unit Groups
+score into different bands is *sliced* into those bands rather than averaged; a
+map may not invent a score. **(b)** clicking a multi-group pin asks which Unit
+Group first, because §9.4's compared/curated entity is the Unit Group, not the
+Listing. Deliberately **no cloud Map ID** (keeps classic `styles` array for
+dark basemap theming from `theme.ts` tokens and `google.maps.Marker` with
+score-palette SVG icons). Deliberately **no new data** — both surfaces read the
+existing `properties.lat/lng` forever-cache DEDUPE already writes; no client-side
+geocoding. A Property without coordinates is counted in the Map footnote, not
+dropped; the drawer falls back to address-only.
+
+**Files:** `frontend/src/lib/googleMaps.ts` (promise-cached loader resolving on
+`importLibrary`, not script `load`); `features/map/MapFrame.tsx`,
+`HuntMapPage.tsx`, `ListingLocationMap.tsx`, `mapTheme.ts`, `mapPoints.ts`.
+Overview filter state lifted to a hunt-scoped provider mounted above the layout
+`Outlet` so Overview and Map filter identically; switching hunts remounts and
+re-seeds.
+
+**Done when:** a hunt's scored groups plot with band colors; a split-band
+property shows both; clicking a multi-group pin selects a group then opens its
+drawer; a geocode-less property is counted, not dropped; with the key unset both
+surfaces degrade to a placeholder.
+
+### P3-21 ✅ — Property contact retrieval (landed 2026-07-27)
+
+> **Landed 2026-07-27** (IMPLEMENTATION 2.0.79, DESIGN v3.17, Yusuf-directed).
+> **Follow-up:** the EXTRACT schema gained a field, so the Phase 0 bench set
+> must be re-run before the extraction-quality claim is considered validated
+> (existing replay recordings still validate — the block is optional with
+> `default=None`). Email deferred by ruling.
+
+**What/why:** the app could tell you a Property was worth calling but not how
+to call it. Delivers a leasing-office phone number and a generic contact/inquiry
+URL, resolved by **provenance precedence** rather than the §10.6 reconciliation
+ladder — contact facts are never scored, never Gate-bearing, and identical digits
+across aggregators usually mean one call-tracking proxy echoed through a feed,
+not corroboration. §16's PII rule is **narrowed, not dropped**: property-level
+*business* contact is permitted; an individual's name, role, direct line, or
+personal email remain prohibited. The control is **structural**: neither the
+EXTRACT block nor `property_contacts` has a column for a person.
+
+**Three rungs, best first:** **official site → Google Places → listing page**.
+Rung 1 fires only when the official site is *already* a fetched Source — no new
+fetch, no widening of §10.6 escalation. Rungs 1 and 3 share one optional
+EXTRACT block ranked at persist time by the Source's `is_official`; rung 2 adds
+`formatted_phone_number` + `website` to the Place Details mask ENRICH already
+calls once per Property. Terminal state is **giving up, not escalating** — no
+contact found renders no Contact row; the reader falls back to the Sources card
+and `official_url`.
+
+**Files:** migration `20260807000000_property_contacts.sql` (append-only
+`property_contacts` + security-invoker `property_contacts_current` view +
+read-only RLS); `worker/.../enrich/contacts.py` (US phone normalization,
+http(s) + registrable-domain guard, `PROVENANCE_RANK`); optional `property_contact`
+EXTRACT block (`schema_gen.py`, `extract.py`, `PropertyContactIn`);
+`_persist_property_contacts` in `queue.py`; drawer **Contact** row inside the
+Location card (`PropertyContact.tsx`, `usePropertyContacts`). Contact values
+never reach `source_claims`, so SCORE is untouched.
+
+**Done when:** all three rungs persist with correct provenance ranking; the
+domain guard rejects off-property contact URLs; re-ingesting the same page
+refreshes `observed_at` rather than appending; the drawer Contact row shows the
+precedence-resolved winner per kind; no person-shaped field exists anywhere in
+the path.
 
 ### P3-22 ⚠ — Notification system + attention indicators (deferred, specified)
 
