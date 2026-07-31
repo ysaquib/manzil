@@ -1,0 +1,10 @@
+/* The member dot. Geometry, not spacing — a fixed 7px reads as a marker at
+   every text size, which a spacing token would not guarantee. */
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+  display: inline-block;
+}

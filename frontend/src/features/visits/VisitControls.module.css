@@ -1,0 +1,13 @@
+/* The tri-state Check control. Its geometry is the point: this is the most
+   tapped thing in the app and it is tapped one-handed, so both buttons clear
+   the 2.75rem touch minimum (UI_DESIGN §5) even though the glyph is smaller. */
+
+.tri {
+  flex: none;
+}
+
+.triButton {
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+}

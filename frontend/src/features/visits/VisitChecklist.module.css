@@ -1,0 +1,83 @@
+/* Checklist runtime layout. The item row is a two-column grid rather than a
+   flex row so a long label wraps without ever squeezing the control — on a
+   phone the control is the thing your thumb is aiming at. */
+
+.itemRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--mantine-spacing-sm);
+  align-items: center;
+  padding: var(--mantine-spacing-xs) 0;
+  border-top: 1px solid var(--mantine-color-default-border);
+}
+
+.itemRow:first-of-type {
+  border-top: none;
+}
+
+.itemLabel {
+  min-width: 0;
+}
+
+.itemControl {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+/* A Question and a free-text Fact need the full width, so they drop below the
+   label instead of fighting it for room. */
+.itemRow:has(textarea) {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.itemRow:has(textarea) .itemControl {
+  justify-content: stretch;
+}
+
+.scopeBar {
+  color: var(--mantine-color-dimmed);
+  padding: 6px 8px;
+  border-radius: var(--mantine-radius-sm);
+  background: var(--mantine-color-default-hover);
+}
+
+/* Chips act as buttons; Mantine's Badge is a span, so it needs the reset. */
+.unitChip,
+.sectionChip {
+  cursor: pointer;
+  border-width: 1px;
+  font-weight: 600;
+  /* Comfortable for a thumb without becoming a slab (UI_DESIGN §5). */
+  min-height: 2.25rem;
+  padding-inline: 0.75rem;
+  /* These live in a nowrap flex row inside a horizontal scroller, so without
+     this they shrink to zero width and render as empty boxes — Badge clips its
+     own label. The strip is meant to scroll, not compress. */
+  flex: none;
+  white-space: nowrap;
+  /* Badge caps its label width; these are labels, not badges. */
+  max-width: none;
+}
+
+.unitChip > span,
+.sectionChip > span {
+  overflow: visible;
+}
+
+.unitChip:focus-visible,
+.sectionChip:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 2px;
+}
+
+/* Per-member rating dot in the team aggregate. Fixed geometry so it reads as a
+   marker at any text size. */
+.memberDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 3px;
+  vertical-align: middle;
+}
