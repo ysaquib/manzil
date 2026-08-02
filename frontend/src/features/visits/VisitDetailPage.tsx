@@ -39,6 +39,7 @@ import type { VisitEditMode } from "./types";
 import { ApiError } from "../../lib/apiClient";
 import { useCurrentMember, useMembers } from "../collaboration/api";
 import { useDeleteVisit, usePatchVisit, useVisit, useVisitTemplate } from "./api";
+import { useGhostMode } from "../admin/useGhostMode";
 import { VisitChecklist } from "./VisitChecklist";
 import { VisitConfirmDialog } from "./VisitConfirmDialog";
 import { VisitDefects } from "./VisitDefects";
@@ -99,6 +100,12 @@ export function VisitDetailPage() {
   const mode: VisitEditMode =
     state === "cancelled" ? "void" : state === "completed" ? "record" : "live";
   const readOnly = mode !== "live";
+  // A Site Admin viewing a Hunt they are not in reads Visits and never writes
+  // them (DESIGN §4.2): an Entry feeds the per-member roll-up in §9.7, and a
+  // ghost answering a tour they did not attend makes those numbers lie. RLS
+  // refuses the write regardless — this is what stops the UI offering it.
+  const { isGhost } = useGhostMode(visit?.hunt_id);
+  const readOnly = state === "completed" || state === "cancelled" || isGhost === true;
   const sections = groupIntoSections(templateQuery.data ?? []);
   const lockedSections = sections.filter((section) => section.key !== "prep");
 

@@ -266,7 +266,7 @@ async def score_stage(state: RunState, ctx: StageCtx) -> RunState:
                     values["all_in_monthly"] = composition.total
                     gate_values["all_in_monthly"] = composition.total
             move_in = compose_move_in(
-                first_month_all_in=composition.total if composition is not None else None,
+                first_month_rent=rent,
                 security_deposit=(
                     float(floor_plan.deposit) if floor_plan.deposit is not None else None
                 ),

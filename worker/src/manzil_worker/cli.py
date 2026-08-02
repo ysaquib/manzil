@@ -631,6 +631,102 @@ def vision_classifier_bench_cmd(
     typer.echo(f"report: {out}")
 
 
+@app.command("vision-ml-bench")
+def vision_ml_bench_cmd(
+    benchmark_root: Path = typer.Option(
+        Path("worker/tests/fixtures/vision_benchmark"),
+        "--benchmark-root",
+        help="Gitignored directory containing downloaded models and public datasets.",
+    ),
+    out: Path = typer.Option(
+        Path("worker/evals/reports/vision-ml-benchmark.json"),
+        "--out",
+        help="Gitignored JSON report; a Markdown sibling is written beside it.",
+    ),
+    model: list[str] = typer.Option(
+        [],
+        "--model",
+        help=(
+            "Frozen model to run: siglip2, clip, clip-onnx, clip-onnx-int8, "
+            "clip-onnx-uint8, or places365 (repeatable)."
+        ),
+    ),
+    profile: str = typer.Option(
+        "full",
+        "--profile",
+        help="`quick` verifies the harness; `full` uses the complete MIT test split.",
+    ),
+    device: str = typer.Option(
+        "cpu",
+        "--device",
+        help="PyTorch device. Use cpu for the portable hosting baseline.",
+    ),
+    batch_size: int = typer.Option(16, "--batch-size", min=1),
+) -> None:
+    """Benchmark frozen local vision models without an LLM or network call."""
+    from manzil_worker.evals.vision_ml_benchmark import (
+        MODEL_NAMES,
+        VisionMLBenchError,
+        report_json,
+        report_markdown,
+        run_benchmark,
+    )
+
+    if profile not in {"quick", "full"}:
+        typer.echo("--profile must be quick or full", err=True)
+        raise typer.Exit(code=2)
+    selected = tuple(model) if model else MODEL_NAMES
+    try:
+        report = run_benchmark(
+            root=benchmark_root,
+            models=selected,
+            profile=profile,  # type: ignore[arg-type]
+            device=device,
+            batch_size=batch_size,
+        )
+    except VisionMLBenchError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=1) from None
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(report_json(report))
+    markdown_out = out.with_suffix(".md")
+    markdown_out.write_text(report_markdown(report))
+    for result in report.results:
+        kitchen_f1 = result.kitchen.f1 or 0.0
+        diagram_f1 = result.diagram.metrics.f1 if result.diagram.metrics else None
+        diagram = "n/a" if diagram_f1 is None else f"{diagram_f1:.1%}"
+        typer.echo(
+            f"{result.model}: kitchen F1 {kitchen_f1:.1%} · diagram F1 {diagram} · "
+            f"{result.images_per_second:.2f} images/s · {result.peak_rss_mb:.0f} MB peak RSS"
+        )
+    typer.echo(f"JSON report: {out}")
+    typer.echo(f"Markdown report: {markdown_out}")
+
+
+@app.command("vision-ml-export-clip-onnx")
+def vision_ml_export_clip_onnx_cmd(
+    benchmark_root: Path = typer.Option(
+        Path("worker/tests/fixtures/vision_benchmark"),
+        "--benchmark-root",
+        help="Gitignored directory containing the downloaded CLIP model and MIT dataset.",
+    ),
+    overwrite: bool = typer.Option(False, "--overwrite", help="Replace prior generated exports."),
+) -> None:
+    """Export vision-only CLIP FP32/signed/unsigned-int8 ONNX artifacts."""
+    from manzil_worker.evals.clip_onnx import ClipONNXExportError, export_clip_onnx
+
+    try:
+        results = export_clip_onnx(benchmark_root, overwrite=overwrite)
+    except ClipONNXExportError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=1) from None
+    for variant, result in results.items():
+        typer.echo(
+            f"{variant}: {result['bytes'] / 1_000_000:.1f} MB · "
+            f"max parity error {result['max_abs_error']:.3g} · {result['path']}"
+        )
+
+
 @app.command("extract-corpus")
 def extract_corpus(slug: str) -> None:
     """Run only EXTRACT -> VERIFY for one saved corpus slug; emit raw JSON.
@@ -791,3 +887,85 @@ def census(
         raise typer.Exit(code=1)
     path = asyncio.run(run_census(urls, _fetchers(tier2, tier3), out))  # type: ignore[arg-type]
     typer.echo(f"census written to {path} ({len(urls)} URLs)")
+
+
+@app.command()
+def costs(
+    days: int = typer.Option(14, "--days", help="Window for the spend breakdown"),
+    hunt_id: str | None = typer.Option(None, "--hunt-id", help="Limit to one Hunt"),
+) -> None:
+    """Spend by stage and tier-3 credit usage (AD-C).
+
+    The readout that makes the credit counter usable before the admin panel's
+    Costs tab exists: the free plan is a fixed monthly allowance, and until
+    something reads it, exhausting it looks like an unexplained fetch failure.
+    """
+    import asyncpg
+    from manzil_shared.config import TIER3_FREE_MONTHLY_CREDITS, TIER3_PRICES_USD
+
+    dsn = os.environ.get("DATABASE_URL")
+    if not dsn:
+        typer.echo("DATABASE_URL is not set — costs needs the service-role DB URL", err=True)
+        raise typer.Exit(code=1)
+
+    async def run() -> None:
+        pool = await asyncpg.create_pool(dsn)
+        try:
+            stages = await pool.fetch(
+                """
+                select c.stage,
+                       sum(c.llm_cost_usd)   as llm,
+                       sum(c.fetch_cost_usd) as fetch,
+                       sum(c.llm_calls)      as calls,
+                       sum(c.fetch_calls)    as fetches
+                from job_stage_costs c
+                join jobs j on j.id = c.job_id
+                where c.updated_at > now() - ($1 || ' days')::interval
+                  and ($2::uuid is null or j.hunt_id = $2::uuid)
+                group by c.stage
+                order by sum(c.llm_cost_usd + c.fetch_cost_usd) desc
+                """,
+                str(days),
+                hunt_id,
+            )
+            credits = await pool.fetch(
+                "select provider, credits from tier3_credit_usage "
+                "where month = date_trunc('month', now()) order by provider"
+            )
+        finally:
+            await pool.close()
+
+        if not stages:
+            typer.echo(f"no recorded spend in the last {days} days")
+        else:
+            typer.echo(f"spend by stage, last {days} days")
+            typer.echo(f"  {'stage':<16}{'llm':>10}{'fetch':>10}{'total':>10}  calls")
+            total_llm = total_fetch = 0.0
+            for row in stages:
+                llm, fetch = float(row["llm"]), float(row["fetch"])
+                total_llm += llm
+                total_fetch += fetch
+                typer.echo(
+                    f"  {row['stage']:<16}{llm:>10.4f}{fetch:>10.4f}{llm + fetch:>10.4f}"
+                    f"  {row['calls']} llm / {row['fetches']} fetch"
+                )
+            typer.echo(
+                f"  {'TOTAL':<16}{total_llm:>10.4f}{total_fetch:>10.4f}"
+                f"{total_llm + total_fetch:>10.4f}"
+            )
+
+        typer.echo("\ntier-3 credits, this calendar month")
+        if not credits:
+            typer.echo("  none used")
+        for row in credits:
+            provider, used = row["provider"], int(row["credits"])
+            allowance = TIER3_FREE_MONTHLY_CREDITS.get(provider)
+            price = TIER3_PRICES_USD.get(provider)
+            spent = f"${used * price:.4f}" if price is not None else "unpriced"
+            if allowance:
+                pct = 100.0 * used / allowance
+                typer.echo(f"  {provider}: {used:,} / {allowance:,} ({pct:.1f}%) · {spent}")
+            else:
+                typer.echo(f"  {provider}: {used:,} (no recorded allowance) · {spent}")
+
+    asyncio.run(run())

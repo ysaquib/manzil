@@ -104,7 +104,7 @@ export function VisitedToggle({
             // leftSection={<IconCircleDotted size={11} />}
             styles={CHIP_BADGE_STYLES}
           >
-            Unvisited
+            Not Visited
           </Badge>
         </UnstyledButton>
       </Tooltip>

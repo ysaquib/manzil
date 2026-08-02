@@ -1,0 +1,37 @@
+/* System health strip (AD-5). State is in the dot as well as the words, so it
+   reads at a glance and does not rely on colour alone. */
+
+.health {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-sm);
+  background-color: var(--mantine-color-default);
+  border-radius: var(--mantine-radius-md);
+  padding: var(--mantine-spacing-sm);
+}
+
+.label {
+  letter-spacing: 0.1em;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.ok {
+  background-color: var(--mantine-color-green-filled);
+  box-shadow: 0 0 0 3px var(--mantine-color-green-light);
+}
+
+.warn {
+  background-color: var(--mantine-color-yellow-filled);
+  box-shadow: 0 0 0 3px var(--mantine-color-yellow-light);
+}
+
+.bad {
+  background-color: var(--mantine-color-red-filled);
+  box-shadow: 0 0 0 3px var(--mantine-color-red-light);
+}

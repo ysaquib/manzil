@@ -1,0 +1,253 @@
+"""AD-5: Jobs, Costs and System.
+
+The queue actions are the ones with teeth — a retry re-queues real work and a
+release re-queues everything a dead worker was holding — so the tests are about
+what each one refuses as much as what it does.
+"""
+
+from __future__ import annotations
+
+import json
+from collections.abc import AsyncIterator
+from uuid import uuid4
+
+import pytest
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+from manzil_api.main import create_app
+
+pytestmark = pytest.mark.asyncio
+
+
+@pytest_asyncio.fixture
+async def admin_app(db_pool):  # type: ignore[no-untyped-def]
+    app = create_app()
+    app.state.db_pool = db_pool
+    return app
+
+
+@pytest_asyncio.fixture
+async def as_admin(admin_app, db_pool, seeded_users) -> AsyncIterator[AsyncClient]:
+    identity = seeded_users["outsider"]
+    await db_pool.execute(
+        "insert into site_admins (user_id) values ($1) on conflict do nothing", identity.user_id
+    )
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=admin_app),
+            base_url="http://test",
+            headers={"Authorization": f"Bearer {identity.token}"},
+        ) as client:
+            yield client
+    finally:
+        await db_pool.execute("delete from site_admins where user_id = $1", identity.user_id)
+
+
+async def _job(db_pool, collab_hunt, state: str, *, stale: bool = False, cost: float = 0.0):
+    return await db_pool.fetchval(
+        """
+        insert into jobs (hunt_id, hunt_listing_id, type, state, current_stage,
+                          cost_actual_usd, locked_at, locked_by)
+        values ($1, $2, 'ingest', $3::job_state, 'EXTRACT', $4,
+                case when $5 then now() - interval '1 hour' else now() end,
+                case when $5 then 'dead-worker' else null end)
+        returning id
+        """,
+        collab_hunt["hunt_id"],
+        collab_hunt["owner_listing_id"],
+        state,
+        cost,
+        stale,
+    )
+
+
+# ── Jobs ─────────────────────────────────────────────────────────────────────
+
+
+async def test_the_queue_is_visible_across_hunts_the_admin_is_not_in(
+    as_admin: AsyncClient, db_pool, collab_hunt
+) -> None:
+    job_id = await _job(db_pool, collab_hunt, "failed", cost=0.0123)
+    try:
+        response = await as_admin.get("/v1/admin/jobs?state=failed")
+        assert response.status_code == 200
+        row = next(job for job in response.json() if job["id"] == str(job_id))
+        assert row["hunt_name"] == "Collab Hunt"
+        assert row["cost_actual_usd"] == 0.0123
+        assert row["stale"] is False
+    finally:
+        await db_pool.execute("delete from jobs where id = $1", job_id)
+
+
+async def test_a_stale_lock_is_identified_and_releasable(
+    as_admin: AsyncClient, db_pool, collab_hunt
+) -> None:
+    """A `running` Job whose worker died holds a claim nobody will release, and
+    from a per-Hunt Tasks tab it just looks slow."""
+    stale_id = await _job(db_pool, collab_hunt, "running", stale=True)
+    fresh_id = await _job(db_pool, collab_hunt, "running", stale=False)
+    try:
+        listed = await as_admin.get("/v1/admin/jobs?stale_only=true")
+        ids = {job["id"] for job in listed.json()}
+        assert str(stale_id) in ids
+        assert str(fresh_id) not in ids, "a live worker's lock must not be swept up"
+
+        released = await as_admin.post("/v1/admin/jobs/release-locks")
+        assert released.status_code == 200
+
+        # Re-queued, not failed: nothing is known to be wrong with the work.
+        assert await db_pool.fetchval(
+            "select state::text from jobs where id = $1", stale_id
+        ) == "queued"
+        assert await db_pool.fetchval(
+            "select locked_by from jobs where id = $1", stale_id
+        ) is None
+        assert await db_pool.fetchval(
+            "select state::text from jobs where id = $1", fresh_id
+        ) == "running"
+    finally:
+        await db_pool.execute("delete from jobs where id = any($1::uuid[])", [stale_id, fresh_id])
+
+
+async def test_retry_requeues_and_resets_the_backoff_ladder(
+    as_admin: AsyncClient, db_pool, collab_hunt
+) -> None:
+    job_id = await _job(db_pool, collab_hunt, "failed")
+    await db_pool.execute(
+        "update jobs set attempts = 3, error = 'blocked' where id = $1", job_id
+    )
+    try:
+        response = await as_admin.post(f"/v1/admin/jobs/{job_id}/retry")
+        assert response.status_code == 200
+
+        row = await db_pool.fetchrow(
+            "select state::text as state, attempts, error from jobs where id = $1", job_id
+        )
+        assert row["state"] == "queued"
+        assert row["attempts"] == 0
+        assert row["error"] is None
+    finally:
+        await db_pool.execute("delete from jobs where id = $1", job_id)
+
+
+async def test_a_done_job_cannot_be_retried_or_cancelled(
+    as_admin: AsyncClient, db_pool, collab_hunt
+) -> None:
+    job_id = await _job(db_pool, collab_hunt, "done")
+    try:
+        retried = await as_admin.post(f"/v1/admin/jobs/{job_id}/retry")
+        assert retried.status_code == 409
+        assert retried.json()["code"] == "job_not_retryable"
+
+        cancelled = await as_admin.post(f"/v1/admin/jobs/{job_id}/cancel")
+        assert cancelled.status_code == 409
+    finally:
+        await db_pool.execute("delete from jobs where id = $1", job_id)
+
+
+async def test_queue_actions_are_audited(
+    as_admin: AsyncClient, db_pool, collab_hunt, seeded_users
+) -> None:
+    job_id = await _job(db_pool, collab_hunt, "failed")
+    try:
+        await as_admin.post(f"/v1/admin/jobs/{job_id}/retry")
+        row = await db_pool.fetchrow(
+            "select action, target_id, before, after from admin_audit_log "
+            "where admin_user_id = $1 order by occurred_at desc limit 1",
+            seeded_users["outsider"].user_id,
+        )
+        assert row["action"] == "job.retry"
+        assert str(row["target_id"]) == str(job_id)
+        assert json.loads(row["after"])["state"] == "queued"
+    finally:
+        await db_pool.execute("delete from jobs where id = $1", job_id)
+
+
+async def test_an_unknown_job_is_404(as_admin: AsyncClient) -> None:
+    assert (await as_admin.post(f"/v1/admin/jobs/{uuid4()}/retry")).status_code == 404
+
+
+# ── Costs ────────────────────────────────────────────────────────────────────
+
+
+async def test_costs_report_splits_the_two_channels_three_ways(
+    as_admin: AsyncClient, db_pool, collab_hunt
+) -> None:
+    """Measured as a delta, not an absolute: `job_stage_costs` is shared with
+    every other run against this database, so an equality assertion here would
+    be testing the fixture's isolation rather than the report."""
+
+    def find(report: dict, key: str, label: str) -> float:
+        bucket = next((b for b in report[key] if b["label"] == label), None)
+        return bucket["total_cost_usd"] if bucket else 0.0
+
+    before = (await as_admin.get("/v1/admin/costs?days=30")).json()
+
+    job_id = await _job(db_pool, collab_hunt, "done")
+    await db_pool.execute(
+        "insert into job_stage_costs (job_id, stage, llm_cost_usd, llm_calls, "
+        "fetch_cost_usd, fetch_calls, fetch_calls_by_provider) "
+        "values ($1, 'EXTRACT', 0.0400, 2, 0.0030, 2, '{\"brightdata\": 2}'::jsonb)",
+        job_id,
+    )
+    try:
+        after = (await as_admin.get("/v1/admin/costs?days=30")).json()
+
+        # The two channels stay separable all the way through the report.
+        stage = next(b for b in after["by_stage"] if b["label"] == "EXTRACT")
+        assert stage["llm_cost_usd"] > 0 and stage["fetch_cost_usd"] > 0
+
+        stage_delta = find(after, "by_stage", "EXTRACT") - find(before, "by_stage", "EXTRACT")
+        hunt_delta = find(after, "by_hunt", "Collab Hunt") - find(before, "by_hunt", "Collab Hunt")
+        assert stage_delta == pytest.approx(0.043)
+        assert hunt_delta == pytest.approx(0.043)
+
+        # By model is derived from the current pin, and the response says so
+        # rather than letting a reader mistake it for history.
+        assert after["grouped_by_current_pin"] is True
+        assert after["by_model"], "stage spend must land under some model"
+
+        assert after["tier3_credits_allowance"] == 5000
+        assert after["tier3_credits_used"] - before["tier3_credits_used"] == 2
+        assert any(point["fetch_cost_usd"] > 0 for point in after["daily"])
+    finally:
+        await db_pool.execute("delete from job_stage_costs where job_id = $1", job_id)
+        await db_pool.execute("delete from jobs where id = $1", job_id)
+
+
+# ── System ───────────────────────────────────────────────────────────────────
+
+
+async def test_system_reports_pins_and_key_presence_but_never_a_value(
+    as_admin: AsyncClient,
+) -> None:
+    response = await as_admin.get("/v1/admin/system")
+    assert response.status_code == 200
+    report = response.json()
+
+    assert report["priced_models"] > 0
+    assert any(pin["stage"] == "extract" for pin in report["model_pins"])
+
+    names = {service["name"] for service in report["services"]}
+    assert {"OpenRouter", "Bright Data", "Langfuse"} <= names
+    # Presence only — a value here would be a credential in an HTTP response.
+    for service in report["services"]:
+        assert set(service) == {"name", "detail", "configured"}
+        assert isinstance(service["configured"], bool)
+
+
+# ── the gate ─────────────────────────────────────────────────────────────────
+
+
+async def test_a_non_admin_is_refused_on_every_operations_route(
+    admin_app, seeded_users
+) -> None:
+    async with AsyncClient(
+        transport=ASGITransport(app=admin_app),
+        base_url="http://test",
+        headers={"Authorization": f"Bearer {seeded_users['member'].token}"},
+    ) as client:
+        assert (await client.get("/v1/admin/jobs")).status_code == 403
+        assert (await client.get("/v1/admin/costs")).status_code == 403
+        assert (await client.get("/v1/admin/system")).status_code == 403
+        assert (await client.post("/v1/admin/jobs/release-locks")).status_code == 403

@@ -60,22 +60,22 @@ const composition: AllInComponents = {
 };
 
 const moveIn: MoveInComponents = {
-  total: 3021,
-  subtotal: 3021,
+  total: 2670,
+  subtotal: 2670,
   refundable_total: 500,
-  non_refundable_total: 2521,
+  non_refundable_total: 2170,
   unclassified_total: 0,
   incomplete: false,
   badges: [],
   charges: [
     {
       name: "first_month",
-      amount: 2146,
-      tag: "estimated",
+      amount: 1795,
+      tag: "actual",
       required: true,
       refundable: false,
       counted: true,
-      note: "one full month",
+      note: "base rent — one full month, no prorated schedule stated",
     },
     {
       name: "security_deposit",
@@ -149,13 +149,13 @@ describe("CostAndFees", () => {
     expect(screen.getAllByText("All-in / month").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Cash at move-in").length).toBeGreaterThan(0);
     expect(screen.getAllByText("$2,146").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("$3,021").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("$2,670").length).toBeGreaterThan(0);
   });
 
   it("renders base rent as its own overrideable row", async () => {
     const user = userEvent.setup();
     render([]);
-    expect(screen.getByText("$1,795")).toBeInTheDocument();
+    expect(within(rowFor("Base rent")).getByText("$1,795")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "edit Base rent" }));
     expect(await screen.findByRole("textbox", { name: "Note" })).toBeInTheDocument();
   });
@@ -239,6 +239,20 @@ describe("CostAndFees", () => {
     expect(screen.queryByText("refundable", { selector: ".mantine-Badge-root" })).toBeNull();
   });
 
+  it("reserves the action column on read-only rows so amounts align with editable ones", () => {
+    render([]);
+    for (const label of ["Security deposit", "First month"]) {
+      const amount = within(rowFor(label)).getByText(/\$/);
+      const valueAction = amount.parentElement;
+      expect(valueAction?.childElementCount).toBe(2);
+      expect(valueAction?.lastElementChild).toHaveAttribute("aria-hidden", "true");
+      expect(valueAction?.lastElementChild?.tagName).toBe("BUTTON");
+    }
+    expect(
+      within(rowFor("Application fee")).getByRole("button", { name: "edit Application fee" }),
+    ).toBeInTheDocument();
+  });
+
   it("presents an incomplete move-in cost as a subtotal, never as a total", () => {
     render([], {
       moveIn: {
@@ -257,7 +271,7 @@ describe("CostAndFees", () => {
   it("splits refundable from non-refundable under the move-in total", () => {
     render([]);
     expect(screen.getByText("Refundable").parentElement).toHaveTextContent("$500");
-    expect(screen.getByText("Non-refundable").parentElement).toHaveTextContent("$2,521");
+    expect(screen.getByText("Non-refundable").parentElement).toHaveTextContent("$2,170");
   });
 
   it("offers required / refundable / credited decisions on a one-time charge", async () => {

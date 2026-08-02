@@ -39,6 +39,12 @@ from manzil_shared.config import (
 from manzil_shared.errors import AgentBudgetExceeded
 from pydantic import BaseModel
 
+# The tally lives outside the seam (AD-C) so tier-3 fetching can bill to it
+# without importing LLM code. Re-exported here: `from manzil_worker.llm.client
+# import cost_tally` is the established import across the worker and tests.
+from manzil_worker.costs import CallUsage, active_tally
+from manzil_worker.costs import CostTally as CostTally  # re-export
+from manzil_worker.costs import cost_tally as cost_tally  # re-export
 from manzil_worker.llm.config import (
     cost_usd,
     max_tokens_for_stage,
@@ -97,38 +103,7 @@ class RunContext:
     mode: str = "workflow"  # workflow | agents (MANZIL_MODE)
 
 
-@dataclass
-class CostTally:
-    """Accumulates across calls; P0-10's runner adds this onto RunState.cost_usd."""
-
-    calls: int = 0
-    input_tokens: int = 0
-    output_tokens: int = 0
-    cache_read_tokens: int = 0
-    cache_write_tokens: int = 0
-    cost_usd: float = 0.0
-
-    def add(self, usage: CallUsage) -> None:
-        self.calls += 1
-        self.input_tokens += usage.input_tokens
-        self.output_tokens += usage.output_tokens
-        self.cache_read_tokens += usage.cache_read_tokens
-        self.cache_write_tokens += usage.cache_write_tokens
-        self.cost_usd += usage.cost_usd
-
-
-@dataclass(frozen=True)
-class CallUsage:
-    model: str
-    input_tokens: int
-    output_tokens: int
-    cache_read_tokens: int
-    cache_write_tokens: int
-    cost_usd: float
-
-
 _run_context: ContextVar[RunContext | None] = ContextVar("manzil_run_context", default=None)
-_active_tally: ContextVar[CostTally | None] = ContextVar("manzil_cost_tally", default=None)
 
 
 def _current_context() -> RunContext:
@@ -142,16 +117,6 @@ def run_context(ctx: RunContext) -> Iterator[None]:
         yield
     finally:
         _run_context.reset(token)
-
-
-@contextmanager
-def cost_tally() -> Iterator[CostTally]:
-    tally = CostTally()
-    token = _active_tally.set(tally)
-    try:
-        yield tally
-    finally:
-        _active_tally.reset(token)
 
 
 # ── provider + tracer plumbing (private) ─────────────────────────────────────
@@ -537,7 +502,7 @@ def _usage_from(model: str, response: ProviderResponse) -> CallUsage:
 
 
 def _tally(usage: CallUsage) -> None:
-    tally = _active_tally.get()
+    tally = active_tally()
     if tally is not None:
         tally.add(usage)
 

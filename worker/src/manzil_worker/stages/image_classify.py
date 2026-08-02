@@ -29,6 +29,7 @@ from manzil_worker.llm.config import model_for_stage
 from manzil_worker.llm.prompt_loader import load_prompt
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.state import PropertyImageIn, RunState, StageWarning
+from manzil_worker.vision_onnx import ONNX_SHADOW_CACHE_KEY, ONNXShadowBatch
 from manzil_worker.vision_refs import load_reference_manifest, vision_references_ready
 
 log = structlog.get_logger()
@@ -344,6 +345,109 @@ async def _renormalize_late_diagrams(state: RunState, ctx: StageCtx) -> None:
         image.normalization_profile = DIAGRAM_NORMALIZATION_PROFILE
 
 
+def _valid_cached_shadow(payload: object) -> bool:
+    if not isinstance(payload, dict) or payload.get("cache_key") != ONNX_SHADOW_CACHE_KEY:
+        return False
+    try:
+        ONNXShadowBatch.model_validate(
+            {
+                "cache_key": payload["cache_key"],
+                "backend": payload["backend"],
+                "artifact_sha256": payload["artifact_sha256"],
+                "kitchen_threshold": payload["kitchen_threshold"],
+                "diagram_threshold": payload["diagram_threshold"],
+                "elapsed_seconds": 0.0,
+                "peak_rss_mb": None,
+                "predictions": [payload["assessment"]],
+            }
+        )
+    except (KeyError, TypeError, ValueError):
+        return False
+    return True
+
+
+async def _apply_onnx_shadow(
+    state: RunState,
+    ctx: StageCtx,
+    cached: dict[str, dict],
+) -> None:
+    """Persist observational ONNX readings without influencing pipeline truth."""
+    if ctx.image_classify_shadow is None or ctx.image_store is None:
+        return
+
+    pending: list[tuple[str, bytes]] = []
+    images_by_hash: dict[str, PropertyImageIn] = {}
+    try:
+        for image in state.property_images[:MAX_IMAGE_CLASSIFY_IMAGES]:
+            images_by_hash[image.content_hash] = image
+            current = image.vision_assessment or {}
+            persisted = cached.get(image.content_hash, {})
+            shadow = current.get("classification_shadow")
+            if not _valid_cached_shadow(shadow):
+                shadow = persisted.get("classification_shadow")
+            if _valid_cached_shadow(shadow):
+                image.vision_assessment = {
+                    **current,
+                    "classification_shadow": shadow,
+                }
+                continue
+            normalized = await ctx.image_store.get(image.storage_path)
+            pending.append((image.content_hash, classification_thumbnail(normalized)))
+        if not pending:
+            log.info("image_classify_onnx_shadow_cached", images=len(images_by_hash))
+            return
+
+        batch = await ctx.image_classify_shadow(pending)
+        if batch.cache_key != ONNX_SHADOW_CACHE_KEY:
+            raise ValueError(f"unexpected shadow cache key {batch.cache_key}")
+        prediction_by_hash = {
+            prediction.content_hash: prediction for prediction in batch.predictions
+        }
+        requested = {content_hash for content_hash, _ in pending}
+        if (
+            len(prediction_by_hash) != len(batch.predictions)
+            or set(prediction_by_hash) != requested
+        ):
+            raise ValueError("shadow response hashes do not exactly match the requested images")
+    except Exception as error:  # optional evidence must never interrupt the Job
+        log.warning("image_classify_onnx_shadow_failed", error=str(error))
+        return
+
+    kitchen_disagreements: list[str] = []
+    diagram_disagreements: list[str] = []
+    for content_hash, prediction in prediction_by_hash.items():
+        image = images_by_hash[content_hash]
+        authoritative = _classification(image)
+        if authoritative is not None:
+            if prediction.kitchen_predicted != (authoritative.primary_scene == "kitchen"):
+                kitchen_disagreements.append(content_hash)
+            if prediction.diagram_predicted != authoritative.diagram:
+                diagram_disagreements.append(content_hash)
+        image.vision_assessment = {
+            **(image.vision_assessment or {}),
+            "classification_shadow": {
+                "cache_key": batch.cache_key,
+                "backend": batch.backend,
+                "artifact_sha256": batch.artifact_sha256,
+                "kitchen_threshold": batch.kitchen_threshold,
+                "diagram_threshold": batch.diagram_threshold,
+                "assessment": prediction.model_dump(),
+            },
+        }
+    log.info(
+        "image_classify_onnx_shadow_complete",
+        classified=len(batch.predictions),
+        cached=len(images_by_hash) - len(batch.predictions),
+        elapsed_seconds=batch.elapsed_seconds,
+        child_peak_rss_mb=batch.peak_rss_mb,
+        images_per_second=(len(batch.predictions) / batch.elapsed_seconds)
+        if batch.elapsed_seconds > 0
+        else None,
+        kitchen_disagreements=kitchen_disagreements,
+        diagram_disagreements=diagram_disagreements,
+    )
+
+
 async def image_classify_stage(state: RunState, ctx: StageCtx) -> RunState:
     if not state.property_images or state.property_id is None or ctx.image_store is None:
         state.vision_targets["kitchen_quality"] = []
@@ -456,6 +560,7 @@ async def image_classify_stage(state: RunState, ctx: StageCtx) -> RunState:
     state.replace_warnings("IMAGE_CLASSIFY", warnings)
 
     await _renormalize_late_diagrams(state, ctx)
+    await _apply_onnx_shadow(state, ctx, cached)
 
     selected = select_kitchen_targets(state.property_images)
     state.vision_targets["kitchen_quality"] = [image.content_hash for image in selected]

@@ -32,6 +32,7 @@ from uuid import UUID, uuid4
 import structlog
 from manzil_shared.config import (
     CHECKPOINT_TIMEOUT_HOURS,
+    IMAGE_REFRESH_RETRY_COOLDOWN_HOURS,
     JOB_ORPHAN_AFTER_SECONDS,
     MANZIL_JOB_MAX_ATTEMPTS,
     REFRESH_TTL_HOURS,
@@ -859,7 +860,7 @@ async def _persist_ingest_results(
     # `unlink` row drops the pair out of `current_floor_plan_images` while the
     # link's history survives. Only a *complete* refresh may do this — a
     # partial or failed discovery retires nothing (§P3-SC5 lifecycle).
-    if state.image_fetch_completed and refreshed_source_ids:
+    if state.image_fetch_strict_complete and refreshed_source_ids:
         stale = await conn.fetch(
             """
             select floor_plan_id, property_image_id, source_id
@@ -886,7 +887,7 @@ async def _persist_ingest_results(
                 row["source_id"],
                 persisted_job_id,
             )
-    if state.image_fetch_completed:
+    if state.image_fetch_strict_complete:
         unsupported_visuals = await conn.fetch(
             """
             select e.*
@@ -2003,7 +2004,20 @@ def _successful_refresh_fields(state: RunState, fields: list[str]) -> list[str]:
         failed_classes.add("location")
     if "reviews_refresh_failed" in failed_codes:
         failed_classes.add("reviews")
-    return [field for field in fields if field not in failed_classes]
+    partial_images = "images" in fields and not state.image_fetch_completed
+    if partial_images:
+        failed_classes.add("images")
+    successful = [field for field in fields if field not in failed_classes]
+    # Image discovery re-fetched and successfully projected the complete text
+    # Catalog even when one image download was partial. Keep those independent
+    # text success markers honest while leaving only `images` due for retry.
+    if partial_images:
+        successful.extend(
+            field
+            for field in ("pricing", "listing_details")
+            if field not in successful
+        )
+    return successful
 
 
 async def _persist_unchanged_text_refresh(
@@ -2692,7 +2706,19 @@ async def refresh_ttl_tick(pool: asyncpg.Pool) -> None:
                      join criteria_catalog cc on cc.key = rc.catalog_key
                      where rc.hunt_id = hl.hunt_id and rc.enabled
                        and cc.refresh_class = 'reviews'
-                   ) as needs_reviews
+                   ) as needs_reviews,
+                   (
+                     select max(j.finished_at)
+                     from jobs j
+                     where j.hunt_listing_id = hl.id
+                       and j.finished_at is not null
+                       and j.state in ('done', 'failed')
+                       and (
+                         (j.type = 'ingest' and (j.plan -> 'stages') ? 'IMAGE_FETCH')
+                         or
+                         (j.type = 'refresh' and (j.payload -> 'fields') ? 'images')
+                       )
+                   ) as last_image_attempt_at
             from hunt_listings hl
             join property_sources ps on ps.id = hl.submitted_source_id
             left join hunt_listing_refresh_status hrs on hrs.hunt_listing_id = hl.id
@@ -2723,6 +2749,11 @@ async def refresh_ttl_tick(pool: asyncpg.Pool) -> None:
                     last = datetime.fromisoformat(last.replace("Z", "+00:00"))
                 ttl = timedelta(hours=REFRESH_TTL_HOURS[refresh_class])
                 if last is None or last <= now - ttl:
+                    if refresh_class == "images":
+                        last_attempt = row["last_image_attempt_at"]
+                        cooldown = timedelta(hours=IMAGE_REFRESH_RETRY_COOLDOWN_HOURS)
+                        if last_attempt is not None and last_attempt > now - cooldown:
+                            continue
                     due.append(refresh_class)
             if not due:
                 continue

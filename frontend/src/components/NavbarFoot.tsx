@@ -12,6 +12,7 @@ import {
   IconChevronUp,
   IconLogout,
   IconMessage2,
+  IconShieldLock,
   IconSettings,
   IconUserCircle,
 } from "@tabler/icons-react";
@@ -19,6 +20,7 @@ import { Link } from "react-router-dom";
 
 import { useAuth } from "../auth/useAuth";
 import { useProfile } from "../auth/profile";
+import { useAdminIdentity } from "../features/admin/api";
 import { memberColor } from "../features/collaboration/memberColors";
 import classes from "./NavbarFoot.module.css";
 
@@ -26,6 +28,10 @@ export function NavbarFoot({ onOpenFeedback }: { onOpenFeedback: () => void }) {
   const { session } = useAuth();
   const profile = useProfile(session?.user.id);
   const [expanded, { toggle }] = useDisclosure(false);
+  // UX only: every admin route is gated server-side, and the tables behind them
+  // have no client SELECT policy. This just avoids showing a door that opens
+  // onto a wall (AGENTS.md: frontend checks are never enforcement).
+  const admin = useAdminIdentity();
 
   const email = session?.user.email ?? "";
   const name = profile.data?.default_display_name ?? email;
@@ -34,6 +40,13 @@ export function NavbarFoot({ onOpenFeedback }: { onOpenFeedback: () => void }) {
 
   return (
     <Box className={classes.foot}>
+      {admin.data?.is_site_admin && (
+        <UnstyledButton component={Link} to="/admin" className={classes.admin}>
+          <IconShieldLock size={16} stroke={1.6} className={classes.adminIcon} />
+          <Text size="sm">Admin panel</Text>
+        </UnstyledButton>
+      )}
+
       <UnstyledButton className={classes.feedback} onClick={onOpenFeedback}>
         <IconMessage2 size={16} stroke={1.6} className={classes.feedbackIcon} />
         <Text size="sm">Submit feedback</Text>

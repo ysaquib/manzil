@@ -575,6 +575,7 @@ function DrawerShell({
                 canEdit={
                   currentMember?.role === "owner" || currentMember?.user_id === listing.added_by
                 }
+                jobs={jobs}
               />
             </SectionCard>
           </Stack>
