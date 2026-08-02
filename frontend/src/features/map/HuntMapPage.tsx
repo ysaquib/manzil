@@ -232,7 +232,7 @@ function MapCanvas({
 
   return (
     <MapFrame
-      height={compact ? 420 : "min(88vh, 60rem)"}
+      height={compact ? 420 : "min(88vh, 44rem)"}
       onReady={onReady}
       emptyLabel={
         isLoading
