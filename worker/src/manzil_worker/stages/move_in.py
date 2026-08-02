@@ -7,14 +7,14 @@ shared by SCORE (ingest) and rescore so the two never drift.
 
 Contract (DESIGN §9.5):
 
-    first_month_all_in + security_deposit + application/admin fees
+    first_month_rent + security_deposit + application/admin fees
     + one-time pet deposits/fees + other required one-time charges
     + explicitly required prepaid/last-month rent
     + the non-credited portion of holding deposits
 
-`first_month_all_in` already carries rent, mandatory monthly fees, first-month
-pet rent and utility estimates — nothing there is added twice, and one full
-realistic month is used because no Source states a prorated schedule. Optional
+`first_month_rent` is base rent only — utilities and other monthly fees belong
+in the all-in ledger, not the first-month move-in line. One full month is used
+because no Source states a prorated schedule. Optional
 charges never count. Refundable amounts still require cash, so they are
 included in the figure but subtotal separately.
 
@@ -150,25 +150,25 @@ def _classify(charges: list[MoveInCharge]) -> tuple[float, float, float]:
 
 def compose_move_in(
     *,
-    first_month_all_in: float | None,
+    first_month_rent: float | None,
     security_deposit: float | None,
     charges: list[MoveInCharge],
     first_month_note: str | None = None,
 ) -> MoveInComposition:
     """The full §9.5 P3-SC8 composition for one Floor Plan.
 
-    `first_month_all_in` None means the all-in itself was withheld (its own
-    strict-unknown branch) — the move-in figure inherits that unknown rather
-    than quietly dropping a month of rent from the cash requirement.
+    `first_month_rent` None means base rent is unknown — the move-in figure
+    inherits that unknown rather than quietly dropping a month of rent from the
+    cash requirement.
     """
     ledger: list[MoveInCharge] = [
         MoveInCharge(
             name="first_month",
-            amount=first_month_all_in,
-            tag="estimated" if first_month_all_in is not None else "unknown",
+            amount=first_month_rent,
+            tag="actual" if first_month_rent is not None else "unknown",
             required=True,
             refundable=False,
-            note=first_month_note or "one full month — no prorated schedule stated",
+            note=first_month_note or "base rent — one full month, no prorated schedule stated",
         ),
         MoveInCharge(
             name="security_deposit",
