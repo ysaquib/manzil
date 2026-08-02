@@ -214,6 +214,14 @@ class CatalogEntry(BaseModel):
     conflict_policy: ConflictPolicy = ConflictPolicy.STANDARD_LADDER
 
 
+class CustomRouteModifiers(BaseModel):
+    """Google-supported routing preferences for Maps custom Criteria (§10.9)."""
+
+    avoid_highways: bool = False
+    avoid_tolls: bool = False
+    avoid_ferries: bool = False
+
+
 class CustomCriterionDef(BaseModel):
     """Versioned Hunt-scoped Criterion definition (DESIGN v3.35)."""
 
@@ -226,6 +234,7 @@ class CustomCriterionDef(BaseModel):
     requires_tool: RequiresTool | None = None
     refresh_class: RefreshClass
     routing_confirmed: bool
+    route_modifiers: CustomRouteModifiers | None = None
 
     @field_validator("label", "description")
     @classmethod

@@ -1,6 +1,7 @@
 import {
   Alert,
   Button,
+  Checkbox,
   Group,
   Modal,
   Radio,
@@ -16,6 +17,7 @@ import { useState } from "react";
 import type { RubricOption } from "../../lib/contracts";
 import type {
   CustomRoute,
+  CustomRouteModifiers,
   RubricCriterion,
 } from "./api";
 import { useClassifyCustomRouting } from "./api";
@@ -54,6 +56,11 @@ export function CustomCriterionModal({
   const [scope, setScope] = useState<"property" | "floor_plan">("property");
   const [valueType, setValueType] = useState<"boolean" | "number" | "enum">("boolean");
   const [enumValues, setEnumValues] = useState<string[]>([]);
+  const [routeModifiers, setRouteModifiers] = useState<CustomRouteModifiers>({
+    avoid_highways: false,
+    avoid_tolls: false,
+    avoid_ferries: false,
+  });
 
   const reset = () => {
     setLabel("");
@@ -65,6 +72,7 @@ export function CustomCriterionModal({
     setScope("property");
     setValueType("boolean");
     setEnumValues([]);
+    setRouteModifiers({ avoid_highways: false, avoid_tolls: false, avoid_ferries: false });
   };
   const close = () => {
     reset();
@@ -114,6 +122,13 @@ export function CustomCriterionModal({
         requires_tool: route,
         refresh_class: route === "maps" ? "location" : "listing_details",
         routing_confirmed: true,
+        route_modifiers:
+          route === "maps" &&
+          (routeModifiers.avoid_highways ||
+            routeModifiers.avoid_tolls ||
+            routeModifiers.avoid_ferries)
+            ? routeModifiers
+            : null,
       },
       enabled: true,
       options: optionsFor(valueSchema),
@@ -183,6 +198,46 @@ export function CustomCriterionModal({
                 { value: "floor_plan", label: "Floor Plan" },
               ]}
             />
+            {route === "maps" && (
+              <Stack gap={6}>
+                <Text size="sm" fw={600}>
+                  Route preferences
+                </Text>
+                <Text size="xs" c="dimmed">
+                  Google routing only — dirt or gravel roads cannot be excluded.
+                </Text>
+                <Checkbox
+                  label="Avoid highways"
+                  checked={routeModifiers.avoid_highways ?? false}
+                  onChange={(event) =>
+                    setRouteModifiers((current) => ({
+                      ...current,
+                      avoid_highways: event.currentTarget.checked,
+                    }))
+                  }
+                />
+                <Checkbox
+                  label="Avoid tolls"
+                  checked={routeModifiers.avoid_tolls ?? false}
+                  onChange={(event) =>
+                    setRouteModifiers((current) => ({
+                      ...current,
+                      avoid_tolls: event.currentTarget.checked,
+                    }))
+                  }
+                />
+                <Checkbox
+                  label="Avoid ferries"
+                  checked={routeModifiers.avoid_ferries ?? false}
+                  onChange={(event) =>
+                    setRouteModifiers((current) => ({
+                      ...current,
+                      avoid_ferries: event.currentTarget.checked,
+                    }))
+                  }
+                />
+              </Stack>
+            )}
             <SegmentedControl
               aria-label="Value type"
               value={valueType}

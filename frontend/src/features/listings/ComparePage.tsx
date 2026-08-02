@@ -30,7 +30,8 @@ import { Link, useParams } from "react-router-dom";
 
 import { PageHeader } from "../../components/PageHeader";
 import { sentenceCase } from "../../lib/text";
-import { useCatalog, useRubric } from "../rubric/api";
+import { labelByKeyFromCatalog } from "../rubric/customCriterion";
+import { useResolvedCatalog } from "../rubric/api";
 import { useExtractions, useListings, usePropertyImages, useUnitGroupStates } from "./api";
 import { AllInCell } from "./AllInCost";
 import { COMPARE_LIMIT, entryKey, useCompareSet, type CompareEntry } from "./compareSet";
@@ -141,8 +142,7 @@ export function ComparePage() {
   const compare = useCompareSet(huntId);
   const { data: listings, isLoading, error } = useListings(huntId);
   const { data: unitGroupStates = [] } = useUnitGroupStates(huntId);
-  const { data: catalog = [] } = useCatalog();
-  const { data: rubric = [] } = useRubric(huntId);
+  const { data: catalog = [] } = useResolvedCatalog(huntId);
   const [density, setDensity] = useLocalStorage<TableDensity>({
     key: "manzil:compare-density",
     defaultValue: "normal",
@@ -168,15 +168,7 @@ export function ComparePage() {
     // and compare.prune already no-ops when nothing changed.
   }, [listings, unitGroupStates]);
 
-  // Criterion labels: catalog first, then the rubric's custom_def label.
-  const labelByKey = new Map<string, string>(catalog.map((entry) => [entry.key, entry.label]));
-  for (const criterion of rubric) {
-    const label = criterion.custom_def?.label;
-    if (criterion.catalog_key === null && typeof label === "string") {
-      const key = criterion.custom_def?.key;
-      if (typeof key === "string") labelByKey.set(key, label);
-    }
-  }
+  const labelByKey = labelByKeyFromCatalog(catalog);
 
   // Union of breakdown criteria across columns, first column's order first.
   const criterionKeys: string[] = [];

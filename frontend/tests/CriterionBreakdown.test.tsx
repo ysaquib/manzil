@@ -144,6 +144,7 @@ function renderBreakdown(
   breakdown: ScoreBreakdown,
   overrides: Override[] = [],
   extractions: Extraction[] = [extraction],
+  catalogEntries: CatalogEntry[] = catalog,
 ) {
   return renderWithProviders(
     <ListingDetailDraftProvider huntId="hunt-1" listing={listingFixture} serverFees={[]}>
@@ -151,7 +152,7 @@ function renderBreakdown(
         huntId="hunt-1"
         listingId="listing-1"
         breakdown={breakdown}
-        catalog={catalog}
+        catalog={catalogEntries}
         extractions={extractions}
         overrides={overrides}
         floorPlanId={null}
@@ -260,6 +261,36 @@ describe("CriterionBreakdown", () => {
     };
     renderBreakdown(breakdown, [], [{ ...extraction, criterion_key: "pets" }]);
     expect(screen.getAllByLabelText("evidence")).toHaveLength(1);
+  });
+
+  it("shows custom criterion label from merged catalog, not opaque key", () => {
+    const customKey = "custom:550e8400-e29b-41d4-a716-446655440000";
+    const mergedCatalog: CatalogEntry[] = [
+      ...catalog,
+      {
+        key: customKey,
+        label: "Near grocery store",
+        category: "custom",
+        domain: "rent",
+        fact_scope: "property",
+        value_schema: { type: "number" },
+        default_options: [],
+        extraction_hint: "",
+        requires_tool: "maps",
+        refresh_class: "location",
+      },
+    ];
+    const breakdown: ScoreBreakdown = {
+      base: 10,
+      total: 10.5,
+      rubric_version: 1,
+      clamped: false,
+      gates: [],
+      criteria: [{ key: customKey, value: 8, matched: null, delta: 0.5 }],
+    };
+    renderBreakdown(breakdown, [], [], mergedCatalog);
+    expect(screen.getByText("Near grocery store")).toBeInTheDocument();
+    expect(screen.queryByText(customKey)).not.toBeInTheDocument();
   });
 
   it("opens evidence in a popover on mobile", async () => {

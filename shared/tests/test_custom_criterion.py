@@ -57,3 +57,16 @@ def test_deferred_routes_cannot_be_confirmed() -> None:
         CustomCriterionDef.model_validate(
             _definition(requires_tool="vision")
         )
+
+
+def test_maps_route_modifiers_round_trip() -> None:
+    custom = CustomCriterionDef.model_validate(
+        _definition(
+            requires_tool="maps",
+            refresh_class="location",
+            route_modifiers={"avoid_highways": True, "avoid_tolls": False, "avoid_ferries": True},
+        )
+    )
+    assert custom.route_modifiers is not None
+    assert custom.route_modifiers.avoid_highways is True
+    assert custom.route_modifiers.avoid_ferries is True
