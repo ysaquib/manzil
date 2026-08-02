@@ -120,6 +120,10 @@ REFRESH_TTL_HOURS = {
     "images": 30 * 24,
     "reviews": 30 * 24,
 }
+# A partial/failed image attempt stays due, but must not be retried on every
+# five-minute scheduler tick. The durable Job history supplies the attempt
+# timestamp so the backoff survives worker restarts.
+IMAGE_REFRESH_RETRY_COOLDOWN_HOURS = 3
 UTILITY_BASELINE_TTL_DAYS = 120
 # A metro whose baselines pass failed is not retried before this cooldown —
 # without it a persistently failing pass would fire one live LLM call per tick.

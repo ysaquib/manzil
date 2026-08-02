@@ -189,6 +189,39 @@ async def test_a_partial_fetch_retires_nothing(pg_pool: asyncpg.Pool) -> None:
         await _cleanup(pg_pool, hunt_id, property_id)
 
 
+async def test_cap_saturated_partial_does_not_unlink_diagrams(pg_pool: asyncpg.Pool) -> None:
+    hunt_id, property_id, listing_id = await _seed(pg_pool)
+    try:
+        await _run(
+            pg_pool,
+            listing_id,
+            property_id,
+            _state(
+                OFFICIAL,
+                plans=[
+                    FloorPlanIn(
+                        response_key="fp1", plan_name="Official Winslow", beds=2, baths=2
+                    )
+                ],
+                images=[_image("aa" * 16, OFFICIAL, refs=["fp1"])],
+            ),
+        )
+        cap_saturated = _state(OFFICIAL, images=[_image("cc" * 16, OFFICIAL)], plans=[])
+        cap_saturated.image_fetch_completed = True
+        cap_saturated.image_fetch_strict_complete = False
+        await _run(pg_pool, listing_id, property_id, cap_saturated)
+
+        links = await pg_pool.fetchval(
+            "select count(*) from current_floor_plan_images c "
+            "join floor_plans fp on fp.id = c.floor_plan_id "
+            "where fp.property_id = $1",
+            property_id,
+        )
+        assert links == 1
+    finally:
+        await _cleanup(pg_pool, hunt_id, property_id)
+
+
 async def test_an_image_links_only_to_its_own_sources_floor_plan(
     pg_pool: asyncpg.Pool,
 ) -> None:

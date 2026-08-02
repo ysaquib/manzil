@@ -20,6 +20,56 @@ export function staleRefreshClasses(
   });
 }
 
+/** True when the Listing has no images marker or the 30-day images TTL has elapsed. */
+export function listingNeedsImageRefresh(
+  statuses: RefreshStatus[],
+  listingId: string,
+  now = Date.now(),
+): boolean {
+  const rows = statuses.filter((status) => status.hunt_listing_id === listingId);
+  const images = rows.find((status) => status.refresh_class === "images");
+  if (!images) return true;
+  return staleRefreshClasses(rows, now).includes("images");
+}
+
+interface ImageFetchJobHint {
+  hunt_listing_id: string | null;
+  state: string;
+  finished_at?: string | null;
+  warnings?: { code: string; detail?: Record<string, unknown> }[];
+}
+
+/** Latest done Job still reporting a retryable underfilled partial image fetch. */
+export function hasRetryableImageFetchPartial(
+  jobs: ImageFetchJobHint[],
+  listingId: string,
+): boolean {
+  const latest = jobs
+    .filter((job) => job.hunt_listing_id === listingId && job.state === "done")
+    .sort(
+      (left, right) =>
+        Date.parse(right.finished_at ?? "") - Date.parse(left.finished_at ?? ""),
+    )[0];
+  return (
+    latest?.warnings?.some(
+      (warning) =>
+        warning.code === "image_fetch_partial" && warning.detail?.cap_saturated !== true,
+    ) ?? false
+  );
+}
+
+export function showRefreshImagesAction(
+  statuses: RefreshStatus[],
+  listingId: string,
+  jobs: ImageFetchJobHint[] = [],
+  now = Date.now(),
+): boolean {
+  return (
+    listingNeedsImageRefresh(statuses, listingId, now)
+    || hasRetryableImageFetchPartial(jobs, listingId)
+  );
+}
+
 export function statusesByListing(
   statuses: RefreshStatus[],
   now = Date.now(),

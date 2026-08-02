@@ -532,6 +532,9 @@ class RunState(BaseModel):
     pending_dispute: PendingDispute | None = None
     property_images: list[PropertyImageIn] = Field(default_factory=list)
     image_fetch_completed: bool = False
+    # Freshness may be satisfied at the photo cap even when some candidates
+    # failed; diagram unlink and vision tombstones require strict completeness.
+    image_fetch_strict_complete: bool = False
     vision_targets: dict[str, list[str]] = Field(default_factory=dict)
     source_claims: list[SourceClaim] = Field(default_factory=list)
     resolved_claims: list[SourceClaim] = Field(default_factory=list)
