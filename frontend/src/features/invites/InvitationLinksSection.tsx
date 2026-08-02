@@ -25,10 +25,7 @@ import {
   usePatchInvitationLink,
 } from "./api";
 
-function dateInputValue(date: Date) {
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 10);
-}
+import { dateInputValue } from "../../lib/dates";
 
 function expirationTimestamp(date: string) {
   return new Date(`${date}T23:59:59.999`).toISOString();
