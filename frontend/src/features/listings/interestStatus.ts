@@ -13,13 +13,14 @@ import type { InterestStatus } from "./types";
 
 const TONE: Record<InterestStatus, string> = {
   interested: "cyan", // fog blue — in the running
+  not_feasible: "gray", // warm stone — not feasible
   applied: "indigo", // storm — waiting on them
   offer_received: "yellow", // muted ochre — waiting on you
   offer_accepted: "green", // sage — settled, positive
   application_rejected: "red", // dusty brick — settled, negative
   offer_rescinded: "red",
-  application_withdrawn: "gray", // warm stone — out of play
-  offer_declined: "gray",
+  application_withdrawn: "dark", // warm stone — out of play
+  offer_declined: "dark",
   not_interested: "gray",
   unavailable: "gray",
 };
