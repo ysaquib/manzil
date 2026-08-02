@@ -887,3 +887,85 @@ def census(
         raise typer.Exit(code=1)
     path = asyncio.run(run_census(urls, _fetchers(tier2, tier3), out))  # type: ignore[arg-type]
     typer.echo(f"census written to {path} ({len(urls)} URLs)")
+
+
+@app.command()
+def costs(
+    days: int = typer.Option(14, "--days", help="Window for the spend breakdown"),
+    hunt_id: str | None = typer.Option(None, "--hunt-id", help="Limit to one Hunt"),
+) -> None:
+    """Spend by stage and tier-3 credit usage (AD-C).
+
+    The readout that makes the credit counter usable before the admin panel's
+    Costs tab exists: the free plan is a fixed monthly allowance, and until
+    something reads it, exhausting it looks like an unexplained fetch failure.
+    """
+    import asyncpg
+    from manzil_shared.config import TIER3_FREE_MONTHLY_CREDITS, TIER3_PRICES_USD
+
+    dsn = os.environ.get("DATABASE_URL")
+    if not dsn:
+        typer.echo("DATABASE_URL is not set — costs needs the service-role DB URL", err=True)
+        raise typer.Exit(code=1)
+
+    async def run() -> None:
+        pool = await asyncpg.create_pool(dsn)
+        try:
+            stages = await pool.fetch(
+                """
+                select c.stage,
+                       sum(c.llm_cost_usd)   as llm,
+                       sum(c.fetch_cost_usd) as fetch,
+                       sum(c.llm_calls)      as calls,
+                       sum(c.fetch_calls)    as fetches
+                from job_stage_costs c
+                join jobs j on j.id = c.job_id
+                where c.updated_at > now() - ($1 || ' days')::interval
+                  and ($2::uuid is null or j.hunt_id = $2::uuid)
+                group by c.stage
+                order by sum(c.llm_cost_usd + c.fetch_cost_usd) desc
+                """,
+                str(days),
+                hunt_id,
+            )
+            credits = await pool.fetch(
+                "select provider, credits from tier3_credit_usage "
+                "where month = date_trunc('month', now()) order by provider"
+            )
+        finally:
+            await pool.close()
+
+        if not stages:
+            typer.echo(f"no recorded spend in the last {days} days")
+        else:
+            typer.echo(f"spend by stage, last {days} days")
+            typer.echo(f"  {'stage':<16}{'llm':>10}{'fetch':>10}{'total':>10}  calls")
+            total_llm = total_fetch = 0.0
+            for row in stages:
+                llm, fetch = float(row["llm"]), float(row["fetch"])
+                total_llm += llm
+                total_fetch += fetch
+                typer.echo(
+                    f"  {row['stage']:<16}{llm:>10.4f}{fetch:>10.4f}{llm + fetch:>10.4f}"
+                    f"  {row['calls']} llm / {row['fetches']} fetch"
+                )
+            typer.echo(
+                f"  {'TOTAL':<16}{total_llm:>10.4f}{total_fetch:>10.4f}"
+                f"{total_llm + total_fetch:>10.4f}"
+            )
+
+        typer.echo("\ntier-3 credits, this calendar month")
+        if not credits:
+            typer.echo("  none used")
+        for row in credits:
+            provider, used = row["provider"], int(row["credits"])
+            allowance = TIER3_FREE_MONTHLY_CREDITS.get(provider)
+            price = TIER3_PRICES_USD.get(provider)
+            spent = f"${used * price:.4f}" if price is not None else "unpriced"
+            if allowance:
+                pct = 100.0 * used / allowance
+                typer.echo(f"  {provider}: {used:,} / {allowance:,} ({pct:.1f}%) · {spent}")
+            else:
+                typer.echo(f"  {provider}: {used:,} (no recorded allowance) · {spent}")
+
+    asyncio.run(run())

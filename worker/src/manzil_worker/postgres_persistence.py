@@ -130,6 +130,7 @@ class PostgresPersistence:
                 finished,
                 warnings,
             )
+            await self._save_stage_costs(conn, state)
             # A stage completes when the cursor advances past it (persist-before-
             # advance means outputs are already durable at that point).
             while self._last_completed < cursor:
@@ -147,6 +148,49 @@ class PostgresPersistence:
                         {"question": state.checkpoint.question},
                     )
                     self._terminal_emitted = True
+
+    async def _save_stage_costs(self, conn: asyncpg.Connection, state: RunState) -> None:
+        """Mirror `RunState.stage_costs` onto `job_stage_costs` (AD-C).
+
+        Upsert on (job_id, stage) with `set`, not `+=`: the RunState entry is
+        already the replace-semantics record of what that stage's latest run
+        cost, so a resumed job that re-runs a stage corrects its row instead of
+        doubling it. Writing inside the caller's transaction keeps the breakdown
+        consistent with the `cost_actual_usd` written a few statements above.
+        """
+        for row in state.stage_costs:
+            await conn.execute(
+                """
+                insert into job_stage_costs (
+                    job_id, stage, llm_calls, llm_cost_usd,
+                    input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+                    fetch_calls, fetch_cost_usd, fetch_calls_by_provider
+                )
+                values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)
+                on conflict (job_id, stage) do update set
+                    llm_calls          = excluded.llm_calls,
+                    llm_cost_usd       = excluded.llm_cost_usd,
+                    input_tokens       = excluded.input_tokens,
+                    output_tokens      = excluded.output_tokens,
+                    cache_read_tokens  = excluded.cache_read_tokens,
+                    cache_write_tokens = excluded.cache_write_tokens,
+                    fetch_calls        = excluded.fetch_calls,
+                    fetch_cost_usd     = excluded.fetch_cost_usd,
+                    fetch_calls_by_provider = excluded.fetch_calls_by_provider,
+                    updated_at         = now()
+                """,
+                self.job_id,
+                row.stage,
+                row.llm_calls,
+                Decimal(str(row.llm_cost_usd)),
+                row.input_tokens,
+                row.output_tokens,
+                row.cache_read_tokens,
+                row.cache_write_tokens,
+                row.fetch_calls,
+                Decimal(str(row.fetch_cost_usd)),
+                json.dumps(row.fetch_calls_by_provider),
+            )
 
     async def _emit(
         self,

@@ -12,7 +12,7 @@ fields added because the CLI and eval harness need run outcomes on the state).
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID, uuid4
 
 from manzil_shared.models import (
@@ -25,6 +25,9 @@ from manzil_shared.models import (
     UnitApplicability,
 )
 from pydantic import BaseModel, Field, field_validator
+
+if TYPE_CHECKING:
+    from manzil_worker.costs import CostTally
 
 VerifyCheck = Literal["evidence", "conformance", "plausibility", "consistency"]
 
@@ -494,6 +497,31 @@ class StageWarning(BaseModel):
     detail: dict[str, Any] = Field(default_factory=dict)
 
 
+class StageCost(BaseModel):
+    """What one stage spent, split by what bought it (AD-C).
+
+    The split is the point: a blended number cannot answer "how much of this
+    was the model?", which is the first question anyone asks of a cost page.
+    `llm_cost_usd` is token spend (plus native-search charges the seam prices);
+    `fetch_cost_usd` is managed-unblocker spend at `TIER3_PRICES_USD`.
+    """
+
+    stage: str
+    llm_calls: int = 0
+    llm_cost_usd: float = 0.0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    fetch_calls: int = 0
+    fetch_cost_usd: float = 0.0
+    fetch_calls_by_provider: dict[str, int] = Field(default_factory=dict)
+
+    @property
+    def total_cost_usd(self) -> float:
+        return self.llm_cost_usd + self.fetch_cost_usd
+
+
 class RunState(BaseModel):
     job_id: UUID
     job_type: JobType
@@ -573,7 +601,35 @@ class RunState(BaseModel):
     # every pre-existing snapshot and recorded fixture keeps validating.
     warnings: list[StageWarning] = Field(default_factory=list)
     cost_usd: float = 0.0
+    # Per-stage spend (AD-C). Optional-with-default so every pre-existing
+    # snapshot and recorded fixture keeps validating.
+    stage_costs: list[StageCost] = Field(default_factory=list)
 
     def replace_warnings(self, stage: str, warnings: list[StageWarning]) -> None:
         """Make `stage`'s warnings exactly `warnings` (idempotent across resume)."""
         self.warnings = [warning for warning in self.warnings if warning.stage != stage] + warnings
+
+    def record_stage_cost(self, stage: str, tally: CostTally) -> None:
+        """Make `stage`'s cost entry exactly this tally.
+
+        Replace, not accumulate — same posture as `replace_warnings`. A stage
+        that re-runs (resume, or a RECONCILE escalation round) reports what its
+        latest run cost rather than a growing sum, which keeps the breakdown
+        idempotent. `cost_usd` remains the running accumulator it has always
+        been, so on a re-run the job total can legitimately exceed the sum of
+        the per-stage rows: the total is what was spent, the breakdown is what
+        the last attempt at each stage cost.
+        """
+        entry = StageCost(
+            stage=stage,
+            llm_calls=tally.calls,
+            llm_cost_usd=tally.cost_usd,
+            input_tokens=tally.input_tokens,
+            output_tokens=tally.output_tokens,
+            cache_read_tokens=tally.cache_read_tokens,
+            cache_write_tokens=tally.cache_write_tokens,
+            fetch_calls=tally.fetch_calls,
+            fetch_cost_usd=tally.fetch_cost_usd,
+            fetch_calls_by_provider=dict(tally.fetch_calls_by_provider),
+        )
+        self.stage_costs = [row for row in self.stage_costs if row.stage != stage] + [entry]
