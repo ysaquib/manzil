@@ -1,0 +1,116 @@
+/* Admin panel shell (AD-2). Its own layout rather than AppLayout's, because
+   nothing here is Hunt-scoped and the hunt navbar's items would all be dead. */
+
+.shell {
+  display: grid;
+  grid-template-columns: 15rem minmax(0, 1fr);
+  min-height: 100vh;
+  background-color: var(--mantine-color-body);
+}
+
+/* `--mantine-color-default` and NOT `--mantine-color-surface-0`: the `surface`
+   virtual colour maps to the `dark` scale in dark mode, and Mantine's dark
+   scale runs lightest-to-darkest — so shade 0 is its *lightest* value (#D1C7D0)
+   and the token means "very light" in both schemes. `default` is the
+   scheme-aware raised-panel surface (white on light, dark-6 on dark). */
+.rail {
+  border-inline-end: 1px solid var(--mantine-color-default-border);
+  background-color: var(--mantine-color-default);
+  padding: var(--mantine-spacing-md) 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.groupLabel {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mantine-color-dimmed);
+  padding: var(--mantine-spacing-sm) var(--mantine-spacing-md) 4px;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  padding: 8px var(--mantine-spacing-md);
+  color: var(--mantine-color-text);
+  border-inline-start: 3px solid transparent;
+  text-decoration: none;
+  font-size: var(--mantine-font-size-sm);
+}
+
+.item:hover {
+  background-color: var(--mantine-color-default-hover);
+}
+
+.itemActive {
+  font-weight: 600;
+  border-inline-start-color: var(--mantine-primary-color-filled);
+  background-color: var(--mantine-color-primary-light);
+  color: var(--mantine-color-primary-light-color);
+}
+
+/* Not-yet-built tabs are shown and disabled rather than hidden: the panel's
+   shape is part of the information, and a link that 404s is worse than one
+   that says "not yet". */
+.itemPending {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.itemPending:hover {
+  background-color: transparent;
+}
+
+.count {
+  margin-inline-start: auto;
+  font-family: var(--mantine-font-family-monospace);
+  font-size: 0.72rem;
+  color: var(--mantine-color-dimmed);
+}
+
+.main {
+  min-width: 0;
+  padding: var(--mantine-spacing-lg) var(--mantine-spacing-xl) var(--mantine-spacing-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-lg);
+}
+
+.railHead {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  padding: 0 var(--mantine-spacing-md) var(--mantine-spacing-sm);
+}
+
+@media (max-width: 48em) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+
+  .rail {
+    border-inline-end: 0;
+    border-bottom: 1px solid var(--mantine-color-default-border);
+    flex-direction: row;
+    flex-wrap: wrap;
+    padding: var(--mantine-spacing-xs);
+  }
+
+  .groupLabel {
+    display: none;
+  }
+
+  .item {
+    border-inline-start: 0;
+    border-radius: var(--mantine-radius-xl);
+    padding: 6px var(--mantine-spacing-sm);
+  }
+
+  .main {
+    padding: var(--mantine-spacing-md);
+  }
+}
