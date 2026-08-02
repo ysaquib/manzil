@@ -92,6 +92,11 @@ export function VisitDetailPage() {
   // must not hide what was recorded on it. **Editability** follows the derived
   // state — a finished or cancelled tour is a record, not a form.
   const hasStarted = visit.started_at !== null;
+  // A Site Admin viewing a Hunt they are not in reads Visits and never writes
+  // them (DESIGN §4.2): an Entry feeds the per-member roll-up in §9.7, and a
+  // ghost answering a tour they did not attend makes those numbers lie. RLS
+  // refuses the write regardless — this is what stops the UI offering it.
+  const { isGhost } = useGhostMode(visit?.hunt_id);
   // Three surfaces, not two (VC-12). A finished tour is a **record**: it keeps
   // every colour, because a green tick and a red flag must not read alike, and
   // loses only its interactivity. A cancelled tour is **void**: nothing was
@@ -99,13 +104,7 @@ export function VisitDetailPage() {
   // identically was telling you the opposite of the truth about both.
   const mode: VisitEditMode =
     state === "cancelled" ? "void" : state === "completed" ? "record" : "live";
-  const readOnly = mode !== "live";
-  // A Site Admin viewing a Hunt they are not in reads Visits and never writes
-  // them (DESIGN §4.2): an Entry feeds the per-member roll-up in §9.7, and a
-  // ghost answering a tour they did not attend makes those numbers lie. RLS
-  // refuses the write regardless — this is what stops the UI offering it.
-  const { isGhost } = useGhostMode(visit?.hunt_id);
-  const readOnly = state === "completed" || state === "cancelled" || isGhost === true;
+  const readOnly = mode !== "live" || isGhost === true;
   const sections = groupIntoSections(templateQuery.data ?? []);
   const lockedSections = sections.filter((section) => section.key !== "prep");
 
