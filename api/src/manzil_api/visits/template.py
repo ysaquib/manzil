@@ -30,7 +30,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-TEMPLATE_VERSION = 1
+TEMPLATE_VERSION = 2
 
 Tier = Literal["quick", "standard", "thorough"]
 Kind = Literal["fact", "check", "question", "impression"]
@@ -206,7 +206,11 @@ TEMPLATE: tuple[TemplateItem, ...] = (
         "sweep",
         "unit",
         "Is this the actual unit you'd rent, or a model?",
-        _enum("actual", "model"),
+        # v2 adds `similar`. The common answer on a real tour is neither of the
+        # other two — the agent shows you the same plan two floors down — and
+        # with only two options that tour was being recorded as one of two wrong
+        # things on a *critical* question.
+        _enum("actual", "model", "similar"),
         "quick",
         is_critical=True,
     ),

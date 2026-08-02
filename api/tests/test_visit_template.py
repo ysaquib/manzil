@@ -20,7 +20,18 @@ from manzil_api.visits.template import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SEEDING_MIGRATION = REPO_ROOT / "supabase" / "migrations" / "20260817000000_visits.sql"
+MIGRATIONS = REPO_ROOT / "supabase" / "migrations"
+
+# One seeding migration per template version. The module only ever describes the
+# *current* version, so older entries here are checked structurally rather than
+# against the module — that is what freezing means.
+SEEDING_MIGRATIONS = {
+    1: MIGRATIONS / "20260817000000_visits.sql",
+    2: MIGRATIONS / "20260826000000_visit_template_v2.sql",
+}
+
+# Row counts of superseded versions, frozen at the point they were superseded.
+FROZEN_ROW_COUNTS = {1: 248}
 
 
 def test_template_is_internally_consistent() -> None:
@@ -28,31 +39,55 @@ def test_template_is_internally_consistent() -> None:
 
 
 def test_committed_migration_matches_the_module() -> None:
-    """The seeding migration embeds `generate_template_sql()` verbatim."""
-    migration = SEEDING_MIGRATION.read_text()
+    """The current version's migration embeds `generate_template_sql()` verbatim."""
+    path = SEEDING_MIGRATIONS[TEMPLATE_VERSION]
+    migration = path.read_text()
     assert generate_template_sql() in migration, (
-        "supabase/migrations/20260817000000_visits.sql no longer matches "
-        "api/src/manzil_api/visits/template.py. Regenerate the seed block rather "
-        "than hand-editing the migration; a new template version needs its own "
-        "migration, not an edit to this one."
+        f"{path.name} no longer matches api/src/manzil_api/visits/template.py. "
+        "Regenerate the seed block rather than hand-editing the migration; a new "
+        "template version needs its own migration, not an edit to this one."
     )
 
 
-def test_seeding_migration_remains_frozen_history() -> None:
-    """A future template version gets a new migration; this one stays at v1.
+def test_every_version_has_its_own_migration() -> None:
+    """A version with no migration is a version no database has."""
+    assert TEMPLATE_VERSION in SEEDING_MIGRATIONS
+    assert set(SEEDING_MIGRATIONS) == set(range(1, TEMPLATE_VERSION + 1))
+    for path in SEEDING_MIGRATIONS.values():
+        assert path.exists(), path
+
+
+@pytest.mark.parametrize("version", sorted(FROZEN_ROW_COUNTS))
+def test_superseded_migrations_remain_frozen_history(version: int) -> None:
+    """A superseded seeding migration is never edited again.
 
     Same posture as the frozen scoped-Catalog migration tests: an applied
     migration is history, so changing it in place would leave every existing
-    database disagreeing with the file that supposedly produced it.
+    database disagreeing with the file that supposedly produced it. The module
+    no longer describes these rows, so the assertion is structural: every row
+    still carries its own version, and there are still exactly as many as there
+    were when the version was frozen.
     """
-    migration = SEEDING_MIGRATION.read_text()
+    migration = SEEDING_MIGRATIONS[version].read_text()
     assert "insert into visit_template_items (" in migration
-    assert TEMPLATE_VERSION == 1
-    # Every seeded row in this migration is version 1.
     seed_rows = [line for line in migration.splitlines() if line.startswith("    ('")]
     assert seed_rows, "seed block missing"
-    assert all(", 1, '" in row for row in seed_rows)
+    assert all(f", {version}, '" in row for row in seed_rows)
+    assert len(seed_rows) == FROZEN_ROW_COUNTS[version]
+
+
+def test_current_version_seeds_every_item() -> None:
+    migration = SEEDING_MIGRATIONS[TEMPLATE_VERSION].read_text()
+    seed_rows = [line for line in migration.splitlines() if line.startswith("    ('")]
     assert len(seed_rows) == len(TEMPLATE)
+    assert all(f", {TEMPLATE_VERSION}, '" in row for row in seed_rows)
+
+
+def test_the_actual_unit_question_offers_a_middle_answer() -> None:
+    """VC-11: the same plan two floors down is neither `actual` nor `model`."""
+    item = next(i for i in TEMPLATE if i.key == "sweep_actual_unit")
+    assert item.is_critical
+    assert item.value_schema["options"] == ["actual", "model", "similar"]
 
 
 def test_keys_are_stable_identifiers() -> None:
