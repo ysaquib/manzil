@@ -4,9 +4,12 @@
 // pinned contract (frontend/API_ASSUMPTIONS.md conflict #1).
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { useMemo } from "react";
+
 import { apiFetch } from "../../lib/apiClient";
 import type { NonNegotiable, RubricOption } from "../../lib/contracts";
 import { supabase } from "../../lib/supabase";
+import { catalogWithCustomLabels } from "./customCriterion";
 import type { ValueSchema } from "./widgets/types";
 
 export interface CatalogEntry {
@@ -37,6 +40,12 @@ export interface RubricCriterion {
 
 export type CustomRoute = null | "maps" | "vision" | "web_search";
 
+export interface CustomRouteModifiers {
+  avoid_highways?: boolean;
+  avoid_tolls?: boolean;
+  avoid_ferries?: boolean;
+}
+
 export interface CustomCriterionDef {
   schema_version: 1;
   key: string;
@@ -47,6 +56,7 @@ export interface CustomCriterionDef {
   requires_tool: CustomRoute;
   refresh_class: "listing_details" | "location";
   routing_confirmed: boolean;
+  route_modifiers?: CustomRouteModifiers | null;
 }
 
 export interface CustomRoutingResponse {
@@ -85,6 +95,21 @@ export function useRubric(huntId: string) {
       return (data ?? []) as RubricCriterion[];
     },
   });
+}
+
+/** Catalog merged with this hunt's custom Criterion labels (drawer, compare, breakdown). */
+export function useResolvedCatalog(huntId: string, domain: "rent" | "buy" = "rent") {
+  const { data: catalog = [], ...catalogQuery } = useCatalog(domain);
+  const { data: rubric = [], ...rubricQuery } = useRubric(huntId);
+  const resolved = useMemo(
+    () => catalogWithCustomLabels(catalog, rubric),
+    [catalog, rubric],
+  );
+  return {
+    data: resolved,
+    isLoading: catalogQuery.isLoading || rubricQuery.isLoading,
+    error: catalogQuery.error ?? rubricQuery.error,
+  };
 }
 
 export function usePutRubric(huntId: string) {

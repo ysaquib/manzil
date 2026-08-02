@@ -139,6 +139,28 @@ async def test_commute_time_returns_minutes() -> None:
     assert minutes == 15.0
 
 
+async def test_commute_time_with_avoid_uses_directions_api() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "directions" in str(request.url)
+        assert "avoid=highways" in str(request.url)
+        return httpx.Response(
+            200,
+            json={
+                "status": "OK",
+                "routes": [{"legs": [{"duration": {"value": 900}}]}],
+            },
+        )
+
+    minutes = await maps._commute_time_call(
+        "42.33,-83.05",
+        "1 Campus Martius, Detroit",
+        mode="driving",
+        avoid_highways=True,
+        transport=_transport(handler),
+    )
+    assert minutes == 15.0
+
+
 async def test_missing_key_raises_a_clear_error(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GOOGLE_MAPS_API_KEY", raising=False)
 

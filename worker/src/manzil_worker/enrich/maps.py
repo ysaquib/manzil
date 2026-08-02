@@ -37,6 +37,7 @@ log = structlog.get_logger()
 _GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 _NEARBY_URL = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
 _DISTANCE_URL = "https://maps.googleapis.com/maps/api/distancematrix/json"
+_DIRECTIONS_URL = "https://maps.googleapis.com/maps/api/directions/json"
 _DETAILS_URL = "https://maps.googleapis.com/maps/api/place/details/json"
 
 # Google `status` values that mean "no error, just no data" — an empty result,
@@ -185,8 +186,39 @@ async def _commute_time_call(
     destination: str,
     *,
     mode: str = "driving",
+    avoid_highways: bool = False,
+    avoid_tolls: bool = False,
+    avoid_ferries: bool = False,
     transport: Any = None,
 ) -> float | None:
+    avoid_parts = [
+        name
+        for enabled, name in (
+            (avoid_highways, "highways"),
+            (avoid_tolls, "tolls"),
+            (avoid_ferries, "ferries"),
+        )
+        if enabled
+    ]
+    if avoid_parts and mode in {"driving", "walking", "bicycling"}:
+        params: dict[str, str] = {
+            "origin": origin_latlng,
+            "destination": destination,
+            "mode": mode,
+            "avoid": "|".join(avoid_parts),
+        }
+        body = await _get_json(_DIRECTIONS_URL, params, transport=transport)
+        routes = body.get("routes") or []
+        if not routes:
+            return None
+        legs = routes[0].get("legs") or []
+        if not legs:
+            return None
+        seconds = legs[0].get("duration", {}).get("value")
+        if seconds is None:
+            return None
+        return round(seconds / 60.0, 1)
+
     body = await _get_json(
         _DISTANCE_URL,
         {"origins": origin_latlng, "destinations": destination, "mode": mode},
@@ -207,12 +239,22 @@ async def commute_time(
     origin_latlng: str,
     destination: str,
     mode: str = "driving",
+    avoid_highways: bool = False,
+    avoid_tolls: bool = False,
+    avoid_ferries: bool = False,
 ) -> float | None:
     """Estimate commute minutes from an origin "lat,lng" to a destination address
-    by `mode` (driving | walking | bicycling | transit). None when no route."""
+    by `mode` (driving | walking | bicycling | transit). Optional avoid_* flags
+    use the Directions API when any is true. None when no route."""
     ctx = current_tool_context()
     return await _commute_time_call(
-        origin_latlng, destination, mode=mode, transport=ctx.maps_transport
+        origin_latlng,
+        destination,
+        mode=mode,
+        avoid_highways=avoid_highways,
+        avoid_tolls=avoid_tolls,
+        avoid_ferries=avoid_ferries,
+        transport=ctx.maps_transport,
     )
 
 

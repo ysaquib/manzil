@@ -15,10 +15,9 @@ vi.mock("../src/features/listings/api", () => ({
 }));
 
 vi.mock("../src/features/rubric/api", () => ({
-  useCatalog: () => ({
-    data: [{ key: "in_unit_laundry", label: "In-unit laundry" }],
+  useResolvedCatalog: () => ({
+    data: [{ key: "in_unit_laundry", label: "In-unit laundry", category: "unit", domain: "rent", fact_scope: "mixed", value_schema: { type: "string" }, default_options: [], extraction_hint: "", requires_tool: null, refresh_class: "listing_details" }],
   }),
-  useRubric: () => ({ data: [] }),
 }));
 
 import { ComparePage } from "../src/features/listings/ComparePage";
