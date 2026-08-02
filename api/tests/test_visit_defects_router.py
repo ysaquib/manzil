@@ -199,7 +199,7 @@ async def test_a_defect_can_be_logged_by_hand_and_edited(
         json={
             "title": "  Fresh caulk in one isolated spot  ",
             "visit_unit_id": visit["units"][0]["id"],
-            "severity": 2,
+            "severity": "minor",
         },
     )
     assert created.status_code == 201
@@ -208,10 +208,10 @@ async def test_a_defect_can_be_logged_by_hand_and_edited(
 
     patched = await as_member.patch(
         f"/v1/visits/{visit['id']}/defects/{created.json()['id']}",
-        json={"severity": 4, "promised_in_writing": True, "note": "photographed"},
+        json={"severity": "dealbreaker", "promised_in_writing": True, "note": "photographed"},
     )
     assert patched.status_code == 200
-    assert patched.json()["severity"] == 4
+    assert patched.json()["severity"] == "dealbreaker"
     assert patched.json()["promised_in_writing"] is True
     assert patched.json()["note"] == "photographed"
 
@@ -249,7 +249,7 @@ async def test_editing_a_deleted_defect_is_a_404(collab_hunt, as_member: AsyncCl
     await as_member.delete(f"/v1/visits/{visit['id']}/defects/{defect_id}")
 
     assert (
-        await as_member.patch(f"/v1/visits/{visit['id']}/defects/{defect_id}", json={"severity": 3})
+        await as_member.patch(f"/v1/visits/{visit['id']}/defects/{defect_id}", json={"severity": "major"})
     ).status_code == 404
     assert (
         await as_member.delete(f"/v1/visits/{visit['id']}/defects/{defect_id}")
@@ -267,7 +267,7 @@ async def test_another_member_can_edit_a_defect_they_did_not_log(
         f"/v1/visits/{visit['id']}/defects", json={"title": "Window won't latch"}
     )
     patched = await as_curator.patch(
-        f"/v1/visits/{visit['id']}/defects/{created.json()['id']}", json={"severity": 3}
+        f"/v1/visits/{visit['id']}/defects/{created.json()['id']}", json={"severity": "major"}
     )
     assert patched.status_code == 200
 

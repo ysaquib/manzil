@@ -10,13 +10,13 @@ import {
   Box,
   Card,
   Group,
-  Progress,
   ScrollArea,
   SegmentedControl,
   Stack,
   Text,
   Tooltip,
 } from "@mantine/core";
+import { useMediaQuery } from "@mantine/hooks";
 import { IconInfoCircle } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 
@@ -50,14 +50,30 @@ import {
   teamAnswers,
   unitFor,
 } from "./entries";
-import type { Visit, VisitEntryConflict, VisitItem, VisitUnit } from "./types";
+import { toneFor } from "./statusColors";
+import type {
+  Visit,
+  VisitEditMode,
+  VisitEntryConflict,
+  VisitItem,
+  VisitUnit,
+} from "./types";
+import { VisitInsights } from "./VisitInsights";
+import { VisitItemNote } from "./VisitItemNote";
+import {
+  PhaseBar,
+  SectionHeading,
+  SectionPicker,
+  SectionRail,
+  SectionSteps,
+} from "./VisitSectionNav";
 import { VisitByline } from "./VisitByline";
 import { ControlForItem } from "./VisitControls";
 import { VisitPresence } from "./VisitPresence";
 import { useGhostMode } from "../admin/useGhostMode";
 import { useVisitPresence } from "./usePresence";
 import classes from "./VisitChecklist.module.css";
-import { groupIntoSections, sectionTitle, type Tier } from "./visitState";
+import { groupIntoSections, neighbours, sectionTitle, type Tier } from "./visitState";
 
 function UnitSwitcher({
   units,
@@ -98,11 +114,12 @@ function UnitSwitcher({
 
 export function VisitChecklist({
   visit,
-  readOnly,
+  mode = "live",
   restrictTo,
 }: {
   visit: Visit;
-  readOnly?: boolean;
+  /** `record` for a finished tour, `void` for a cancelled one (VC-12). */
+  mode?: VisitEditMode;
   /** Section keys to show. Used before a tour starts, when only prep is open. */
   restrictTo?: string[];
 }) {
@@ -114,6 +131,13 @@ export function VisitChecklist({
     () => [...(visit.visit_units ?? [])].sort((a, b) => a.display_order - b.display_order),
     [visit.visit_units],
   );
+
+  // Which panes exist is a *rendering* decision, not just a styling one: the
+  // rail and the phase bar are the same list, so leaving both in the DOM and
+  // hiding one with CSS would read it twice to a screen reader and give every
+  // section two buttons with the same name. Only one is ever mounted.
+  const wideEnoughForRail = useMediaQuery("(min-width: 82em)") ?? false;
+  const wideEnoughForInsights = useMediaQuery("(min-width: 62em)") ?? false;
 
   const [tier, setTier] = useState<Tier>("standard");
   const [activeUnitId, setActiveUnitId] = useState<string | null>(units[0]?.id ?? null);
@@ -171,7 +195,10 @@ export function VisitChecklist({
   const mixed = Boolean(section?.hasUnitScoped && section?.hasPropertyScoped);
   const activeUnit = units.find((unit) => unit.id === activeUnitId) ?? null;
 
-  function save(item: VisitItem, patch: { value?: unknown; answer_text?: string | null }) {
+  function save(
+    item: VisitItem,
+    patch: { value?: unknown; answer_text?: string | null; note?: string | null },
+  ) {
     const unitId = unitFor(item, activeUnitId);
     // A unit-scoped item with no unit selected has nowhere to go; the API would
     // reject it, so don't send it.
@@ -212,6 +239,24 @@ export function VisitChecklist({
     ]);
   }
 
+  /** A section's progress, in the scope it is actually answered in. */
+  const sectionProgress = (candidate: (typeof sections)[number]) =>
+    progressFor(candidate.items, index, candidate.hasUnitScoped ? activeUnitId : null, userId);
+
+  const { previous, next } = neighbours(sections, currentSectionKey);
+
+  // Questions nobody has answered, across the whole checklist rather than this
+  // section — "what did we forget to ask" is never a per-room question.
+  const openQuestions = useMemo(
+    () =>
+      items.filter(
+        (item) =>
+          item.kind === "question" &&
+          !isAnswered(item, currentAnswer(index, item, activeUnitId, userId)),
+      ),
+    [items, index, activeUnitId, userId],
+  );
+
   if (templateQuery.isLoading || entriesQuery.isLoading) {
     return (
       <Card>
@@ -221,6 +266,12 @@ export function VisitChecklist({
       </Card>
     );
   }
+
+  const scopeLabel = mixed
+    ? "Mixed"
+    : section?.hasUnitScoped
+      ? (activeUnit?.label ?? "no unit")
+      : "Whole property";
 
   return (
     <Stack gap="md">
@@ -289,56 +340,56 @@ export function VisitChecklist({
         </Stack>
       </Card>
 
-      <ScrollArea type="never">
-        <Group gap={6} wrap="nowrap" py={2}>
-          {sections.map((candidate) => {
-            const progress = progressFor(
-              candidate.items,
-              index,
-              candidate.hasUnitScoped ? activeUnitId : null,
-              userId,
-            );
-            const active = candidate.key === currentSectionKey;
-            return (
-              <Badge
-                key={candidate.key}
-                component="button"
-                type="button"
-                variant={active ? "filled" : "outline"}
-                color={progress.answered === progress.total ? "green" : "gray"}
-                radius="sm"
-                size="lg"
-                className={classes.sectionChip}
-                onClick={() => setActiveSection(candidate.key)}
-                aria-pressed={active}
-              >
-                {sectionTitle(candidate.key)} {progress.answered}/{progress.total}
-              </Badge>
-            );
-          })}
-        </Group>
-      </ScrollArea>
+      {/* Three panes on a desktop, one on a phone. The rail and the insight
+          column drop out below their breakpoints, which is why the phone
+          layout needs no separate component: it is this one, narrower. */}
+      <Box
+        className={classes.layout}
+        data-panes={
+          wideEnoughForRail ? "three" : wideEnoughForInsights ? "two" : "one"
+        }
+      >
+        {wideEnoughForRail && (
+          <Box className={classes.railPane}>
+            <SectionRail
+              sections={sections}
+              current={currentSectionKey}
+              onSelect={setActiveSection}
+              progressFor={sectionProgress}
+            />
+          </Box>
+        )}
+
+        <Stack gap="md" className={classes.mainPane}>
+          {/* The compact navigation: five phases that fit, and the section name
+              as the button onto the full list. Hidden once the rail is up. */}
+          {!wideEnoughForRail && (
+          <Card padding={0} className={classes.compactNav}>
+            <PhaseBar
+              sections={sections}
+              current={currentSectionKey}
+              onSelect={setActiveSection}
+              progressFor={sectionProgress}
+            />
+            <Box px="sm">
+              <SectionPicker
+                sections={sections}
+                current={currentSectionKey}
+                onSelect={setActiveSection}
+                progressFor={sectionProgress}
+              />
+            </Box>
+          </Card>
+          )}
 
       {section && (
         <Card>
           <Stack gap="xs">
-            <Group justify="space-between" align="center">
-              <Text fw={600} ff="var(--mantine-font-family-headings)" size="md">
-                {sectionTitle(section.key)}
-              </Text>
-              <Badge variant="light" color="gray" radius="sm">
-                {mixed ? "Mixed" : section.hasUnitScoped ? (activeUnit?.label ?? "no unit") : "Whole property"}
-              </Badge>
-            </Group>
-
-            <Progress
-              size="xs"
-              value={
-                (progressFor(section.items, index, unitScoped ? activeUnitId : null, userId)
-                  .answered /
-                  Math.max(section.items.length, 1)) *
-                100
-              }
+            <SectionHeading
+              title={sectionTitle(section.key)}
+              scopeLabel={scopeLabel}
+              progress={sectionProgress(section)}
+              showTitle={wideEnoughForRail}
             />
 
             <Stack gap={0} mt="xs">
@@ -354,14 +405,19 @@ export function VisitChecklist({
                       <Group gap={6} wrap="wrap">
                         <Text size="sm">{item.label}</Text>
                         {item.is_critical && (
-                          <Badge color="yellow" variant="light" size="xs" radius="sm">
+                          <Badge
+                            color={toneFor("critical").color}
+                            variant={toneFor("critical").variant}
+                            size="xs"
+                            radius="sm"
+                          >
                             Critical
                           </Badge>
                         )}
                         {item.isCustom && (
                           <Badge
-                            color="teal"
-                            variant="outline"
+                            color={toneFor("custom").color}
+                            variant={toneFor("custom").variant}
                             size="xs"
                             radius="sm"
                             style={{ borderStyle: "dashed" }}
@@ -386,7 +442,12 @@ export function VisitChecklist({
                         )}
                         {ownerFor(item, userId) && (
                           <Tooltip label="Your own answer — everyone records their own">
-                            <Badge color="grape" variant="light" size="xs" radius="sm">
+                            <Badge
+                              color={toneFor("personal").color}
+                              variant={toneFor("personal").variant}
+                              size="xs"
+                              radius="sm"
+                            >
                               Yours
                             </Badge>
                           </Tooltip>
@@ -451,13 +512,22 @@ export function VisitChecklist({
                       {entry && ownerFor(item, userId) === null && (
                         <VisitByline entry={entry} members={members} viewerId={userId} />
                       )}
+                      {/* VC-15: the 249th thought. A tri-state cannot say why a
+                          check failed and a 2-out-of-5 cannot say what was
+                          wrong with the counter. */}
+                      <VisitItemNote
+                        entry={entry}
+                        label={item.label}
+                        mode={mode}
+                        onSave={(note) => save(item, { note })}
+                      />
                     </Box>
                     <Box className={classes.itemControl}>
                       <ControlForItem
                         item={item}
                         entry={entry}
                         disabled={blocked}
-                        readOnly={readOnly}
+                        mode={mode}
                         onSave={(patch) => save(item, patch)}
                       />
                     </Box>
@@ -478,9 +548,34 @@ export function VisitChecklist({
           listing={listing}
           proposals={proposalsQuery.data ?? []}
           activeUnit={activeUnit}
-          readOnly={readOnly}
+          readOnly={mode !== "live"}
         />
       )}
+
+          {/* Nobody tours a flat by jumping: the common path is the template's
+              own order, two taps from the foot of the section you just did. */}
+          <SectionSteps previous={previous} next={next} onSelect={setActiveSection} />
+        </Stack>
+
+        {wideEnoughForInsights && (
+        <Box className={classes.insightPane}>
+          {section && (
+            <VisitInsights
+              visit={visit}
+              items={section.items}
+              entries={entries}
+              activeUnitId={section.hasUnitScoped ? activeUnitId : null}
+              members={members}
+              viewerId={userId ?? null}
+              answered={sectionProgress(section).answered}
+              total={sectionProgress(section).total}
+              openQuestions={openQuestions}
+              defectCount={0}
+            />
+          )}
+        </Box>
+        )}
+      </Box>
     </Stack>
   );
 }

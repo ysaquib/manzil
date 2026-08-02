@@ -1,0 +1,265 @@
+/* Section navigation (VC-13). Every colour here is a theme token; nothing in
+   this file names a hue. */
+
+/* --- phase bar: five items, one row, never scrolls ------------------------ */
+.phaseBar {
+  display: flex;
+  width: 100%;
+  border-bottom: 1px solid var(--mantine-color-default-border);
+  padding-inline: 4px;
+}
+
+.phaseTab {
+  flex: 1 1 0;
+  /* The reason this fits where 21 chips did not: each tab may shrink to
+     nothing rather than forcing the row to overflow, and the label ellipses. */
+  min-width: 0;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0.5rem 0.25rem 0.4rem;
+  cursor: pointer;
+  color: var(--mantine-color-dimmed);
+  font-size: var(--mantine-font-size-xs);
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  transition: color 140ms ease, border-color 140ms ease;
+}
+
+.phaseTab:hover {
+  color: var(--mantine-color-text);
+}
+
+.phaseTab[data-active] {
+  color: var(--mantine-primary-color-filled);
+  border-bottom-color: var(--mantine-primary-color-filled);
+}
+
+.phaseTab:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: -2px;
+}
+
+.phaseName {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.phaseDots {
+  display: flex;
+  gap: 2px;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 100%;
+}
+
+.phaseDots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--mantine-color-default-border);
+}
+
+.phaseDots i[data-status="complete"] {
+  background: var(--mantine-color-green-6);
+}
+
+.phaseDots i[data-status="partial"] {
+  background: var(--mantine-color-yellow-6);
+}
+
+/* --- section header: the name is the button ------------------------------ */
+.sectionHead {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 0.25rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--mantine-color-text);
+  /* Comfortable for a thumb without becoming a slab (UI_DESIGN §5). */
+  min-height: 2.75rem;
+}
+
+.sectionHead:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 2px;
+  border-radius: var(--mantine-radius-sm);
+}
+
+.sectionName {
+  font-family: var(--mantine-font-family-headings);
+  font-weight: 600;
+  font-size: var(--mantine-font-size-md);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sectionCount {
+  font-size: var(--mantine-font-size-xs);
+  color: var(--mantine-color-dimmed);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+/* --- picker + rail rows -------------------------------------------------- */
+.groupLabel {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--mantine-color-dimmed);
+  padding: 0.75rem 0.5rem 0.25rem;
+}
+
+.pickerRow,
+.railRow {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  width: 100%;
+  padding: 0.5rem;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--mantine-color-text);
+  border-radius: var(--mantine-radius-sm);
+  font-size: var(--mantine-font-size-sm);
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.pickerRow {
+  min-height: 2.75rem;
+}
+
+.pickerRow:hover,
+.railRow:hover {
+  background: var(--mantine-color-default-hover);
+}
+
+.pickerRow[aria-current="true"],
+.railRow[aria-current="true"] {
+  background: var(--mantine-primary-color-light);
+  color: var(--mantine-primary-color-light-color);
+  font-weight: 600;
+}
+
+.pickerRow:focus-visible,
+.railRow:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: -2px;
+}
+
+.pickerName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pickerCount {
+  font-size: var(--mantine-font-size-xs);
+  color: var(--mantine-color-dimmed);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--mantine-color-default-border);
+}
+
+.statusDot[data-status="complete"] {
+  background: var(--mantine-color-green-6);
+}
+
+.statusDot[data-status="partial"] {
+  background: var(--mantine-color-yellow-6);
+}
+
+/* --- desktop rail -------------------------------------------------------- */
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0.25rem;
+  overflow-y: auto;
+  /* Sticks alongside the content rather than scrolling away with it: on a
+     desktop the rail is how you move, so it has to stay reachable. */
+  position: sticky;
+  top: var(--mantine-spacing-md);
+  max-height: calc(100vh - 8rem);
+}
+
+/* --- previous / next ----------------------------------------------------- */
+.step {
+  flex: 1;
+  min-width: 0;
+  background: var(--mantine-color-body);
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-md);
+  padding: 0.625rem 0.75rem;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 3.25rem;
+  color: var(--mantine-color-text);
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.step:hover:not(:disabled) {
+  border-color: var(--mantine-primary-color-filled);
+  background: var(--mantine-color-default-hover);
+}
+
+.step:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.step:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 2px;
+}
+
+.stepNext {
+  text-align: right;
+  align-items: flex-end;
+}
+
+.stepDir {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mantine-color-dimmed);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.stepName {
+  font-size: var(--mantine-font-size-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}

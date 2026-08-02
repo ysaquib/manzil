@@ -254,7 +254,11 @@ async def patch_visit(
             raise InvalidVisitTransition("This visit is cancelled. Reinstate it before reopening.")
         if visit["ended_at"] is None:
             raise InvalidVisitTransition("This visit has not ended, so there is nothing to reopen.")
-        patch["ended_at"] = None
+        # VC-9: `ended_at` is never cleared. The tour ended when it ended — that
+        # is a fact about a real afternoon, and nulling it to move the derived
+        # state was destroying it to record something else entirely. Only the
+        # most recent reopen is kept; a second one replaces it.
+        patch["reopened_at"] = now
     elif body.action == "cancel":
         if not caller_may_cancel(client, visit, user_id):
             raise CannotCancelVisit("Only the visit's creator or the Hunt Owner can cancel it.")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 from httpx import AsyncClient
+from manzil_api.visits.template import TEMPLATE_VERSION
 
 
 async def _create(client: AsyncClient, collab_hunt, **overrides):  # type: ignore[no-untyped-def]
@@ -29,7 +30,7 @@ async def test_create_visit_spanning_a_planned_and_a_described_unit(
     assert created.status_code == 201, created.text
     body = created.json()
     assert body["state"] == "planned"
-    assert body["template_version"] == 1
+    assert body["template_version"] == TEMPLATE_VERSION
     assert body["started_at"] is None
 
     units = {unit["label"]: unit for unit in body["units"]}
@@ -287,7 +288,10 @@ async def test_reopening_a_finished_visit_makes_it_editable_again(
     reopened = await as_owner.patch(f"/v1/visits/{visit['id']}", json={"action": "reopen"})
     assert reopened.status_code == 200, reopened.text
     assert reopened.json()["state"] == "in_progress"
-    assert reopened.json()["ended_at"] is None
+    # VC-9: the tour ended when it ended. Reopening records a *second* event
+    # rather than erasing the first, so the 42 minutes it actually took survives.
+    assert reopened.json()["ended_at"] == ended.json()["ended_at"]
+    assert reopened.json()["reopened_at"] is not None
     # The tour still knows when it started; reopening is not restarting.
     assert reopened.json()["started_at"] is not None
 

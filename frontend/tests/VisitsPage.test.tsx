@@ -189,7 +189,9 @@ describe("VisitsPage", () => {
   it("links each row and the header action into the flow", () => {
     mockVisits = [visit({ id: "abc", name: "Cedar & Vine" })];
     renderPage();
-    expect(screen.getByRole("link", { name: "Cedar & Vine" })).toHaveAttribute(
+    // Report 10: the whole card is the link, so its accessible name is the whole
+    // row rather than just the title — that is the fix, not a regression.
+    expect(screen.getByRole("link", { name: /Cedar & Vine/ })).toHaveAttribute(
       "href",
       "/h/h1/visits/abc",
     );

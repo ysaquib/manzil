@@ -10,7 +10,6 @@ import {
   Button,
   Card,
   Group,
-  Rating,
   Stack,
   Switch,
   Text,
@@ -20,17 +19,99 @@ import {
 import { IconFlag, IconPlus, IconTrash, IconWand } from "@tabler/icons-react";
 import { useState } from "react";
 
+import { SEVERITY_META, SEVERITY_ORDER, toneFor } from "./statusColors";
+
 import {
   useCreateVisitDefect,
   useDeleteVisitDefect,
   usePatchVisitDefect,
   useVisitDefects,
 } from "./api";
-import type { VisitDefect, VisitUnit } from "./types";
+import type { VisitDefect, VisitDefectSeverity, VisitUnit } from "./types";
+import classes from "./VisitDefects.module.css";
 
 function unitLabel(units: VisitUnit[], unitId: string | null): string {
   if (unitId === null) return "The building";
   return units.find((unit) => unit.id === unitId)?.label ?? "Unknown unit";
+}
+
+/** The glyph per level. Colour reinforces; the shape and the word carry it. */
+const SEVERITY_GLYPH: Record<VisitDefectSeverity, string> = {
+  noted: "○",
+  minor: "◐",
+  major: "▲",
+  dealbreaker: "✖",
+};
+
+/**
+ * Four named levels replacing five stars (VC-10).
+ *
+ * Stars asked you to rate a defect out of five on a scale nobody had defined,
+ * and read as *quality* everywhere else in this app — so on a defect, more
+ * stars looked like better news. Each level here carries a word, a glyph and a
+ * band of the status ramp, and says in plain words what it means.
+ *
+ * On a record the unchosen levels are dropped rather than greyed: an empty
+ * outline beside the answer is an affordance that does nothing.
+ */
+function SeverityPicker({
+  value,
+  readOnly,
+  onChange,
+}: {
+  value: VisitDefectSeverity | null;
+  readOnly?: boolean;
+  onChange: (next: VisitDefectSeverity) => void;
+}) {
+  const shown = readOnly ? SEVERITY_ORDER.filter((level) => level === value) : SEVERITY_ORDER;
+
+  if (readOnly && shown.length === 0) {
+    return (
+      <Text size="xs" c="dimmed" fs="italic">
+        Unrated
+      </Text>
+    );
+  }
+
+  return (
+    <Stack gap={3}>
+      <Group gap={4} wrap="wrap" role="group" aria-label="Severity">
+        {shown.map((level) => {
+          const meta = SEVERITY_META[level];
+          const active = value === level;
+          return (
+            <Tooltip key={level} label={meta.help} disabled={readOnly}>
+              <Button
+                size="compact-sm"
+                // `light` in both states rather than `filled` when chosen: the
+                // filled variant's text colour is picked by autoContrast, which
+                // flips between schemes on exactly these mid-tone earthy hues.
+                variant={active ? "light" : "default"}
+                color={active ? meta.color : "gray"}
+                className={active ? classes.severityOn : undefined}
+                aria-pressed={active}
+                onClick={() => !readOnly && onChange(level)}
+                leftSection={<span aria-hidden>{SEVERITY_GLYPH[level]}</span>}
+                style={readOnly ? { cursor: "default" } : undefined}
+              >
+                {meta.label}
+              </Button>
+            </Tooltip>
+          );
+        })}
+      </Group>
+      {value !== null && (
+        <Text size="xs" c="dimmed">
+          {SEVERITY_META[value].help}
+        </Text>
+      )}
+      {value === null && !readOnly && (
+        <Text size="xs" c="dimmed" fs="italic">
+          Unrated — pick one when you know
+        </Text>
+      )}
+    </Stack>
+  );
 }
 
 function DefectRow({
@@ -82,30 +163,23 @@ function DefectRow({
           </Text>
         )}
         <Group gap="md" wrap="wrap" mt={2}>
-          <Group gap={6}>
+          <Stack gap={4}>
             <Text size="xs" c="dimmed">
               Severity
             </Text>
-            <Rating
-              size="xs"
-              color="red"
-              value={defect.severity ?? 0}
+            <SeverityPicker
+              value={defect.severity}
               readOnly={readOnly}
-              onChange={(value) =>
+              onChange={(next) =>
                 patch.mutate({
                   defectId: defect.id,
-                  // Clicking the current rating clears it back to unrated,
-                  // which is a real state on a tour you are still walking.
-                  body: { severity: value === defect.severity ? null : value },
+                  // Choosing the current level clears it back to unrated, which
+                  // is a real state on a tour you are still walking.
+                  body: { severity: next === defect.severity ? null : next },
                 })
               }
             />
-            {defect.severity === null && (
-              <Text size="xs" c="dimmed" fs="italic">
-                unrated
-              </Text>
-            )}
-          </Group>
+          </Stack>
           {/* On a record the switch says nothing the green badge above has not
               already said, and greyed out it says it less legibly. */}
           {!readOnly && (
@@ -170,7 +244,11 @@ export function VisitDefects({
               Defect log
             </Text>
           </Group>
-          <Badge variant="light" color={defects.length ? "red" : "gray"} radius="sm">
+          <Badge
+            variant={toneFor(defects.length ? "problem" : "empty").variant}
+            color={toneFor(defects.length ? "problem" : "empty").color}
+            radius="sm"
+          >
             {defects.length === 1 ? "1 defect" : `${defects.length} defects`}
           </Badge>
         </Group>

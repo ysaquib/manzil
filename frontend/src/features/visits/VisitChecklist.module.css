@@ -2,10 +2,20 @@
    flex row so a long label wraps without ever squeezing the control — on a
    phone the control is the thing your thumb is aiming at. */
 
+/* Flex, not grid. A two-column grid cannot wrap: when the label and the
+   control both wanted more room than the row had, the columns overflowed and
+   the control printed *on top of* the wrapped label. Worse, giving the label a
+   fixed floor to stop it being squeezed into a three-word column ("Stand still
+   and listen for 60 seconds", one word per line) made that overlap certain in a
+   narrow centre pane.
+
+   `flex: 1 1 14rem` gives the label the same floor as a preferred width rather
+   than a hard one, so when both will not fit the control wraps to its own line
+   instead of colliding. Nothing is ever squeezed and nothing ever overlaps. */
 .itemRow {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--mantine-spacing-sm);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
   align-items: center;
   padding: var(--mantine-spacing-xs) 0;
   border-top: 1px solid var(--mantine-color-default-border);
@@ -16,22 +26,24 @@
 }
 
 .itemLabel {
+  flex: 1 1 14rem;
   min-width: 0;
 }
 
 .itemControl {
   display: flex;
+  flex: 0 1 auto;
+  margin-left: auto;
   justify-content: flex-end;
   align-items: center;
+  min-width: 0;
 }
 
-/* A Question and a free-text Fact need the full width, so they drop below the
-   label instead of fighting it for room. */
-.itemRow:has(textarea) {
-  grid-template-columns: minmax(0, 1fr);
-}
-
+/* A Question and a free-text Fact need the full width, so they take their own
+   line outright rather than competing for the row. */
 .itemRow:has(textarea) .itemControl {
+  flex: 1 0 100%;
+  margin-left: 0;
   justify-content: stretch;
 }
 
@@ -80,4 +92,37 @@
   display: inline-block;
   margin-right: 3px;
   vertical-align: middle;
+}
+
+/* --------------------------------------------------------------------------
+   Three-pane layout (VC-14)
+
+   The shipped page was one 760px column at every width: a phone layout that a
+   desktop was merely stretching. Three panes now, and the phone gets the same
+   component with two of them dropped — so there is one layout, not two.
+   -------------------------------------------------------------------------- */
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--mantine-spacing-md);
+  align-items: start;
+}
+
+.mainPane,
+.railPane,
+.insightPane {
+  min-width: 0;
+}
+
+/* The column template follows what the component actually mounted, rather than
+   a media query of its own — the panes are conditionally *rendered*, so a
+   second source of truth here could only ever disagree with the first.
+   The insight column arrives before the rail: the compare table is the payoff,
+   and it fits in less width than a third column does. */
+.layout[data-panes="two"] {
+  grid-template-columns: minmax(0, 1fr) 17rem;
+}
+
+.layout[data-panes="three"] {
+  grid-template-columns: 13.5rem minmax(0, 1fr) 18rem;
 }

@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -167,7 +167,11 @@ describe("VisitDetailPage before the tour starts", () => {
   it("offers Start visit, and starting sends the action rather than a timestamp", async () => {
     renderPage();
     const user = userEvent.setup();
-    await user.click(screen.getByRole("button", { name: /Start visit/ }));
+    // Starting confirms first (report 9): it is the one action on this page
+    // that cannot be undone, and it used to be the only way off the screen.
+    await user.click(screen.getByRole("button", { name: /^Start visit$/ }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: /Start visit/ }));
     expect(patchVisit).toHaveBeenCalledWith({ visitId: "v1", body: { action: "start" } });
   });
 });

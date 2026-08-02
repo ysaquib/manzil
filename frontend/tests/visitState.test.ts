@@ -12,6 +12,12 @@ import {
   unitDescriptor,
   unitGroupKeysFor,
   visitState,
+  isReopened,
+  neighbours,
+  phasesPresent,
+  sectionOrder,
+  SECTION_TITLE,
+  VISIT_PHASES,
 } from "../src/features/visits/visitState";
 
 function stamps(
@@ -218,5 +224,86 @@ describe("sectionTitle", () => {
 
   it("falls back readably for an unknown key rather than showing a raw slug", () => {
     expect(sectionTitle("some_new_section")).toBe("some new section");
+  });
+});
+
+describe("reopening is its own event (VC-9)", () => {
+  const START = "2026-07-28T16:12:00Z";
+  const END = "2026-07-28T16:54:00Z";
+
+  it("puts a tour back in progress without erasing when it ended", () => {
+    const visit = {
+      started_at: START,
+      ended_at: END,
+      reopened_at: "2026-07-31T20:30:00Z",
+      cancelled_at: null,
+    };
+    expect(visitState(visit)).toBe("in_progress");
+    expect(isReopened(visit)).toBe(true);
+    // The whole point: the 42 minutes the tour actually took survives.
+    expect(visit.ended_at).toBe(END);
+  });
+
+  it("lands back on completed when the reopened tour is ended again", () => {
+    // Ending stamps a *new* ended_at, later than the reopen that preceded it.
+    const visit = {
+      started_at: START,
+      ended_at: "2026-07-31T21:00:00Z",
+      reopened_at: "2026-07-31T20:30:00Z",
+      cancelled_at: null,
+    };
+    expect(visitState(visit)).toBe("completed");
+    // The reopen stamp stays: it is still true that somebody came back to it.
+    expect(isReopened(visit)).toBe(false);
+    expect(visit.reopened_at).not.toBeNull();
+  });
+
+  it("treats a missing reopen exactly as before", () => {
+    expect(
+      visitState({ started_at: START, ended_at: END, reopened_at: null, cancelled_at: null }),
+    ).toBe("completed");
+  });
+
+  it("still lets cancellation outrank a reopen", () => {
+    expect(
+      visitState({
+        started_at: START,
+        ended_at: END,
+        reopened_at: "2026-07-31T20:30:00Z",
+        cancelled_at: "2026-08-01T09:00:00Z",
+      }),
+    ).toBe("cancelled");
+  });
+});
+
+describe("phases (VC-13)", () => {
+  const sections = Object.keys(SECTION_TITLE).map((key) => ({ key }));
+
+  it("places every section in exactly one phase", () => {
+    const placed = VISIT_PHASES.flatMap((phase) => phase.sections);
+    expect(new Set(placed).size).toBe(placed.length);
+    for (const key of Object.keys(SECTION_TITLE)) {
+      expect(placed).toContain(key);
+    }
+    expect(placed).toHaveLength(Object.keys(SECTION_TITLE).length);
+  });
+
+  it("fits in one row — this is the whole reason the strip went", () => {
+    expect(VISIT_PHASES.length).toBeLessThanOrEqual(5);
+  });
+
+  it("drops a phase with nothing in it rather than navigating nowhere", () => {
+    const groups = phasesPresent([{ key: "kitchen" }, { key: "money" }]);
+    expect(groups.map((group) => group.phase.key)).toEqual(["walk", "money"]);
+  });
+
+  it("walks previous/next in template order across phase boundaries", () => {
+    const order = sectionOrder(sections);
+    expect(order[0]).toBe("prep");
+    const { previous, next } = neighbours(sections, "prep");
+    expect(previous).toBeNull();
+    // The last section of "Before" steps into the first of "Walk it".
+    expect(next).toBe("essentials");
+    expect(neighbours(sections, order[order.length - 1]).next).toBeNull();
   });
 });

@@ -1,0 +1,10 @@
+/* The chosen severity level. Mantine's `light` variant supplies the tint and
+   the same-hue text; the border is what separates "this one" from "the other
+   three" without reaching for `filled`, whose text colour autoContrast picks
+   per shade and therefore flips between schemes on these mid-tone earthy hues.
+   `currentColor` follows the variant's own text colour, so the ramp stays
+   theme-driven and this file names no hue of its own. */
+.severityOn {
+  border: 1px solid currentColor;
+  font-weight: 700;
+}

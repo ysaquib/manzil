@@ -1,8 +1,15 @@
-// Create a Visit (VC-2, DESIGN §13.2): property → plans → units → prep.
+// Create a Visit (VC-2, DESIGN §13.2): property → plans → units.
 //
-// Step 4 is not a step in this component. Pre-visit is a *state*, not a screen
-// (DESIGN §9.7) — a planned Visit is one whose tour has not started — so
-// creating navigates to the Visit itself, which is the prep page.
+// Prep is not a step here. Pre-visit is a *state*, not a screen (DESIGN §9.7) —
+// a planned Visit is one whose tour has not started — so creating navigates to
+// the Visit itself, which *is* the prep page.
+//
+// It used to be declared as a fourth `Stepper.Step` with no children, as a
+// label for that fact. Mantine resolves content by active index
+// (`_children[active].props.children`), so the moment anything advanced the
+// stepper to it the step rendered undefined content and the page threw. A step
+// that must never be reached is not a step; the three real ones are the flow,
+// and the sentence below the stepper does the explaining instead.
 import {
   Alert,
   Badge,
@@ -496,12 +503,6 @@ export function VisitCreatePage() {
             </Group>
           </Stack>
         </Stepper.Step>
-
-        <Stepper.Step
-          label="Prep"
-          description={isCompact ? undefined : "Before you go"}
-          allowStepSelect={false}
-        />
       </Stepper>
     </Stack>
   );
