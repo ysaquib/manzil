@@ -63,6 +63,10 @@ export function VisitDetailPage() {
 
   const visit = visitQuery.data;
   const templateQuery = useVisitTemplate(visit?.template_version);
+  // This must stay above the loading/not-found early returns. The route Hunt is
+  // authoritative for this page, and calling it only once a Visit arrives
+  // changes this component's hook order when the query resolves.
+  const { isGhost } = useGhostMode(huntId);
 
   if (visitQuery.isLoading) {
     return (
@@ -96,7 +100,6 @@ export function VisitDetailPage() {
   // them (DESIGN §4.2): an Entry feeds the per-member roll-up in §9.7, and a
   // ghost answering a tour they did not attend makes those numbers lie. RLS
   // refuses the write regardless — this is what stops the UI offering it.
-  const { isGhost } = useGhostMode(visit?.hunt_id);
   // Three surfaces, not two (VC-12). A finished tour is a **record**: it keeps
   // every colour, because a green tick and a red flag must not read alike, and
   // loses only its interactivity. A cancelled tour is **void**: nothing was
