@@ -31,6 +31,7 @@ import { useDisclosure } from "@mantine/hooks";
 import { IconFilter, IconSearch, IconWorld } from "@tabler/icons-react";
 import type { ReactNode } from "react";
 
+import { datePickerToIso, parseLocalDate } from "../../lib/dates";
 import { titleCase } from "../../lib/text";
 import { interestLabel } from "./interestStatus";
 import { INTEREST_STATUSES } from "./types";
@@ -398,12 +399,9 @@ export function OverviewFilterBar({
                   placeholder="Available by — any date"
                   size="xs"
                   clearable
-                  value={filters.availableBy ? new Date(filters.availableBy) : null}
+                  value={filters.availableBy ? parseLocalDate(filters.availableBy) : null}
                   onChange={(value) =>
-                    setField(
-                      "availableBy",
-                      value ? new Date(value as unknown as string).toISOString().slice(0, 10) : null,
-                    )
+                    setField("availableBy", datePickerToIso(value as Date | string | null))
                   }
                 />
               </Stack>
