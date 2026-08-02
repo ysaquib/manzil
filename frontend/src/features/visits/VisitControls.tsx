@@ -17,7 +17,7 @@ import {
   TextInput,
 } from "@mantine/core";
 import { IconCheck, IconFlag } from "@tabler/icons-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { sentenceCase } from "../../lib/text";
 import type { VisitEntry, VisitItem } from "./types";
@@ -27,8 +27,44 @@ import classes from "./VisitControls.module.css";
 export interface ControlProps {
   item: VisitItem;
   entry: VisitEntry | undefined;
+  /**
+   * The control cannot be used *yet* — a unit-scoped item with no unit picked.
+   * Greying it out is the message: there is nothing to record here.
+   */
   disabled?: boolean;
+  /**
+   * The tour is over and this is a record, not a form. Greying it out would
+   * throw the answer's colour away — a green tick and a red flag would read
+   * identically — so a read-only control keeps its whole appearance and loses
+   * only its interactivity.
+   */
+  readOnly?: boolean;
   onSave: (patch: { value?: unknown; answer_text?: string | null }) => void;
+}
+
+/**
+ * Makes its children non-interactive without touching how they look. `inert`
+ * (React 19) is what `disabled` should have been for a record: no clicks, no
+ * focus, no tab stop, no restyling. Used for the button/chip/rating controls;
+ * text controls use the native `readOnly` instead, so the answer stays
+ * selectable and copyable.
+ */
+function Inert({ on, children }: { on: boolean; children: ReactNode }) {
+  if (!on) return <>{children}</>;
+  return (
+    <Box inert className={classes.inert}>
+      {children}
+    </Box>
+  );
+}
+
+/** What a record says where an answer would have been. */
+function NotRecorded({ label = "Not recorded" }: { label?: string }) {
+  return (
+    <Text size="xs" c="dimmed" fs="italic">
+      {label}
+    </Text>
+  );
 }
 
 function schemaType(item: VisitItem): string {
@@ -49,36 +85,47 @@ function schemaUnit(item: VisitItem): string | undefined {
 // Check — tri-state
 // ---------------------------------------------------------------------------
 
-export function CheckControl({ item, entry, disabled, onSave }: ControlProps) {
+export function CheckControl({ item, entry, disabled, readOnly, onSave }: ControlProps) {
   const state = checkStateOf(entry);
   const set = (clicked: Exclude<CheckState, null>) =>
     onSave({ value: nextCheckState(state, clicked) });
 
+  // On a finished tour only the side somebody actually pressed survives: an
+  // empty outline beside every answer is an affordance that does nothing.
+  const shows = (side: Exclude<CheckState, null>) => (readOnly ? state === side : true);
+
   return (
-    <Group gap={4} wrap="nowrap" className={classes.tri}>
-      <Button
-        variant={state === "ok" ? "filled" : "default"}
-        color="green"
-        disabled={disabled}
-        onClick={() => set("ok")}
-        aria-pressed={state === "ok"}
-        aria-label={`${item.label}: fine`}
-        className={classes.triButton}
-      >
-        <IconCheck size={17} />
-      </Button>
-      <Button
-        variant={state === "problem" ? "filled" : "default"}
-        color="red"
-        disabled={disabled}
-        onClick={() => set("problem")}
-        aria-pressed={state === "problem"}
-        aria-label={`${item.label}: problem`}
-        className={classes.triButton}
-      >
-        <IconFlag size={17} />
-      </Button>
-    </Group>
+    <Inert on={Boolean(readOnly)}>
+      <Group gap={4} wrap="nowrap" className={classes.tri}>
+        {readOnly && state === null && <NotRecorded label="Not checked" />}
+        {shows("ok") && (
+          <Button
+            variant={state === "ok" ? "filled" : "default"}
+            color="green"
+            disabled={disabled}
+            onClick={() => set("ok")}
+            aria-pressed={state === "ok"}
+            aria-label={`${item.label}: fine`}
+            className={classes.triButton}
+          >
+            <IconCheck size={17} />
+          </Button>
+        )}
+        {shows("problem") && (
+          <Button
+            variant={state === "problem" ? "filled" : "default"}
+            color="red"
+            disabled={disabled}
+            onClick={() => set("problem")}
+            aria-pressed={state === "problem"}
+            aria-label={`${item.label}: problem`}
+            className={classes.triButton}
+          >
+            <IconFlag size={17} />
+          </Button>
+        )}
+      </Group>
+    </Inert>
   );
 }
 
@@ -87,7 +134,14 @@ export function CheckControl({ item, entry, disabled, onSave }: ControlProps) {
 // ---------------------------------------------------------------------------
 
 /** Text commits on blur so a save doesn't fire per keystroke. */
-function TextValue({ item, entry, disabled, onSave, multiline }: ControlProps & { multiline?: boolean }) {
+function TextValue({
+  item,
+  entry,
+  disabled,
+  readOnly,
+  onSave,
+  multiline,
+}: ControlProps & { multiline?: boolean }) {
   const stored = typeof entry?.value === "string" ? entry.value : "";
   const [draft, setDraft] = useState(stored);
   useEffect(() => setDraft(stored), [stored]);
@@ -103,8 +157,9 @@ function TextValue({ item, entry, disabled, onSave, multiline }: ControlProps & 
     <Component
       value={draft}
       disabled={disabled}
+      readOnly={readOnly}
       aria-label={item.label}
-      placeholder="—"
+      placeholder={readOnly ? "Not recorded" : "—"}
       autosize={multiline ? true : undefined}
       minRows={multiline ? 2 : undefined}
       onChange={(event) => setDraft(event.currentTarget.value)}
@@ -114,7 +169,7 @@ function TextValue({ item, entry, disabled, onSave, multiline }: ControlProps & 
   );
 }
 
-function NumberValue({ item, entry, disabled, onSave }: ControlProps) {
+function NumberValue({ item, entry, disabled, readOnly, onSave }: ControlProps) {
   const stored = typeof entry?.value === "number" ? entry.value : "";
   const [draft, setDraft] = useState<number | string>(stored);
   useEffect(() => setDraft(stored), [stored]);
@@ -124,6 +179,8 @@ function NumberValue({ item, entry, disabled, onSave }: ControlProps) {
     <NumberInput
       value={draft}
       disabled={disabled}
+      readOnly={readOnly}
+      hideControls={readOnly}
       aria-label={item.label}
       prefix={money ? "$" : undefined}
       suffix={schemaUnit(item) ? ` ${schemaUnit(item)}` : undefined}
@@ -141,40 +198,69 @@ function NumberValue({ item, entry, disabled, onSave }: ControlProps) {
   );
 }
 
-function EnumValue({ item, entry, disabled, onSave }: ControlProps) {
+/**
+ * The options to draw. A live control offers all of them; a record shows only
+ * what was picked, for the same reason the unpressed half of a Check goes.
+ */
+function optionsToShow(item: VisitItem, chosen: string[], readOnly?: boolean): string[] {
+  const all = schemaOptions(item);
+  return readOnly ? all.filter((option) => chosen.includes(option)) : all;
+}
+
+function EnumValue({ item, entry, disabled, readOnly, onSave }: ControlProps) {
   const stored = typeof entry?.value === "string" ? entry.value : null;
+  const shown = optionsToShow(item, stored ? [stored] : [], readOnly);
+  if (readOnly && shown.length === 0) return <NotRecorded />;
   return (
-    <Chip.Group
-      value={stored}
-      onChange={(value) => onSave({ value: value === stored ? null : value })}
-    >
-      <Group gap={6} wrap="wrap">
-        {schemaOptions(item).map((option) => (
-          <Chip key={option} value={option} size="sm" disabled={disabled} variant="outline">
-            {sentenceCase(option)}
-          </Chip>
-        ))}
-      </Group>
-    </Chip.Group>
+    <Inert on={Boolean(readOnly)}>
+      <Chip.Group
+        value={stored}
+        onChange={(value) => onSave({ value: value === stored ? null : value })}
+      >
+        <Group gap={6} wrap="wrap">
+          {shown.map((option) => (
+            <Chip
+              key={option}
+              value={option}
+              size="sm"
+              disabled={disabled}
+              variant={readOnly ? "light" : "outline"}
+            >
+              {sentenceCase(option)}
+            </Chip>
+          ))}
+        </Group>
+      </Chip.Group>
+    </Inert>
   );
 }
 
-function MultiValue({ item, entry, disabled, onSave }: ControlProps) {
+function MultiValue({ item, entry, disabled, readOnly, onSave }: ControlProps) {
   const stored = Array.isArray(entry?.value) ? (entry.value as string[]) : [];
+  const shown = optionsToShow(item, stored, readOnly);
+  if (readOnly && shown.length === 0) return <NotRecorded />;
   return (
-    <Chip.Group
-      multiple
-      value={stored}
-      onChange={(value) => onSave({ value: value.length ? value : null })}
-    >
-      <Group gap={6} wrap="wrap">
-        {schemaOptions(item).map((option) => (
-          <Chip key={option} value={option} size="sm" disabled={disabled} variant="outline">
-            {sentenceCase(option)}
-          </Chip>
-        ))}
-      </Group>
-    </Chip.Group>
+    <Inert on={Boolean(readOnly)}>
+      <Chip.Group
+        multiple
+        value={stored}
+        onChange={(value) => onSave({ value: value.length ? value : null })}
+      >
+        <Group gap={6} wrap="wrap">
+          {shown.map((option) => (
+            <Chip
+              key={option}
+              value={option}
+              size="sm"
+              disabled={disabled}
+              variant={readOnly ? "light" : "outline"}
+            >
+              {sentenceCase(option)}
+            </Chip>
+          ))}
+        </Group>
+      </Chip.Group>
+    </Inert>
   );
 }
 
@@ -199,7 +285,7 @@ export function FactControl(props: ControlProps) {
 // Question — the typed answer *is* the checkmark
 // ---------------------------------------------------------------------------
 
-export function QuestionControl({ item, entry, disabled, onSave }: ControlProps) {
+export function QuestionControl({ item, entry, disabled, readOnly, onSave }: ControlProps) {
   const stored = entry?.answer_text ?? "";
   const [draft, setDraft] = useState(stored);
   useEffect(() => setDraft(stored), [stored]);
@@ -211,26 +297,33 @@ export function QuestionControl({ item, entry, disabled, onSave }: ControlProps)
       <Textarea
         value={draft}
         disabled={disabled}
+        readOnly={readOnly}
         aria-label={`Answer: ${item.label}`}
-        placeholder="Type what they said…"
+        placeholder={readOnly ? "Never asked" : "Type what they said…"}
         autosize
         minRows={2}
         onChange={(event) => setDraft(event.currentTarget.value)}
       />
       <Group gap="xs" mt={6}>
-        <Button
-          size="compact-sm"
-          // The gate, and the whole point: an answer is what marks a question
-          // asked, so there is no way to tick it off without one.
-          disabled={disabled || !ready}
-          onClick={() => onSave({ answer_text: draft.trim() })}
-        >
-          {asked ? "Update answer" : "Mark asked"}
-        </Button>
+        {/* On a record the save button goes rather than greys: there is nothing
+            here to be persuaded to press. */}
+        {!readOnly && (
+          <Button
+            size="compact-sm"
+            // The gate, and the whole point: an answer is what marks a question
+            // asked, so there is no way to tick it off without one.
+            disabled={disabled || !ready}
+            onClick={() => onSave({ answer_text: draft.trim() })}
+          >
+            {asked ? "Update answer" : "Mark asked"}
+          </Button>
+        )}
         {asked ? (
           <Badge color="green" variant="light" size="sm" leftSection={<IconCheck size={11} />}>
             Asked
           </Badge>
+        ) : readOnly ? (
+          <NotRecorded label="Not asked" />
         ) : (
           <Text size="xs" c="dimmed" fs="italic">
             {draft.trim() ? "Ready — this records you as the asker" : "Needs an answer first"}
@@ -246,15 +339,16 @@ export function QuestionControl({ item, entry, disabled, onSave }: ControlProps)
 // ---------------------------------------------------------------------------
 
 export function ImpressionControl(props: ControlProps) {
-  const { item, entry, disabled, onSave } = props;
+  const { item, entry, disabled, readOnly, onSave } = props;
   const type = schemaType(item);
 
   if (type === "rating") {
     const stored = typeof entry?.value === "number" ? entry.value : 0;
+    if (readOnly && stored === 0) return <NotRecorded label="Not rated" />;
     return (
       <Rating
         value={stored}
-        readOnly={disabled}
+        readOnly={disabled || readOnly}
         aria-label={item.label}
         onChange={(value) => onSave({ value: value === stored ? null : value })}
       />
@@ -262,25 +356,34 @@ export function ImpressionControl(props: ControlProps) {
   }
   if (type === "boolean") {
     const flagged = entry?.value === true;
+    // An unflagged item on a finished tour is one nobody objected to; a dead
+    // "Flag it" button says the opposite.
+    if (readOnly && !flagged) return <NotRecorded label="Not flagged" />;
     return (
-      <Button
-        size="compact-sm"
-        variant={flagged ? "filled" : "default"}
-        color="red"
-        disabled={disabled}
-        aria-pressed={flagged}
-        aria-label={item.label}
-        onClick={() => onSave({ value: flagged ? null : true })}
-      >
-        {flagged ? "Flagged" : "Flag it"}
-      </Button>
+      <Inert on={Boolean(readOnly)}>
+        <Button
+          size="compact-sm"
+          variant={flagged ? "filled" : "default"}
+          color="red"
+          disabled={disabled}
+          aria-pressed={flagged}
+          aria-label={item.label}
+          onClick={() => onSave({ value: flagged ? null : true })}
+        >
+          {flagged ? "Flagged" : "Flag it"}
+        </Button>
+      </Inert>
     );
   }
   if (type === "enum") return <EnumValue {...props} />;
   return <TextValue {...props} multiline />;
 }
 
-export function ControlForItem(props: ControlProps) {
+export function ControlForItem(input: ControlProps) {
+  // `inert` is presentation, and presentation is not a permission: a record
+  // also refuses to save. (The API refuses too — this stops the optimistic
+  // write from ever being created.)
+  const props: ControlProps = input.readOnly ? { ...input, onSave: () => {} } : input;
   switch (props.item.kind) {
     case "check":
       return <CheckControl {...props} />;

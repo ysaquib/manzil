@@ -194,6 +194,9 @@ describe("VisitMoneyLedger", () => {
 
   it("offers nothing on a finished visit", () => {
     render({ readOnly: true });
-    expect(screen.getByRole("button", { name: "Propose Base rent" })).toBeDisabled();
+    // Not a greyed-out input beside a dead send button — a line that says what
+    // happened on the tour, which is nothing.
+    expect(screen.queryByRole("button", { name: "Propose Base rent" })).not.toBeInTheDocument();
+    expect(screen.getAllByText("Nothing offered").length).toBeGreaterThan(0);
   });
 });

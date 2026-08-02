@@ -149,6 +149,12 @@ function LedgerRow({
             </Tooltip>
           )}
         </Group>
+      ) : readOnly ? (
+        // Nothing was offered for this line on the tour. An empty greyed-out
+        // input says the same thing while looking like a broken control.
+        <Text size="xs" c="dimmed" fs="italic">
+          Nothing offered
+        </Text>
       ) : (
         <Group gap={6} wrap="nowrap">
           <NumberInput

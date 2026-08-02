@@ -326,7 +326,12 @@ describe("reopening a finished visit", () => {
       ended_at: "2026-07-28T17:30:00Z",
     });
     renderPage();
-    expect(screen.getByRole("button", { name: /Read the online reviews: fine/ })).toBeDisabled();
+    // Read-only is the record, not a greyed-out form: nothing was recorded
+    // against this check, so it says that instead of offering dead buttons.
+    expect(
+      screen.queryByRole("button", { name: /Read the online reviews: fine/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.getAllByText("Not checked").length).toBeGreaterThan(0);
   });
 
   it("offers no Reopen on a tour still in progress", () => {
