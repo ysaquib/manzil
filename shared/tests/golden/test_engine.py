@@ -323,3 +323,33 @@ def test_multi_plan_group_scores_independently_best_displayed() -> None:
 
     assert select_display_score(breakdowns) == 1  # best wins
     assert select_display_score(breakdowns, pinned=0) == 0  # pin overrides best (§9.4)
+
+
+def test_year_built_range_and_gte_options() -> None:
+    year_built = crit(
+        "year_built",
+        [
+            opt(MatchOp.GTE, 2010, 0.5),
+            opt(MatchOp.RANGE, [2000, 2009], 0.25),
+            opt(MatchOp.LT, 1990, -0.25),
+        ],
+    )
+    assert score([year_built], {"year_built": 2015}, rubric_version=1).criteria[0].delta == 0.5
+    assert score([year_built], {"year_built": 2005}, rubric_version=1).criteria[0].delta == 0.25
+    assert score([year_built], {"year_built": 1985}, rubric_version=1).criteria[0].delta == -0.25
+
+
+def test_is_renovated_presence_enum() -> None:
+    renovated = crit(
+        "is_renovated",
+        [
+            opt(MatchOp.EQ, "confirmed", 0.25),
+            opt(MatchOp.EQ, "advertised_unconfirmed", 0.0),
+            opt(MatchOp.EQ, "none", 0.0),
+        ],
+    )
+    assert score([renovated], {"is_renovated": "confirmed"}, rubric_version=1).criteria[0].delta == 0.25
+    assert (
+        score([renovated], {"is_renovated": "advertised_unconfirmed"}, rubric_version=1).criteria[0].delta
+        == 0.0
+    )

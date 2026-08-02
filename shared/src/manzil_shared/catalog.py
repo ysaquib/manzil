@@ -513,6 +513,15 @@ CATALOG: tuple[CatalogEntry, ...] = (
             "this does not assert appliance age, condition, or quality."
         ),
     ),
+    _unit_presence_entry(
+        key="is_renovated",
+        label="Renovated unit",
+        extraction_hint=(
+            "True only when the Source explicitly states this unit or Floor Plan was "
+            "renovated, remodeled, or updated (not merely modern finishes, new paint, or "
+            "building-wide lobby work). Silence is unknown."
+        ),
+    ),
     CatalogEntry(
         key="min_lease_months",
         label="Minimum lease term",
@@ -618,6 +627,29 @@ CATALOG: tuple[CatalogEntry, ...] = (
     # P3-SC3: first Property tranche. Preference conveniences use the
     # available-sources-only / verified-positive defaults; a Hunt Gate upgrades
     # acquisition to decision-relevant at reconciliation time (DESIGN §9.2).
+    CatalogEntry(
+        key="year_built",
+        label="Year built",
+        category=CriterionCategory.AMENITIES,
+        domain=CriterionDomain.RENT,
+        fact_scope=FactScope.PROPERTY,
+        value_schema={"type": "integer", "minimum": 1800, "maximum": 2030},
+        default_options=[
+            _opt(MatchOp.GTE, 2010, 0.5),
+            _opt(MatchOp.RANGE, [2000, 2009], 0.25),
+            _opt(MatchOp.RANGE, [1990, 1999], 0.0),
+            _opt(MatchOp.LT, 1990, -0.25),
+        ],
+        extraction_hint=(
+            "Original construction or build year of the Property as a four-digit year. "
+            "Use explicit page prose or embedded data only; ignore renovation or remodel "
+            "dates unless they restate the original build year. Silence is unknown."
+        ),
+        requires_tool=None,
+        refresh_class=RefreshClass.LISTING_DETAILS,
+        escalation_policy=EscalationPolicy.AVAILABLE_SOURCES_ONLY,
+        conflict_policy=ConflictPolicy.VERIFIED_POSITIVE_PREFERRED,
+    ),
     CatalogEntry(
         key="pool",
         label="Pool",
@@ -891,6 +923,7 @@ _FLOOR_PLAN_KEYS = frozenset(
         "fireplace",
         "ceiling_fans",
         "stainless_steel_appliances",
+        "is_renovated",
         "cooling",
         "dishwasher",
         "unit_types",
@@ -925,6 +958,7 @@ SCOPED_UNIT_CLAIM_KEYS = frozenset(
         "fireplace",
         "ceiling_fans",
         "stainless_steel_appliances",
+        "is_renovated",
         "flooring_materials",
     }
 )
@@ -937,6 +971,7 @@ P3_SC6_KEYS = frozenset(
         "fireplace",
         "ceiling_fans",
         "stainless_steel_appliances",
+        "is_renovated",
     }
 )
 BOOLEAN_PRESENCE_KEYS = frozenset({"patio_balcony", "private_entry", "dishwasher"}) | P3_SC6_KEYS

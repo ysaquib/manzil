@@ -8,6 +8,7 @@
 // claim at all. All four are rendered, because UI_DESIGN's data-honesty rule
 // means a missing chip and a known absence must never look alike.
 import type { CatalogEntry } from "../rubric/api";
+import { TYPED_MULTI_CRITERIA } from "../rubric/typedMultiClaim";
 import { activeOverrides, extractionForFloorPlan } from "./overrides";
 import type { Extraction, Override } from "./types";
 
@@ -30,8 +31,6 @@ export interface AmenityFact {
   extraction: Extraction | undefined;
   overridden: boolean;
 }
-
-const TYPED_MULTI_CRITERIA = new Set(["in_unit_laundry", "parking", "cooling"]);
 
 export interface AmenityCounts {
   confirmed: number;
