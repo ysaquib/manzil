@@ -1,0 +1,102 @@
+/* The desktop insight column (VC-14). */
+
+.column {
+  position: sticky;
+  top: var(--mantine-spacing-md);
+  max-height: calc(100vh - 8rem);
+  overflow-y: auto;
+  padding-inline: 2px;
+}
+
+.panelTitle {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--mantine-color-dimmed);
+}
+
+/* A compare table is the one thing here that can genuinely outgrow its column,
+   so it scrolls inside itself rather than widening the page. */
+.tableWrap {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.compare {
+  font-size: var(--mantine-font-size-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.compare th {
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--mantine-color-dimmed);
+}
+
+.numeric {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.rowLabel {
+  max-width: 11rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Your own column, so you can find it without counting across. */
+.mine {
+  color: var(--mantine-primary-color-light-color);
+  font-weight: 700;
+}
+
+.raterDot {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 0.5625rem;
+  font-weight: 700;
+}
+
+.spread {
+  display: inline-block;
+  position: relative;
+  width: 34px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--mantine-color-default-border);
+  vertical-align: middle;
+}
+
+.spread i {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  border-radius: 3px;
+  background: var(--mantine-color-yellow-6);
+}
+
+/* Three or more points apart is a disagreement, not a rounding difference. */
+.spread[data-wide] i {
+  background: var(--mantine-color-red-6);
+}
+
+.qMark {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mantine-color-yellow-6);
+  margin-top: 6px;
+  flex: none;
+}
+
+.qMark[data-critical] {
+  background: var(--mantine-color-red-6);
+}

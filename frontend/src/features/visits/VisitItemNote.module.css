@@ -1,0 +1,20 @@
+/* The note affordance sits under its row's label and must not run inline with
+   it — a block-level toggle is the difference between "Run every burner Add
+   note" and two separate things. */
+.toggle {
+  display: flex;
+  width: fit-content;
+  margin-top: 2px;
+  padding-inline: 0;
+}
+
+.box {
+  margin-top: 6px;
+}
+
+.readNote {
+  margin-top: 3px;
+  padding-left: 8px;
+  border-left: 2px solid var(--mantine-color-default-border);
+  white-space: pre-wrap;
+}

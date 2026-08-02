@@ -167,8 +167,15 @@ beforeEach(() => {
   ];
 });
 
+/**
+ * Reach a section the way a person does now (VC-13): open the picker from the
+ * section header and choose from the full list. The 21-section chip strip these
+ * tests used to click is gone — that strip is the thing VC-13 removed.
+ */
 async function openSection(user: ReturnType<typeof userEvent.setup>, title: RegExp) {
-  await user.click(screen.getByRole("button", { name: title }));
+  await user.click(screen.getByRole("button", { name: /Jump to a section|of \d+$/ }));
+  const dialog = await screen.findByRole("dialog");
+  await user.click(within(dialog).getByRole("button", { name: title }));
 }
 
 describe("scope drives the unit switcher", () => {
@@ -431,6 +438,7 @@ describe("the depth dial", () => {
 describe("section restriction before a tour starts", () => {
   it("shows only the sections it is given", () => {
     render({ restrictTo: ["prep"] });
+    // The header names the only section there is, and the picker offers no other.
     expect(screen.getByRole("button", { name: /Before you go/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Kitchen/ })).not.toBeInTheDocument();
   });
@@ -486,8 +494,11 @@ describe("progress", () => {
       entry({ id: "1", item_key: "kitchen_disposal", visit_unit_id: "unit-a", value: "ok" }),
     ];
     render();
-    const kitchen = screen.getByRole("button", { name: /Kitchen/ });
-    expect(within(kitchen).getByText(/1\/2/)).toBeInTheDocument();
+    const user = userEvent.setup();
+    await openSection(user, /Kitchen/);
+    // The header carries the count now, not a chip: "Kitchen", "1 of 2". (The
+    // picker row for the same section also names it, hence the first match.)
+    expect(screen.getAllByText("1 of 2").length).toBeGreaterThan(0);
   });
 });
 
@@ -498,21 +509,23 @@ describe("read-only", () => {
     mockEntries = [
       entry({ id: "1", item_key: "kitchen_disposal", visit_unit_id: "unit-a", value: "problem" }),
     ];
-    render({ readOnly: true });
+    render({ mode: "record" });
     const user = userEvent.setup();
     await openSection(user, /Kitchen/);
 
     const flag = screen.getByRole("button", { name: /Ran the disposal: problem/ });
     // Not disabled — just not operable. Disabled is what threw the colour away.
     expect(flag).not.toBeDisabled();
-    expect(flag).toHaveAttribute("data-variant", "filled");
+    // `light`, not `filled`: the filled variant's text colour is chosen by
+    // autoContrast, which flipped between schemes on these earthy hues.
+    expect(flag).toHaveAttribute("data-variant", "light");
     expect(
       screen.queryByRole("button", { name: /Ran the disposal: fine/ }),
     ).not.toBeInTheDocument();
   });
 
   it("says so plainly when a check was never performed", async () => {
-    render({ readOnly: true });
+    render({ mode: "record" });
     const user = userEvent.setup();
     await openSection(user, /Kitchen/);
     expect(screen.getByText("Not checked")).toBeInTheDocument();
@@ -525,7 +538,7 @@ describe("read-only", () => {
     mockEntries = [
       entry({ id: "1", item_key: "kitchen_disposal", visit_unit_id: "unit-a", value: "ok" }),
     ];
-    render({ readOnly: true });
+    render({ mode: "record" });
     const user = userEvent.setup();
     await openSection(user, /Kitchen/);
     const tick = screen.getByRole("button", { name: /Ran the disposal: fine/ });
@@ -538,10 +551,35 @@ describe("read-only", () => {
     mockEntries = [
       entry({ id: "1", item_key: "kitchen_stove", visit_unit_id: "unit-a", value: "gas" }),
     ];
-    render({ readOnly: true });
+    render({ mode: "record" });
     const user = userEvent.setup();
     await openSection(user, /Kitchen/);
     expect(screen.getByText("Gas")).toBeInTheDocument();
     expect(screen.queryByText("Electric")).not.toBeInTheDocument();
+  });
+});
+
+describe("a cancelled tour is not a record (VC-12)", () => {
+  // The two used to render identically, which said the wrong thing about both.
+  it("greys the controls out rather than showing a colourless record", async () => {
+    render({ mode: "void" });
+    const user = userEvent.setup();
+    await openSection(user, /Kitchen/);
+
+    const ok = screen.getByRole("button", { name: /Ran the disposal: fine/ });
+    const problem = screen.getByRole("button", { name: /Ran the disposal: problem/ });
+    // Both sides survive, and both are disabled: nothing was recorded here and
+    // nothing ever will be.
+    expect(ok).toBeDisabled();
+    expect(problem).toBeDisabled();
+    expect(screen.queryByText("Not checked")).not.toBeInTheDocument();
+  });
+
+  it("still refuses the write even if a control were somehow operated", async () => {
+    render({ mode: "void" });
+    const user = userEvent.setup();
+    await openSection(user, /Kitchen/);
+    await user.click(screen.getByRole("button", { name: /Ran the disposal: fine/ }));
+    expect(saveEntries).not.toHaveBeenCalled();
   });
 });

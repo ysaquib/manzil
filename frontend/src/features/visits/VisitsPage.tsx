@@ -27,6 +27,7 @@ import type { Visit, VisitState } from "./types";
 import { VisitStatePill } from "./VisitStatePill";
 import { VisitUnitChips } from "./VisitUnitChips";
 import { countByState, filterByState, visitState } from "./visitState";
+import classes from "./VisitsPage.module.css";
 
 type Filter = VisitState | "all";
 
@@ -54,21 +55,21 @@ function VisitRow({
   const state = visitState(visit);
   const units = visit.visit_units ?? [];
   return (
-    <Group
-      align="flex-start"
-      wrap="nowrap"
-      gap="md"
-      py="sm"
+    // Report 10: the whole row is one link. Wrapping only the title meant the
+    // 90% of the card that looks clickable was not, and the state pill and unit
+    // chips beside it read as targets while doing nothing.
+    <Link
+      to={`/h/${huntId}/visits/${visit.id}`}
+      className={classes.cardLink}
       // Cancelled visits stay in the list at reduced emphasis: an agent
       // no-showing is information about the property, and the prep survives.
       style={{ opacity: state === "cancelled" ? 0.62 : 1 }}
     >
+      <Group align="flex-start" wrap="nowrap" gap="md" py="sm">
       <Stack gap={6} style={{ flex: 1, minWidth: 0 }}>
-        <Anchor component={Link} to={`/h/${huntId}/visits/${visit.id}`} underline="never">
           <Text fw={600} ff="var(--mantine-font-family-headings)" size="md" lh={1.25}>
             {visit.property?.name ?? "Unknown property"}
           </Text>
-        </Anchor>
         <Text size="xs" c="dimmed">
           {whenLabel(visit)} · set up by {memberName(visit.created_by)}
           {visit.cancel_reason ? ` · ${visit.cancel_reason}` : ""}
@@ -81,7 +82,8 @@ function VisitRow({
           {units.length === 1 ? "1 unit" : `${units.length} units`}
         </Text>
       </Stack>
-    </Group>
+      </Group>
+    </Link>
   );
 }
 

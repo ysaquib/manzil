@@ -1908,7 +1908,7 @@ export interface components {
             /** Note */
             note?: string | null;
             /** Severity */
-            severity?: number | null;
+            severity?: ("noted" | "minor" | "major" | "dealbreaker") | null;
             /**
              * Promised In Writing
              * @default false
@@ -1924,7 +1924,7 @@ export interface components {
             /** Note */
             note?: string | null;
             /** Severity */
-            severity?: number | null;
+            severity?: ("noted" | "minor" | "major" | "dealbreaker") | null;
             /** Promised In Writing */
             promised_in_writing?: boolean | null;
             /** Resolution */
@@ -1951,7 +1951,7 @@ export interface components {
             /** Note */
             note: string | null;
             /** Severity */
-            severity: number | null;
+            severity: ("noted" | "minor" | "major" | "dealbreaker") | null;
             /** Promised In Writing */
             promised_in_writing: boolean;
             /** Resolution */
@@ -2178,6 +2178,8 @@ export interface components {
             ended_at: string | null;
             /** Cancelled At */
             cancelled_at: string | null;
+            /** Reopened At */
+            reopened_at?: string | null;
             /** Cancel Reason */
             cancel_reason: string | null;
             /** Template Version */
