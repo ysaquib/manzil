@@ -377,6 +377,115 @@ function RentRow({ amount, floorPlanId }: { amount: number | null; floorPlanId: 
   );
 }
 
+/** Security deposit — a Floor-Plan extraction, overrideable like base rent (§9.6). */
+function SecurityDepositRow({
+  amount,
+  floorPlanId,
+  savedOverride = false,
+}: {
+  amount: number | null;
+  floorPlanId: string | null;
+  savedOverride?: boolean;
+}) {
+  const scope = floorPlanId
+    ? { target_scope: "floor_plan" as const, floor_plan_id: floorPlanId }
+    : {};
+  const { draftOverrides, setDraftOverride } = useListingDetailDraft();
+  const [opened, setOpened] = useState(false);
+  const [value, setValue] = useState<number | "">("");
+  const [note, setNote] = useState("");
+  const draft = draftOverrides.get("security_deposit");
+  const pending = draft !== undefined;
+  const shown = pending && typeof draft?.value === "number" ? draft.value : amount;
+  const showRevert = pending || savedOverride;
+
+  return (
+    <CostRow
+      label="Security deposit"
+      state={savedOverride && !pending ? "manual" : amount == null ? "unknown" : "actual"}
+      testId="cost-state-security-deposit"
+      amount={shown}
+      pending={pending}
+      manual={savedOverride && !pending}
+      icons={<StatusIcons refundable />}
+      subline={pending ? "Your edit applies when you save" : undefined}
+      hoverRevealAction={!showRevert}
+      action={
+        showRevert ? (
+          <RevertButton
+            label="security deposit"
+            onClick={() =>
+              setDraftOverride("security_deposit", { value: null, note: REVERT_NOTE, ...scope })
+            }
+          />
+        ) : (
+          <Popover
+            opened={opened}
+            onChange={setOpened}
+            hideDetached={false}
+            width={240}
+            position="bottom-end"
+            withArrow
+          >
+            <Popover.Target>
+              <ActionIcon
+                color="gray"
+                size="sm"
+                variant="subtle"
+                className={drawer.hoverRevealPencil}
+                aria-label="edit Security deposit"
+                onClick={() => {
+                  setValue(amount ?? "");
+                  setNote("");
+                  setOpened(true);
+                }}
+              >
+                <IconPencil size={14} stroke={1.5} />
+              </ActionIcon>
+            </Popover.Target>
+            <Popover.Dropdown>
+              <Stack gap="xs">
+                <NumberInput
+                  label="Security deposit"
+                  prefix="$"
+                  min={0}
+                  value={value}
+                  onChange={(next) => setValue(typeof next === "number" ? next : "")}
+                />
+                <TextInput
+                  label="Note"
+                  placeholder="e.g. leasing office quote"
+                  value={note}
+                  onChange={(event) => setNote(event.currentTarget.value)}
+                />
+                <Button
+                  size="xs"
+                  disabled={value === ""}
+                  onClick={() => {
+                    if (value === "") return;
+                    setDraftOverride("security_deposit", {
+                      value,
+                      note: note.trim() || null,
+                      ...scope,
+                    });
+                    setOpened(false);
+                  }}
+                >
+                  Apply
+                </Button>
+              </Stack>
+            </Popover.Dropdown>
+          </Popover>
+        )
+      }
+    />
+  );
+}
+
+function looseFeeLabel(name: string): string {
+  return name.replaceAll("_", " ");
+}
+
 function componentForUtility(composition: AllInComponents | null, utility: UtilityName) {
   if (!composition) return undefined;
   const direct = composition.components.find((component) => component.name === utility);
@@ -535,6 +644,8 @@ function SlotRow({
   charge,
   enteredByName,
   original,
+  fallbackAmount,
+  fallbackState,
   uncountedReason,
 }: {
   slot: string;
@@ -545,6 +656,8 @@ function SlotRow({
   charge?: MoveInCharge;
   enteredByName?: string;
   original?: number;
+  fallbackAmount?: number | null;
+  fallbackState?: string;
   /** why this charge is out of the totals — dims the row and strikes the figure */
   uncountedReason?: string;
 }) {
@@ -558,8 +671,8 @@ function SlotRow({
   const [isCredited, setIsCredited] = useState(false);
 
   const pending = draftEntry !== undefined;
-  const state = pending ? "manual" : (entry?.value_state ?? "unknown");
-  const serverAmount = entry?.amount ?? null;
+  const state = pending ? "manual" : (entry?.value_state ?? fallbackState ?? "unknown");
+  const serverAmount = entry?.amount ?? fallbackAmount ?? null;
   const displayAmount = pending ? draftEntry.amount : (charge?.amount ?? serverAmount);
   const creditedAmount = pending
     ? (draftEntry.credited_amount ?? 0)
@@ -1016,6 +1129,7 @@ export function CostAndFees({
   extractedIncluded = null,
   utilityOverrides = [],
   allInOverridden = false,
+  securityDepositOverridden = false,
   floorPlanId = null,
   proposals = [],
   huntId = "",
@@ -1032,6 +1146,7 @@ export function CostAndFees({
   extractedIncluded?: string[] | null;
   utilityOverrides?: UtilityOverride[];
   allInOverridden?: boolean;
+  securityDepositOverridden?: boolean;
   floorPlanId?: string | null;
   /** Pending Fee Proposals addressed to this Listing (VC-7). */
   proposals?: VisitFeeProposal[];
@@ -1060,9 +1175,11 @@ export function CostAndFees({
     "rent",
     "pet rent",
   ]);
-  // Extracted mandatory fees with no checklist slot: they compose, so they show.
+  const monthlySlotIds = new Set(MONTHLY_FEE_SLOTS.map((entry) => entry.slot));
+  // Unmapped mandatory fees compose under their page name; slotted fees edit via
+  // the checklist rows below — showing both would duplicate the same charge.
   const looseFees = (composition?.components ?? []).filter(
-    (component) => !utilityNames.has(component.name),
+    (component) => !utilityNames.has(component.name) && !monthlySlotIds.has(component.name),
   );
   const included = effectiveUtilitiesIncluded(extractedIncluded, utilityOverrides, draftUtilities);
   const inclusionLevel = included.some((utility) => MAJOR_UTILITIES.has(utility))
@@ -1134,12 +1251,17 @@ export function CostAndFees({
           <SectionLabel first>Monthly</SectionLabel>
           <RentRow amount={rent?.amount ?? null} floorPlanId={floorPlanId} />
           {looseFees.map((component) => (
-            <CostRow
+            <SlotRow
               key={component.name}
-              label={component.name.replaceAll("_", " ")}
-              state={component.tag}
-              amount={component.amount}
-              subline={component.note || undefined}
+              slot={component.name}
+              label={looseFeeLabel(component.name)}
+              entry={bySlot.get(component.name)}
+              monthly
+              fallbackAmount={component.amount}
+              fallbackState={component.tag}
+              subtitle={component.note || undefined}
+              enteredByName={nameFor(bySlot.get(component.name))}
+              original={feeOriginals?.get(component.name)}
             />
           ))}
           {MONTHLY_FEE_SLOTS.map(({ slot, label }) => {
@@ -1204,7 +1326,7 @@ export function CostAndFees({
       {moveIn && (
         <>
           {moveIn.charges
-            .filter((charge) => charge.name === "first_month" || charge.name === "security_deposit")
+            .filter((charge) => charge.name === "first_month")
             .map((charge) => (
               <CostRow
                 key={charge.name}
@@ -1214,6 +1336,16 @@ export function CostAndFees({
                 counted={charge.counted}
                 icons={<StatusIcons refundable={charge.refundable} />}
                 subline={charge.note || undefined}
+              />
+            ))}
+          {moveIn.charges
+            .filter((charge) => charge.name === "security_deposit")
+            .map((charge) => (
+              <SecurityDepositRow
+                key={charge.name}
+                amount={charge.amount}
+                floorPlanId={floorPlanId}
+                savedOverride={securityDepositOverridden}
               />
             ))}
         </>

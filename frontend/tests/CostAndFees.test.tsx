@@ -115,6 +115,7 @@ function render(
     utilityOverrides?: UtilityOverride[];
     extractedIncluded?: string[];
     household?: { occupants: number; cats: number; dogs: number };
+    feeOriginals?: Map<string, number>;
   },
 ) {
   return renderWithProviders(
@@ -132,6 +133,7 @@ function render(
         utilityOverrides={extra?.utilityOverrides}
         extractedIncluded={extra?.extractedIncluded}
         household={extra?.household ?? { occupants: 2, cats: 0, dogs: 0 }}
+        feeOriginals={extra?.feeOriginals}
       />
     </ListingDetailDraftProvider>,
   );
@@ -241,16 +243,39 @@ describe("CostAndFees", () => {
 
   it("reserves the action column on read-only rows so amounts align with editable ones", () => {
     render([]);
-    for (const label of ["Security deposit", "First month"]) {
-      const amount = within(rowFor(label)).getByText(/\$/);
-      const valueAction = amount.parentElement;
-      expect(valueAction?.childElementCount).toBe(2);
-      expect(valueAction?.lastElementChild).toHaveAttribute("aria-hidden", "true");
-      expect(valueAction?.lastElementChild?.tagName).toBe("BUTTON");
-    }
+    const firstMonthAmount = within(rowFor("First month")).getByText(/\$/);
+    const valueAction = firstMonthAmount.parentElement;
+    expect(valueAction?.childElementCount).toBe(2);
+    expect(valueAction?.lastElementChild).toHaveAttribute("aria-hidden", "true");
+    expect(valueAction?.lastElementChild?.tagName).toBe("BUTTON");
+    expect(
+      within(rowFor("Security deposit")).getByRole("button", { name: "edit Security deposit" }),
+    ).toBeInTheDocument();
     expect(
       within(rowFor("Application fee")).getByRole("button", { name: "edit Application fee" }),
     ).toBeInTheDocument();
+  });
+
+  it("allows editing an unmapped mandatory fee that composes into all-in", async () => {
+    const user = userEvent.setup();
+    const withAmenity: AllInComponents = {
+      ...composition,
+      total: 2156,
+      components: [
+        ...composition.components,
+        { name: "amenity fee", amount: 10, tag: "actual" },
+      ],
+    };
+    render([], {
+      composition: withAmenity,
+      feeOriginals: new Map([["amenity fee", 10]]),
+    });
+    await user.click(screen.getByRole("button", { name: "edit amenity fee" }));
+    const amountInput = await screen.findByRole("textbox", { name: "Monthly amount" });
+    await user.clear(amountInput);
+    await user.type(amountInput, "15");
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    expect(screen.getByTestId("fee-state-amenity fee")).toHaveAttribute("data-state", "pending");
   });
 
   it("presents an incomplete move-in cost as a subtotal, never as a total", () => {

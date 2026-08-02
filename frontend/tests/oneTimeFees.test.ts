@@ -6,6 +6,7 @@ import {
   feeForSlot,
   moveInEstimate,
   parseOneTimeFees,
+  slotForMandatoryFee,
   slotForOneTimeFee,
 } from "../src/features/listings/oneTimeFees";
 import type { OneTimeFee } from "../src/features/listings/types";
@@ -16,6 +17,13 @@ const FEES: OneTimeFee[] = [
   { name: "pet deposit", amount: 300, basis: "per_pet", refundable: true },
   { name: "elevator reservation", amount: 75, basis: "flat" },
 ];
+
+describe("slotForMandatoryFee", () => {
+  it("mirrors the worker keyword map", () => {
+    expect(slotForMandatoryFee("Required renters insurance program")).toBe("insurance_program");
+    expect(slotForMandatoryFee("Amenity fee")).toBeNull();
+  });
+});
 
 describe("slotForOneTimeFee", () => {
   it("mirrors the worker keyword map", () => {
@@ -66,7 +74,7 @@ describe("extractedFeeOriginals", () => {
       [
         { name: "valet trash", amount_monthly: 25 },
         { name: "water/sewer billing", amount_monthly: 60 },
-        { name: "amenity fee", amount_monthly: 10 }, // no slot → not revertible
+        { name: "amenity fee", amount_monthly: 10 },
       ],
       FEES,
     );
@@ -75,6 +83,7 @@ describe("extractedFeeOriginals", () => {
     expect(originals.get("application_fee")).toBe(50);
     expect(originals.get("admin")).toBe(150);
     expect(originals.get("pet_deposit")).toBe(300);
+    expect(originals.get("amenity fee")).toBe(10);
     expect(originals.has("pet_rent")).toBe(false); // no extraction row for pets
   });
 

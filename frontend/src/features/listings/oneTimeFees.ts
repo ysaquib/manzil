@@ -22,10 +22,19 @@ const MANDATORY_SLOT_KEYWORDS: [string, string[]][] = [
   ["insurance_program", ["insurance", "liability"]],
 ];
 
+export function slotForMandatoryFee(name: string): string | null {
+  const lowered = name.toLowerCase();
+  for (const [slot, keywords] of MANDATORY_SLOT_KEYWORDS) {
+    if (keywords.some((k) => lowered.includes(k))) return slot;
+  }
+  return null;
+}
+
 /** Slot → originally extracted amount, from the `mandatory_fees` and
  * `one_time_fees` extractions. Pet-rent slots have no extraction row (the v1
  * projection writes them straight to the checklist), so a reverted pet slot
- * falls back to unknown. */
+ * falls back to unknown. Unmapped mandatory fees keep their page name as the key.
+ */
 export function extractedFeeOriginals(
   mandatoryValue: unknown,
   oneTimeValue: unknown,
@@ -36,11 +45,8 @@ export function extractedFeeOriginals(
       const name = (fee as { name?: unknown }).name;
       const amount = (fee as { amount_monthly?: unknown }).amount_monthly;
       if (typeof name !== "string" || typeof amount !== "number") continue;
-      const lowered = name.toLowerCase();
-      const slot = MANDATORY_SLOT_KEYWORDS.find(([, kws]) =>
-        kws.some((k) => lowered.includes(k)),
-      )?.[0];
-      if (slot && !originals.has(slot)) originals.set(slot, amount);
+      const key = slotForMandatoryFee(name) ?? name;
+      if (!originals.has(key)) originals.set(key, amount);
     }
   }
   for (const fee of parseOneTimeFees(oneTimeValue)) {
