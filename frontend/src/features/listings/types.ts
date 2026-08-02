@@ -19,7 +19,7 @@ export interface Property {
 }
 
 export const INTEREST_STATUSES = [
-  "interested", "not_interested", "applied", "application_rejected",
+  "interested", "not_interested", "not_feasible", "applied", "application_rejected",
   "application_withdrawn", "offer_received", "offer_accepted", "offer_declined",
   "offer_rescinded", "unavailable",
 ] as const;
