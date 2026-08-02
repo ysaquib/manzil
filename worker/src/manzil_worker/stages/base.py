@@ -8,9 +8,11 @@ world wholesale — no monkeypatching stage internals.
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 from uuid import UUID
 
@@ -30,6 +32,7 @@ if TYPE_CHECKING:
         RunState,
         SourceFreshness,
     )
+    from manzil_worker.vision_onnx import ONNXShadowBatch
 
 CallStructured = Callable[[str, type[Any], str], Awaitable[Any]]
 CallVision = Callable[[str, type[Any], list[Any]], Awaitable[Any]]
@@ -53,6 +56,7 @@ DedupeCandidates = Callable[[], Awaitable[list["DedupeCandidate"]]]
 GeocodeAddress = Callable[[str], Awaitable["GeocodeIn"]]
 ExistingImageHashes = Callable[[UUID], Awaitable[set[str]]]
 ExistingImageClassifications = Callable[[UUID], Awaitable[dict[str, dict[str, Any]]]]
+ImageClassifyShadow = Callable[[list[tuple[str, bytes]]], Awaitable["ONNXShadowBatch"]]
 
 # ENRICH's Maps seams (P3-8): plain function calls, not tools (§10.2 — ENRICH is
 # not a tool-loop stage). Defaults wrap the live Maps calls lazily, mirroring
@@ -96,6 +100,20 @@ async def _no_existing_image_classifications(
     property_id: UUID,
 ) -> dict[str, dict[str, Any]]:
     return {}
+
+
+def _configured_image_classify_shadow() -> ImageClassifyShadow | None:
+    """Build the optional shadow seam without importing ONNX Runtime in-process."""
+    model_dir = os.getenv("MANZIL_IMAGE_CLASSIFY_ONNX_SHADOW_DIR", "").strip()
+    if not model_dir:
+        return None
+
+    async def classify(images: list[tuple[str, bytes]]) -> ONNXShadowBatch:
+        from manzil_worker.vision_onnx import run_shadow_subprocess
+
+        return await run_shadow_subprocess(Path(model_dir), images)
+
+    return classify
 
 
 async def _no_utility_baselines(
@@ -211,6 +229,11 @@ class StageCtx:
     existing_image_hashes: ExistingImageHashes = _no_existing_image_hashes
     existing_image_classifications: ExistingImageClassifications = (
         _no_existing_image_classifications
+    )
+    # Optional observation-only ONNX classifier. It runs out-of-process and its
+    # predictions never affect image kind, selectors, VISION, or SCORE.
+    image_classify_shadow: ImageClassifyShadow | None = field(
+        default_factory=_configured_image_classify_shadow
     )
     # DISCOVER's bounded loop writes every local/server tool use through this
     # sink. Queue mode wires Postgres; CLI/tests may leave it null (log-only).

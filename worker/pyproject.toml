@@ -23,11 +23,38 @@ dependencies = [
     "pillow>=11.0",
 ]
 
+[project.optional-dependencies]
+vision-onnx = [
+    "numpy>=2",
+    "onnxruntime>=1.20",
+]
+vision-bench = [
+    "numpy>=2",
+    "onnx>=1.17",
+    "onnxruntime>=1.20",
+    "pyarrow>=18",
+    "sentencepiece>=0.2",
+    "torch>=2.6",
+    "torchvision>=0.21",
+    "transformers>=4.49,<5",
+]
+
 [project.scripts]
 manzil = "manzil_worker.cli:app"
 
 [tool.uv.sources]
 manzil-shared = { workspace = true }
+torch = [
+    { index = "pytorch-cpu", marker = "sys_platform == 'linux'" },
+]
+torchvision = [
+    { index = "pytorch-cpu", marker = "sys_platform == 'linux'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [build-system]
 requires = ["uv_build>=0.11.13,<0.12.0"]

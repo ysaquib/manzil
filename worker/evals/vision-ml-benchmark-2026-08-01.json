@@ -1,0 +1,165 @@
+{
+  "schema_version": 1,
+  "run_date": "2026-08-01",
+  "status": "public_component_benchmark_only",
+  "platform": {
+    "system": "Darwin",
+    "machine": "arm64",
+    "python": "3.12.13",
+    "device": "cpu",
+    "batch_size": 16
+  },
+  "methodology": {
+    "weights": "frozen; no fine-tuning",
+    "classifier_max_dimension": 384,
+    "kitchen_positive_labels": ["kitchen", "restaurant_kitchen"],
+    "kitchen_calibration": "20 MIT TrainImages.txt images per class; maximum-F1 threshold",
+    "kitchen_evaluation": "complete official 1,340-image MIT TestImages.txt split",
+    "diagram_calibration": "748 CubiCasa train positives and 748 MIT train photo negatives",
+    "diagram_evaluation": "748 CubiCasa validation positives and 748 MIT test photo negatives",
+    "important_limit": "No public label for kitchen-quality assessability or listing-gallery invalid assets"
+  },
+  "results": [
+    {
+      "model": "google/siglip2-base-patch16-224",
+      "artifact_bytes": 1539456768,
+      "artifact_digest": "03df2c46c37b2022701be668506d23c3522568791f7b8c016be7e4ee9018978b",
+      "kitchen": {
+        "threshold": 0.2363632470369339,
+        "positives": 44,
+        "true_positive": 44,
+        "false_positive": 5,
+        "false_negative": 0,
+        "precision": 0.8979591836734694,
+        "recall": 1.0,
+        "f1": 0.9462365591397849,
+        "auroc": 0.999263468013468
+      },
+      "scene_top1_accuracy": 0.8619402985074627,
+      "diagram": {
+        "precision": 1.0,
+        "recall": 0.9973262032085561,
+        "f1": 0.998661311914324
+      },
+      "images_per_second": 25.65002798336962,
+      "benchmark_peak_rss_mb": 2201.625
+    },
+    {
+      "model": "openai/clip-vit-base-patch32",
+      "artifact_bytes": 608871522,
+      "artifact_digest": "464c4b5423ae81b3deb5734dcdaf1659fc69265f4b4b15d154add553aac0a529",
+      "kitchen": {
+        "threshold": 0.7237955331802368,
+        "positives": 44,
+        "true_positive": 40,
+        "false_positive": 2,
+        "false_negative": 4,
+        "precision": 0.9523809523809523,
+        "recall": 0.9090909090909091,
+        "f1": 0.9302325581395349,
+        "auroc": 0.9988425925925926
+      },
+      "scene_top1_accuracy": 0.7492537313432835,
+      "diagram": {
+        "precision": 1.0,
+        "recall": 0.9986631016042781,
+        "f1": 0.9993311036789299
+      },
+      "images_per_second": 67.58161694828462,
+      "benchmark_peak_rss_mb": 1953.5625
+    },
+    {
+      "model": "Places365 ResNet-18",
+      "artifact_bytes": 45519186,
+      "artifact_digest": "ade6370efde00eb29f25e05099b074f9cb7a2e812694941ed9e439b3dc0dc0f8",
+      "kitchen": {
+        "threshold": 0.18119123578071594,
+        "positives": 44,
+        "true_positive": 37,
+        "false_positive": 9,
+        "false_negative": 7,
+        "precision": 0.8043478260869565,
+        "recall": 0.8409090909090909,
+        "f1": 0.8222222222222223,
+        "auroc": 0.9958964646464646
+      },
+      "scene_top1_accuracy": 0.2208955223880597,
+      "diagram": null,
+      "images_per_second": 50.05823176319775,
+      "benchmark_peak_rss_mb": 734.453125
+    }
+  ],
+  "onnx_exports": {
+    "source_model": "openai/clip-vit-base-patch32",
+    "contract": "vision tower plus fixed normalized text prototypes; no runtime PyTorch, Transformers, tokenizer, or text tower",
+    "held_out_scope": "same complete MIT Indoor 67 and CubiCasa evaluation splits as results above",
+    "variants": [
+      {
+        "variant": "fp32",
+        "artifact_bytes": 352345138,
+        "artifact_digest": "48d03826a822df5a92538cd723d939c40a440c065475ec78c1bd3be8f703181b",
+        "export_max_abs_error": 6.63e-7,
+        "kitchen": {
+          "true_positive": 40,
+          "false_positive": 2,
+          "false_negative": 4,
+          "precision": 0.9523809523809523,
+          "recall": 0.9090909090909091,
+          "f1": 0.9302325581395349
+        },
+        "scene_top1_accuracy": 0.7492537313432835,
+        "diagram_f1": 0.9993311036789299,
+        "render_starter": "failed hard-limit combined-process diagnostic"
+      },
+      {
+        "variant": "signed_int8",
+        "artifact_bytes": 96950921,
+        "artifact_digest": "3387374f9736c32b5852e938acbccb2a0efd88caa86476c916e2d3591949ac88",
+        "export_max_abs_error": 0.00857,
+        "kitchen": {
+          "true_positive": 39,
+          "false_positive": 2,
+          "false_negative": 5,
+          "precision": 0.9512195121951219,
+          "recall": 0.8863636363636364,
+          "f1": 0.9176470588235294
+        },
+        "scene_top1_accuracy": 0.746268656716418,
+        "diagram_f1": 0.9973190348525469,
+        "selection": "rejected: loses an additional kitchen true positive"
+      },
+      {
+        "variant": "unsigned_int8",
+        "artifact_bytes": 96992977,
+        "artifact_digest": "af06481c9b95daa042c9d89f7c2412c845f98aca3706e1cc2d23e7dad853a00b",
+        "export_max_abs_error": 0.0166,
+        "kitchen": {
+          "true_positive": 40,
+          "false_positive": 2,
+          "false_negative": 4,
+          "precision": 0.9523809523809523,
+          "recall": 0.9090909090909091,
+          "f1": 0.9302325581395349
+        },
+        "scene_top1_accuracy": 0.7455223880597015,
+        "diagram_f1": 0.9993311036789299,
+        "selection": "selected for Render Starter shadow"
+      }
+    ],
+    "render_starter_smoke": {
+      "platform": "linux/arm64 container",
+      "limits": {"memory_mb": 512, "swap": false, "cpu": 0.5},
+      "process": "FastAPI application and worker imports plus unsigned-int8 ONNX",
+      "inference": "30 images, streamed one at a time",
+      "elapsed_seconds": 2.5810077479982283,
+      "images_per_second": 11.623366889645073,
+      "process_peak_rss_mb": 247.9453125,
+      "cgroup_peak_mb": 442.37890625,
+      "memory_pressure_events": 0,
+      "oom_events": 0,
+      "remaining_cgroup_headroom_mb": 69.62109375,
+      "limit": "does not include a live database pool or concurrent Chromium; serialize and shadow before promotion"
+    }
+  },
+  "recommendation": "SigLIP2 is the accuracy ceiling; unsigned-int8 vision-only CLIP ONNX is the deployable Render Starter shadow candidate; no production pin change"
+}
