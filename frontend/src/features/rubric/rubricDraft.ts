@@ -4,6 +4,7 @@
 // is derived, never edited (§9.2: all deltas ≥ 0).
 import type { MatchOp, OptionMatch, RubricOption } from "../../lib/contracts";
 import type { CatalogEntry, RubricCriterion } from "./api";
+import { isTypedMultiClaimKey } from "./typedMultiClaim";
 import type { ValueSchema } from "./widgets/types";
 
 /** Catalog seed rows omit null dealbreaker_set_score; treat absent as off. */
@@ -175,22 +176,44 @@ export function overlapWarnings(
   catalog: CatalogEntry[],
 ): CriterionIssue[] {
   const schemaByKey = new Map(catalog.map((entry) => [entry.key, entry.value_schema]));
+  const labelByKey = new Map(catalog.map((entry) => [entry.key, entry.label]));
   const warnings: CriterionIssue[] = [];
+
   for (const criterion of draft) {
     if (!criterion.enabled || criterion.catalog_key === null) continue;
-    const schema = schemaByKey.get(criterion.catalog_key);
+    const key = criterion.catalog_key;
+    const schema = schemaByKey.get(key);
     if (schema?.type !== "array") continue;
+
+    if (isTypedMultiClaimKey(key)) {
+      if (criterion.options.length >= 2) {
+        const label = labelByKey.get(key) ?? key;
+        warnings.push({
+          catalogKey: key,
+          tone: "info",
+          message: `${label} can match multiple advertised types; only the first matching option in this order scores. Put your most preferred match first.`,
+        });
+      }
+      continue;
+    }
+
+    const overlappingPairs: string[] = [];
     for (let left = 0; left < criterion.options.length; left += 1) {
       for (let right = left + 1; right < criterion.options.length; right += 1) {
         if (arrayOptionsCanOverlap(criterion.options[left].match, criterion.options[right].match)) {
-          warnings.push({
-            catalogKey: criterion.catalog_key,
-            message: `options ${left + 1} and ${right + 1} overlap; first match wins`,
-          });
+          overlappingPairs.push(`${left + 1} and ${right + 1}`);
         }
       }
     }
+    if (overlappingPairs.length > 0) {
+      warnings.push({
+        catalogKey: key,
+        tone: "review",
+        message: `options ${overlappingPairs.join(", ")} overlap; first match wins`,
+      });
+    }
   }
+
   const enabledKeys = new Set(
     draft
       .filter((criterion) => criterion.enabled && criterion.catalog_key !== null)
@@ -199,8 +222,25 @@ export function overlapWarnings(
   if (enabledKeys.has("flooring_materials") && enabledKeys.has("flooring_quality")) {
     warnings.push({
       catalogKey: "flooring_materials",
+      tone: "review",
       message:
         "Flooring materials and Flooring quality are both enabled; review their points to avoid double-weighting flooring.",
+    });
+  }
+  if (enabledKeys.has("year_built") && enabledKeys.has("kitchen_quality")) {
+    warnings.push({
+      catalogKey: "year_built",
+      tone: "review",
+      message:
+        "Year built and Kitchen quality are both enabled; review their points to avoid double-weighting building age and unit condition.",
+    });
+  }
+  if (enabledKeys.has("is_renovated") && enabledKeys.has("kitchen_quality")) {
+    warnings.push({
+      catalogKey: "is_renovated",
+      tone: "review",
+      message:
+        "Renovated unit and Kitchen quality are both enabled; review their points to avoid double-weighting renovation and kitchen condition.",
     });
   }
   return warnings;
@@ -209,6 +249,7 @@ export function overlapWarnings(
 export interface CriterionIssue {
   catalogKey: string;
   message: string;
+  tone?: "info" | "review";
 }
 
 // Validate every enabled criterion's options against its value_schema — the

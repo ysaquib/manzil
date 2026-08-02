@@ -60,6 +60,8 @@ export function RubricEditor({
   const entryByKey = new Map([...catalog, ...customEntries].map((e) => [e.key, e]));
   const issues = validateDraft(draft, catalog);
   const warnings = overlapWarnings(draft, catalog);
+  const infoWarnings = warnings.filter((warning) => warning.tone === "info");
+  const reviewWarnings = warnings.filter((warning) => warning.tone !== "info");
   const enabledCount = draft.filter((c) => c.enabled).length;
   const criterionByKey = new Map(
     draft
@@ -135,10 +137,22 @@ export function RubricEditor({
         </Alert>
       )}
 
-      {warnings.length > 0 && (
+      {infoWarnings.length > 0 && (
+        <Alert color="blue" title="Option ordering">
+          <Stack gap={4}>
+            {infoWarnings.map((warning, i) => (
+              <Text size="sm" key={i}>
+                {warning.message}
+              </Text>
+            ))}
+          </Stack>
+        </Alert>
+      )}
+
+      {reviewWarnings.length > 0 && (
         <Alert color="yellow" title="Review overlapping options">
           <Stack gap={4}>
-            {warnings.map((warning, i) => (
+            {reviewWarnings.map((warning, i) => (
               <Text size="sm" key={i}>
                 {entryByKey.get(warning.catalogKey)?.label ?? warning.catalogKey}: {warning.message}
               </Text>

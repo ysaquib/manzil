@@ -80,7 +80,7 @@ def parse_seed_sql(sql: str) -> list[CatalogEntry]:
 
 def test_catalog_contains_the_approved_p3_sc3_tranche() -> None:
     keys = [entry.key for entry in CATALOG]
-    assert len(keys) == len(set(keys)) == 40
+    assert len(keys) == len(set(keys)) == 42
     assert keys == [
         "beds",
         "baths",
@@ -106,10 +106,12 @@ def test_catalog_contains_the_approved_p3_sc3_tranche() -> None:
         "fireplace",
         "ceiling_fans",
         "stainless_steel_appliances",
+        "is_renovated",
         "min_lease_months",
         "grocery_proximity",
         "management_reviews",
         "location_safety",
+        "year_built",
         "pool",
         "fitness_center",
         "clubhouse",
@@ -141,6 +143,7 @@ def test_catalog_contains_the_approved_p3_sc3_tranche() -> None:
         "fireplace",
         "ceiling_fans",
         "stainless_steel_appliances",
+        "is_renovated",
     }:
         assert by_key[key].fact_scope.value == "floor_plan"
         assert by_key[key].category.value == "fittings"
@@ -161,6 +164,11 @@ def test_catalog_contains_the_approved_p3_sc3_tranche() -> None:
     ]
     assert flooring.value_schema["uniqueItems"] is True
     assert flooring.default_options[0].match.op.value == "contains_any"
+    year_built = by_key["year_built"]
+    assert year_built.fact_scope.value == "property"
+    assert year_built.category.value == "amenities"
+    assert year_built.default_options[0].match.op.value == "gte"
+    assert by_key["is_renovated"].fact_scope.value == "floor_plan"
 
 
 SCOPED_UNIT_HEADER = """-- P3-SC4 separates raw Source claim schemas from scoreable per-Floor-Plan

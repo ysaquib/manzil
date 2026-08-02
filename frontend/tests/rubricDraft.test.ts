@@ -197,6 +197,36 @@ describe("overlapWarnings", () => {
     expect(overlapWarnings(draft, [entry])[0].message).toMatch(/first match wins/);
   });
 
+  it("emits one informational message for typed multi-claim defaults, not pairwise spam", () => {
+    const parking: CatalogEntry = {
+      ...bedsEntry,
+      key: "parking",
+      label: "Parking",
+      category: "unit",
+      fact_scope: "mixed",
+      value_schema: {
+        type: "array",
+        items: {
+          type: "string",
+          enum: ["garage", "carport", "covered", "dedicated_lot", "street_only", "none"],
+        },
+        minItems: 1,
+        uniqueItems: true,
+      },
+      default_options: [
+        option({ match: { op: "contains_any", value: ["garage"] } }),
+        option({ match: { op: "contains_any", value: ["carport"] } }),
+        option({ match: { op: "contains_any", value: ["covered"] } }),
+      ],
+    };
+    const draft = initDraft([parking], []);
+    draft[0].enabled = true;
+    const result = overlapWarnings(draft, [parking]);
+    expect(result).toHaveLength(1);
+    expect(result[0].tone).toBe("info");
+    expect(result[0].message).toMatch(/first matching option/);
+  });
+
   it("warns when objective flooring materials and subjective quality are both enabled", () => {
     const materials: CatalogEntry = {
       ...bedsEntry,
@@ -228,6 +258,7 @@ describe("overlapWarnings", () => {
 
     expect(overlapWarnings(draft, [materials, quality])).toContainEqual({
       catalogKey: "flooring_materials",
+      tone: "review",
       message: expect.stringMatching(/double-weighting flooring/),
     });
   });
