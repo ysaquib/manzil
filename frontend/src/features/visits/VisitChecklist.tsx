@@ -54,6 +54,7 @@ import type { Visit, VisitEntryConflict, VisitItem, VisitUnit } from "./types";
 import { VisitByline } from "./VisitByline";
 import { ControlForItem } from "./VisitControls";
 import { VisitPresence } from "./VisitPresence";
+import { useGhostMode } from "../admin/useGhostMode";
 import { useVisitPresence } from "./usePresence";
 import classes from "./VisitChecklist.module.css";
 import { groupIntoSections, sectionTitle, type Tier } from "./visitState";
@@ -151,7 +152,17 @@ export function VisitChecklist({
   const index = useMemo(() => indexEntries(entries), [entries]);
 
   const currentSectionKey = activeSection ?? sections[0]?.key ?? null;
-  const present = useVisitPresence(visit.id, userId ?? undefined, currentSectionKey);
+  // A ghost watches the tour without joining it. `isGhost` is undefined until
+  // membership is known, and the `!== false` test is deliberate: observe until
+  // proven a member, so a slow membership read can never flash an admin onto
+  // somebody else's tour.
+  const { isGhost } = useGhostMode(visit.hunt_id);
+  const present = useVisitPresence(
+    visit.id,
+    userId ?? undefined,
+    currentSectionKey,
+    isGhost !== false,
+  );
   const section = sections.find((candidate) => candidate.key === currentSectionKey);
   const unitScoped = section?.hasUnitScoped ?? false;
   // A section can hold both scopes (Building history asks about the building and

@@ -35,6 +35,8 @@ import { Link, NavLink as RouterNavLink, Outlet, useLocation, useParams } from "
 import { useHuntRealtime } from "../lib/realtime";
 import { useCompareSet } from "../features/listings/compareSet";
 import { OverviewFiltersProvider } from "../features/listings/filterState";
+import { GhostBanner } from "../features/admin/GhostBanner";
+import { useGhostMode } from "../features/admin/useGhostMode";
 import { FeedbackModal } from "../features/feedback/FeedbackModal";
 import { CreateRubricPrompt } from "../features/rubric/CreateRubricPrompt";
 import { useHunt, useHunts } from "../features/hunts/api";
@@ -101,6 +103,10 @@ export function AppLayout() {
   const isMobile = useMediaQuery("(max-width: 48em)");
   useHuntRealtime(huntId);
   const compare = useCompareSet(huntId ?? "");
+  // AD-4: a Site Admin reading a Hunt they do not belong to. Derived from
+  // membership, so it is correct on every screen without any route state.
+  const { isGhost } = useGhostMode(huntId);
+  const { data: ghostHunt } = useHunt(huntId ?? "");
 
   return (
     <AppShell
@@ -167,6 +173,7 @@ export function AppLayout() {
       </AppShell.Navbar>
 
       <AppShell.Main className={classes.main}>
+        {isGhost === true && <GhostBanner huntName={ghostHunt?.name} />}
         {huntId && <CreateRubricPrompt huntId={huntId} />}
         {/* Filter state lives above the Outlet so Overview and Map filter the
             same set; keying on huntId re-seeds hunt-wide filters on switch. */}

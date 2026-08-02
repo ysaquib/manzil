@@ -86,3 +86,30 @@
     transition: none;
   }
 }
+
+/* Admin panel entry (AD-2). Sits directly above Submit feedback — the same
+   "meta, not Hunt" cluster, and the natural neighbour of the inbox that
+   receives those reports. Solid border rather than the feedback item's dashed
+   one: this is navigation, that is an action. */
+.admin {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-xs);
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+  border-radius: var(--mantine-radius-md);
+  border: 1px solid var(--mantine-color-default-border);
+  color: var(--mantine-color-text);
+  text-decoration: none;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.adminIcon {
+  color: var(--mantine-primary-color-filled);
+  flex: none;
+}
+
+.admin:hover {
+  background-color: var(--mantine-color-primary-light);
+  border-color: var(--mantine-primary-color-filled);
+  color: var(--mantine-color-primary-light-color);
+}
