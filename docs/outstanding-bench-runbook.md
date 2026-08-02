@@ -935,8 +935,6 @@ Keep these visible, but do not mix them into model accuracy reports:
 - real-page exercise of `full_size_url`;
 - a live ingest followed by an unchanged refresh proving zero classifier and
   quality calls once refresh/hash gating exists;
-- P3-8 live Detroit-metro ENRICH smoke;
-- P3-14 live provider posture for the five hostile census domains.
 
 These are visual, integration, or operational acceptance checks.
 
@@ -974,4 +972,3 @@ For each active benchmark:
       implementation status.
 - [ ] Any model/behavior rollout decision appended to `DESIGN.md` §20.
 - [ ] Gitignored corpus, labels, recordings, and reports backed up again.
-

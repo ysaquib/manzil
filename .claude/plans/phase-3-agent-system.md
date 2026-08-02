@@ -256,13 +256,13 @@ Full task detail in §4–§13; every task below carries its what/why.
 | P3-5 ✅ | B | **Landed 2026-07-21:** DISCOVER official-link capture + tier-diverse slate + candidate pool + Source Policy enforcement + reasoned single-source badge | cross-source outvoting is the core trust mechanism (R3/R4); tier/family diversity is what makes the votes independent; policy caps keep the user in control of the cost/assurance trade |
 | P3-6 ✅ | B | **Landed 2026-07-28:** Multi-source fan-out + RECONCILE ladder v2 + bounded escalation | conflicting sources need a deterministic, recorded resolution — this is where `resolution_rule`, `disputed`, and the escalation ladder become real |
 | P3-7 ◐ | C | **Kitchen VISION live by Owner override;** flooring/bathroom disabled — owed external quality bench (`docs/p3-7-vision-guide.md`) | kitchen/flooring quality are rubric criteria only vision can score; reference anchoring is the consistency control (R6) |
-| P3-8 ◐ | C | **Landed 2026-07-18** — ENRICH proximity/commute/Places ratings; safety placeholder — ◐ pending one live Detroit-metro ENRICH run | location and reputation criteria are the remaining unscoreable catalog rows; Places is near-free and covers almost every complex |
+| P3-8 ✅ | C | **Landed 2026-07-18; live Detroit-metro acceptance completed 2026-08-02** — ENRICH proximity/commute/Places ratings; safety placeholder | location and reputation criteria are the remaining unscoreable catalog rows; Places is near-free and covers almost every complex |
 | P3-9 ◐ | C | **Landed 2026-07-18** — utility baselines tick + §9.5 all-in composition; first live baselines pass done — ◐ owed bench re-run after schema growth | the all-in number is the tool's core promise; winter-weighted estimates make unlisted utilities honest instead of invisible |
-| P3-10 ◐ | C | **Engineering landed 2026-07-30** (DESIGN v3.35 / IMPLEMENTATION 2.0.101); live Maps + text acceptance remains | the catalog can't anticipate every hunt's dealbreaker; authoring-time routing keeps run-time dumb and cheap |
+| P3-10 ✅ | C | **Engineering landed 2026-07-30; live acceptance confirmed 2026-08-02** (no dedicated programmatic test) | the catalog can't anticipate every hunt's dealbreaker; authoring-time routing keeps run-time dumb and cheap |
 | P3-11 ✅ | D | **Landed 2026-07-30** (DESIGN v3.32 / IMPLEMENTATION 2.0.95): evidence/Source context, 24 h sweep, clay clock badge, immutable correction Job/re-score; screenshots deferred | checkpoints only work if ignoring them costs nothing — auto-resume with visible provenance means nothing strands and nothing hides |
 | P3-12 | D | Refresh: TTLs, hash gating, field-scoped partial, planner refresh mode | fresh data without re-paying extraction; hash gating is the single biggest cost lever after caching (§15) |
-| P3-13 ◐ | D | **Compare landed 2026-07-19** — remaining mobile bottom-sheet polish | FR9 — the decision endgame is comparing finalists, and it happens on phones |
-| P3-14 ⚠ | E | Tier-3 adapters per census verdict | spend on hostile domains only where the census proves inventory lives behind them |
+| P3-13 ✅ | D | **Compare landed 2026-07-19; mobile exploratory acceptance completed 2026-08-02** | FR9 — the decision endgame is comparing finalists, and it happens on phones |
+| P3-14 ✅ | E | All five census-named hostile domains confirmed through Bright Data on 2026-08-02 | spend on hostile domains only where the census proves inventory lives behind them |
 | P3-15 | E | Ratings stage 2: apartmentratings.com | renter-specific signal Places lacks; lands as a second provenance-carrying extraction, RECONCILE owns disagreement |
 | P3-SC1 ✅ | SC | Promoted scoped-Criteria design + Extraction-consumer audit (docs/contracts only, 2026-07-21) | prerequisite for P3-SC2 substrate |
 | P3-SC2 ✅ | SC | Unified append-only scoped Extraction foundation (2026-07-21) | Source-local Floor Plan identity and effective resolver |
@@ -511,12 +511,13 @@ of Yusuf's own rating on the anchored scale; gallery renders with assessments.
 
 ## 10. P3-8 — ENRICH: proximity, commute, ratings stage 1, safety (Wave C)
 
-> **Landed 2026-07-18 ◐** (IMPLEMENTATION 2.0.58) with one deviation from this
+> **Landed 2026-07-18 ✅; live Detroit-metro acceptance completed 2026-08-02**
+> (IMPLEMENTATION 2.0.58) with one deviation from this
 > section, ruled in DESIGN §20 2026-07-18: `location_safety` ships as an
 > **override-first A+..F placeholder** (no web-search synthesis; the assessor is
 > the deferred P3-17 safety module). The interim proximity-flip path is a
 > `refresh` job (`scope: enrich`) re-running the location slice only — zero LLM
-> spend, as the done-criterion requires. ◐ pending one live Detroit-metro run.
+> spend, as the done-criterion requires.
 
 **What/why:** the remaining catalog criteria go live — `grocery_proximity`
 (honoring `settings.proximity_mode`, edit → field-scoped location refresh),
@@ -586,11 +587,12 @@ rescores without any refetch; a fully-unknown utility contributes
 
 ## 12. P3-10 — Custom criteria authoring + dispatch (Wave C)
 
-> **Engineering landed 2026-07-30 ◐** (DESIGN v3.35 / IMPLEMENTATION
+> **Engineering landed 2026-07-30 ✅** (DESIGN v3.35 / IMPLEMENTATION
 > 2.0.101). The author-selected, versioned v1 contract ships page-text and
 > Property-only Maps acquisition, immediate cached-evidence backfill, and
 > hunt-scoped append-only provenance. VISION and web-search custom routes moved
-> to §18. One live commute custom and one live text custom remain before ✅.
+> to §18. Live acceptance was confirmed on 2026-08-02; no dedicated
+> programmatic acceptance test exists.
 
 **What/why:** the §9.2 authoring flow — name → description → one cheap LLM
 routing classification (`requires_tool`) → **user confirms the routing with
@@ -669,9 +671,9 @@ pricing TTL lapses and clears on refresh.
 
 ### P3-13 — Compare view + mobile polish
 
-> **Landed 2026-07-19 ◐** (IMPLEMENTATION 2.0.65): `/h/:huntId/compare`,
-> Send-to-Compare, and transposed criterion table are live. **Remaining:** mobile
-> bottom-sheet polish (the sheet itself already shipped in Phase 2 prep).
+> **Landed 2026-07-19 ✅** (IMPLEMENTATION 2.0.65): `/h/:huntId/compare`,
+> Send-to-Compare, and transposed criterion table are live; mobile exploratory
+> acceptance completed 2026-08-02.
 
 **What/why:** FR9 — 2–4 listings side-by-side at criterion granularity,
 reachable from Overview selection state; plus the mobile pass (bottom-sheet
@@ -686,17 +688,15 @@ enabled criteria in rubric order with per-listing matched-option/delta/evidence,
 gates called out, all-in row with tags. Reads ride existing hooks
 (listings/scores/extractions) — no new API.
 **Done when:** 3-listing compare is usable on a phone viewport (vitest for the
-row model; manual pass for feel); deep-link with listing ids renders directly.
+row model; manual exploratory pass for feel ✅); deep-link with listing ids renders directly.
 
-### P3-14 ⚠ — Tier-3 per census verdict (conditional)
+### P3-14 ✅ — Tier-3 per census verdict (conditional)
 
-**What/why:** the fetcher exists (free-plan-only, off the ladder without a
-key); what remains is whatever the P0-14 verdict names — enabling the provider
-key posture, per-domain registry pins for census-named hostile domains, and
-possibly nothing at all. Scope is *only* the named domains: the census exists
-precisely so hostile-domain spend follows measured inventory, not vibes.
-**Done when:** census-named domains fetch successfully through the configured
-provider on the live hunt — or the task is deleted with a one-line §20 note.
+**What/why:** the fetcher exists on the Bright Data free plan and is configured
+only for the census-named hostile domains. The census keeps hostile-domain spend
+bound to measured inventory rather than vibes.
+**Live evidence:** all five census-named domains fetch successfully through
+the configured Bright Data provider on the live Hunt (confirmed 2026-08-02).
 
 ### P3-15 — Ratings stage 2: apartmentratings.com
 
