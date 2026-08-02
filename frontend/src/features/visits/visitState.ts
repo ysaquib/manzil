@@ -12,16 +12,32 @@ export const VISIT_STATES = ["planned", "in_progress", "completed", "cancelled"]
 /**
  * Cancellation outranks everything: a tour that started and was then called off
  * is cancelled, not in progress. Ordering here is the whole rule.
+ *
+ * A reopen later than the end puts the tour back in progress (VC-9). It does
+ * this *without* clearing `ended_at`, which is why the comparison is between
+ * two timestamps rather than a null check: ending a reopened tour stamps a new,
+ * later `ended_at` and lands back on completed, leaving the reopen stamp where
+ * it is as the record that somebody came back to it.
  */
 export function visitState(visit: {
   started_at: string | null;
   ended_at: string | null;
+  reopened_at?: string | null;
   cancelled_at: string | null;
 }): VisitState {
   if (visit.cancelled_at) return "cancelled";
-  if (visit.ended_at) return "completed";
+  if (visit.ended_at && !isReopened(visit)) return "completed";
   if (visit.started_at) return "in_progress";
   return "planned";
+}
+
+/** True when the latest reopen is more recent than the latest end. */
+export function isReopened(visit: {
+  ended_at: string | null;
+  reopened_at?: string | null;
+}): boolean {
+  if (!visit.reopened_at || !visit.ended_at) return false;
+  return new Date(visit.reopened_at).getTime() > new Date(visit.ended_at).getTime();
 }
 
 export const VISIT_STATE_LABEL: Record<VisitState, string> = {
@@ -172,4 +188,106 @@ export const SECTION_TITLE: Record<string, string> = {
 
 export function sectionTitle(key: string): string {
   return SECTION_TITLE[key] ?? key.replace(/_/g, " ");
+}
+
+// ---------------------------------------------------------------------------
+// Phases (VC-13)
+// ---------------------------------------------------------------------------
+
+/**
+ * Twenty-one sections never fitted in a row, and the horizontal strip they were
+ * rendered as turned every section change into a scrub past everything else.
+ * They roll up into five **phases**, which do fit — and which are the shape of
+ * the afternoon rather than an arbitrary split: what you do on the couch, what
+ * you do walking around, what you ask the person with the keys, the money
+ * conversation, and what you decide afterwards.
+ *
+ * The phase bar is the only permanent navigation. The full list stays reachable
+ * through the section picker, which is a list you open deliberately rather than
+ * a strip in the way of the thing under it.
+ */
+export interface VisitPhase {
+  key: string;
+  title: string;
+  /** Section keys in template order. A section belongs to exactly one phase. */
+  sections: string[];
+}
+
+export const VISIT_PHASES: VisitPhase[] = [
+  { key: "before", title: "Before", sections: ["prep"] },
+  {
+    key: "walk",
+    title: "Walk it",
+    sections: [
+      "essentials",
+      "sweep",
+      "kitchen",
+      "bathrooms",
+      "bedrooms",
+      "living",
+      "laundry",
+      "systems",
+      "noise",
+      "space",
+      "safety",
+      "building",
+      "pets",
+      "red_flags",
+    ],
+  },
+  { key: "ask", title: "Ask", sections: ["lease", "application", "history"] },
+  { key: "money", title: "Money", sections: ["money"] },
+  {
+    key: "wrap",
+    title: "Wrap up",
+    sections: ["followup", "verdict_unit", "verdict_property"],
+  },
+];
+
+/** Which phase a section belongs to. Unknown sections fall into Walk it. */
+export function phaseForSection(sectionKey: string): VisitPhase {
+  return (
+    VISIT_PHASES.find((phase) => phase.sections.includes(sectionKey)) ??
+    VISIT_PHASES.find((phase) => phase.key === "walk")!
+  );
+}
+
+/**
+ * Phases carrying at least one of the sections actually present, in phase order.
+ * A tier or a restriction can empty a phase — a bar item that navigates nowhere
+ * is worse than one fewer item.
+ */
+export function phasesPresent<T extends { key: string }>(
+  sections: T[],
+): { phase: VisitPhase; sections: T[] }[] {
+  const byKey = new Map(sections.map((section) => [section.key, section]));
+  return VISIT_PHASES.map((phase) => ({
+    phase,
+    sections: phase.sections
+      .map((key) => byKey.get(key))
+      .filter((section): section is T => section !== undefined),
+  })).filter((group) => group.sections.length > 0);
+}
+
+/**
+ * Section keys in template order, flattened across phases. This is what
+ * previous/next walks — and it is derived from the sections actually shown, so
+ * changing the depth dial changes where "next" goes.
+ */
+export function sectionOrder<T extends { key: string }>(sections: T[]): string[] {
+  return phasesPresent(sections).flatMap((group) => group.sections.map((s) => s.key));
+}
+
+/** The section before and after `current`, or null at either end. */
+export function neighbours<T extends { key: string }>(
+  sections: T[],
+  current: string | null,
+): { previous: string | null; next: string | null } {
+  const order = sectionOrder(sections);
+  const index = current ? order.indexOf(current) : -1;
+  if (index === -1) return { previous: null, next: null };
+  return {
+    previous: index > 0 ? order[index - 1] : null,
+    next: index < order.length - 1 ? order[index + 1] : null,
+  };
 }

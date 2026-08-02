@@ -23,6 +23,7 @@ import { useDisclosure } from "@mantine/hooks";
 import {
   IconAlertTriangle,
   IconArrowLeft,
+  IconCheck,
   IconDotsVertical,
   IconLock,
   IconPlayerPlay,
@@ -34,6 +35,7 @@ import dayjs from "dayjs";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { useAuth } from "../../auth/useAuth";
+import type { VisitEditMode } from "./types";
 import { ApiError } from "../../lib/apiClient";
 import { useCurrentMember, useMembers } from "../collaboration/api";
 import { useDeleteVisit, usePatchVisit, useVisit, useVisitTemplate } from "./api";
@@ -43,6 +45,7 @@ import { VisitDefects } from "./VisitDefects";
 import { VisitStatePill } from "./VisitStatePill";
 import { VisitUnitChips } from "./VisitUnitChips";
 import { groupIntoSections, sectionTitle, visitState } from "./visitState";
+import classes from "./VisitDetailPage.module.css";
 
 export function VisitDetailPage() {
   const { huntId = "", visitId = "" } = useParams();
@@ -53,6 +56,7 @@ export function VisitDetailPage() {
   const currentMember = useCurrentMember(huntId);
   const patchVisit = usePatchVisit(huntId);
   const deleteVisit = useDeleteVisit(huntId);
+  const [startOpen, startModal] = useDisclosure(false);
   const [cancelOpen, cancelModal] = useDisclosure(false);
   const [deleteOpen, deleteModal] = useDisclosure(false);
 
@@ -87,7 +91,14 @@ export function VisitDetailPage() {
   // must not hide what was recorded on it. **Editability** follows the derived
   // state — a finished or cancelled tour is a record, not a form.
   const hasStarted = visit.started_at !== null;
-  const readOnly = state === "completed" || state === "cancelled";
+  // Three surfaces, not two (VC-12). A finished tour is a **record**: it keeps
+  // every colour, because a green tick and a red flag must not read alike, and
+  // loses only its interactivity. A cancelled tour is **void**: nothing was
+  // recorded and nothing will be, so it greys out properly. Rendering those two
+  // identically was telling you the opposite of the truth about both.
+  const mode: VisitEditMode =
+    state === "cancelled" ? "void" : state === "completed" ? "record" : "live";
+  const readOnly = mode !== "live";
   const sections = groupIntoSections(templateQuery.data ?? []);
   const lockedSections = sections.filter((section) => section.key !== "prep");
 
@@ -107,7 +118,7 @@ export function VisitDetailPage() {
     });
 
   return (
-    <Stack gap="lg" maw={760}>
+    <Stack gap="lg" className={classes.page}>
       <Group gap="xs">
         <Button
           component={Link}
@@ -182,6 +193,11 @@ export function VisitDetailPage() {
               ? ` · started ${dayjs(visit.started_at).format("h:mm A")}`
               : ""}
             {visit.ended_at ? ` · ended ${dayjs(visit.ended_at).format("h:mm A")}` : ""}
+            {/* VC-9: reopening no longer erases the end time, so the 42 minutes
+                the tour actually took survives being revisited on a laptop. */}
+            {visit.reopened_at
+              ? ` · reopened ${dayjs(visit.reopened_at).format("ddd D MMM")}`
+              : ""}
           </Text>
 
           {visit.cancel_reason && (
@@ -205,7 +221,7 @@ export function VisitDetailPage() {
           anyone has seen a room (DESIGN §9.7). */}
       <VisitChecklist
         visit={visit}
-        readOnly={readOnly}
+        mode={mode}
         restrictTo={hasStarted ? undefined : ["prep"]}
       />
 
@@ -267,17 +283,32 @@ export function VisitDetailPage() {
         >
           <Stack gap="sm">
             <Text size="sm">
-              Starting the visit stamps the time and opens every section. Anyone on the tour can
-              start it — whoever gets there first.
+              Your prep answers save as you type them — there is nothing to submit. Start the
+              visit when you are actually there: it stamps the time and opens every section, and
+              anyone on the tour can do it, whoever gets there first.
             </Text>
-            <Button
-              leftSection={<IconPlayerPlay size={16} />}
-              loading={patchVisit.isPending}
-              onClick={() => act("start")}
-              fullWidth
-            >
-              Start visit
-            </Button>
+            {/* Report 9. Leaving the prep page used to mean pressing the one
+                button that cannot be un-pressed. This one deliberately performs
+                no write: every answer was already saved. It exists so that
+                "I'm done for now" has somewhere to go that is not "begin the
+                tour I am not on yet". */}
+            <Group gap="sm" wrap="wrap">
+              <Button
+                variant="default"
+                component={Link}
+                to={`/h/${huntId}/visits`}
+                leftSection={<IconCheck size={16} />}
+              >
+                Save and close
+              </Button>
+              <Button
+                leftSection={<IconPlayerPlay size={16} />}
+                loading={patchVisit.isPending}
+                onClick={startModal.open}
+              >
+                Start visit
+              </Button>
+            </Group>
           </Stack>
         </Card>
       )}
@@ -304,8 +335,12 @@ export function VisitDetailPage() {
         <Card>
           <Group justify="space-between" wrap="wrap" gap="sm">
             <Text size="sm" c="dimmed">
-              Toured {dayjs(visit.ended_at).format("ddd D MMM")}. Reopen to add anything you
-              remembered afterwards.
+              Toured {dayjs(visit.ended_at).format("ddd D MMM")}
+              {visit.reopened_at
+                ? `, reopened ${dayjs(visit.reopened_at).format("ddd D MMM")}`
+                : ""}
+              . Reopen to add anything you remembered afterwards — the tour keeps its
+              own start and end times either way.
             </Text>
             {/* A tour is written on a phone and read on a desktop, and the
                 desktop is where the typo gets fixed and the half-heard answer
@@ -323,6 +358,19 @@ export function VisitDetailPage() {
           </Group>
         </Card>
       )}
+
+      <VisitConfirmDialog
+        opened={startOpen}
+        onClose={startModal.close}
+        title="Start the tour?"
+        body="This stamps the start time and opens every section. Only do it when you're actually at the property — the prep answers are already saved either way."
+        confirmLabel="Start visit"
+        loading={patchVisit.isPending}
+        onConfirm={() => {
+          act("start");
+          startModal.close();
+        }}
+      />
 
       <VisitConfirmDialog
         opened={cancelOpen}

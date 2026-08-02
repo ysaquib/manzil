@@ -6,6 +6,8 @@ export type VisitState = "planned" | "in_progress" | "completed" | "cancelled";
 export type VisitItemKind = "fact" | "check" | "question" | "impression";
 export type VisitItemScope = "property" | "unit";
 export type VisitTier = "quick" | "standard" | "thorough";
+/** Ordered least to worst; null is unrated, which is a real state (VC-10). */
+export type VisitDefectSeverity = "noted" | "minor" | "major" | "dealbreaker";
 
 export interface VisitUnit {
   id: string;
@@ -32,6 +34,12 @@ export interface Visit {
   /** State derives from these three (see `visitState`); there is no status column. */
   started_at: string | null;
   ended_at: string | null;
+  /**
+   * When the tour was most recently reopened after ending (VC-9). Only the
+   * latest reopen is kept, and `ended_at` is never cleared to make room for it:
+   * when the tour ended is a fact about a real afternoon.
+   */
+  reopened_at: string | null;
   cancelled_at: string | null;
   cancel_reason: string | null;
   template_version: number;
@@ -161,8 +169,8 @@ export interface VisitDefect {
   from_item_key: string | null;
   title: string;
   note: string | null;
-  /** Null = unrated. A promoted defect starts unrated by design. */
-  severity: number | null;
+  /** Null = unrated. A promoted defect starts unrated by design (VC-10). */
+  severity: VisitDefectSeverity | null;
   promised_in_writing: boolean;
   resolution: string | null;
   created_by: string;
@@ -182,3 +190,13 @@ export interface DraftUnit {
   /** True when described by hand rather than picked from a Floor Plan. */
   custom: boolean;
 }
+
+/**
+ * What kind of surface a Visit is being rendered as (VC-12).
+ *
+ * A finished tour and a cancelled one were both `readOnly` and therefore looked
+ * identical, which said the wrong thing about both: a completed tour is a
+ * record worth reading in full colour, and a cancelled one is a form nobody
+ * will ever fill in.
+ */
+export type VisitEditMode = "live" | "record" | "void";

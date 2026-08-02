@@ -1,0 +1,7 @@
+/* One Visit. The page used to be capped at 760px, which was right when it was a
+   single column and is exactly what starved the three-pane layout (VC-14) of
+   the width it exists to use. The cap is now the wide layout's own ceiling, and
+   the reading measure is enforced per-pane instead of page-wide. */
+.page {
+  max-width: 96rem;
+}

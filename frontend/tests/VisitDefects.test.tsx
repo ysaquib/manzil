@@ -54,14 +54,14 @@ function defect(partial: Partial<VisitDefect> = {}): VisitDefect {
 let mockDefects: VisitDefect[] = [];
 
 /**
- * Mantine's `Rating` wires its **label**, not the hidden radio input, so
- * `userEvent.click` on the radio fires nothing under jsdom. Clicking the label
- * is what a real pointer does anyway; `stars[n]` is rating `n` (index 0 is the
- * "clear" option Rating renders first).
+ * Severity is four named buttons now rather than five stars (VC-10), so the
+ * accessible name carries the glyph and the word — which is the point: the
+ * level is legible without reading a count.
  */
-function clickStar(container: HTMLElement, rating: number) {
-  const labels = container.querySelectorAll("label");
-  fireEvent.click(labels[rating]);
+function clickSeverity(name: string) {
+  // The glyph is aria-hidden, so the accessible name is the word alone — which
+  // is the point of naming the levels in the first place.
+  fireEvent.click(screen.getByRole("button", { name }));
 }
 
 function render(props: Record<string, unknown> = {}) {
@@ -113,24 +113,37 @@ describe("the defect log", () => {
     expect(screen.getByText("3 defects")).toBeInTheDocument();
   });
 
-  it("shows an unrated defect as unrated rather than as zero", () => {
+  it("shows an unrated defect as unrated rather than as the mildest level", () => {
     mockDefects = [defect({ severity: null })];
     render();
-    expect(screen.getByText("unrated")).toBeInTheDocument();
+    expect(screen.getByText(/Unrated/)).toBeInTheDocument();
   });
 
-  it("clears the severity when the current rating is clicked again", () => {
-    mockDefects = [defect({ severity: 3 })];
-    const { container } = render();
-    clickStar(container, 3);
+  it("names every level rather than asking for a number out of five", () => {
+    mockDefects = [defect({ severity: "major" })];
+    render();
+    for (const label of ["Noted", "Minor", "Major", "Dealbreaker"]) {
+      expect(screen.getByRole("button", { name: new RegExp(label) })).toBeInTheDocument();
+    }
+    // The chosen level says what it means, which five stars never did.
+    expect(screen.getByText("Costs money or comfort")).toBeInTheDocument();
+  });
+
+  it("clears the severity when the current level is chosen again", () => {
+    mockDefects = [defect({ severity: "major" })];
+    render();
+    clickSeverity("Major");
     expect(patchDefect).toHaveBeenCalledWith({ defectId: "d1", body: { severity: null } });
   });
 
-  it("sets a severity when a different rating is clicked", () => {
+  it("sets a severity when a different level is chosen", () => {
     mockDefects = [defect({ severity: null })];
-    const { container } = render();
-    clickStar(container, 4);
-    expect(patchDefect).toHaveBeenCalledWith({ defectId: "d1", body: { severity: 4 } });
+    render();
+    clickSeverity("Dealbreaker");
+    expect(patchDefect).toHaveBeenCalledWith({
+      defectId: "d1",
+      body: { severity: "dealbreaker" },
+    });
   });
 
   it("records a repair promise", async () => {
