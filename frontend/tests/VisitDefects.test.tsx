@@ -189,6 +189,8 @@ describe("the defect log", () => {
     render({ readOnly: true });
     expect(screen.queryByRole("button", { name: /Remove defect/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Log something else/ })).not.toBeInTheDocument();
-    expect(screen.getByRole("switch", { name: /Promised in writing/ })).toBeDisabled();
+    // The switch goes rather than greys — the green badge already states the
+    // promise, and a dead switch beside it only muddies the record.
+    expect(screen.queryByRole("switch", { name: /Promised in writing/ })).not.toBeInTheDocument();
   });
 });

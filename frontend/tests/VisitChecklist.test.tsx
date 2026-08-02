@@ -492,10 +492,56 @@ describe("progress", () => {
 });
 
 describe("read-only", () => {
-  it("disables the controls on a completed visit", async () => {
+  // A finished tour is a record. Its answers must stay *readable* — greying
+  // them out is what made a green tick and a red flag look identical.
+  it("keeps the answered check coloured and drops the side nobody pressed", async () => {
+    mockEntries = [
+      entry({ id: "1", item_key: "kitchen_disposal", visit_unit_id: "unit-a", value: "problem" }),
+    ];
     render({ readOnly: true });
     const user = userEvent.setup();
     await openSection(user, /Kitchen/);
-    expect(screen.getByRole("button", { name: /Ran the disposal: fine/ })).toBeDisabled();
+
+    const flag = screen.getByRole("button", { name: /Ran the disposal: problem/ });
+    // Not disabled — just not operable. Disabled is what threw the colour away.
+    expect(flag).not.toBeDisabled();
+    expect(flag).toHaveAttribute("data-variant", "filled");
+    expect(
+      screen.queryByRole("button", { name: /Ran the disposal: fine/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("says so plainly when a check was never performed", async () => {
+    render({ readOnly: true });
+    const user = userEvent.setup();
+    await openSection(user, /Kitchen/);
+    expect(screen.getByText("Not checked")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Ran the disposal: fine/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("cannot be edited — the control is inert, and refuses to save regardless", async () => {
+    mockEntries = [
+      entry({ id: "1", item_key: "kitchen_disposal", visit_unit_id: "unit-a", value: "ok" }),
+    ];
+    render({ readOnly: true });
+    const user = userEvent.setup();
+    await openSection(user, /Kitchen/);
+    const tick = screen.getByRole("button", { name: /Ran the disposal: fine/ });
+    expect(tick.closest("[inert]")).not.toBeNull();
+    await user.click(tick);
+    expect(saveEntries).not.toHaveBeenCalled();
+  });
+
+  it("shows only the Fact option that was chosen", async () => {
+    mockEntries = [
+      entry({ id: "1", item_key: "kitchen_stove", visit_unit_id: "unit-a", value: "gas" }),
+    ];
+    render({ readOnly: true });
+    const user = userEvent.setup();
+    await openSection(user, /Kitchen/);
+    expect(screen.getByText("Gas")).toBeInTheDocument();
+    expect(screen.queryByText("Electric")).not.toBeInTheDocument();
   });
 });

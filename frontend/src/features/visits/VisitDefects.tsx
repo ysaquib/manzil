@@ -106,18 +106,21 @@ function DefectRow({
               </Text>
             )}
           </Group>
-          <Switch
-            size="xs"
-            label="Promised in writing"
-            checked={defect.promised_in_writing}
-            disabled={readOnly}
-            onChange={(event) =>
-              patch.mutate({
-                defectId: defect.id,
-                body: { promised_in_writing: event.currentTarget.checked },
-              })
-            }
-          />
+          {/* On a record the switch says nothing the green badge above has not
+              already said, and greyed out it says it less legibly. */}
+          {!readOnly && (
+            <Switch
+              size="xs"
+              label="Promised in writing"
+              checked={defect.promised_in_writing}
+              onChange={(event) =>
+                patch.mutate({
+                  defectId: defect.id,
+                  body: { promised_in_writing: event.currentTarget.checked },
+                })
+              }
+            />
+          )}
         </Group>
       </Stack>
       {!readOnly && (
