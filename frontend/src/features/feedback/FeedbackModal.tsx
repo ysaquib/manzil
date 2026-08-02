@@ -77,7 +77,13 @@ export function FeedbackModal({ opened, onClose }: { opened: boolean; onClose: (
   };
 
   return (
-    <Modal opened={opened} onClose={close} title="Submit feedback" size="md">
+    <Modal
+      opened={opened}
+      onClose={close}
+      title="Submit feedback"
+      size="md"
+      zIndex={1100}
+    >
       <Stack gap="md">
         <Stack gap={6}>
           <Text size="sm" fw={600}>

@@ -6,6 +6,7 @@
 // first open with opened=true skips the enter slide. Close interception uses a
 // ref only — never child→parent setState (that caused a render loop).
 import {
+  ActionIcon,
   Box,
   Button,
   Center,
@@ -16,9 +17,10 @@ import {
   Stack,
   Text,
   Title,
+  Tooltip,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
-import { IconMapPin } from "@tabler/icons-react";
+import { IconMapPin, IconMessageCircle } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { SectionCard } from "../../components/SectionCard";
@@ -30,10 +32,11 @@ import { useListingFeeProposals } from "../visits/api";
 import { ListingVisits } from "../visits/ListingVisits";
 import { memberDisplayNameMap } from "../collaboration/memberDisplay";
 import { useHunt } from "../hunts/api";
+import { useFeedbackOptional } from "../feedback/FeedbackContext";
 import { AutoResolvedCheckpointReview } from "../jobs/AutoResolvedCheckpointReview";
 import type { Job } from "../jobs/api";
 import { ListingLocationMap } from "../map/ListingLocationMap";
-import { useCatalog } from "../rubric/api";
+import { useResolvedCatalog } from "../rubric/api";
 import { activeOverrides, extractionForFloorPlan } from "./overrides";
 import { CriterionBreakdown } from "./CriterionBreakdown";
 import { DrawerHero } from "./DrawerHero";
@@ -254,7 +257,7 @@ function DrawerShell({
         ).group
       : resolvedGroup;
 
-  const { data: catalog } = useCatalog();
+  const { data: catalog = [] } = useResolvedCatalog(huntId);
   const { data: extractions, isLoading: extractionsLoading } = useExtractions(
     listing?.property_id ?? "",
     huntId,
@@ -270,6 +273,7 @@ function DrawerShell({
   // Figures confirmed on a tour and offered to this Listing (VC-7).
   const { data: feeProposals } = useListingFeeProposals(listing?.id);
   const { data: hunt } = useHunt(huntId);
+  const openFeedback = useFeedbackOptional();
   // Household settings drive the per-person / per-pet move-in estimate (§9.5).
   const household = {
     occupants: Number(hunt?.settings.occupants ?? 1),
@@ -378,7 +382,21 @@ function DrawerShell({
             </Text>
           </Group>
         </Stack>
-        <Drawer.CloseButton ml="auto" />
+        <Group gap={4} ml="auto" wrap="nowrap">
+          {openFeedback && (
+            <Tooltip label="Submit feedback">
+              <ActionIcon
+                variant="subtle"
+                color="gray"
+                aria-label="Submit feedback"
+                onClick={openFeedback}
+              >
+                <IconMessageCircle size={18} stroke={1.5} />
+              </ActionIcon>
+            </Tooltip>
+          )}
+          <Drawer.CloseButton />
+        </Group>
       </Drawer.Header>
 
       <Drawer.Body>
@@ -434,7 +452,7 @@ function DrawerShell({
                     huntId={huntId}
                     listingId={listing.id}
                     breakdown={score.breakdown}
-                    catalog={catalog ?? []}
+                    catalog={catalog}
                     extractions={extractions ?? []}
                     overrides={overrides ?? []}
                     floorPlanId={displayFloorPlanId}
@@ -472,6 +490,10 @@ function DrawerShell({
                 allInOverridden={activeOverrides(overrides ?? [], displayFloorPlanId).has(
                   "all_in_monthly",
                 )}
+                securityDepositOverridden={activeOverrides(
+                  overrides ?? [],
+                  displayFloorPlanId,
+                ).has("security_deposit")}
                 floorPlanId={displayFloorPlanId}
                 huntId={huntId}
                 proposals={feeProposals ?? []}
@@ -490,7 +512,7 @@ function DrawerShell({
                 <FloorPlanList
                   group={group}
                   scores={listing.scores}
-                  catalog={catalog ?? []}
+                  catalog={catalog}
                   extractions={extractions ?? []}
                   overrides={overrides ?? []}
                   images={images ?? []}
@@ -612,7 +634,7 @@ function DrawerShell({
           listingId={listing.id}
           unitGroupLabel={unitGroupLabel(group.beds, group.baths)}
           planCount={group.plans.length}
-          catalog={catalog ?? []}
+          catalog={catalog}
           extractions={extractions ?? []}
           overrides={overrides ?? []}
           sources={listing.property.sources}

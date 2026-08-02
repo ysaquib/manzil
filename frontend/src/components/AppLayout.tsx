@@ -38,6 +38,7 @@ import { OverviewFiltersProvider } from "../features/listings/filterState";
 import { GhostBanner } from "../features/admin/GhostBanner";
 import { useGhostMode } from "../features/admin/useGhostMode";
 import { FeedbackModal } from "../features/feedback/FeedbackModal";
+import { FeedbackProvider } from "../features/feedback/FeedbackContext";
 import { CreateRubricPrompt } from "../features/rubric/CreateRubricPrompt";
 import { useHunt, useHunts } from "../features/hunts/api";
 import { ColorSchemeToggle } from "./ColorSchemeToggle";
@@ -178,7 +179,9 @@ export function AppLayout() {
         {/* Filter state lives above the Outlet so Overview and Map filter the
             same set; keying on huntId re-seeds hunt-wide filters on switch. */}
         <OverviewFiltersProvider key={huntId ?? ""} huntId={huntId ?? ""}>
-          <Outlet />
+          <FeedbackProvider openFeedback={openFeedback}>
+            <Outlet />
+          </FeedbackProvider>
         </OverviewFiltersProvider>
       </AppShell.Main>
 
