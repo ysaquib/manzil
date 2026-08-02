@@ -6,5 +6,27 @@
         "Read(*/.env)"
       ],
       "ask": []
-    }
+    },
+    "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/ysaquib/.local/bin/graphify hook-guard search"
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/ysaquib/.local/bin/graphify hook-guard read"
+          }
+        ]
+      }
+    ]
   }
+}
