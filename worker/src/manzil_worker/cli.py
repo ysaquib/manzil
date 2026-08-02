@@ -631,6 +631,102 @@ def vision_classifier_bench_cmd(
     typer.echo(f"report: {out}")
 
 
+@app.command("vision-ml-bench")
+def vision_ml_bench_cmd(
+    benchmark_root: Path = typer.Option(
+        Path("worker/tests/fixtures/vision_benchmark"),
+        "--benchmark-root",
+        help="Gitignored directory containing downloaded models and public datasets.",
+    ),
+    out: Path = typer.Option(
+        Path("worker/evals/reports/vision-ml-benchmark.json"),
+        "--out",
+        help="Gitignored JSON report; a Markdown sibling is written beside it.",
+    ),
+    model: list[str] = typer.Option(
+        [],
+        "--model",
+        help=(
+            "Frozen model to run: siglip2, clip, clip-onnx, clip-onnx-int8, "
+            "clip-onnx-uint8, or places365 (repeatable)."
+        ),
+    ),
+    profile: str = typer.Option(
+        "full",
+        "--profile",
+        help="`quick` verifies the harness; `full` uses the complete MIT test split.",
+    ),
+    device: str = typer.Option(
+        "cpu",
+        "--device",
+        help="PyTorch device. Use cpu for the portable hosting baseline.",
+    ),
+    batch_size: int = typer.Option(16, "--batch-size", min=1),
+) -> None:
+    """Benchmark frozen local vision models without an LLM or network call."""
+    from manzil_worker.evals.vision_ml_benchmark import (
+        MODEL_NAMES,
+        VisionMLBenchError,
+        report_json,
+        report_markdown,
+        run_benchmark,
+    )
+
+    if profile not in {"quick", "full"}:
+        typer.echo("--profile must be quick or full", err=True)
+        raise typer.Exit(code=2)
+    selected = tuple(model) if model else MODEL_NAMES
+    try:
+        report = run_benchmark(
+            root=benchmark_root,
+            models=selected,
+            profile=profile,  # type: ignore[arg-type]
+            device=device,
+            batch_size=batch_size,
+        )
+    except VisionMLBenchError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=1) from None
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(report_json(report))
+    markdown_out = out.with_suffix(".md")
+    markdown_out.write_text(report_markdown(report))
+    for result in report.results:
+        kitchen_f1 = result.kitchen.f1 or 0.0
+        diagram_f1 = result.diagram.metrics.f1 if result.diagram.metrics else None
+        diagram = "n/a" if diagram_f1 is None else f"{diagram_f1:.1%}"
+        typer.echo(
+            f"{result.model}: kitchen F1 {kitchen_f1:.1%} · diagram F1 {diagram} · "
+            f"{result.images_per_second:.2f} images/s · {result.peak_rss_mb:.0f} MB peak RSS"
+        )
+    typer.echo(f"JSON report: {out}")
+    typer.echo(f"Markdown report: {markdown_out}")
+
+
+@app.command("vision-ml-export-clip-onnx")
+def vision_ml_export_clip_onnx_cmd(
+    benchmark_root: Path = typer.Option(
+        Path("worker/tests/fixtures/vision_benchmark"),
+        "--benchmark-root",
+        help="Gitignored directory containing the downloaded CLIP model and MIT dataset.",
+    ),
+    overwrite: bool = typer.Option(False, "--overwrite", help="Replace prior generated exports."),
+) -> None:
+    """Export vision-only CLIP FP32/signed/unsigned-int8 ONNX artifacts."""
+    from manzil_worker.evals.clip_onnx import ClipONNXExportError, export_clip_onnx
+
+    try:
+        results = export_clip_onnx(benchmark_root, overwrite=overwrite)
+    except ClipONNXExportError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=1) from None
+    for variant, result in results.items():
+        typer.echo(
+            f"{variant}: {result['bytes'] / 1_000_000:.1f} MB · "
+            f"max parity error {result['max_abs_error']:.3g} · {result['path']}"
+        )
+
+
 @app.command("extract-corpus")
 def extract_corpus(slug: str) -> None:
     """Run only EXTRACT -> VERIFY for one saved corpus slug; emit raw JSON.
