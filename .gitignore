@@ -82,8 +82,14 @@ worker/evals/reports/
 # generated reference sheets, and their manifest are the only committed assets.
 worker/prompts/vision_refs/originals/
 worker/tests/fixtures/vision_labels/
+# Public pretrained model/dataset downloads for the local discriminative-vision
+# benchmark. The reproducible manifest, loaders, metrics, and reports belong in
+# source control; third-party weights and images do not.
+worker/tests/fixtures/vision_benchmark/
 .pnpm-store/**
 worker/tests/fixtures/bench/labels.md
 
 docs/screenshots/**
 .playwright-mcp/**
+
+graphify-out/
