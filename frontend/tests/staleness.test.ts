@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { staleRefreshClasses, statusesByListing } from "../src/features/listings/staleness";
+import {
+  hasRetryableImageFetchPartial,
+  listingNeedsImageRefresh,
+  showRefreshImagesAction,
+  staleRefreshClasses,
+  statusesByListing,
+} from "../src/features/listings/staleness";
 import type { RefreshStatus } from "../src/features/listings/types";
 
 const NOW = Date.parse("2026-07-29T12:00:00Z");
@@ -68,5 +74,61 @@ describe("refresh staleness", () => {
     );
     expect(grouped.get("one")).toEqual(["listing_details"]);
     expect(grouped.get("two")).toEqual(["pricing", "listing_details"]);
+  });
+
+  it("treats a missing or expired images marker as needing image refresh", () => {
+    const now = NOW;
+    expect(
+      listingNeedsImageRefresh(
+        [status("pricing", "2026-07-29T11:59:00Z", "one")],
+        "one",
+        now,
+      ),
+    ).toBe(true);
+    expect(
+      listingNeedsImageRefresh(
+        [
+          status("images", "2026-06-29T12:00:00Z", "one"),
+          status("pricing", "2026-07-29T11:59:00Z", "one"),
+        ],
+        "one",
+        now,
+      ),
+    ).toBe(true);
+    expect(
+      listingNeedsImageRefresh(
+        [
+          status("images", "2026-06-29T12:00:01Z", "one"),
+          status("pricing", "2026-07-29T11:59:00Z", "one"),
+        ],
+        "one",
+        now,
+      ),
+    ).toBe(false);
+  });
+
+  it("shows the images action for retryable partial fetches but not cap-saturated ones", () => {
+    const partialJob = {
+      hunt_listing_id: "listing-a",
+      state: "done",
+      finished_at: "2026-07-29T12:00:00Z",
+      warnings: [{ code: "image_fetch_partial", detail: { cap_saturated: false } }],
+    };
+    const saturatedJob = {
+      hunt_listing_id: "listing-a",
+      state: "done",
+      finished_at: "2026-07-29T13:00:00Z",
+      warnings: [{ code: "image_fetch_partial", detail: { cap_saturated: true } }],
+    };
+    expect(hasRetryableImageFetchPartial([partialJob], "listing-a")).toBe(true);
+    expect(hasRetryableImageFetchPartial([saturatedJob], "listing-a")).toBe(false);
+    expect(
+      showRefreshImagesAction(
+        [status("images", "2026-06-29T12:00:01Z", "listing-a")],
+        "listing-a",
+        [saturatedJob],
+        NOW,
+      ),
+    ).toBe(false);
   });
 });
