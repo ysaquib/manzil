@@ -8,11 +8,13 @@ real secrets; tests that touch the DB run against the local Supabase stack.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import AsyncIterator
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import UUID
 
 from dotenv import load_dotenv
 from local_supabase import LOCAL_ANON_KEY, LOCAL_SERVICE_ROLE_KEY, LOCAL_SUPABASE_URL
@@ -57,6 +59,36 @@ class TestIdentity:
         return create_user_client(get_settings(), self.token)
 
 
+
+async def _purge_user_references(pool, user_id: str) -> None:
+    """Delete everything that would block removing this account.
+
+    Eleven columns reference `auth.users` with NO ACTION, so a seeded user who
+    created a Visit cannot be deleted — and because `seeded_users` suppresses
+    the failure and then tries to *create* the same email, an interrupted run
+    used to break the entire suite with "a user with this email address has
+    already been registered".
+
+    Reflected from the catalog so a future NO ACTION reference is covered
+    without anyone remembering to add it here. Identifiers come from
+    `pg_constraint`, never from a caller.
+    """
+    fks = await pool.fetch(
+        """
+        select c.conrelid::regclass::text as tbl, a.attname as col
+        from pg_constraint c
+        join pg_attribute a on a.attrelid = c.conrelid and a.attnum = c.conkey[1]
+        where c.contype = 'f'
+          and c.confrelid = 'auth.users'::regclass
+          and c.connamespace = 'public'::regnamespace
+          and c.confdeltype = 'a'
+        """
+    )
+    for fk in fks:
+        with suppress(Exception):
+            await pool.execute(f'delete from {fk["tbl"]} where {fk["col"]} = $1', UUID(user_id))
+
+
 @pytest.fixture(scope="session")
 def seeded_users() -> dict[str, TestIdentity]:
     admin = create_service_client(get_settings())
@@ -68,6 +100,20 @@ def seeded_users() -> dict[str, TestIdentity]:
     }
     password = "manzil-local-test-password"
     identities: dict[str, TestIdentity] = {}
+
+    async def _purge_all() -> None:
+        pool = await asyncpg.create_pool(DATABASE_URL, timeout=5, min_size=1, max_size=2)
+        try:
+            for uid, _ in specs.values():
+                await _purge_user_references(pool, uid)
+        finally:
+            await pool.close()
+
+    # Clear anything a previous (possibly interrupted) run left pointing at
+    # these accounts, so the delete below actually succeeds.
+    with suppress(Exception):
+        asyncio.run(_purge_all())
+
     for user_id, email in specs.values():
         with suppress(Exception):
             admin.auth.admin.delete_user(user_id)
@@ -232,3 +278,40 @@ async def collab_hunt(db_pool, seeded_users):  # type: ignore[no-untyped-def]
         ),
     }
     await db_pool.execute("delete from hunts where id = $1", hunt_id)
+
+
+@pytest_asyncio.fixture
+async def no_primordial_admin(db_pool):  # type: ignore[no-untyped-def]
+    """Yield a database with no primordial admin, and put back whatever was
+    there afterwards.
+
+    A real deployment — and any dev database somebody has bootstrapped — already
+    has one, and `site_admins_one_primordial_idx` allows exactly one. Without
+    this the tests below pass only on a virgin database, which is precisely the
+    database nobody has.
+    """
+    existing = await db_pool.fetchrow(
+        "select user_id, granted_by, note from site_admins where is_primordial"
+    )
+    if existing is not None:
+        await db_pool.execute(
+            "alter table site_admins disable trigger site_admins_protect_primordial"
+        )
+        await db_pool.execute(
+            "delete from site_admins where user_id = $1", existing["user_id"]
+        )
+        await db_pool.execute(
+            "alter table site_admins enable trigger site_admins_protect_primordial"
+        )
+    try:
+        yield
+    finally:
+        if existing is not None:
+            await db_pool.execute(
+                "insert into site_admins (user_id, granted_by, note, is_primordial) "
+                "values ($1, $2, $3, true) on conflict (user_id) do update "
+                "set is_primordial = true",
+                existing["user_id"],
+                existing["granted_by"],
+                existing["note"],
+            )

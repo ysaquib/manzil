@@ -69,6 +69,16 @@ async def test_profile_default_color_assigns_unused_then_wraps(
     db_pool,
     seeded_users,
 ) -> None:
+    # The colour trigger assigns the first *globally* unused token, so this test
+    # genuinely needs an empty table — scoping the delete to the seeded four
+    # would leave other profiles holding tokens and the wrap would never happen.
+    # So it snapshots and restores rather than wiping: a bare
+    # `delete from user_profiles` also took the developer's own profile, which
+    # silently bounces them to /onboarding on their next page load.
+    saved = await db_pool.fetch(
+        "select user_id, default_display_name, default_color, created_at, updated_at "
+        "from user_profiles"
+    )
     await db_pool.execute("delete from user_profiles")
 
     clients = [
@@ -122,3 +132,17 @@ async def test_profile_default_color_assigns_unused_then_wraps(
             "delete from user_profiles where user_id = any($1::uuid[])",
             [UUID(uid) for uid in extra_ids],
         )
+        # Leave the database as it was found.
+        for row in saved:
+            await db_pool.execute(
+                "insert into user_profiles "
+                "(user_id, default_display_name, default_color, created_at, updated_at) "
+                "values ($1, $2, $3, $4, $5) on conflict (user_id) do update set "
+                "default_display_name = excluded.default_display_name, "
+                "default_color = excluded.default_color",
+                row["user_id"],
+                row["default_display_name"],
+                row["default_color"],
+                row["created_at"],
+                row["updated_at"],
+            )
