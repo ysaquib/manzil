@@ -46,6 +46,7 @@ from manzil_worker.stages.move_in import (
     default_required,
 )
 from manzil_worker.stages.pet_costs import (
+    CHECKLIST_FEE_SLOTS,
     MANDATORY_FEE_SLOTS,
     ONE_TIME_FEE_SLOTS,
     beds_bucket,
@@ -150,14 +151,36 @@ async def _mandatory_fees(
         for row in rows
         if row["fee_slot"] not in covered_slots
     ]
+    fee_names = {name for name, _ in fees}
+    # Unmapped mandatory fees a human corrected inline land on fee_checklist under
+    # the page's own fee name — they must compose like the extraction row would.
+    custom_rows = await conn.fetch(
+        """
+        select fee_slot, amount from fee_checklist
+        where hunt_listing_id = $1
+          and not (fee_slot = any($2::text[]))
+          and value_state <> 'unknown'
+          and amount is not null
+          and coalesce(counted, true)
+        """,
+        hunt_listing_id,
+        list(CHECKLIST_FEE_SLOTS),
+    )
+    for row in custom_rows:
+        slot = row["fee_slot"]
+        if slot in fee_names:
+            continue
+        fees.append((slot, float(row["amount"])))
+        fee_names.add(slot)
     extracted = catalog_ext.get("mandatory_fees")
     if extracted is not None and isinstance(extracted[0], list):
         for entry in extracted[0]:
             name = entry.get("name")
             amount = entry.get("amount_monthly")
             slot = slot_for_fee(name or "")
-            if name and amount is not None and slot is None:
+            if name and amount is not None and slot is None and name not in fee_names:
                 fees.append((name, float(amount)))
+                fee_names.add(name)
     return fees
 
 

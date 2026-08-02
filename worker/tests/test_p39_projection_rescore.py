@@ -458,3 +458,59 @@ async def test_rescore_applies_and_reverts_individual_utility_corrections(
         )
     finally:
         await _cleanup(pg_pool, hunt_id, property_id, metro)
+
+
+async def test_rescore_uses_manual_unmapped_mandatory_fee_slots(pg_pool: asyncpg.Pool) -> None:
+    metro = f"CustomFeeVille-{uuid4().hex[:6]}"
+    hunt_id, property_id, listing_id = await _seed(pg_pool, city=metro)
+    rubric = [
+        RubricCriterion(
+            hunt_id=hunt_id,
+            catalog_key="all_in_monthly",
+            options=[RubricOption(match=OptionMatch(op=MatchOp.LT, value=2500), delta=0.5)],
+            unknown_delta=-1.0,
+            position=0,
+        )
+    ]
+    try:
+        async with pg_pool.acquire() as conn, conn.transaction():
+            await _persist_ingest_results(
+                conn,
+                hunt_listing_id=listing_id,
+                property_id=property_id,
+                rubric_version=1,
+                state=_state(),
+            )
+        await pg_pool.execute(
+            """
+            insert into fee_checklist
+                (hunt_listing_id, fee_slot, amount, value_state, entered_by)
+            values ($1, 'amenity fee', 18, 'manual', $2)
+            """,
+            listing_id,
+            uuid4(),
+        )
+        async with pg_pool.acquire() as conn, conn.transaction():
+            await rescore_hunt(
+                conn,
+                hunt_id=hunt_id,
+                rubric=rubric,
+                rubric_version=2,
+                min_confidence=Confidence.MEDIUM,
+            )
+        corrected = json.loads(
+            await pg_pool.fetchval(
+                "select all_in_components from hunt_listings where id = $1",
+                listing_id,
+            )
+        )
+        amenity = next(
+            component
+            for component in corrected["components"]
+            if component["name"] == "amenity fee"
+        )
+        assert amenity["amount"] == 18.0
+        # Baseline ingest total is 1905 (amenity 10); manual 18 adds 8 → 1913.
+        assert corrected["total"] == 1913.0
+    finally:
+        await _cleanup(pg_pool, hunt_id, property_id, metro)

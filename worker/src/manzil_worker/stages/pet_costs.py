@@ -66,6 +66,17 @@ _SLOT_COVERS: dict[str, tuple[str, ...]] = {
 # One-time / move-in fee slots (§9.5, §20 2026-07-18): display-only, never
 # composed into all_in_monthly. `admin` predates P3-9 (v1 checklist slot).
 ONE_TIME_FEE_SLOTS = ("application_fee", "admin", "pet_deposit", "pet_fee")
+# Every standard checklist slot — custom slots (unmapped mandatory fees a human
+# corrects inline) are everything else on fee_checklist.
+CHECKLIST_FEE_SLOTS = frozenset(
+    (
+        *MANDATORY_FEE_SLOTS,
+        *ONE_TIME_FEE_SLOTS,
+        "pet_rent",
+        "pet_rent_cat",
+        "pet_rent_dog",
+    )
+)
 _ONE_TIME_SLOT_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("application_fee", ("application", "app fee")),
     ("pet_deposit", ("pet deposit",)),
