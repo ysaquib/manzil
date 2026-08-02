@@ -20,6 +20,7 @@ import structlog
 from manzil_shared.config import TIER3_TIMEOUT_SECONDS
 from manzil_shared.errors import PrivateAddressRefused
 
+from manzil_worker.costs import record_fetch
 from manzil_worker.fetching.results import FetchResult
 from manzil_worker.fetching.ssrf import Resolver, screen_url
 
@@ -141,6 +142,13 @@ class Tier3Fetcher:
                     json=request.json,
                     params=request.params,
                 )
+            # Billed on RESPONSE, not on success (AD-C): the provider ran the
+            # request and charged for it whatever status it hands back — a 403
+            # from the target still costs a credit. Transport failures below
+            # never reach here, so a request that never landed is never billed.
+            # This can over-count an auth/quota rejection from the provider's
+            # own API; over-counting is the safe direction for a budget meter.
+            record_fetch(provider.name)
         except PrivateAddressRefused:
             raise  # security refusal: never mask as a retryable fetch error
         except (httpx.HTTPError, OSError) as exc:

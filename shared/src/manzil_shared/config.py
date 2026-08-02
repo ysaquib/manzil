@@ -54,6 +54,25 @@ DISCOVER_MAX_TOTAL_RESULTS = 12
 # Live OpenRouter calls prefer the provider-reported total; replay uses this
 # explicit price so jobs.cost_actual_usd does not silently omit search spend.
 DISCOVER_WEB_SEARCH_REQUEST_USD = 0.01
+
+# Tier-3 managed-unblocker pricing (AD-C). Non-LLM spend the run tally records
+# alongside token cost so `jobs.cost_actual_usd` is the *whole* bill rather than
+# just the model half. Keyed by the `MANZIL_TIER3_PROVIDER` name, so switching
+# provider changes the number here and nothing in `fetching/tier3.py`.
+#
+# A provider absent from this map is deliberately NOT guessed at: its calls are
+# still counted, and it contributes $0 until someone prices it. An unpriced
+# provider is visible as `calls > 0, cost == 0` rather than silently wrong.
+TIER3_PRICES_USD = {
+    "brightdata": 0.0015,  # Web Unlocker: $1.50 / 1,000 requests (2026-08-01)
+}
+# Free-plan monthly allowance, in credits — one tier-3 request is one credit.
+# The allowance resets monthly, so exhausting it silently drops tier 3 off the
+# ladder mid-month; the counter exists so that cliff is a number, not a surprise.
+TIER3_FREE_MONTHLY_CREDITS = {
+    "brightdata": 5_000,
+}
+
 # Tool-call observability (§10.2): a tool result can be a whole page, so the
 # `tool_called` job event stores only a truncated summary — the full result still
 # goes back to the model in the loop.
