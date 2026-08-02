@@ -1,5 +1,6 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -9,7 +10,7 @@ const patchVisit = vi.fn();
 const deleteVisit = vi.fn();
 
 vi.mock("../src/features/visits/api", () => ({
-  useVisit: () => ({ data: mockVisit, isLoading: false }),
+  useVisit: () => ({ data: mockVisit, isLoading: mockVisitLoading }),
   useVisitTemplate: () => ({ data: mockTemplate, isLoading: false }),
   usePatchVisit: () => ({ mutate: patchVisit, isPending: false, isError: false, error: null }),
   useDeleteVisit: () => ({ mutate: deleteVisit, isPending: false }),
@@ -59,6 +60,7 @@ function templateItem(partial: Record<string, unknown>) {
 }
 
 let mockVisit: Record<string, unknown> | null = null;
+let mockVisitLoading = false;
 let mockTemplate: ReturnType<typeof templateItem>[] = [];
 let mockViewer = "u1";
 let mockViewerRole = "member";
@@ -115,11 +117,35 @@ function renderPage() {
   );
 }
 
+function pageRoute() {
+  return (
+    <MemoryRouter initialEntries={["/h/h1/visits/v1"]}>
+      <Routes>
+        <Route path="/h/:huntId/visits/:visitId" element={<VisitDetailPage />} />
+      </Routes>
+    </MemoryRouter>
+  );
+}
+
+function LoadingTransition() {
+  const [loading, setLoading] = useState(true);
+  mockVisitLoading = loading;
+  return (
+    <>
+      <button type="button" onClick={() => setLoading(false)}>
+        Resolve visit
+      </button>
+      {pageRoute()}
+    </>
+  );
+}
+
 beforeEach(() => {
   patchVisit.mockReset();
   deleteVisit.mockReset();
   mockViewer = "u1";
   mockViewerRole = "member";
+  mockVisitLoading = false;
   mockVisit = visit();
   mockTemplate = [
     templateItem({ key: "prep_reviews" }),
@@ -141,6 +167,16 @@ beforeEach(() => {
 });
 
 describe("VisitDetailPage before the tour starts", () => {
+  it("keeps its hook order stable while the Visit loads", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<LoadingTransition />);
+    expect(screen.queryByText("Cedar & Vine")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Resolve visit" }));
+
+    expect(screen.getByText("Cedar & Vine")).toBeInTheDocument();
+  });
+
   it("exposes only the property-scoped prep section, and locks the rest", () => {
     renderPage();
     // The prep section is answerable — it is the one thing you do on the couch.
