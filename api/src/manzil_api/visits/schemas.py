@@ -18,6 +18,11 @@ from pydantic import (
 
 VisitState = Literal["planned", "in_progress", "completed", "cancelled"]
 
+# Ordered least to worst, matching the `visit_defect_severity` enum (VC-10).
+# Null is unrated — a real state, not a missing value, because a defect promoted
+# from a failed Check starts without a judgement anybody made.
+VisitDefectSeverity = Literal["noted", "minor", "major", "dealbreaker"]
+
 _MAX_UNITS_PER_VISIT = 40
 
 
@@ -155,6 +160,7 @@ class VisitResponse(BaseModel):
     started_at: datetime | None
     ended_at: datetime | None
     cancelled_at: datetime | None
+    reopened_at: datetime | None = None
     cancel_reason: str | None
     template_version: int
     prefilled_from: UUID | None
@@ -168,7 +174,12 @@ class VisitResponse(BaseModel):
         a cancelled tour that had already started is still cancelled."""
         if self.cancelled_at is not None:
             return "cancelled"
-        if self.ended_at is not None:
+        # A reopen later than the end puts the tour back in progress without
+        # destroying when it actually ended (VC-9). Ending again stamps a new,
+        # later `ended_at`, which lands back here on completed.
+        if self.ended_at is not None and (
+            self.reopened_at is None or self.reopened_at <= self.ended_at
+        ):
             return "completed"
         if self.started_at is not None:
             return "in_progress"
@@ -280,8 +291,8 @@ class VisitDefectCreate(BaseModel):
     title: str = Field(min_length=1, max_length=300)
     visit_unit_id: UUID | None = None
     note: str | None = Field(default=None, max_length=4000)
-    # Unrated by default: a number nobody chose is worse than no number.
-    severity: int | None = Field(default=None, ge=1, le=5)
+    # Unrated by default: a level nobody chose is worse than no level.
+    severity: VisitDefectSeverity | None = None
     promised_in_writing: bool = False
     resolution: str | None = Field(default=None, max_length=500)
 
@@ -301,7 +312,7 @@ class VisitDefectCreate(BaseModel):
 class VisitDefectPatch(BaseModel):
     title: str | None = None
     note: str | None = Field(default=None, max_length=4000)
-    severity: int | None = Field(default=None, ge=1, le=5)
+    severity: VisitDefectSeverity | None = None
     promised_in_writing: bool | None = None
     resolution: str | None = Field(default=None, max_length=500)
 
@@ -324,7 +335,7 @@ class VisitDefectResponse(BaseModel):
     from_item_key: str | None
     title: str
     note: str | None
-    severity: int | None
+    severity: VisitDefectSeverity | None
     promised_in_writing: bool
     resolution: str | None
     created_by: UUID
