@@ -17,6 +17,9 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from manzil_api.admin.operations import router as admin_operations_router
+from manzil_api.admin.people import router as admin_people_router
+from manzil_api.admin.router import router as admin_router
 from manzil_api.collaboration.router import router as collaboration_router
 from manzil_api.config import Settings, get_settings
 from manzil_api.database import create_db_pool
@@ -118,6 +121,9 @@ def create_app() -> FastAPI:
         profiles_router,
         feedback_router,
         visits_router,
+        admin_router,
+        admin_people_router,
+        admin_operations_router,
     ):
         app.include_router(router, prefix="/v1")
 

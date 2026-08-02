@@ -25,6 +25,7 @@ from manzil_shared.config import STAGE_BACKOFF_BASE_SECONDS, STAGE_RETRIES
 from manzil_shared.errors import CheckpointRaised, ManzilError, StageFatal, StageRetryable
 from manzil_shared.models import JobState
 
+from manzil_worker.costs import CostTally
 from manzil_worker.llm.client import RunContext, cost_tally, run_context
 from manzil_worker.stages.base import Stage, StageCtx
 from manzil_worker.stages.custom_match import custom_match_stage
@@ -133,11 +134,22 @@ def _backoff_seconds(attempt: int) -> float:
 
 
 async def _run_stage(name: str, stage: Stage, state: RunState, ctx: StageCtx) -> RunState:
+    # Spend survives a retry (AD-C). Each attempt opens its own tally, and a
+    # failed attempt has usually already burned tokens and fetch credits, so the
+    # attempts are merged here rather than only the winning one being counted.
+    spent = CostTally()
     for attempt in range(STAGE_RETRIES + 1):
         try:
             with cost_tally() as tally:
-                state = await stage(state, ctx)
-            state.cost_usd += tally.cost_usd
+                try:
+                    state = await stage(state, ctx)
+                finally:
+                    # Bank in `finally` so every exit banks exactly once:
+                    # success, a retryable failure, a fatal one, and a raised
+                    # checkpoint all spent real money before they got here.
+                    spent.merge(tally)
+                    state.cost_usd += tally.total_cost_usd
+                    state.record_stage_cost(name, spent)
             return state
         except StageRetryable as error:
             if attempt >= STAGE_RETRIES:

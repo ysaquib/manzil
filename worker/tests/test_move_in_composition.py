@@ -29,7 +29,7 @@ def _charge(name: str, amount: float | None, **kwargs) -> MoveInCharge:
 
 def test_complete_ledger_totals_and_splits() -> None:
     result = compose_move_in(
-        first_month_all_in=2146.0,
+        first_month_rent=2146.0,
         security_deposit=500.0,
         charges=[
             _charge("application_fee", 150.0, refundable=False),
@@ -46,22 +46,22 @@ def test_complete_ledger_totals_and_splits() -> None:
     assert result.badges == []
 
 
-def test_full_month_is_used_and_never_re_summed() -> None:
-    """The first month enters as the composed all-in — one line, not rent plus
-    fees again — and says why it is a whole month."""
+def test_base_rent_is_used_for_the_first_month_line() -> None:
+    """First month is base rent only — one line, not rent plus fees again."""
     result = compose_move_in(
-        first_month_all_in=1800.0, security_deposit=0.0, charges=[]
+        first_month_rent=1800.0, security_deposit=0.0, charges=[]
     )
     first = result.charges[0]
     assert first.name == "first_month"
     assert first.amount == 1800.0
-    assert "full month" in (first.note or "")
+    assert first.tag == "actual"
+    assert "base rent" in (first.note or "")
     assert result.total == 1800.0
 
 
 def test_unknown_required_component_withholds_the_total() -> None:
     result = compose_move_in(
-        first_month_all_in=2146.0,
+        first_month_rent=2146.0,
         security_deposit=500.0,
         charges=[_charge("pet_deposit", None, required=True, refundable=True)],
     )
@@ -73,7 +73,7 @@ def test_unknown_required_component_withholds_the_total() -> None:
 
 def test_unknown_optional_component_does_not_make_it_incomplete() -> None:
     result = compose_move_in(
-        first_month_all_in=2146.0,
+        first_month_rent=2146.0,
         security_deposit=500.0,
         charges=[_charge("pet_deposit", None, required=False, counted=False)],
     )
@@ -81,19 +81,19 @@ def test_unknown_optional_component_does_not_make_it_incomplete() -> None:
     assert result.total == 2646.0
 
 
-def test_missing_all_in_or_deposit_is_incomplete() -> None:
-    """The all-in's own strict-unknown branch propagates: no month, no total."""
+def test_missing_rent_or_deposit_is_incomplete() -> None:
+    """Unknown base rent or deposit withholds the total."""
     assert compose_move_in(
-        first_month_all_in=None, security_deposit=500.0, charges=[]
+        first_month_rent=None, security_deposit=500.0, charges=[]
     ).total is None
     assert compose_move_in(
-        first_month_all_in=2000.0, security_deposit=None, charges=[]
+        first_month_rent=2000.0, security_deposit=None, charges=[]
     ).total is None
 
 
 def test_credited_deposit_counts_only_its_non_credited_portion() -> None:
     result = compose_move_in(
-        first_month_all_in=2000.0,
+        first_month_rent=2000.0,
         security_deposit=500.0,
         charges=[
             _charge("holding_deposit", 300.0, refundable=True, credited=300.0),
@@ -108,7 +108,7 @@ def test_credited_deposit_counts_only_its_non_credited_portion() -> None:
 
 def test_credit_larger_than_the_charge_never_goes_negative() -> None:
     result = compose_move_in(
-        first_month_all_in=1000.0,
+        first_month_rent=1000.0,
         security_deposit=0.0,
         charges=[_charge("holding_deposit", 200.0, credited=500.0, refundable=True)],
     )
@@ -117,7 +117,7 @@ def test_credit_larger_than_the_charge_never_goes_negative() -> None:
 
 def test_unknown_refundability_subtotals_separately() -> None:
     result = compose_move_in(
-        first_month_all_in=1000.0,
+        first_month_rent=1000.0,
         security_deposit=0.0,
         charges=[_charge("key_deposit", 150.0, refundable=None)],
     )
@@ -128,7 +128,7 @@ def test_unknown_refundability_subtotals_separately() -> None:
 
 def test_uncounted_charge_is_visible_but_excluded() -> None:
     result = compose_move_in(
-        first_month_all_in=1000.0,
+        first_month_rent=1000.0,
         security_deposit=0.0,
         charges=[_charge("last_month_rent", 1795.0, required=False, counted=False)],
     )
@@ -188,7 +188,7 @@ def test_extracted_charges_default_to_required() -> None:
 
 def test_json_shape_is_stable() -> None:
     result = compose_move_in(
-        first_month_all_in=1000.0,
+        first_month_rent=1000.0,
         security_deposit=500.0,
         charges=[_charge("admin", 200.0, refundable=False, credited=50.0)],
     )

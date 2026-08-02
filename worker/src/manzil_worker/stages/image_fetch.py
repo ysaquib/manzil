@@ -21,7 +21,7 @@ from manzil_worker.enrich.images import (
     normalize_image,
 )
 from manzil_worker.stages.base import StageCtx
-from manzil_worker.state import PropertyImageIn, RunState
+from manzil_worker.state import PropertyImageIn, RunState, StageWarning
 
 log = structlog.get_logger()
 
@@ -75,7 +75,19 @@ def _skip_vision(state: RunState, why: str) -> None:
         state.plan.skipped["VISION"] = why
 
 
+def _apply_fetch_completion(
+    state: RunState, *, incomplete: bool, photo_count: int
+) -> bool:
+    """Return whether the pass is strict-complete (no failed downloads)."""
+    strict_complete = not incomplete
+    cap_saturated = photo_count >= MAX_STORED_IMAGES
+    state.image_fetch_strict_complete = strict_complete
+    state.image_fetch_completed = strict_complete or cap_saturated
+    return strict_complete
+
+
 async def image_fetch_stage(state: RunState, ctx: StageCtx) -> RunState:
+    state.replace_warnings("IMAGE_FETCH", [])
     # Round-robin Sources so one large gallery cannot exhaust the Property cap
     # before later Slate members contribute.
     candidates_by_source = []
@@ -105,7 +117,7 @@ async def image_fetch_stage(state: RunState, ctx: StageCtx) -> RunState:
         index += 1
     if not ordered:
         state.property_images = []
-        state.image_fetch_completed = True
+        _apply_fetch_completion(state, incomplete=False, photo_count=0)
         _skip_vision(state, "no_images")
         return state
     if state.property_id is None:
@@ -120,6 +132,7 @@ async def image_fetch_stage(state: RunState, ctx: StageCtx) -> RunState:
     prepared: list[tuple[object, object, NormalizedImage, bool]] = []
     seen: set[str] = set()
     incomplete = False
+    failed_candidates = 0
     photo_count = 0
     diagram_count = 0
     for source, candidate in ordered:
@@ -148,6 +161,7 @@ async def image_fetch_stage(state: RunState, ctx: StageCtx) -> RunState:
                 log.warning("image_rejected", url=attempt, error=str(error))
         if normalized is None:
             incomplete = True
+            failed_candidates += 1
             continue
         if normalized.content_hash in seen:
             continue
@@ -158,16 +172,48 @@ async def image_fetch_stage(state: RunState, ctx: StageCtx) -> RunState:
         else:
             photo_count += 1
 
-    # A known-partial set is stored but never marked complete. Persistence keys
-    # its authoritative replace off `image_fetch_completed`, so leaving the flag
-    # unset makes the write purely additive — a failed candidate can never look
-    # like a deletion. Discarding `prepared` here as well would be the actual
-    # data loss: one permanently-404 candidate (a mis-parsed srcset entry, a
-    # rotated CDN path) would otherwise starve the Property of images forever.
-    complete = not incomplete
+    # A known-partial set is stored; underfilled partials stay non-authoritative
+    # for diagram/vision lifecycle, while a cap-saturated gallery still advances
+    # the images freshness marker. Persistence keys photo retirement off
+    # `image_fetch_completed`, so an underfilled partial write stays additive.
+    cap_saturated = photo_count >= MAX_STORED_IMAGES
+    if incomplete:
+        if cap_saturated:
+            message = (
+                f"{failed_candidates} image candidate"
+                f"{'s' if failed_candidates != 1 else ''} could not be downloaded; "
+                f"the gallery is at capacity ({MAX_STORED_IMAGES} photos) so this "
+                "pass is treated as complete."
+            )
+            detail: dict[str, object] = {
+                "failed_candidates": failed_candidates,
+                "prepared_images": len(prepared),
+                "cap_saturated": True,
+            }
+        else:
+            message = (
+                f"{failed_candidates} image candidate"
+                f"{'s' if failed_candidates != 1 else ''} could not be downloaded; "
+                "usable images were kept and prior images were not retired."
+            )
+            detail = {
+                "failed_candidates": failed_candidates,
+                "prepared_images": len(prepared),
+            }
+        state.replace_warnings(
+            "IMAGE_FETCH",
+            [
+                StageWarning(
+                    stage="IMAGE_FETCH",
+                    code="image_fetch_partial",
+                    message=message,
+                    detail=detail,
+                )
+            ],
+        )
     if not prepared:
         state.property_images = []
-        state.image_fetch_completed = complete
+        _apply_fetch_completion(state, incomplete=incomplete, photo_count=photo_count)
         _skip_vision(state, "no_usable_images")
         return state
 
@@ -250,13 +296,16 @@ async def image_fetch_stage(state: RunState, ctx: StageCtx) -> RunState:
         )
 
     state.property_images = images
-    state.image_fetch_completed = complete
+    strict_complete = _apply_fetch_completion(
+        state, incomplete=incomplete, photo_count=photo_count
+    )
     current_hashes = {image.content_hash for image in images}
     log.info(
         "images_prepared",
         property_id=str(state.property_id),
         count=len(images),
-        complete=complete,
+        complete=state.image_fetch_completed,
+        strict_complete=strict_complete,
         changed=bool(current_hashes - previous_hashes),
     )
     return state

@@ -1,0 +1,32 @@
+/* Ghost-view banner (AD-4). Deliberately the accent, not a status colour:
+   this is not an error and not a warning — it is a statement about who you
+   currently are, and it has to stay legible without reading as alarming. */
+
+.banner {
+  background-color: var(--mantine-color-accent-light);
+  color: var(--mantine-color-accent-light-color);
+  border-bottom: 1px solid var(--mantine-color-accent-filled);
+  padding: 6px var(--mantine-spacing-md);
+  position: sticky;
+  top: 0;
+  z-index: 200;
+}
+
+.detail {
+  opacity: 0.85;
+}
+
+.exit {
+  margin-inline-start: var(--mantine-spacing-xs);
+  color: inherit;
+  text-decoration: underline;
+  white-space: nowrap;
+}
+
+@media (max-width: 48em) {
+  /* On a phone the sentence would wrap to three lines and push the app down;
+     the label and the way out are the parts that must survive. */
+  .detail {
+    display: none;
+  }
+}

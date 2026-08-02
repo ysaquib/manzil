@@ -18,6 +18,7 @@
     "@fontsource/jetbrains-mono": "^5.3.0",
     "@mantine/carousel": "^9.4.2",
     "@mantine/core": "^9.4.1",
+    "@mantine/charts": "^9.4.1",
     "@mantine/dates": "^9.4.1",
     "@mantine/hooks": "^9.4.1",
     "@mantine/notifications": "^9.4.1",

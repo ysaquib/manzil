@@ -463,15 +463,11 @@ async def rescore_hunt(
                 if all_in_override is None and composition.total is not None:
                     values["all_in_monthly"] = composition.total
                     gate_values["all_in_monthly"] = composition.total
-            # §9.5 P3-SC8. The first month follows the *effective* all-in, so a
-            # human's all-in override flows into the cash figure too.
-            first_month = None
-            if all_in_override is not None and isinstance(all_in_override, int | float):
-                first_month = float(all_in_override)
-            elif composition is not None:
-                first_month = composition.total
+            # §9.5 P3-SC8. First month is base rent only — utilities and other
+            # monthly fees stay in the all-in ledger, not this line. `rent`
+            # already carries a `base_rent` override when one exists.
             move_in = compose_move_in(
-                first_month_all_in=first_month,
+                first_month_rent=rent,
                 security_deposit=(
                     float(deposit_override)
                     if isinstance(

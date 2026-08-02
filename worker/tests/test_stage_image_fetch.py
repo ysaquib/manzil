@@ -126,6 +126,41 @@ def test_partial_download_set_keeps_good_images_without_authoritative_replace() 
     assert len(state.property_images) == 1
     assert len(store.objects) == 1
     assert state.plan is not None and "VISION" not in state.plan.skipped
+    assert len(state.warnings) == 1
+    assert state.warnings[0].code == "image_fetch_partial"
+    assert state.warnings[0].detail == {"failed_candidates": 1, "prepared_images": 1}
+    assert not state.image_fetch_strict_complete
+
+
+def test_cap_saturated_partial_is_freshness_complete_but_not_strict() -> None:
+    interleaved: list[str] = []
+    for i in range(MAX_STORED_IMAGES):
+        interleaved.append(f"https://img.test/good{i}")
+        interleaved.append(f"https://img.test/bad{i}")
+    interleaved.extend(f"https://img.test/extra-bad{i}" for i in range(5))
+
+    async def fetch(url: str) -> bytes:
+        if "/bad" in url:
+            return b"not an image"
+        return _bytes(f"#{abs(hash(url)) % 0xFFFFFF:06x}")
+
+    store = MemoryStore()
+    state = asyncio.run(
+        image_fetch_stage(
+            _state(interleaved),
+            StageCtx(download_image=fetch, image_store=store),
+        )
+    )
+    photos = [image for image in state.property_images if image.kind == "listing_photo"]
+    assert len(photos) == MAX_STORED_IMAGES
+    assert state.image_fetch_completed
+    assert not state.image_fetch_strict_complete
+    assert len(state.warnings) == 1
+    assert state.warnings[0].code == "image_fetch_partial"
+    assert state.warnings[0].detail["cap_saturated"] is True
+    assert state.warnings[0].detail["prepared_images"] == MAX_STORED_IMAGES
+    assert state.warnings[0].detail["failed_candidates"] >= 1
+    assert "at capacity" in state.warnings[0].message
 
 
 def test_all_candidates_failing_stores_nothing_and_skips_vision() -> None:
@@ -142,6 +177,7 @@ def test_all_candidates_failing_stores_nothing_and_skips_vision() -> None:
     assert state.property_images == []
     assert state.plan is not None
     assert state.plan.skipped == {"VISION": "no_usable_images"}
+    assert state.warnings[0].code == "image_fetch_partial"
 
 
 def test_partial_set_adding_no_new_hashes_leaves_quality_gate_to_classifier() -> None:

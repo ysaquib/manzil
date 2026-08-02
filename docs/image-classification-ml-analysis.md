@@ -1,8 +1,8 @@
 # Image classification without an LLM
 
-**Status:** Technical assessment and recommendation
+**Status:** Public-data benchmark implemented; shadow evaluation still required
 
-**Date:** 2026-07-30
+**Date:** 2026-08-01
 
 **Updated finding:** The 294-image local kit is duplicate-heavy and contains
 many maps, blanks, and other non-room assets. It is not recommended for
@@ -33,20 +33,26 @@ The best fit for Manzil is:
    view usability/assessability. It can express maps, blanks, diagrams,
    renderings, open-plan rooms, and “assessable kitchen” without a custom
    trained head.
-3. Benchmark it against pretrained **Places365-ResNet18**, the strongest
-   strict scene-classification baseline, and **MobileCLIP2-S0**, the
-   deployment-efficient alternative.
-4. Use public pre-labelled datasets—Places365, MIT Indoor 67, SUN397, LSUN,
-   ZInD, and CubiCasa5K—for evaluation and targeted coverage. Do not train on
-   the current 294-image kit and do not treat it as the primary acceptance set;
-   after collapsing duplicates and unusable assets, it is only a weak
-   regression smoke set.
+3. Benchmark it against pretrained **Places365-ResNet18**, the strict scene
+   baseline, and **OpenAI CLIP ViT-B/32**, the smaller open-weight zero-shot
+   comparison. MobileCLIP2 is not a production candidate because Apple's model
+   terms restrict it to research and exclude product development.
+4. Use MIT Indoor 67 and CubiCasa5K for the initial public-data benchmark. Keep
+   SUN397, LSUN, ZInD, and ADE20K optional rather than requiring 36–108 GB
+   downloads before the first decision. Do not train on the current 294-image
+   kit or treat it as the primary acceptance set; after collapsing duplicates
+   and unusable assets, it is only a weak regression smoke set.
 5. Preserve an abstain/unknown path and promote a pretrained classifier only
    after external-dataset evaluation plus a live shadow run.
 6. Keep the separate, subjective 1–5 `kitchen_quality` rating on anchored
    `VISION` for now. It may eventually be replaced by an ordinal or
    similarity-based model, but the current evidence is not enough to claim
    that replacement is safe.
+7. When the deployment must remain on Render Starter, use the exported
+   **vision-only CLIP uint8 ONNX** artifact as the practical shadow candidate.
+   It preserves PyTorch CLIP's held-out kitchen and diagram results in 97 MB and
+   completes a 30-image combined API/worker smoke run under the hard 512 MB
+   limit. SigLIP2 remains the accuracy ceiling, not the $7 deployment choice.
 
 This is pretrained discriminative vision rather than a classic hand-engineered
 classifier, but it satisfies the practical goal: fully local, non-generative,
@@ -61,9 +67,10 @@ the same pin. The current working copy of
 `worker/src/manzil_worker/llm/config.py`, however, maps `image_classify` to
 `TASTE_MODEL`, currently `anthropic/claude-sonnet-4.6`.
 
-That is an authority conflict under the repository rules. This analysis does
-not choose between them and does not change either. It should be resolved
-before benchmarking the incumbent or implementing a replacement.
+That is an authority conflict under the repository rules. The Owner directed
+the 2026-08-01 **offline local-model benchmark** to proceed in isolation while
+leaving the production pins untouched. Consequently the benchmark below does
+not compare against, modify, or validate the incumbent production classifier.
 
 Replacing the classifier is also a material design change: it requires an
 in-place update to DESIGN.md §10.2/§10.8/§11/§15 and a §20 Decision Log entry
@@ -171,6 +178,192 @@ new hand-labelled room corpus.
 | [Zillow Indoor Dataset](https://github.com/zillow/zind) | 67,448 panoramas from 1,575 residential homes with room/layout annotations and Floor Plans | Closest residential-domain check and useful whole-room views | Controlled, mostly unfurnished 360-degree panoramas rather than listing-gallery crops; custom terms and approval; roughly 40 GB |
 | [CubiCasa5K](https://arxiv.org/abs/1904.01920) | 5,000 densely annotated residential Floor Plan images | Positive corpus for Floor Plan diagram recognition | Contains diagrams but not the ordinary-photo negative distribution |
 | [ADE20K](https://arxiv.org/abs/1608.05442) | About 22,000 scene-parsing images with indoor objects and regions | Optional appliance, cabinet, counter, and room-object evidence | Segmentation taxonomy rather than a ready-made gallery classifier |
+
+## Implemented public-data benchmark
+
+The repository now provides `manzil vision-ml-bench` and an optional
+`vision-bench` dependency extra. Models and datasets remain in the gitignored
+`worker/tests/fixtures/vision_benchmark/` directory. The harness is offline,
+loads only local files, freezes every model, bounds inputs to the production
+classifier's 384 px maximum, and emits JSON plus Markdown reports. A dedicated
+Linux-compatible Dockerfile is `worker/vision-benchmark.Dockerfile`.
+
+The full 2026-08-01 run used:
+
+- 20 public MIT training images per class to calibrate one deterministic
+  kitchen threshold by maximum F1;
+- the complete official 1,340-image MIT `TestImages.txt` split for final
+  kitchen-vs-rest and 67-way scene grading;
+- 748 CubiCasa training diagrams plus 748 MIT photographs for diagram-threshold
+  calibration;
+- all 748 CubiCasa validation diagrams plus 748 held-out MIT photographs for
+  final diagram grading;
+- CPU-only inference on Darwin arm64 with batch size 16. These timings establish
+  relative local cost, not yet the Linux hosting measurement.
+
+No task-specific model weights were trained. Public training labels calibrated
+thresholds only; all reported accuracy metrics use held-out splits.
+
+| Model | Kitchen precision | Kitchen recall | Kitchen F1 | 67-way top-1 | Diagram precision | Diagram recall | Diagram F1 | Images/s | Artifact |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| SigLIP2 Base | 89.8% | **100.0%** | **94.6%** | **86.2%** | 100.0% | 99.7% | 99.9% | 25.7 | 1,539 MB |
+| CLIP ViT-B/32 | **95.2%** | 90.9% | 93.0% | 74.9% | 100.0% | **99.9%** | **99.9%** | **67.6** | 609 MB |
+| Places365 ResNet-18 | 80.4% | 84.1% | 82.2% | 22.1% | n/a | n/a | n/a | 50.1 | **46 MB** |
+
+The kitchen test contained 44 positives. SigLIP2 found all 44 with five false
+positives. CLIP missed four and produced two false positives. Places365 missed
+seven and produced nine false positives. The stage's costlier error is a false
+negative that omits useful evidence before quality scoring, so **SigLIP2 is the
+accuracy-first shadow candidate when hosting permits it**. The later ONNX
+deployment benchmark makes CLIP the selected $7 Render candidate. Places365 does
+not clear the room-routing result and cannot visually reject Floor Plans with
+its closed taxonomy.
+
+The tracked compact evidence is
+`worker/evals/vision-ml-benchmark-2026-08-01.json`; detailed per-run reports are
+local artifacts under `worker/evals/reports/`.
+
+### Vision-only CLIP ONNX comparison
+
+`manzil vision-ml-export-clip-onnx` now reproducibly exports the downloaded
+OpenAI CLIP checkpoint into three image-tower-only variants. The command
+precomputes the fixed text embeddings, verifies FP32 output parity, quantizes
+both signed and unsigned int8 alternatives, and writes a self-describing
+manifest beside each model. Runtime classification needs Pillow, NumPy, and
+ONNX Runtime, not PyTorch, Transformers, a tokenizer, or the 253 MB text tower.
+
+```bash
+uv run --package manzil-worker --extra vision-bench \
+  manzil vision-ml-export-clip-onnx
+```
+
+All variants were graded on the same complete held-out splits as the original
+models:
+
+| CLIP runtime | Artifact | Kitchen precision | Kitchen recall | Kitchen F1 | 67-way top-1 | Diagram F1 | Render Starter result |
+|---|---:|---:|---:|---:|---:|---:|---|
+| PyTorch, full model | 609 MB | 95.2% | 90.9% | 93.0% | 74.9% | 99.9% | Does not leave safe API/worker headroom |
+| ONNX FP32, vision only | 352 MB | 95.2% | 90.9% | 93.0% | 74.9% | 99.9% | Failed the hard-limit combined diagnostic |
+| ONNX signed int8, vision only | 97 MB | 95.1% | 88.6% | 91.8% | 74.6% | 99.7% | Fits, but loses one additional kitchen true positive |
+| **ONNX unsigned int8, vision only** | **97 MB** | **95.2%** | **90.9%** | **93.0%** | 74.6% | **99.9%** | **Fits in streaming mode; selected deployment candidate** |
+
+The unsigned variant exactly preserved PyTorch CLIP's kitchen confusion counts
+(40 true positives, two false positives, four false negatives) and diagram
+result. Its 67-way result changed from 74.93% to 74.55%, a five-image difference
+over 1,340 test images. Signed int8 was rejected because the smaller result was
+not worth an additional kitchen false negative.
+
+The closest local Render Starter simulation used `linux/arm64`, a hard 512 MB
+memory limit with swap disabled, 0.5 CPU, the actual FastAPI application and
+worker imports, ONNX prepacking/memory arenas disabled, and one image at a
+time. The final unsigned-model run processed 30 images in 2.58 seconds (11.6
+images/s), with 248 MB process peak RSS and 442 MB cgroup peak. It recorded zero
+memory-pressure and zero OOM events, leaving approximately 70 MB cgroup
+headroom.
+`api/vision-onnx-smoke.Dockerfile` reproduces the API/worker dependency
+substrate; it is intentionally not a deployment image because it excludes both
+the generated model artifact and Playwright's Chromium binary.
+
+This establishes **technical fit for a serialized shadow stage**, not unlimited
+co-residency. Chromium must not overlap inference on Starter, Uvicorn must stay
+at one process, and loading the model in a short-lived subprocess is safer than
+keeping it resident across later Tier-2 Jobs. The real Render service still
+needs an observed live-job memory check before promotion.
+
+### Implemented shadow rollout path
+
+The consolidated model, runtime, local-development, production-deployment,
+observability, and ONNX-only promotion guide is
+[`onnx-image-classification.md`](onnx-image-classification.md). This section
+retains the benchmark conclusion and deployment-fit evidence.
+
+The selected unsigned-int8 model is now available to `IMAGE_CLASSIFY` as an
+explicitly enabled, observation-only backend. Set
+`MANZIL_IMAGE_CLASSIFY_ONNX_SHADOW_DIR` to the directory containing its pinned
+`model.onnx` and `manifest.json`; leaving the variable unset preserves existing
+behavior exactly. The API deployment must install its `vision-onnx` extra. For
+a local real Listing Job from the repository root:
+
+```bash
+export MANZIL_IMAGE_CLASSIFY_ONNX_SHADOW_DIR="$PWD/worker/tests/fixtures/vision_benchmark/models/clip-vision-onnx-uint8"
+uv run --package manzil-api --extra vision-onnx \
+  uvicorn manzil_api.main:app --host 127.0.0.1 --port 8000 --workers 1
+```
+
+The parent starts a short-lived Python subprocess, verifies the complete
+artifact digest and unsigned-int8 manifest, streams one thumbnail at a time,
+and releases ONNX memory when the subprocess exits. Failures are warning logs
+only and never halt or park the Job. Results cache by normalized image content
+hash plus backend/artifact/threshold version and persist separately at
+`property_images.vision_assessment.classification_shadow`. They do **not**
+change the incumbent `classification`, image kind, deterministic target
+selection, quality `VISION`, or SCORE.
+
+Each uncached Job emits `image_classify_onnx_shadow_complete` with classified
+and cached counts, subprocess wall time, throughput, child peak RSS, and the
+content hashes where kitchen or diagram decisions disagree with the incumbent.
+Render's service graph remains the authority for combined instance memory;
+record its peak alongside this log because child RSS alone excludes the API
+parent. Before promotion, collect representative real Listing Jobs containing
+ordinary rooms, open-plan kitchens, diagrams, maps, blanks, logos, collages,
+and rendered interiors, then review disagreement images rather than treating
+incumbent agreement as ground truth.
+
+The generated 97 MB artifact remains gitignored, so ordinary Git and no Git
+LFS are still sufficient. A deployment must supply those two files from a
+pinned private release/object-store asset during image construction (or copy
+them from a secure build context) and set the environment variable to that
+immutable directory. Do not fetch model files when a Job runs. The current
+smoke Dockerfile intentionally does not invent an artifact host; production
+deployment cannot be completed until that stable artifact location exists.
+
+### Linux/Docker portability validation
+
+The benchmark also passed in a locally built `linux/arm64` container on
+2026-08-01. The image is 817 MB and uses the official PyTorch CPU wheels on
+Linux; it contains neither CUDA libraries nor the downloaded datasets/model
+artifacts. A Places365 quick-profile smoke run completed without a network
+download at runtime, reporting 76.2% kitchen F1, 68.1 images/s, and 606 MB peak
+RSS. The quick profile is a harness/portability check, not a replacement for
+the full results above. A native `linux/amd64` hosting measurement remains to
+be collected on the eventual target infrastructure.
+
+Build and run the same portable check from the repository root:
+
+```bash
+docker build \
+  -f worker/vision-benchmark.Dockerfile \
+  -t manzil-vision-benchmark:local \
+  .
+
+docker run --rm \
+  -v "$PWD/worker/tests/fixtures/vision_benchmark:/benchmark:ro" \
+  -v "$PWD/worker/evals/reports:/reports" \
+  manzil-vision-benchmark:local \
+  --benchmark-root /benchmark \
+  --profile quick \
+  --model places365 \
+  --device cpu \
+  --batch-size 16 \
+  --out /reports/vision-ml-benchmark-docker-quick.json
+```
+
+The repository records the harness, dependency lock, Dockerfile, tests, and
+compact result JSON in ordinary Git. `.gitignore` and `.dockerignore` exclude
+the roughly 9 GB public dataset/model directory, so Git LFS is not required.
+For a future production image, package only the selected inference artifact
+and its license/manifest; do not package these benchmark datasets.
+
+### What this benchmark does not prove
+
+MIT and CubiCasa validate room identity and Floor Plan rejection. They do not
+label whether cabinets, counters, appliances, or flooring are sufficiently
+visible to judge kitchen quality; nor do they cover listing maps, blanks,
+logos, renderings, collages, amenity kitchens, or open-plan crops in the same
+distribution as Manzil. Therefore this result selects a **shadow candidate**,
+not a production backend. Promotion still requires deterministic invalid-asset
+tests, a live Listing-gallery shadow run, an assessability/abstention policy,
+an observed target-host shadow measurement, and the material DESIGN decision.
 
 ### What no public dataset fully supplies
 
@@ -348,7 +541,7 @@ SigLIP in zero-shot classification and transfer.
 **Verdict:** recommended model family. Start with SigLIP2 Base for the
 accuracy-first evaluation and keep an explicit abstention path.
 
-### 6. Compact MobileCLIP2 encoder
+### 6. MobileCLIP2 encoder
 
 Apple's [official MobileCLIP repository](https://github.com/apple/ml-mobileclip)
 publishes compact contrastive image-text encoders. MobileCLIP2-S0 has an
@@ -373,8 +566,10 @@ then needs only the image tower and stored prototype vectors.
 - Its published general benchmarks do not establish apartment-gallery
   performance.
 
-**Verdict:** recommended efficiency candidate if it performs comparably to
-SigLIP2 Base, subject to license acceptance.
+**Verdict:** rejected as a production candidate. The weights are licensed only
+for non-commercial scientific research and academic development; the terms
+explicitly exclude product development and use in a product or service. OpenAI
+CLIP ViT-B/32 replaced it in the implemented comparison.
 
 ### 7. Frozen DINOv2 embeddings plus k-NN or logistic regression
 
@@ -501,10 +696,10 @@ preferred steady-state classifier.
 
 Start with `google/siglip2-base-patch16-224` as the accuracy-first candidate.
 It is pretrained, Apache-2.0, non-generative, and can compare every image with
-fixed natural-language class prototypes. Benchmark `MobileCLIP2-S0` as the
-smaller deployment candidate and `Places365-ResNet18` as the closed-taxonomy
-scene baseline. No candidate receives a task-specific trained head in the
-first pass.
+fixed natural-language class prototypes. The implemented benchmark uses OpenAI
+CLIP ViT-B/32 as the smaller deployment candidate and Places365-ResNet18 as the
+closed-taxonomy scene baseline. No candidate receives a task-specific trained
+head in the first pass.
 
 Classify hierarchically rather than asking one flat eight-way question:
 
@@ -613,7 +808,7 @@ Run, at minimum:
 1. incumbent classifier, after resolving its model-pin conflict;
 2. Places365-ResNet18 direct scene scores plus deterministic rules;
 3. SigLIP2 Base hierarchical zero-shot prototypes;
-4. MobileCLIP2-S0 with the exact same hierarchy and prototypes;
+4. OpenAI CLIP ViT-B/32 with the exact same hierarchy and prototypes;
 5. optional SigLIP2 plus Places365 agreement policy.
 
 No model is fitted on Manzil images.
@@ -829,10 +1024,11 @@ with new weights.
 Approve an evaluation task, not an immediate production flip:
 
 > Replace generative `IMAGE_CLASSIFY` with a local frozen
-> SigLIP2 Base hierarchical zero-shot classifier using fixed, versioned
-> prototypes for asset kind, multi-label room scenes, and profile-specific
-> usability. Benchmark it against Places365-ResNet18 and MobileCLIP2-S0 on
-> public pre-labelled datasets. Do not train on the current 294-image kit;
+> pretrained classifier using fixed, versioned prototypes for asset kind,
+> multi-label room scenes, and profile-specific usability. SigLIP2 remains the
+> public-data accuracy winner, but the 512 MB Render constraint selects the
+> 97 MB vision-only CLIP uint8 ONNX export for the first deployable shadow
+> stage. Do not train on the current 294-image kit;
 > retain only its unique image clusters as a local regression smoke set. Keep
 > the incumbent as a shadow/fallback during one rollout window, and keep
 > anchored 1–5 kitchen-quality `VISION` unchanged.

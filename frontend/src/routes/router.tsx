@@ -11,6 +11,15 @@ import { ResetPasswordPage } from "../auth/ResetPasswordPage";
 import { SignOutPage } from "../auth/SignOutPage";
 import { AppLayout } from "../components/AppLayout";
 import { ColorsPage } from "../dev/ColorsPage";
+import { AdminFeedbackPage } from "../features/admin/AdminFeedbackPage";
+import { AdminAuditPage } from "../features/admin/AdminAuditPage";
+import { AdminCostsPage } from "../features/admin/AdminCostsPage";
+import { AdminHuntsPage } from "../features/admin/AdminHuntsPage";
+import { AdminJobsPage } from "../features/admin/AdminJobsPage";
+import { AdminSystemPage } from "../features/admin/AdminSystemPage";
+import { AdminLayout } from "../features/admin/AdminLayout";
+import { AdminOverviewPage } from "../features/admin/AdminOverviewPage";
+import { AdminPeoplePage } from "../features/admin/AdminPeoplePage";
 import { HuntSwitcherPage } from "../features/hunts/HuntSwitcherPage";
 import { HuntSettingsPage } from "../features/hunts/HuntSettingsPage";
 import { InviteAcceptPage } from "../features/invites/InviteAcceptPage";
@@ -49,6 +58,22 @@ export const router = createBrowserRouter([
   {
     path: "/",
     element: protectedRoute(<HuntSwitcherPage />),
+  },
+  // Outside the /h/:huntId tree on purpose: nothing in the panel is Hunt-scoped,
+  // and it has its own shell rather than the hunt navbar (AD-2).
+  {
+    path: "/admin",
+    element: protectedRoute(<AdminLayout />),
+    children: [
+      { index: true, element: <AdminOverviewPage /> },
+      { path: "people", element: <AdminPeoplePage /> },
+      { path: "hunts", element: <AdminHuntsPage /> },
+      { path: "jobs", element: <AdminJobsPage /> },
+      { path: "costs", element: <AdminCostsPage /> },
+      { path: "system", element: <AdminSystemPage /> },
+      { path: "audit", element: <AdminAuditPage /> },
+      { path: "feedback", element: <AdminFeedbackPage /> },
+    ],
   },
   {
     path: "/h/:huntId",

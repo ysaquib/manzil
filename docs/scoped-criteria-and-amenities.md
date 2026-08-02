@@ -810,6 +810,9 @@ Exact column names remain an engineering choice. The approved constraints are:
 - `split-property`, DEDUPE merge, refresh, and retention handle associations
   transactionally;
 - a partial image fetch cannot delete prior known-good assets or associations;
+  underfilled partials stay additive, while cap-saturated partials (`MAX_STORED_IMAGES`
+  photos stored) may retire stale photos from refreshed Sources but withhold diagram
+  unlink until a strict-complete pass ([§10.8](../DESIGN.md#108-vision));
 - removed/replaced diagrams retain history while `is_current` controls ordinary
   display.
 

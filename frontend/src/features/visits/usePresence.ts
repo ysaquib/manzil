@@ -45,6 +45,13 @@ interface Shared {
   sectionKey: string | null;
   /** The section last actually broadcast. */
   trackedSection?: string | null;
+  /**
+   * Watch without joining. A Site Admin viewing a Hunt they are not a member of
+   * must be able to read a live tour without appearing on it as a phantom body
+   * (AD-4, DESIGN §4.2) — so the channel is subscribed but `track()` is never
+   * called, and nothing about them is ever broadcast.
+   */
+  observeOnly: boolean;
   /** Serialises re-tracking, so a fast series of section changes cannot interleave. */
   pending?: Promise<void>;
   /** Pending teardown, cancelled if the route is re-entered first. */
@@ -105,6 +112,7 @@ function computePresent(channel: RealtimeChannel, viewerId: string): PresentMemb
  * people's avatar rows; presence is ambient, a permanently wrong roster is not.
  */
 function retrack(entry: Shared, userId: string) {
+  if (entry.observeOnly) return;
   entry.pending = (entry.pending ?? Promise.resolve())
     .then(async () => {
       const section = entry.sectionKey;
@@ -126,6 +134,7 @@ function acquire(
   userId: string,
   sectionKey: string | null,
   listener: Listener,
+  observeOnly: boolean,
 ): Shared {
   const key = `${visitId}:${userId}`;
   const existing = shared.get(key);
@@ -148,6 +157,7 @@ function acquire(
     listeners: new Set([listener]),
     present: [],
     sectionKey,
+    observeOnly,
   };
   shared.set(key, entry);
 
@@ -161,7 +171,7 @@ function acquire(
     .on("presence", { event: "join" }, sync)
     .on("presence", { event: "leave" }, sync)
     .subscribe((status) => {
-      if (status === "SUBSCRIBED") {
+      if (status === "SUBSCRIBED" && !entry.observeOnly) {
         entry.trackedSection = entry.sectionKey;
         void channel.track({
           user_id: userId,
@@ -204,6 +214,8 @@ export function useVisitPresence(
   visitId: string | undefined,
   userId: string | undefined,
   sectionKey: string | null,
+  /** Subscribe and read the roster, but never announce yourself (AD-4). */
+  observeOnly = false,
 ): PresentMember[] {
   const [others, setOthers] = useState<PresentMember[]>([]);
   // Read at join time without making the section a subscribe dependency.
@@ -216,14 +228,14 @@ export function useVisitPresence(
       return;
     }
     const listener: Listener = (present) => setOthers(present);
-    acquire(visitId, userId, sectionKeyRef.current, listener);
+    acquire(visitId, userId, sectionKeyRef.current, listener, observeOnly);
     return () => {
       release(visitId, userId, listener);
     };
     // `sectionKey` is deliberately not a dependency: re-subscribing on every
     // section change would make this member flicker out and back in for
     // everyone else. The effect below re-tracks on the live channel instead.
-  }, [visitId, userId]);
+  }, [visitId, userId, observeOnly]);
 
   useEffect(() => {
     if (!visitId || !userId) return;

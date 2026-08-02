@@ -242,7 +242,7 @@ function CostRow({
             text
           )}
         </Text>
-        {action}
+        {action ?? <ActionSlotPlaceholder />}
       </Group>
     </Box>
   );
@@ -261,6 +261,23 @@ function RevertButton({ label, onClick }: { label: string; onClick: () => void }
         <IconArrowBackUp size={14} stroke={1.5} />
       </ActionIcon>
     </Tooltip>
+  );
+}
+
+/** Invisible twin of the edit ActionIcon — keeps read-only row amounts aligned. */
+function ActionSlotPlaceholder() {
+  return (
+    <ActionIcon
+      color="gray"
+      size="sm"
+      variant="subtle"
+      className={drawer.hoverRevealPencil}
+      aria-hidden
+      tabIndex={-1}
+      style={{ visibility: "hidden", pointerEvents: "none" }}
+    >
+      <IconPencil size={14} stroke={1.5} />
+    </ActionIcon>
   );
 }
 
@@ -878,7 +895,7 @@ function TotalRow({
       </Group>
       <Group gap={4} wrap="nowrap" className={classes.valueAction}>
         <Text className={`${classes.totalValue} ${drawer.tabularNums}`}>{value}</Text>
-        {action}
+        {action ?? <ActionSlotPlaceholder />}
       </Group>
       {subtotals ? <Box className={classes.subtotals}>{subtotals}</Box> : null}
     </Box>
