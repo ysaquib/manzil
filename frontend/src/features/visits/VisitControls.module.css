@@ -6,6 +6,13 @@
   flex: none;
 }
 
+/* A read-only record. `inert` already removes clicks, focus and tab stops; the
+   only thing left to say is that the cursor should stop pretending. Colours are
+   deliberately untouched — losing them is the bug this exists to avoid. */
+.inert {
+  cursor: default;
+}
+
 .triButton {
   width: 2.75rem;
   height: 2.75rem;

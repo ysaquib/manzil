@@ -445,7 +445,8 @@ export function VisitChecklist({
                       <ControlForItem
                         item={item}
                         entry={entry}
-                        disabled={readOnly || blocked}
+                        disabled={blocked}
+                        readOnly={readOnly}
                         onSave={(patch) => save(item, patch)}
                       />
                     </Box>
