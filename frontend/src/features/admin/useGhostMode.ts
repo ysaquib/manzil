@@ -40,3 +40,9 @@ export function useGhostMode(huntId: string | undefined): GhostMode {
   // §4.2's column does not apply to them at all.
   return { isGhost: !isMember, resolved: true };
 }
+
+/** Route an ordinary Hunt mutation through the audited Ghost View surface. */
+export function useGhostMutationPath(huntId: string): (path: string) => string {
+  const { isGhost } = useGhostMode(huntId);
+  return (path: string) => isGhost ? path.replace("/v1/", "/v1/admin/ghost/") : path;
+}

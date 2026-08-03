@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 import { notifications } from "@mantine/notifications";
 
 import { useCurrentMember } from "../collaboration/api";
+import { useGhostMode } from "../admin/useGhostMode";
 import { usePublishSharedFilters, useSharedFilters } from "../hunts/api";
 import {
   DEFAULT_OVERVIEW_FILTERS,
@@ -44,6 +45,7 @@ export function OverviewFiltersProvider({
   const { data: sharedRow } = useSharedFilters(huntId);
   const publishFilters = usePublishSharedFilters(huntId);
   const { data: currentMember } = useCurrentMember(huntId);
+  const { isGhost } = useGhostMode(huntId);
   const sharedFilters = useMemo(
     () => (sharedRow ? sanitizeFilterState(sharedRow.filters) : null),
     [sharedRow],
@@ -64,7 +66,7 @@ export function OverviewFiltersProvider({
         setFiltersState(next);
       },
       sharedFilters,
-      canPublish: currentMember?.role === "owner" || currentMember?.role === "curator",
+      canPublish: isGhost === true || currentMember?.role === "owner" || currentMember?.role === "curator",
       publish: (next) =>
         publishFilters.mutate({ ...next }, {
           onSuccess: () =>
@@ -76,7 +78,7 @@ export function OverviewFiltersProvider({
         }),
       publishPending: publishFilters.isPending,
     }),
-    [filters, sharedFilters, currentMember, publishFilters],
+    [filters, sharedFilters, currentMember, isGhost, publishFilters],
   );
 
   return (

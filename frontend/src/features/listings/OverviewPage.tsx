@@ -31,6 +31,7 @@ import { OverviewRowList } from "./OverviewRowList";
 import { resolveSettings } from "../../lib/contracts";
 import { sentenceCase } from "../../lib/text";
 import { useHunt } from "../hunts/api";
+import { useGhostMode } from "../admin/useGhostMode";
 import { usePatchListingStatus, usePatchUnitGroupState } from "./api";
 import {
   useListings,
@@ -82,6 +83,7 @@ export function OverviewPage() {
   const patchListingStatus = usePatchListingStatus(huntId);
   const patchState = usePatchUnitGroupState(huntId);
   const compare = useCompareSet(huntId);
+  const { isGhost } = useGhostMode(huntId);
 
   const [sort, setSort] = useState<SortState>({ key: "score", dir: "desc" });
   const [view, setView] = useState<"active" | "archived">("active");
@@ -431,6 +433,7 @@ export function OverviewPage() {
         opened={drawer.opened}
         onClose={drawer.close}
         onExited={drawer.onExited}
+        isGhost={isGhost === true}
         filters={filters}
         jobs={jobs}
         answeringCheckpoint={answerCheckpoint.isPending}

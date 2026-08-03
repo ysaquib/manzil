@@ -82,6 +82,7 @@ import {
   type SortState,
 } from "./overviewRows";
 import { sentenceCase } from "../../lib/text";
+import { useGhostMode } from "../admin/useGhostMode";
 
 import classes from "./OverviewTable.module.css";
 
@@ -277,8 +278,9 @@ function PeopleCell({
 
 function CurationCells({ row, huntId }: { row: OverviewRow; huntId: string }) {
   const { data: currentMember } = useCurrentMember(huntId);
+  const { isGhost } = useGhostMode(huntId);
   const patchState = usePatchUnitGroupState(huntId);
-  const canCurate = currentMember?.role === "owner" || currentMember?.role === "curator";
+  const canCurate = isGhost === true || currentMember?.role === "owner" || currentMember?.role === "curator";
   const group = row.group;
   const visited = row.state?.visited ?? false;
   const save = (interest_status: InterestStatus | null, nextVisited: boolean) => {
@@ -323,8 +325,10 @@ function RowActionsMenu({
   const inCompare = compare.has(entry);
   const compareBlocked = entry === null || (compare.isFull && !inCompare);
   const { data: currentMember } = useCurrentMember(huntId);
+  const { isGhost } = useGhostMode(huntId);
   const refresh = useRefreshListing(huntId);
   const canRefresh =
+    isGhost === true ||
     currentMember?.role === "owner" ||
     currentMember?.user_id === row.listing.added_by;
 

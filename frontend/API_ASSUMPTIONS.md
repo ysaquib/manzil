@@ -115,11 +115,19 @@ origin with `window.location.origin` before copying. Supabase Auth storage is or
 configured `www`/apex or localhost/LAN-host mismatch must not send a signed-in user to another
 origin that appears logged out.
 
+**Site Admin Ghost View mutations.** Hunt-scoped hooks derive Ghost View from the current account's
+Site Admin identity plus the absence of a `hunt_members` row. Once confirmed, they mirror ordinary
+`/v1/...` requests under `/v1/admin/ghost/...`; the request and response bodies stay identical.
+Those endpoints use service-role access only after re-checking non-membership server-side and write
+`admin_audit_log` with `via_ghost_view = true`. A Site Admin who is a Hunt member always uses the
+ordinary endpoint and their assigned Hunt role. Personal comments, ratings, profile color/name, and
+Visits remain on ordinary member-only paths and are never routed through Ghost View.
+
 ## Direct Supabase reads (via `supabase-js`, RLS-guarded from P2-1)
 
 | Table(s) | Hook (file) | Shape | Status |
 |---|---|---|---|
-| `hunts` | `useHunts`, `useHunt` (`features/hunts/api.ts`) | hand-typed `Hunt` (incl. `created_at`) | exists (0002; `created_at` 0003) |
+| `hunts` (+ inner `hunt_members` membership filter for `useHunts`) | `useHunts`, `useHunt` (`features/hunts/api.ts`) | hand-typed `Hunt` (incl. `created_at`); the switcher is explicitly current-member-scoped because Site Admin SELECT policies expose all Hunts for Ghost View | exists (0002; `created_at` 0003; admin read widening 20260829000000) |
 | `hunt_listings` + embedded `properties`, current `floor_plans`, `scores` | `useListings` (`features/listings/api.ts`) | hand-typed; `properties` includes nullable `city`, `state` (USPS code), `county`, and the §12 geocode cache `lat`/`lng` (nullable — written by DEDUPE only-when-null, so a listing may legitimately have no coordinates; the §13.2 map surfaces read them); embedded Floor Plans filter `is_current = true`, with a defensive client-side retirement filter | exists (0001 incl. `lat`/`lng` + 0002; locality 20260803000000; Floor Plan lifecycle 20260801000000) |
 | `hunt_listings` (`status = archived`, same embed) | `useArchivedListings` (`features/listings/api.ts`) — fetched only while the Archived view is open | hand-typed; current Floor Plans only | exists (0001 + 0002; Floor Plan lifecycle 20260801000000) |
 | `current_overrides` for one listing | `useOverrides` (`features/listings/api.ts`) | hand-typed scoped target/applicability; newest row per concrete target, including null revert tombstones | exists (20260801000000) |
@@ -135,6 +143,7 @@ origin that appears logged out.
 | `ratings` for one Listing | `useRatings` (`features/collaboration/api.ts`) | hand-typed `Rating`; filtered per Unit Group by row consumers | exists (0002 + 20260724000000) |
 | `listing_unit_group_states` for one Hunt | `useUnitGroupStates` (`features/listings/api.ts`) | hand-typed `UnitGroupState` | exists (20260725000000) |
 | `hunt_listing_refresh_status` for one Hunt | `useRefreshStatuses` (`features/listings/api.ts`) | hand-typed `RefreshStatus`; service-role success markers, member-readable through Listing membership | exists (20260816000000) |
+| `property_images` + `current_floor_plan_images` for one Property, plus signed Storage URLs | `usePropertyImages` (`features/listings/api.ts`) | hand-typed `PropertyImage`; projects canonical ONNX `predicted_scene` + `kitchen_score` from `vision_assessment.classification`, with temporary read compatibility for pre-promotion `classification_shadow` rows; LLM-only legacy records are not presented as current classification | exists (20260705000000 + 20260808000000; ONNX authority DESIGN v3.52) |
 | `visits` (+ embedded `visit_units`, `properties`) for one Hunt, one Property, or one id | `useVisits`, `usePropertyVisits`, `useVisit` (`features/visits/api.ts`) | hand-typed `Visit`; **state is derived client-side** from `started_at`/`ended_at`/`cancelled_at` — there is no status column to read | exists (20260817000000) |
 | `visit_template_items` for the Visit's `template_version` | `useVisitTemplate` (`features/visits/api.ts`) — `staleTime: Infinity`, since it only changes by migration | hand-typed `VisitTemplateItem`; global read-only reference data like `criteria_catalog`. Section titles are **frontend copy** — the table carries `section_key` and a globally monotonic `display_order`, no section table | exists (20260817000000) + seed in migration |
 | `current_visit_entries` for one Visit | `useVisitEntries` (`features/visits/api.ts`) | hand-typed `VisitEntry`. The **view**, never `visit_entries` directly — it centralises the newest-per-`(visit, item, unit, owner)` rule, and is `security_invoker` so it keeps the base table's RLS | exists (20260819000000) |
