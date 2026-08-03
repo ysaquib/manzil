@@ -50,6 +50,43 @@ Catalog entry (§8.2) · hunt settings (§8.2) · rubric option (§8.2) · score
 - Frontend: `pnpm -C frontend dev | test | build`
 - DB: `supabase db reset` locally; migrations live in `supabase/migrations/`.
 
+### Local Site Admin bootstrap
+
+Before testing the website through a browser, ensure the local Auth account
+`admin@manzil.local` is a Site Admin. **Immediately after every `supabase db
+reset`, do this before any other local UI work** — reset deletes the local Auth
+user and the `site_admins` grant.
+
+1. Start/check the local stack with `supabase start`, then check both the user
+   and grant (do not assume either exists):
+   ```bash
+   supabase db query --local "select u.id, u.email, exists (select 1 from public.site_admins sa where sa.user_id = u.id) as is_site_admin from auth.users u where u.email = 'admin@manzil.local';"
+   ```
+2. If the user exists, use it. If `is_site_admin` is false, add the grant in
+   step 4. Do **not** recreate the user or change its password.
+3. If the user is absent, create the confirmed local-only account with password
+   `local-dev-password`. Keep the service-role key in the shell; never print it,
+   commit it, or expose it to the frontend:
+   ```bash
+   MANZIL_LOCAL_STATUS="$(supabase status -o json)"
+   MANZIL_LOCAL_API_URL="$(printf '%s' "$MANZIL_LOCAL_STATUS" | jq -er '.API_URL')"
+   MANZIL_LOCAL_SERVICE_ROLE_KEY="$(printf '%s' "$MANZIL_LOCAL_STATUS" | jq -er '.SERVICE_ROLE_KEY')"
+   curl --fail --silent --show-error -X POST "$MANZIL_LOCAL_API_URL/auth/v1/admin/users" \
+     -H "apikey: $MANZIL_LOCAL_SERVICE_ROLE_KEY" \
+     -H "Authorization: Bearer $MANZIL_LOCAL_SERVICE_ROLE_KEY" \
+     -H 'Content-Type: application/json' \
+     --data '{"email":"admin@manzil.local","password":"local-dev-password","email_confirm":true}' >/dev/null
+   ```
+4. Ensure the account has a Site Admin grant. On a fresh reset it becomes the
+   immutable primordial admin; otherwise it is an ordinary additional admin:
+   ```bash
+   supabase db query --local "insert into public.site_admins (user_id, is_primordial, note) select u.id, not exists (select 1 from public.site_admins), 'Local development bootstrap admin' from auth.users u where u.email = 'admin@manzil.local' on conflict (user_id) do nothing;"
+   ```
+
+Sign into the local app as `admin@manzil.local` / `local-dev-password`. This is
+local-development bootstrap only; production account provisioning must use the
+audited Site Admin path (PR-1).
+
 ## Current phase
 **Phase 3 (formally entered 2026-07-18) and the Phase 0 tail are running in parallel; Phases 1 and 2 are closed.** Full task tables: IMPLEMENTATION.md §7.
 

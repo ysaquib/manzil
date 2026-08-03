@@ -154,7 +154,7 @@ class PersonDetail(PersonRow):
     blocking_owned_hunts: list[PersonMembership] = Field(default_factory=list)
 
 
-class InvitePerson(BaseModel):
+class ProvisionPerson(BaseModel):
     # Plain str, as in invites/schemas.py — Supabase Auth is the real validator,
     # and email-validator is not a dependency this repo carries.
     email: str = Field(min_length=3, max_length=320)

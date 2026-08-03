@@ -29,10 +29,10 @@ from fastapi import APIRouter, Query, status
 from manzil_api.admin.dependencies import AdminUser, Audit
 from manzil_api.admin.schemas import (
     ActionResult,
-    InvitePerson,
     PersonDetail,
     PersonMembership,
     PersonRow,
+    ProvisionPerson,
     SetMembership,
     UpdatePerson,
 )
@@ -215,20 +215,30 @@ async def get_person(user_id: UUID, admin: AdminUser, pool: DbPool) -> PersonDet
     "",
     response_model=ActionResult,
     status_code=status.HTTP_201_CREATED,
-    summary="Invite someone",
+    summary="Provision an account",
 )
-async def invite_person(
-    body: InvitePerson, admin: AdminUser, pool: DbPool, audit: Audit
+async def provision_person(
+    body: ProvisionPerson, admin: AdminUser, pool: DbPool, audit: Audit
 ) -> ActionResult:
-    """Sends the ordinary Supabase invite email. If a Hunt and role are given the
-    membership is written once the account exists — the invite is the account,
-    the membership is the Hunt, and conflating them is how you end up with a
-    half-joined user."""
+    """Create an Auth account and send its password-enrollment email.
+
+    This is the sole account-creation path. The Site Admin dependency and audit
+    record are therefore part of the security boundary, not UI conveniences.
+    If a Hunt and role are given, membership is a separate fact written only
+    after Supabase has created the account.
+    """
     service = _service()
     try:
-        response = service.auth.admin.invite_user_by_email(body.email)
+        response = service.auth.admin.invite_user_by_email(
+            body.email,
+            {
+                "redirect_to": (
+                    f"{_settings().frontend_url.rstrip('/')}/auth/reset-password"
+                )
+            },
+        )
     except Exception as exc:
-        raise AuthOperationFailed(f"Supabase could not send the invite: {exc}") from exc
+        raise AuthOperationFailed(f"Supabase could not provision the account: {exc}") from exc
 
     invited_id = getattr(getattr(response, "user", None), "id", None)
     if invited_id and body.hunt_id and body.role:
@@ -241,14 +251,14 @@ async def invite_person(
         )
 
     await audit.record(
-        "user.invite",
+        "user.provision",
         target_type="user",
         target_id=invited_id,
         target_label=body.email,
         hunt_id=body.hunt_id,
         after={"email": body.email, "role": body.role},
     )
-    return ActionResult(detail=f"Invite sent to {body.email}")
+    return ActionResult(detail=f"Account created; password setup sent to {body.email}")
 
 
 @router.patch("/{user_id}", response_model=PersonDetail, summary="Update an account")

@@ -29,8 +29,16 @@ def join_invitation_link(service_client: Client, token: str, user_id: str) -> di
 
 def send_invite_email(service_client: Client, email: str, token: str, frontend_url: str) -> None:
     try:
-        service_client.auth.admin.invite_user_by_email(
-            email, {"redirect_to": f"{frontend_url.rstrip('/')}/invite/{token}"}
+        service_client.auth.sign_in_with_otp(
+            {
+                "email": email,
+                "options": {
+                    "email_redirect_to": f"{frontend_url.rstrip('/')}/invite/{token}",
+                    # Hunt Owners may invite an existing account to their Hunt,
+                    # but only a Site Admin may provision an Auth account.
+                    "should_create_user": False,
+                },
+            }
         )
     except Exception as exc:
         raise InviteEmailFailed("Supabase could not send the invite email") from exc
