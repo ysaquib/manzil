@@ -103,10 +103,15 @@ async def delete_listing(client: Client, listing_id: UUID, user_id: str) -> None
 
 
 async def patch_status(
-    client: Client, listing: dict[str, Any], user_id: str, body: ListingStatusPatch
+    client: Client,
+    listing: dict[str, Any],
+    user_id: str,
+    body: ListingStatusPatch,
+    *,
+    authorized_admin: bool = False,
 ) -> ListingResponse:
     """Archive or restore — the same owner gate as delete_listing (archive's alias)."""
-    if _role(client, listing["hunt_id"], user_id) != "owner":
+    if not authorized_admin and _role(client, listing["hunt_id"], user_id) != "owner":
         raise InsufficientRole("Only the Hunt Owner may archive or restore Listings")
     listing_id = UUID(listing["id"])
     client.table("hunt_listings").update({"status": body.status}).eq(
@@ -119,9 +124,18 @@ async def patch_status(
 
 
 async def patch_pins(
-    client: Client, listing: dict[str, Any], user_id: str, body: PinsPatch
+    client: Client,
+    listing: dict[str, Any],
+    user_id: str,
+    body: PinsPatch,
+    *,
+    authorized_admin: bool = False,
 ) -> ListingResponse:
-    if _role(client, listing["hunt_id"], user_id) == "member" and listing["added_by"] != user_id:
+    if (
+        not authorized_admin
+        and _role(client, listing["hunt_id"], user_id) == "member"
+        and listing["added_by"] != user_id
+    ):
         raise InsufficientRole("Members may edit pins only on their own Listings")
     listing_id = UUID(listing["id"])
     client.table("hunt_listings").update({"pins": body.pins}).eq("id", str(listing_id)).execute()
@@ -279,8 +293,10 @@ async def patch_unit_group_state(
     unit_group_key: str,
     user_id: str,
     body: UnitGroupStatePatch,
+    *,
+    authorized_admin: bool = False,
 ) -> UnitGroupStateResponse:
-    if _role(client, listing["hunt_id"], user_id) == "member":
+    if not authorized_admin and _role(client, listing["hunt_id"], user_id) == "member":
         raise InsufficientRole("Only Hunt Curators and the Owner may curate Unit Groups")
     response = (
         client.table("listing_unit_group_states")

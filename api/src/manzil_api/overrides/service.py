@@ -24,6 +24,7 @@ async def create_override(
     hunt_id: UUID,
     user_id: str,
     body: OverrideCreate,
+    authorized_admin: bool = False,
 ) -> OverrideResponse:
     listing = (
         client.table("hunt_listings")
@@ -33,16 +34,18 @@ async def create_override(
         .execute()
         .data
     )
-    role = (
-        client.table("hunt_members")
-        .select("role")
-        .eq("hunt_id", str(hunt_id))
-        .eq("user_id", user_id)
-        .single()
-        .execute()
-        .data["role"]
-    )
-    if role == "member" and listing["added_by"] != user_id:
+    role = None
+    if not authorized_admin:
+        role = (
+            client.table("hunt_members")
+            .select("role")
+            .eq("hunt_id", str(hunt_id))
+            .eq("user_id", user_id)
+            .single()
+            .execute()
+            .data["role"]
+        )
+    if not authorized_admin and role == "member" and listing["added_by"] != user_id:
         raise InsufficientRole("Members may Override only their own Listings")
     if body.floor_plan_id is not None:
         floor_plan_response = (

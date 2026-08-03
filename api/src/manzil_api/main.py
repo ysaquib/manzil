@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from manzil_api.admin.hunt_operations import router as admin_hunt_operations_router
 from manzil_api.admin.operations import router as admin_operations_router
 from manzil_api.admin.people import router as admin_people_router
 from manzil_api.admin.router import router as admin_router
@@ -124,6 +125,7 @@ def create_app() -> FastAPI:
         admin_router,
         admin_people_router,
         admin_operations_router,
+        admin_hunt_operations_router,
     ):
         app.include_router(router, prefix="/v1")
 
