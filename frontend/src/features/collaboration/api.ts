@@ -197,11 +197,12 @@ export function useSetMemberDisplayName(huntId: string, userId: string) {
 }
 
 // Owner-only: change another member's role (member|curator; never owner).
-export function useSetMemberRole(huntId: string) {
+export function useSetMemberRole(huntId: string, isGhost = false) {
   const qc = useQueryClient();
+  const mutationPath = (path: string) => isGhost ? path.replace("/v1/", "/v1/admin/ghost/") : path;
   return useMutation({
     mutationFn: ({ userId, role }: { userId: string; role: "member" | "curator" }) =>
-      apiFetch<MemberResponse>(`/v1/hunts/${huntId}/members/${userId}`, {
+      apiFetch<MemberResponse>(mutationPath(`/v1/hunts/${huntId}/members/${userId}`), {
         method: "PATCH",
         body: { role } satisfies MemberPatch,
       }),
@@ -210,21 +211,23 @@ export function useSetMemberRole(huntId: string) {
 }
 
 // Owner-only: remove another member (the owner row is refused server-side).
-export function useRemoveMember(huntId: string) {
+export function useRemoveMember(huntId: string, isGhost = false) {
   const qc = useQueryClient();
+  const mutationPath = (path: string) => isGhost ? path.replace("/v1/", "/v1/admin/ghost/") : path;
   return useMutation({
     mutationFn: (userId: string) =>
-      apiFetch<void>(`/v1/hunts/${huntId}/members/${userId}`, { method: "DELETE" }),
+      apiFetch<void>(mutationPath(`/v1/hunts/${huntId}/members/${userId}`), { method: "DELETE" }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["hunt_members", huntId] }),
   });
 }
 
 // Owner-only: hand ownership to an existing member; the old owner becomes Curator.
-export function useTransferOwnership(huntId: string) {
+export function useTransferOwnership(huntId: string, isGhost = false) {
   const qc = useQueryClient();
+  const mutationPath = (path: string) => isGhost ? path.replace("/v1/", "/v1/admin/ghost/") : path;
   return useMutation({
     mutationFn: (newOwnerId: string) =>
-      apiFetch<TransferOwnershipResponse>(`/v1/hunts/${huntId}/transfer-ownership`, {
+      apiFetch<TransferOwnershipResponse>(mutationPath(`/v1/hunts/${huntId}/transfer-ownership`), {
         method: "POST",
         body: { new_owner_id: newOwnerId } satisfies TransferOwnershipRequest,
       }),

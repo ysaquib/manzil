@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/apiClient";
 import type { components } from "../../lib/generated/api";
 import { supabase } from "../../lib/supabase";
+import { useGhostMutationPath } from "../admin/useGhostMode";
 import type {
   Extraction,
   FeeEntry,
@@ -66,9 +67,10 @@ export function useRefreshStatuses(huntId: string) {
 
 export function useRefreshListing(huntId: string) {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: ({ listingId, fields }: { listingId: string; fields?: RefreshClass[] }) =>
-      apiFetch<components["schemas"]["JobResponse"]>(`/v1/listings/${listingId}/refresh`, {
+      apiFetch<components["schemas"]["JobResponse"]>(mutationPath(`/v1/listings/${listingId}/refresh`), {
         method: "POST",
         body: fields ? { fields } : {},
       }),
@@ -99,12 +101,13 @@ export function useUnitGroupStates(huntId: string) {
 
 export function usePatchUnitGroupState(huntId: string) {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: ({ listingId, unitGroupKey, interest_status, visited }: {
       listingId: string; unitGroupKey: string;
       interest_status: UnitGroupState["interest_status"]; visited: boolean;
     }) => apiFetch<UnitGroupState>(
-      `/v1/listings/${listingId}/unit-groups/${unitGroupKey}/state`,
+      mutationPath(`/v1/listings/${listingId}/unit-groups/${unitGroupKey}/state`),
       { method: "PATCH", body: { interest_status, visited } },
     ),
     onSuccess: (saved) => {
@@ -242,9 +245,10 @@ export function useResolutionCandidates(extractionId: string, enabled: boolean) 
 
 export function useCreateListing(huntId: string) {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: (body: ListingCreate) =>
-      apiFetch<ListingResponse>(`/v1/hunts/${huntId}/listings`, { method: "POST", body }),
+      apiFetch<ListingResponse>(mutationPath(`/v1/hunts/${huntId}/listings`), { method: "POST", body }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["hunt_listings", huntId] });
       void qc.invalidateQueries({ queryKey: ["jobs", huntId] });
@@ -275,9 +279,10 @@ export function useArchivedListings(huntId: string, enabled: boolean) {
 // refreshes both the active and archived queries.
 export function usePatchListingStatus(huntId: string) {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: ({ listingId, status }: { listingId: string; status: "active" | "archived" }) =>
-      apiFetch<ListingResponse>(`/v1/listings/${listingId}/status`, {
+      apiFetch<ListingResponse>(mutationPath(`/v1/listings/${listingId}/status`), {
         method: "PATCH",
         body: { status } satisfies components["schemas"]["ListingStatusPatch"],
       }),
@@ -287,9 +292,10 @@ export function usePatchListingStatus(huntId: string) {
 
 export function usePatchPins(huntId: string) {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: ({ listingId, pins }: { listingId: string; pins: Record<string, string> }) =>
-      apiFetch<ListingResponse>(`/v1/listings/${listingId}/pins`, {
+      apiFetch<ListingResponse>(mutationPath(`/v1/listings/${listingId}/pins`), {
         method: "PATCH",
         body: { pins } satisfies components["schemas"]["PinsPatch"],
       }),
@@ -315,11 +321,12 @@ export function usePatchPins(huntId: string) {
 
 export function usePatchSourcePolicy(huntId: string) {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: ({ listingId, sourcePolicy }: {
       listingId: string;
       sourcePolicy: Listing["source_policy"];
-    }) => apiFetch<ListingResponse>(`/v1/listings/${listingId}/source-policy`, {
+    }) => apiFetch<ListingResponse>(mutationPath(`/v1/listings/${listingId}/source-policy`), {
       method: "PATCH",
       body: { source_policy: sourcePolicy },
     }),
@@ -332,9 +339,10 @@ export function usePatchSourcePolicy(huntId: string) {
 
 export function useCreateOverride(huntId: string, listingId: string) {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: (body: OverrideCreate) =>
-      apiFetch<OverrideResponse>(`/v1/listings/${listingId}/overrides`, { method: "POST", body }),
+      apiFetch<OverrideResponse>(mutationPath(`/v1/listings/${listingId}/overrides`), { method: "POST", body }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["overrides", listingId] });
       // Rescore is async; the listings re-fetch picks up new scores when it lands.
@@ -345,9 +353,10 @@ export function useCreateOverride(huntId: string, listingId: string) {
 
 export function useUpsertFee(huntId: string, listingId: string) {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: ({ slot, ...body }: FeeEntryUpsert & { slot: string }) =>
-      apiFetch<FeeEntryResponse>(`/v1/listings/${listingId}/fees/${slot}`, {
+      apiFetch<FeeEntryResponse>(mutationPath(`/v1/listings/${listingId}/fees/${slot}`), {
         method: "PUT",
         body,
       }),
@@ -360,13 +369,14 @@ export function useUpsertFee(huntId: string, listingId: string) {
 
 export function useUpsertUtilityOverride(huntId: string, listingId: string) {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: ({ utility, included, monthly_amount, note }: {
       utility: UtilityName;
       included: boolean | null;
       monthly_amount: number | null;
       note?: string | null;
-    }) => apiFetch<UtilityOverride>(`/v1/listings/${listingId}/utilities/${utility}`, {
+    }) => apiFetch<UtilityOverride>(mutationPath(`/v1/listings/${listingId}/utilities/${utility}`), {
       method: "PUT",
       body: { included, monthly_amount, note: note ?? null },
     }),

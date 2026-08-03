@@ -98,6 +98,7 @@ export function ListingDetailDrawer({
   jobs = [],
   answeringCheckpoint = false,
   onAnswerCheckpoint,
+  isGhost = false,
 }: {
   huntId: string;
   selection: DrawerSelection | null;
@@ -108,6 +109,7 @@ export function ListingDetailDrawer({
   jobs?: Job[];
   answeringCheckpoint?: boolean;
   onAnswerCheckpoint?: (jobId: string, choice: string, text?: string) => void;
+  isGhost?: boolean;
 }) {
   const isMobile = useMediaQuery("(max-width: 48em)");
   const onCloseRef = useRef(onClose);
@@ -140,6 +142,7 @@ export function ListingDetailDrawer({
             jobs={jobs}
             answeringCheckpoint={answeringCheckpoint}
             onAnswerCheckpoint={onAnswerCheckpoint}
+            isGhost={isGhost}
           />
         ) : null}
       </Drawer.Content>
@@ -158,6 +161,7 @@ function SelectionGate({
   jobs,
   answeringCheckpoint,
   onAnswerCheckpoint,
+  isGhost,
 }: {
   huntId: string;
   selection: DrawerSelection;
@@ -169,6 +173,7 @@ function SelectionGate({
   jobs: Job[];
   answeringCheckpoint: boolean;
   onAnswerCheckpoint?: (jobId: string, choice: string, text?: string) => void;
+  isGhost: boolean;
 }) {
   const { data: listings, isLoading: listingsLoading } = useListings(huntId);
   const { listing } = resolveRow(listings ?? [], selection.listingId, selection.groupKey);
@@ -204,6 +209,7 @@ function SelectionGate({
         jobs={jobs}
         answeringCheckpoint={answeringCheckpoint}
         onAnswerCheckpoint={onAnswerCheckpoint}
+        isGhost={isGhost}
       />
     </ListingDetailDraftProvider>
   );
@@ -220,6 +226,7 @@ function DrawerShell({
   jobs,
   answeringCheckpoint,
   onAnswerCheckpoint,
+  isGhost,
 }: {
   huntId: string;
   selection: DrawerSelection;
@@ -231,6 +238,7 @@ function DrawerShell({
   jobs: Job[];
   answeringCheckpoint: boolean;
   onAnswerCheckpoint?: (jobId: string, choice: string, text?: string) => void;
+  isGhost: boolean;
 }) {
   const { draftPins, setDraftPin, isDirty, saving, saveAll, resetDraft } = useListingDetailDraft();
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
@@ -426,6 +434,7 @@ function DrawerShell({
                 <AutoResolvedCheckpointReview
                   checkpoint={autoResolvedJob.auto_resolved_checkpoint}
                   canAnswer={
+                    isGhost === true ||
                     currentMember?.role === "owner" ||
                     currentMember?.role === "curator" ||
                     currentMember?.user_id === listing.added_by
@@ -595,7 +604,9 @@ function DrawerShell({
                 listingId={listing.id}
                 singleSourceReason={listing.single_source_reason}
                 canEdit={
-                  currentMember?.role === "owner" || currentMember?.user_id === listing.added_by
+                  isGhost === true ||
+                  currentMember?.role === "owner" ||
+                  currentMember?.user_id === listing.added_by
                 }
                 jobs={jobs}
               />

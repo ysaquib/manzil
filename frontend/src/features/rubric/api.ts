@@ -9,6 +9,7 @@ import { useMemo } from "react";
 import { apiFetch } from "../../lib/apiClient";
 import type { NonNegotiable, RubricOption } from "../../lib/contracts";
 import { supabase } from "../../lib/supabase";
+import { useGhostMutationPath } from "../admin/useGhostMode";
 import { catalogWithCustomLabels } from "./customCriterion";
 import type { ValueSchema } from "./widgets/types";
 
@@ -114,9 +115,10 @@ export function useResolvedCatalog(huntId: string, domain: "rent" | "buy" = "ren
 
 export function usePutRubric(huntId: string) {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: (criteria: RubricCriterion[]) =>
-      apiFetch<RubricCriterion[]>(`/v1/hunts/${huntId}/rubric`, {
+      apiFetch<RubricCriterion[]>(mutationPath(`/v1/hunts/${huntId}/rubric`), {
         method: "PUT",
         body: { criteria },
       }),
@@ -131,9 +133,10 @@ export function usePutRubric(huntId: string) {
 }
 
 export function useClassifyCustomRouting(huntId: string) {
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: (body: { label: string; description: string }) =>
-      apiFetch<CustomRoutingResponse>(`/v1/hunts/${huntId}/rubric/custom-routing`, {
+      apiFetch<CustomRoutingResponse>(mutationPath(`/v1/hunts/${huntId}/rubric/custom-routing`), {
         method: "POST",
         body,
       }),

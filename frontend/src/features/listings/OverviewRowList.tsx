@@ -47,6 +47,7 @@ import {
   StaleBadge,
 } from "../../components/badges/ListingBadges";
 import type { RefreshClass } from "./types";
+import { useGhostMode } from "../admin/useGhostMode";
 
 import classes from "./OverviewRowList.module.css";
 
@@ -76,10 +77,11 @@ function ExpandedDetail({
   const { data: ratings = [] } = useRatings(row.listing.id);
   const { data: comments = [] } = useComments(row.listing.id);
   const { data: currentMember } = useCurrentMember(huntId);
+  const { isGhost } = useGhostMode(huntId);
   const patchState = usePatchUnitGroupState(huntId);
   const compare = useCompareSet(huntId);
   const entry = rowEntry(row);
-  const canCurate = currentMember?.role === "owner" || currentMember?.role === "curator";
+  const canCurate = isGhost === true || currentMember?.role === "owner" || currentMember?.role === "curator";
   const visited = row.state?.visited ?? false;
   const listingUrl = row.listing.property.official_url ?? row.listing.property.sources[0]?.url ?? null;
 

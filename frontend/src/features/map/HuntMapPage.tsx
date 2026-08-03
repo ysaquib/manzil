@@ -27,6 +27,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { PageHeader } from "../../components/PageHeader";
+import { useGhostMode } from "../admin/useGhostMode";
 import { useListings, useUnitGroupStates } from "../listings/api";
 import { useOverviewFilters } from "../listings/filterState";
 import { ListingDetailDrawer } from "../listings/ListingDetailDrawer";
@@ -55,6 +56,7 @@ export function HuntMapPage() {
   const { huntId = "" } = useParams();
   const { data: listings, isLoading } = useListings(huntId);
   const { data: unitGroupStates = [] } = useUnitGroupStates(huntId);
+  const { isGhost } = useGhostMode(huntId);
   const { filters, setFilters, sharedFilters, canPublish, publish, publishPending } =
     useOverviewFilters();
   const isCompact = useMediaQuery("(max-width: 48em)") ?? false;
@@ -138,6 +140,7 @@ export function HuntMapPage() {
         opened={drawer.opened}
         onClose={drawer.close}
         onExited={drawer.onExited}
+        isGhost={isGhost === true}
         filters={filters}
       />
     </Stack>
