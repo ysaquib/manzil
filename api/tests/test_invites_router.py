@@ -25,8 +25,11 @@ async def test_accept_is_idempotent_for_existing_member(
 
 @pytest.mark.asyncio
 async def test_expired_and_revoked_invites_are_gone(
-    collab_hunt, as_owner: AsyncClient, as_outsider: AsyncClient, db_pool
+    collab_hunt, as_owner: AsyncClient, as_outsider: AsyncClient, db_pool, monkeypatch
 ) -> None:
+    # Delivery is orthogonal to this lifecycle test, and PR-1 deliberately
+    # refuses an OTP email for its nonexistent revoked@example.com recipient.
+    monkeypatch.setattr(privileged, "send_invite_email", lambda *args: None)
     expired_token = "expired-test-token"
     await db_pool.execute(
         """insert into invites (hunt_id, email, token, created_by, expires_at)
@@ -78,3 +81,32 @@ async def test_email_invite_dispatches_supabase_auth(
     assert response.status_code == 201
     assert sent["email"] == "partner@example.com"
     assert response.json()["link"].endswith(sent["token"])
+
+
+def test_hunt_invite_email_cannot_create_an_auth_account() -> None:
+    """A Hunt Owner controls membership, not the account roster (PR-1)."""
+    calls: list[dict] = []
+
+    class Auth:
+        def sign_in_with_otp(self, credentials):  # type: ignore[no-untyped-def]
+            calls.append(credentials)
+
+    class Service:
+        auth = Auth()
+
+    privileged.send_invite_email(
+        Service(),  # type: ignore[arg-type]
+        "existing@example.com",
+        "hunt-token",
+        "https://manzil.example",
+    )
+
+    assert calls == [
+        {
+            "email": "existing@example.com",
+            "options": {
+                "email_redirect_to": "https://manzil.example/invite/hunt-token",
+                "should_create_user": False,
+            },
+        }
+    ]

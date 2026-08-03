@@ -29,7 +29,7 @@ Route: `/admin/*`, deliberately outside the `/h/:huntId` tree, with its own shel
 | **AD-0** | Design ratification — glossary, §4.2 column, workstream entry | ✅ |
 | **AD-1** | Admin identity, the gate, `admin_audit_log`, router | ✅ 2.0.108 |
 | **AD-2** | Panel shell, nav entry, feedback inbox | ✅ 2.0.109 |
-| **AD-3** | People — roster, detail, invite/update/suspend/delete, memberships | ✅ 2.0.110 |
+| **AD-3 / PR-1** | People — roster, detail, provision/update/suspend/delete, memberships; sole account-creation path | ✅ 2.0.110 / 2.0.121 |
 | **AD-4** | Hunts + the ghost view (`open as owner`) | ✅ 2.0.111 |
 | **AD-5** | Jobs, Costs, System, Audit log — with `@mantine/charts` | ✅ 2.0.112 |
 
@@ -99,6 +99,11 @@ frontend/src/features/admin/
 worker/src/manzil_worker/costs.py   AD-C  CostTally, outside llm/ on purpose
 ```
 
+`POST /v1/admin/people` is the only account-creation path. It is Site-Admin
+gated, writes `user.provision` to the Admin Audit Log, and sends the new account
+to password setup. Hunt invites and Login magic links authenticate existing
+accounts only; neither may create one.
+
 ## Routes
 
 | Route | Who | Notes |
@@ -121,6 +126,7 @@ worker/src/manzil_worker/costs.py   AD-C  CostTally, outside llm/ on purpose
 | `POST .../jobs/{id}/retry` · `/cancel` · `/jobs/release-locks` | admin | Queue control, all audited |
 | `GET /v1/admin/costs?days=` | admin | Spend by stage, Hunt and model + daily series |
 | `GET /v1/admin/system` | admin | Queue health, model pins, key **presence** |
+| `/v1/admin/ghost/...` | admin non-member of the target Hunt | Mirrors Owner Hunt/listing/rubric/people mutations; every write is audited with `via_ghost_view = true` |
 
 ## Things that will bite you
 
@@ -265,8 +271,11 @@ The shell, the nav entry, and the inbox.
 
 The nav entry sits in `NavbarFoot` directly above *Send feedback* — the same
 "meta, not Hunt" cluster, and the natural neighbour of the inbox that receives
-those reports. It renders only for admins, which is **UX, not enforcement**: the
-API refuses everyone else regardless.
+those reports. The `/` Hunt switcher also leads with a filled primary-colour
+Admin panel card, so the panel is reachable before entering a Hunt. Both render
+only for admins, which is **UX, not enforcement**: the API refuses everyone else
+regardless. The switcher's Hunt query remains explicitly membership-scoped;
+Ghost View read widening must never turn every Hunt into one of "Your hunts."
 
 Tabs that later slices will build are **shown and disabled**, labelled with the
 slice that owns them. The panel's shape is part of the information, and a link
