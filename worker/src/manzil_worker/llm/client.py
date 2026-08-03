@@ -216,8 +216,67 @@ def _inline_local_schema_refs(schema: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+_GEMINI_FUNCTION_SCHEMA_FIELDS = frozenset(
+    {
+        "type",
+        "format",
+        "title",
+        "description",
+        "nullable",
+        "enum",
+        "maxItems",
+        "minItems",
+        "properties",
+        "required",
+        "minProperties",
+        "maxProperties",
+        "minLength",
+        "maxLength",
+        "pattern",
+        "example",
+        "anyOf",
+        "propertyOrdering",
+        "default",
+        "items",
+        "minimum",
+        "maximum",
+    }
+)
+
+
+def _gemini_function_schema(schema: Any) -> Any:
+    """Keep provider tool schemas inside Gemini's documented OpenAPI subset.
+
+    Pydantic emits full JSON Schema, including ``uniqueItems`` and
+    ``additionalProperties``. Google AI Studio rejects unsupported function
+    declaration keywords with a generic ``INVALID_ARGUMENT`` 400. The client
+    still validates the returned arguments with the original Pydantic model, so
+    removing provider-side-only constraints does not weaken Manzil's contract.
+    """
+    if isinstance(schema, list):
+        return [_gemini_function_schema(item) for item in schema]
+    if not isinstance(schema, dict):
+        return schema
+    sanitized: dict[str, Any] = {}
+    for key, value in schema.items():
+        if key not in _GEMINI_FUNCTION_SCHEMA_FIELDS:
+            continue
+        # ``properties`` is a map of application field names to schemas, not a
+        # schema itself. Filtering its keys as keywords would erase every
+        # property before the request reaches the provider.
+        if key == "properties" and isinstance(value, dict):
+            sanitized[key] = {
+                property_name: _gemini_function_schema(property_schema)
+                for property_name, property_schema in value.items()
+            }
+        else:
+            sanitized[key] = _gemini_function_schema(value)
+    return sanitized
+
+
 def _tool_schema(schema: type[BaseModel]) -> dict[str, Any]:
-    return _inline_local_schema_refs(schema.model_json_schema())
+    """Provider-safe tool schema, with local refs expanded for Gemini."""
+    return _gemini_function_schema(_inline_local_schema_refs(schema.model_json_schema()))
 
 
 async def _live_call(plan: _CallPlan, schema: type[BaseModel]) -> ProviderResponse:

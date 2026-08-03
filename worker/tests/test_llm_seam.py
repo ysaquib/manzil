@@ -222,11 +222,11 @@ def test_unknown_stage_has_no_silent_fallback() -> None:
         model_for_stage("brand-new-stage")
 
 
-def test_image_classify_uses_owner_selected_pin(
+def test_image_classify_uses_owner_selected_taste_pin(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("MANZIL_MODEL_IMAGE_CLASSIFY", raising=False)
-    assert model_for_stage("image_classify") == "google/gemini-3-flash-preview"
+    assert model_for_stage("image_classify") == "anthropic/claude-sonnet-4.6"
 
 
 # ── OpenRouter routing + cache economics ─────────────────────────────────────
@@ -311,6 +311,17 @@ def test_tool_schema_inlines_nested_pydantic_refs() -> None:
     assert "$defs" not in serialized
     assert schema["properties"]["nested"]["properties"]["value"]["anyOf"]
     assert schema["properties"]["many"]["items"]["properties"]["value"]["anyOf"]
+
+
+def test_tool_schema_removes_keywords_google_rejects() -> None:
+    """The dynamic EXTRACT schema uses both constraints at multiple depths."""
+    from manzil_worker.stages.schema_gen import build_extraction_schema
+
+    schema = client_mod._tool_schema(build_extraction_schema())
+    serialized = json.dumps(schema)
+
+    assert '"uniqueItems"' not in serialized
+    assert '"additionalProperties"' not in serialized
 
 
 def test_bad_llm_mode_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:

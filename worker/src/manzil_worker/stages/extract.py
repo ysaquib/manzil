@@ -60,7 +60,6 @@ async def _extract_single(state: RunState, ctx: StageCtx) -> RunState:
     source = state.sources[0]
     schema = build_extraction_schema()
     content = f"URL: {source.url}\n\n{source.cleaned_text}"
-
     try:
         extraction = await ctx.call_structured("extract", schema, content)
     except ValidationError as first_error:

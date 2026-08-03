@@ -85,6 +85,7 @@ def test_extract_populates_every_criterion_with_provenance() -> None:
         "ceiling_fans",
         "stainless_steel_appliances",
         "flooring_materials",
+        "is_renovated",
     }
     beds = get_claim(state, "beds")
     assert beds.value == 2
@@ -112,7 +113,6 @@ def test_extract_preserves_property_facts_and_floor_plan_unit_types() -> None:
     payload = maple_extraction()
     payload["pool"] = field_payload("outdoor", "Outdoor swimming pool")
     payload["property_types"] = field_payload(["apartment"], "Apartment homes")
-    payload["unit_types"] = field_payload(["apartment"], "Apartment homes")
     payload["floor_plans"][0]["unit_types"] = ["loft"]
     state = asyncio.run(
         extract_stage(
@@ -124,8 +124,7 @@ def test_extract_preserves_property_facts_and_floor_plan_unit_types() -> None:
     pool = get_claim(state, "pool")
     assert pool.value == "outdoor"
     assert pool.applicability is None
-    generalized_type = get_claim(state, "unit_types")
-    assert generalized_type.applicability == "unit_scope_unspecified"
+    assert not any(claim.criterion_key == "unit_types" for claim in state.source_claims)
     assert state.floor_plans[0].unit_types == ["loft"]
 
 
