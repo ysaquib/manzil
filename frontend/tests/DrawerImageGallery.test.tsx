@@ -23,3 +23,18 @@ it("renders the empty state when there are no photos", () => {
   wrap(<DrawerImageGallery images={[]} loading={false} />);
   expect(screen.getByText(/No photos collected yet/i)).toBeInTheDocument();
 });
+
+it("shows the canonical ONNX scene and kitchen probability in the gallery tag", () => {
+  const classified = [{
+    id: "classified",
+    url: "http://x/classified.webp",
+    width: null,
+    height: null,
+    classification: { primaryScene: "residential_kitchen", kitchenProbability: 0.72 },
+  }] satisfies PropertyImage[];
+
+  wrap(<DrawerImageGallery images={classified} loading={false} />);
+
+  expect(screen.getByText("residential kitchen")).toBeInTheDocument();
+  expect(screen.getByText("Kitchen probability 72%" )).toBeInTheDocument();
+});

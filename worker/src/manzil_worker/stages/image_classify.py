@@ -29,7 +29,11 @@ from manzil_worker.llm.config import model_for_stage
 from manzil_worker.llm.prompt_loader import load_prompt
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.state import PropertyImageIn, RunState, StageWarning
-from manzil_worker.vision_onnx import ONNX_SHADOW_CACHE_KEY, ONNXShadowBatch
+from manzil_worker.vision_onnx import (
+    ONNX_SHADOW_CACHE_KEY,
+    ONNXShadowBatch,
+    ONNXShadowPrediction,
+)
 from manzil_worker.vision_refs import load_reference_manifest, vision_references_ready
 
 log = structlog.get_logger()
@@ -226,7 +230,7 @@ def _classification(image: PropertyImageIn) -> ImageClassification | None:
 
 
 def eligible_quality_images(images: list[PropertyImageIn]) -> list[PropertyImageIn]:
-    """Images that may ever feed a quality-rating VISION target.
+    """Canonical ONNX-classified photos that may feed quality VISION.
 
     Floor Plan diagrams are excluded **categorically** (§7.2, workbook): a
     layout drawing says nothing about finish quality, and letting one through
@@ -234,10 +238,36 @@ def eligible_quality_images(images: list[PropertyImageIn]) -> list[PropertyImage
     lives here rather than in one criterion's selector so `flooring_quality`
     and every later target inherit it instead of re-deriving it.
 
-    Both signals are honoured: `kind` carries the deterministic pass and any
-    persisted classification, `assessment.diagram` the visual one.
+    `kind` carries deterministic page evidence; ONNX's diagram result is a
+    second categorical exclusion. The promoted narrow contract deliberately
+    has no invented assessability, framing, relevance, or confidence fields.
     """
     return [
+        image
+        for image in images
+        if image.kind == "listing_photo"
+        and (assessment := _onnx_classification(image)) is not None
+        and not assessment.diagram_predicted
+    ]
+
+
+def select_kitchen_targets(images: list[PropertyImageIn]) -> list[PropertyImageIn]:
+    """Select up to three photos by descending ONNX kitchen probability."""
+    eligible = eligible_quality_images(images)
+    eligible.sort(
+        key=lambda image: (
+            -_onnx_classification(image).kitchen_score,  # type: ignore[union-attr]
+            image.source_url_page or "",
+            image.source_page_order if image.source_page_order is not None else 10**9,
+            image.content_hash,
+        )
+    )
+    return eligible[: VISION_TARGET_QUOTAS["kitchen_quality"]]
+
+
+def select_kitchen_targets_llm_legacy(images: list[PropertyImageIn]) -> list[PropertyImageIn]:
+    """Disabled pre-v3.52 selector retained for the historical LLM benchmark."""
+    eligible = [
         image
         for image in images
         if image.kind != "floor_plan_diagram"
@@ -245,15 +275,6 @@ def eligible_quality_images(images: list[PropertyImageIn]) -> list[PropertyImage
         and not assessment.diagram
         and not assessment.irrelevant
         and assessment.framing != "unusable"
-    ]
-
-
-def select_kitchen_targets(images: list[PropertyImageIn]) -> list[PropertyImageIn]:
-    """Select diverse, assessable kitchens with stable evidence-first ordering."""
-    eligible = [
-        image
-        for image in eligible_quality_images(images)
-        if (assessment := _classification(image)) is not None
         and assessment.confidence == "high"
         and assessment.kitchen_visibility == "assessable"
     ]
@@ -267,7 +288,6 @@ def select_kitchen_targets(images: list[PropertyImageIn]) -> list[PropertyImageI
             image.content_hash,
         )
     )
-
     selected: list[PropertyImageIn] = []
     covered_plans: set[str] = set()
     remaining = list(eligible)
@@ -294,6 +314,16 @@ def select_kitchen_targets(images: list[PropertyImageIn]) -> list[PropertyImageI
         if len(selected) >= VISION_TARGET_QUOTAS["kitchen_quality"]:
             break
     return selected
+
+
+def _onnx_classification(image: PropertyImageIn) -> ONNXShadowPrediction | None:
+    payload = (image.vision_assessment or {}).get("classification")
+    if not _valid_cached_shadow(payload):
+        return None
+    try:
+        return ONNXShadowPrediction.model_validate(payload["assessment"])
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 async def _renormalize_late_diagrams(state: RunState, ctx: StageCtx) -> None:
@@ -372,7 +402,7 @@ async def _apply_onnx_shadow(
     cached: dict[str, dict],
 ) -> None:
     """Persist observational ONNX readings without influencing pipeline truth."""
-    if ctx.image_classify_shadow is None or ctx.image_store is None:
+    if ctx.image_classify_onnx is None or ctx.image_store is None:
         return
 
     pending: list[tuple[str, bytes]] = []
@@ -397,7 +427,7 @@ async def _apply_onnx_shadow(
             log.info("image_classify_onnx_shadow_cached", images=len(images_by_hash))
             return
 
-        batch = await ctx.image_classify_shadow(pending)
+        batch = await ctx.image_classify_onnx(pending)
         if batch.cache_key != ONNX_SHADOW_CACHE_KEY:
             raise ValueError(f"unexpected shadow cache key {batch.cache_key}")
         prediction_by_hash = {
@@ -448,7 +478,8 @@ async def _apply_onnx_shadow(
     )
 
 
-async def image_classify_stage(state: RunState, ctx: StageCtx) -> RunState:
+async def _image_classify_llm_stage(state: RunState, ctx: StageCtx) -> RunState:
+    """Disabled legacy LLM classifier retained for rollback/reference."""
     if not state.property_images or state.property_id is None or ctx.image_store is None:
         state.vision_targets["kitchen_quality"] = []
         if state.plan is not None:
@@ -598,5 +629,142 @@ async def image_classify_stage(state: RunState, ctx: StageCtx) -> RunState:
             )
             and state.plan is not None
         ):
+            state.plan.skipped["VISION"] = "quality_inputs_unchanged"
+    return state
+
+
+def _canonical_onnx_record(
+    batch: ONNXShadowBatch, prediction: ONNXShadowPrediction
+) -> dict[str, object]:
+    return {
+        "cache_key": batch.cache_key,
+        "backend": batch.backend,
+        "artifact_sha256": batch.artifact_sha256,
+        "kitchen_threshold": batch.kitchen_threshold,
+        "diagram_threshold": batch.diagram_threshold,
+        "assessment": prediction.model_dump(),
+    }
+
+
+def _promote_cached_onnx(
+    image: PropertyImageIn, analysis: dict[str, object], record: dict[str, object]
+) -> None:
+    legacy = analysis.get("classification")
+    if _classification(image) is not None and "classification_llm_legacy" not in analysis:
+        analysis["classification_llm_legacy"] = legacy
+    analysis["classification"] = record
+    analysis.pop("classification_shadow", None)
+    image.vision_assessment = analysis
+    prediction = ONNXShadowPrediction.model_validate(record["assessment"])
+    if prediction.diagram_predicted:
+        image.kind = "floor_plan_diagram"
+
+
+async def image_classify_stage(state: RunState, ctx: StageCtx) -> RunState:
+    """Classify gallery images exclusively with the canonical ONNX backend."""
+    if not state.property_images or state.property_id is None or ctx.image_store is None:
+        state.vision_targets["kitchen_quality"] = []
+        if state.plan is not None:
+            state.plan.skipped["VISION"] = "no_classified_kitchen_targets"
+        return state
+    if ctx.image_classify_onnx is None:
+        raise RuntimeError(
+            "IMAGE_CLASSIFY requires MANZIL_IMAGE_CLASSIFY_ONNX_DIR "
+            "(legacy alias MANZIL_IMAGE_CLASSIFY_ONNX_SHADOW_DIR is also accepted)"
+        )
+
+    cached = await ctx.existing_image_classifications(state.property_id)
+    pending: list[tuple[str, bytes]] = []
+    images_by_hash: dict[str, PropertyImageIn] = {}
+    for image in state.property_images[:MAX_IMAGE_CLASSIFY_IMAGES]:
+        images_by_hash[image.content_hash] = image
+        persisted = cached.get(image.content_hash, {})
+        analysis: dict[str, object] = {
+            **persisted,
+            **(image.vision_assessment or {}),
+        }
+        candidates = (
+            analysis.get("classification"),
+            analysis.get("classification_shadow"),
+        )
+        record = next(
+            (candidate for candidate in candidates if _valid_cached_shadow(candidate)), None
+        )
+        if isinstance(record, dict):
+            image.vision_assessment = analysis
+            _promote_cached_onnx(image, analysis, record)
+            continue
+        normalized = await ctx.image_store.get(image.storage_path)
+        pending.append((image.content_hash, classification_thumbnail(normalized)))
+
+    classified = 0
+    if pending:
+        batch = await ctx.image_classify_onnx(pending)
+        if batch.cache_key != ONNX_SHADOW_CACHE_KEY:
+            raise ValueError(f"unexpected ONNX cache key {batch.cache_key}")
+        prediction_by_hash = {
+            prediction.content_hash: prediction for prediction in batch.predictions
+        }
+        requested = {content_hash for content_hash, _ in pending}
+        if (
+            len(prediction_by_hash) != len(batch.predictions)
+            or set(prediction_by_hash) != requested
+        ):
+            raise ValueError("ONNX response hashes do not exactly match the requested images")
+        for content_hash, prediction in prediction_by_hash.items():
+            image = images_by_hash[content_hash]
+            analysis = dict(image.vision_assessment or {})
+            if _classification(image) is not None and "classification_llm_legacy" not in analysis:
+                analysis["classification_llm_legacy"] = analysis.get("classification")
+            _promote_cached_onnx(image, analysis, _canonical_onnx_record(batch, prediction))
+        classified = len(batch.predictions)
+        log.info(
+            "image_classify_onnx_complete",
+            classified=classified,
+            cached=len(images_by_hash) - classified,
+            elapsed_seconds=batch.elapsed_seconds,
+            child_peak_rss_mb=batch.peak_rss_mb,
+            images_per_second=(classified / batch.elapsed_seconds)
+            if batch.elapsed_seconds > 0
+            else None,
+        )
+    else:
+        log.info("image_classify_onnx_cached", images=len(images_by_hash))
+
+    state.replace_warnings("IMAGE_CLASSIFY", [])
+    await _renormalize_late_diagrams(state, ctx)
+    selected = select_kitchen_targets(state.property_images)
+    state.vision_targets["kitchen_quality"] = [image.content_hash for image in selected]
+    if not selected and state.plan is not None:
+        state.plan.skipped["VISION"] = "no_classified_kitchen_targets"
+    elif selected and vision_references_ready(criterion="kitchen_quality"):
+        manifest = load_reference_manifest(criterion="kitchen_quality")
+        assert manifest is not None
+        profile = manifest["profiles"]["kitchen_quality"]
+        quality_prompt = load_prompt("vision")
+        digest = hashlib.sha256(
+            json.dumps(
+                {
+                    "criterion": "kitchen_quality",
+                    "targets": [
+                        {
+                            "hash": image.content_hash,
+                            "associations": sorted(image.exact_floor_plan_refs),
+                        }
+                        for image in selected
+                    ],
+                    "model": model_for_stage("vision"),
+                    "prompt_version": quality_prompt.version,
+                    "reference_version": profile["version"],
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        prior_digests = {
+            ((image.vision_assessment or {}).get("kitchen_quality") or {}).get("input_digest")
+            for image in selected
+        }
+        if prior_digests == {digest} and state.plan is not None:
             state.plan.skipped["VISION"] = "quality_inputs_unchanged"
     return state
