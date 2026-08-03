@@ -9,18 +9,20 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
-import { IconChevronRight } from "@tabler/icons-react";
+import { IconChevronRight, IconShieldLock } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { PublicPageShell } from "../../components/PublicPageShell";
 import { UserMenu } from "../../components/UserMenu";
+import { useAdminIdentity } from "../admin/api";
 import { ApiError } from "../../lib/apiClient";
 import { useCreateHunt, useHunts } from "./api";
 
 export function HuntSwitcherPage() {
   const { data: hunts, isLoading, error } = useHunts();
+  const admin = useAdminIdentity();
   const createHunt = useCreateHunt();
   const [name, setName] = useState("");
 
@@ -66,6 +68,21 @@ export function HuntSwitcherPage() {
         )}
 
         <Stack gap="sm">
+          {admin.data?.is_site_admin && (
+            <NavLink
+              component={Link}
+              to="/admin"
+              label="Admin panel"
+              description="Manage Manzil"
+              leftSection={<IconShieldLock size={18} stroke={1.6} />}
+              rightSection={<IconChevronRight size={16} stroke={1.5} />}
+              active
+              variant="filled"
+              p="sm"
+              style={{ borderRadius: "var(--mantine-radius-md)" }}
+            />
+          )}
+
           {(hunts ?? []).map((hunt) => (
             <NavLink
               key={hunt.id}
