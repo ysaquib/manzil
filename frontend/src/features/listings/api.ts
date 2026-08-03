@@ -420,8 +420,41 @@ export interface PropertyImage {
   width: number | null;
   height: number | null;
   kind?: "listing_photo" | "floor_plan_diagram" | "other";
-  visionAssessment?: Record<string, unknown> | null;
+  classification?: {
+    primaryScene: string;
+    kitchenProbability: number;
+  };
   floorPlanAssociations?: string[];
+}
+
+function assessmentRecord(value: unknown, classifier: "classification" | "classification_shadow") {
+  if (!value || typeof value !== "object") return null;
+  const record = (value as Record<string, unknown>)[classifier];
+  if (!record || typeof record !== "object") return null;
+  const assessment = (record as Record<string, unknown>).assessment;
+  return assessment && typeof assessment === "object"
+    ? assessment as Record<string, unknown>
+    : null;
+}
+
+export function projectImageClassifications(
+  visionAssessment: unknown,
+): Pick<PropertyImage, "classification"> {
+  const canonical = assessmentRecord(visionAssessment, "classification");
+  // Migration compatibility: rows classified during shadow rollout become
+  // visible as ONNX immediately and are promoted on their next image refresh.
+  const legacyShadow = assessmentRecord(visionAssessment, "classification_shadow");
+  const onnx = typeof canonical?.predicted_scene === "string" ? canonical : legacyShadow;
+  const predictedScene = onnx?.predicted_scene;
+  const kitchenScore = onnx?.kitchen_score;
+  return {
+    classification: typeof predictedScene === "string" && typeof kitchenScore === "number"
+      ? {
+          primaryScene: predictedScene,
+          kitchenProbability: kitchenScore,
+        }
+      : undefined,
+  };
 }
 
 export function usePropertyImages(propertyId: string) {
@@ -462,7 +495,7 @@ export function usePropertyImages(propertyId: string) {
               width: row.width,
               height: row.height,
               kind: row.kind,
-              visionAssessment: row.vision_assessment,
+              ...projectImageClassifications(row.vision_assessment),
               floorPlanAssociations: plansByImage.get(row.id) ?? [],
             }]
           : [];

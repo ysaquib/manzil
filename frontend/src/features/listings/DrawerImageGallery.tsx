@@ -63,14 +63,7 @@ export function DrawerImageGallery({ images, loading }: { images: PropertyImage[
   }
 
   const many = images.length > 1;
-  const assessmentOf = (image: PropertyImage) => {
-    const classification = image.visionAssessment?.classification;
-    if (!classification || typeof classification !== "object") return null;
-    const assessment = (classification as Record<string, unknown>).assessment;
-    return assessment && typeof assessment === "object"
-      ? (assessment as Record<string, unknown>)
-      : null;
-  };
+  const displayScene = (scene: string) => scene.replaceAll("_", " ");
   return (
     <div className={classes.gallery}>
       <div className={classes.primaryWrap}>
@@ -97,9 +90,8 @@ export function DrawerImageGallery({ images, loading }: { images: PropertyImage[
                   className={classes.primary}
                 />
                 {(() => {
-                  const assessment = assessmentOf(img);
-                  if (!assessment) return null;
-                  const scene = String(assessment.primary_scene ?? "photo").replaceAll("_", " ");
+                  if (!img.classification) return null;
+                  const scene = displayScene(img.classification.primaryScene);
                   return (
                     <Stack gap={2} className={classes.assessment}>
                       <Group gap={6} wrap="wrap">
@@ -112,11 +104,9 @@ export function DrawerImageGallery({ images, loading }: { images: PropertyImage[
                           </Text>
                         )}
                       </Group>
-                      {assessment.kitchen_visibility === "assessable" && (
-                        <Text component="span" className={classes.assessmentHint}>
-                          Kitchen assessable
-                        </Text>
-                      )}
+                      <Text component="span" className={classes.assessmentHint}>
+                        Kitchen probability {Math.round(img.classification.kitchenProbability * 100)}%
+                      </Text>
                     </Stack>
                   );
                 })()}

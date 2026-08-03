@@ -195,8 +195,8 @@ def evaluate_classifier(
     tally: CostTally,
     latency_seconds: float,
 ) -> ClassifierBenchResult:
-    """Score one model's outputs using the exact production target selector."""
-    from manzil_worker.stages.image_classify import select_kitchen_targets
+    """Score historical LLM outputs with the retained pre-v3.52 selector."""
+    from manzil_worker.stages.image_classify import select_kitchen_targets_llm_legacy
 
     by_property: dict[str, list[ImageLabel]] = defaultdict(list)
     for label in labels:
@@ -208,7 +208,7 @@ def evaluate_classifier(
         }
         selected_hashes = {
             image.content_hash
-            for image in select_kitchen_targets(
+            for image in select_kitchen_targets_llm_legacy(
                 _property_images(property_labels, property_assessments, labels_dir)
             )
         }
