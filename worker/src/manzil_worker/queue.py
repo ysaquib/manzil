@@ -35,6 +35,8 @@ from manzil_shared.config import (
     IMAGE_REFRESH_RETRY_COOLDOWN_HOURS,
     JOB_ORPHAN_AFTER_SECONDS,
     MANZIL_JOB_MAX_ATTEMPTS,
+    REFRESH_FAILURE_BACKOFF_BASE_HOURS,
+    REFRESH_FAILURE_BACKOFF_MAX_HOURS,
     REFRESH_TTL_HOURS,
     SCHEDULER_TICK_SECONDS,
     UTILITY_BASELINE_RETRY_SECONDS,
@@ -108,6 +110,7 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger()
 
+_SYNTHETIC_SEED_DOMAIN = "seed.example"
 JOB_ORPHAN_AFTER = timedelta(seconds=JOB_ORPHAN_AFTER_SECONDS)
 
 # A dispatcher runs one claimed job to a terminal state (raising only on
@@ -2678,6 +2681,36 @@ async def checkpoint_timeout_tick(pool: asyncpg.Pool) -> None:
             )
 
 
+def _refresh_failure_backoff_active(
+    failure: dict[str, Any] | None,
+    *,
+    now: datetime,
+) -> bool:
+    """Whether the scheduler must still wait after repeated class failures.
+
+    The aggregate contains failures newer than that class's last successful
+    marker, so a success resets the exponent without mutable retry metadata.
+    """
+    if not failure:
+        return False
+    count = failure.get("failure_count")
+    last_failed_at = failure.get("last_failed_at")
+    if not isinstance(count, int) or count < 1 or last_failed_at is None:
+        return False
+    if isinstance(last_failed_at, str):
+        last_failed_at = datetime.fromisoformat(last_failed_at.replace("Z", "+00:00"))
+    if not isinstance(last_failed_at, datetime):
+        return False
+    if last_failed_at.tzinfo is None:
+        last_failed_at = last_failed_at.replace(tzinfo=UTC)
+    exponent = min(count - 1, 16)
+    hours = min(
+        REFRESH_FAILURE_BACKOFF_BASE_HOURS * (2**exponent),
+        REFRESH_FAILURE_BACKOFF_MAX_HOURS,
+    )
+    return last_failed_at > now - timedelta(hours=hours)
+
+
 async def refresh_ttl_tick(pool: asyncpg.Pool) -> None:
     """Enqueue one class-combined refresh per due active Listing."""
     async with pool.acquire() as conn, conn.transaction():
@@ -2718,11 +2751,50 @@ async def refresh_ttl_tick(pool: asyncpg.Pool) -> None:
                          or
                          (j.type = 'refresh' and (j.payload -> 'fields') ? 'images')
                        )
-                   ) as last_image_attempt_at
+                   ) as last_image_attempt_at,
+                   (
+                     select coalesce(
+                       jsonb_object_agg(
+                         failed.refresh_class,
+                         jsonb_build_object(
+                           'failure_count', failed.failure_count,
+                           'last_failed_at', failed.last_failed_at
+                         )
+                       ),
+                       '{}'::jsonb
+                     )
+                     from (
+                       select field.value as refresh_class,
+                              count(*) as failure_count,
+                              max(j.finished_at) as last_failed_at
+                       from jobs j
+                       cross join lateral jsonb_array_elements_text(
+                         case
+                           when jsonb_typeof(j.payload -> 'fields') = 'array'
+                             then j.payload -> 'fields'
+                           else '[]'::jsonb
+                         end
+                       ) field
+                       left join hunt_listing_refresh_status success
+                         on success.hunt_listing_id = hl.id
+                        and success.refresh_class = field.value
+                       where j.hunt_listing_id = hl.id
+                         and j.type = 'refresh'
+                         and j.state = 'failed'
+                         and j.finished_at is not null
+                         and (
+                           success.last_success_at is null
+                           or j.finished_at > success.last_success_at
+                         )
+                       group by field.value
+                     ) failed
+                   ) as refresh_failures
             from hunt_listings hl
             join property_sources ps on ps.id = hl.submitted_source_id
             left join hunt_listing_refresh_status hrs on hrs.hunt_listing_id = hl.id
             where hl.status = 'active'
+              and lower(ps.site_domain) <> $1
+              and lower(ps.site_domain) not like '%.' || $1
               and not exists (
                 select 1 from jobs j
                 where j.hunt_listing_id = hl.id
@@ -2731,12 +2803,19 @@ async def refresh_ttl_tick(pool: asyncpg.Pool) -> None:
               )
             group by hl.id, hl.hunt_id, ps.url
             order by hl.created_at
-            """
+            """,
+            _SYNTHETIC_SEED_DOMAIN,
         )
         now = datetime.now(UTC)
         for row in rows:
             raw = row["freshness"]
             freshness = json.loads(raw) if isinstance(raw, str) else dict(raw or {})
+            raw_failures = row["refresh_failures"]
+            refresh_failures = (
+                json.loads(raw_failures)
+                if isinstance(raw_failures, str)
+                else dict(raw_failures or {})
+            )
             relevant = ["pricing", "listing_details"]
             if row["needs_images"]:
                 relevant.append("images")
@@ -2749,6 +2828,10 @@ async def refresh_ttl_tick(pool: asyncpg.Pool) -> None:
                     last = datetime.fromisoformat(last.replace("Z", "+00:00"))
                 ttl = timedelta(hours=REFRESH_TTL_HOURS[refresh_class])
                 if last is None or last <= now - ttl:
+                    if _refresh_failure_backoff_active(
+                        refresh_failures.get(refresh_class), now=now
+                    ):
+                        continue
                     if refresh_class == "images":
                         last_attempt = row["last_image_attempt_at"]
                         cooldown = timedelta(hours=IMAGE_REFRESH_RETRY_COOLDOWN_HOURS)

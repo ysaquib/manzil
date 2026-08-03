@@ -143,6 +143,11 @@ REFRESH_TTL_HOURS = {
 # five-minute scheduler tick. The durable Job history supplies the attempt
 # timestamp so the backoff survives worker restarts.
 IMAGE_REFRESH_RETRY_COOLDOWN_HOURS = 3
+# A failed class-scoped refresh is retried with durable exponential backoff.
+# Job history is the state store: a successful class marker resets the count,
+# and manual retries remain available because only the scheduler reads this.
+REFRESH_FAILURE_BACKOFF_BASE_HOURS = 1
+REFRESH_FAILURE_BACKOFF_MAX_HOURS = 24
 UTILITY_BASELINE_TTL_DAYS = 120
 # A metro whose baselines pass failed is not retried before this cooldown —
 # without it a persistently failing pass would fire one live LLM call per tick.
