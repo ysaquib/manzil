@@ -201,11 +201,14 @@ async def list_jobs(
     return [row_to_response(row) for row in query.execute().data or []]
 
 
-async def cancel_job(client: Client, job_id: UUID, user_id: str) -> JobResponse:
+async def cancel_job(
+    client: Client, job_id: UUID, user_id: str, *, authorized_admin: bool = False
+) -> JobResponse:
     row = await get_job_row(client, job_id)
     if row is None:
         raise JobNotFound(f"Job {job_id} not found")
-    await _assert_manage_job(client, row, user_id)
+    if not authorized_admin:
+        await _assert_manage_job(client, row, user_id)
     if row["state"] not in {
         JobState.QUEUED.value,
         JobState.RUNNING.value,
@@ -220,11 +223,14 @@ async def cancel_job(client: Client, job_id: UUID, user_id: str) -> JobResponse:
     return row_to_response(updated)
 
 
-async def retry_job(client: Client, job_id: UUID, user_id: str) -> JobResponse:
+async def retry_job(
+    client: Client, job_id: UUID, user_id: str, *, authorized_admin: bool = False
+) -> JobResponse:
     row = await get_job_row(client, job_id)
     if row is None:
         raise JobNotFound(f"Job {job_id} not found")
-    await _assert_manage_job(client, row, user_id)
+    if not authorized_admin:
+        await _assert_manage_job(client, row, user_id)
     if row["state"] not in {JobState.FAILED.value, JobState.CANCELLED.value}:
         raise JobNotRetryable(f"Job in state {row['state']} cannot be retried")
     client.table("jobs").update(
