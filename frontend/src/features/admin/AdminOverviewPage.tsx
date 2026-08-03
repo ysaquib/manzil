@@ -117,8 +117,9 @@ export function AdminOverviewPage() {
               icon={<IconAlertTriangle size={18} />}
               title={`${s.jobs_failed} failed ${s.jobs_failed === 1 ? "Job" : "Jobs"}`}
             >
-              Cross-Hunt queue control arrives with AD-5. Until then, the Hunt&apos;s own Tasks tab
-              can retry them.
+              <Link to="/admin/jobs">
+                Open the cross-Hunt Jobs queue to inspect, retry, or cancel them.
+              </Link>
             </Alert>
           )}
           {s.feedback_new > 0 && (
