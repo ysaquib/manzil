@@ -1,6 +1,6 @@
 // Criterion breakdown (P1-11, §9.3): renders the persisted scores.breakdown
-// directly — no client-side re-derivation. When a gate fired, criteria is
-// empty by contract and the UI says so instead of showing a hollow list.
+// directly — no client-side re-derivation. When a gate fired, an alert names
+// the gate-pass matched option and the criteria rows below are informational.
 // Evidence and provenance sit behind an info affordance (HoverCard/Popover).
 import {
   ActionIcon,
@@ -16,7 +16,8 @@ import {
 import { IconArrowBackUp, IconInfoCircle } from "@tabler/icons-react";
 import { Fragment, useState } from "react";
 
-import type { ScoreBreakdown } from "../../lib/contracts";
+import type { GateFiring, OptionMatch, ScoreBreakdown } from "../../lib/contracts";
+import { formatMatchLabel } from "../rubric/matchLabels";
 import { displayValue as formatCriterionValue } from "./displayValue";
 import { useListingDetailDraft } from "./ListingDetailDraft";
 import { useResolutionCandidates } from "./api";
@@ -29,6 +30,61 @@ import type { Extraction, Override, ResolutionCandidate } from "./types";
 import type { CatalogEntry } from "../rubric/api";
 import { memberDisplayName } from "../collaboration/memberDisplay";
 import type { HuntMember } from "../collaboration/api";
+
+function isAdvertisedUnconfirmed(value: unknown): boolean {
+  if (value === "advertised_unconfirmed") return true;
+  return (
+    Array.isArray(value) &&
+    value.some((item) => item === "advertised_unconfirmed")
+  );
+}
+
+function gateHasLegacyShape(gate: GateFiring): boolean {
+  return gate.value === undefined && gate.matched === undefined;
+}
+
+function resolveGateFields(
+  gate: GateFiring,
+  criteriaRow: ScoreBreakdown["criteria"][number] | undefined,
+): { value: unknown; matched: OptionMatch | null | undefined } {
+  if (gateHasLegacyShape(gate)) {
+    if (criteriaRow) {
+      return { value: criteriaRow.value, matched: criteriaRow.matched };
+    }
+    return { value: undefined, matched: undefined };
+  }
+  return { value: gate.value, matched: gate.matched ?? null };
+}
+
+function formatGateLine(
+  gate: GateFiring,
+  label: string,
+  criteriaRow: ScoreBreakdown["criteria"][number] | undefined,
+): string {
+  const { value, matched } = resolveGateFields(gate, criteriaRow);
+  const setScore = gate.set_score;
+
+  if (gate.kind === "dealbreaker") {
+    if (matched) {
+      return `${label}: "${formatMatchLabel(matched, gate.key)}" is a dealbreaker — score set to ${setScore}`;
+    }
+    if (value !== undefined && value !== null) {
+      return `${label}: ${formatCriterionValue(value, gate.key)} is a dealbreaker — score set to ${setScore}`;
+    }
+    return `${label} matched a dealbreaker — score set to ${setScore}`;
+  }
+
+  if (value === undefined || value === null) {
+    return `${label}: unknown — score set to ${setScore}`;
+  }
+  if (isAdvertisedUnconfirmed(value)) {
+    return `${label}: advertised, unconfirmed (not gate-sufficient) — score set to ${setScore}`;
+  }
+  if (matched) {
+    return `${label} matched "${formatMatchLabel(matched, gate.key)}" (not acceptable) — score set to ${setScore}`;
+  }
+  return `${label}: ${formatCriterionValue(value, gate.key)} matched no option — score set to ${setScore}`;
+}
 
 function applicabilityLabel(extraction: Extraction): string | null {
   if (extraction.target_scope === "floor_plan") return "this floor plan";
@@ -194,12 +250,24 @@ export function CriterionBreakdown({
     ),
   ];
 
-  if (breakdown.gates.length > 0) {
+  const legacyGatedOnly =
+    breakdown.gates.length > 0 &&
+    breakdown.criteria.length === 0 &&
+    breakdown.gates.every(gateHasLegacyShape);
+
+  const gateCap =
+    breakdown.gates.length > 0
+      ? Math.min(...breakdown.gates.map((gate) => gate.set_score))
+      : null;
+
+  const criteriaByKey = new Map(breakdown.criteria.map((row) => [row.key, row]));
+
+  if (legacyGatedOnly) {
     return (
-      <Alert color={"danger"} title="A gate fired — criteria were not scored">
+      <Alert color={"danger"} title={`A gate fired — score capped at ${gateCap}`}>
         <Stack gap="xs">
           {breakdown.gates.map((gate) => (
-            <Text size="sm" key={gate.key}>
+            <Text size="sm" key={`${gate.key}:${gate.kind}`}>
               <Text span fw={600}>
                 {catalogByKey.get(gate.key)?.label ?? gate.key}
               </Text>{" "}
@@ -213,7 +281,26 @@ export function CriterionBreakdown({
   }
 
   return (
-    <Box className={classes.wrap}>
+    <Stack gap="md">
+      {breakdown.gates.length > 0 && (
+        <Alert color={"danger"} title={`A gate fired — score capped at ${gateCap}`}>
+          <Stack gap="xs">
+            {breakdown.gates.map((gate) => (
+              <Text size="sm" key={`${gate.key}:${gate.kind}`}>
+                {formatGateLine(
+                  gate,
+                  catalogByKey.get(gate.key)?.label ?? gate.key,
+                  criteriaByKey.get(gate.key),
+                )}
+              </Text>
+            ))}
+            <Text size="xs" c="dimmed">
+              Criterion deltas below are informational; total reflects the gate cap.
+            </Text>
+          </Stack>
+        </Alert>
+      )}
+      <Box className={classes.wrap}>
       <Group justify="space-between" align="baseline" className={classes.baseRow} wrap="nowrap">
         <Text size="xs" c="dimmed">
           Baseline{" "}
@@ -293,9 +380,16 @@ export function CriterionBreakdown({
             {" "}
             / 15
           </Text>
+          {breakdown.gates.length > 0 && (
+            <Text component="span" size="xs" c="dimmed" fw={400}>
+              {" "}
+              (gate cap)
+            </Text>
+          )}
         </Text>
       </Group>
-    </Box>
+      </Box>
+    </Stack>
   );
 }
 

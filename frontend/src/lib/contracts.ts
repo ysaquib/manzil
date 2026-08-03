@@ -40,6 +40,10 @@ export interface GateFiring {
   key: string;
   kind: "dealbreaker" | "non_negotiable";
   set_score: number;
+  /** Gate-pass value; absent on legacy persisted scores. */
+  value?: unknown;
+  /** Gate-pass first match; absent on legacy persisted scores. */
+  matched?: OptionMatch | null;
 }
 
 export interface BreakdownCriterion {

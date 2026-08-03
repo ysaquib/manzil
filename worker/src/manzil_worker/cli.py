@@ -114,11 +114,22 @@ def ingest(
             typer.echo(f"\nplan: {plan_score.plan_name or '(property-level)'}{marker}")
             if b["gates"]:
                 for gate in b["gates"]:
-                    typer.echo(f"  GATE {gate['kind']} on {gate['key']} -> {gate['set_score']}")
-            for c in b["criteria"]:
-                value = "unknown" if c.get("unknown") else repr(c["value"])
-                typer.echo(f"  {c['key']}: {value} -> {c['delta']:+g}")
-            typer.echo(f"  total: {b['total']}")
+                    detail = ""
+                    if gate.get("matched"):
+                        detail = f" (matched {gate['matched']!r})"
+                    elif gate.get("value") is None and "value" in gate:
+                        detail = " (unknown)"
+                    typer.echo(
+                        f"  GATE {gate['kind']} on {gate['key']}{detail} -> {gate['set_score']}"
+                    )
+            if b["criteria"]:
+                if b["gates"]:
+                    typer.echo("  (informational deltas — total is gate-capped)")
+                for c in b["criteria"]:
+                    value = "unknown" if c.get("unknown") else repr(c["value"])
+                    typer.echo(f"  {c['key']}: {value} -> {c['delta']:+g}")
+            cap_note = " (gate cap)" if b["gates"] else ""
+            typer.echo(f"  total: {b['total']}{cap_note}")
         typer.echo(f"\ncost: ${state.cost_usd:.4f}")
 
     asyncio.run(run())
