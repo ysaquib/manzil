@@ -1,5 +1,5 @@
-import { Badge, Box, Tooltip } from "@mantine/core";
-import { IconAlertTriangle, IconClockExclamation } from "@tabler/icons-react";
+import { Box, Tooltip } from "@mantine/core";
+import { IconAlertTriangle, IconClockExclamation, IconLink } from "@tabler/icons-react";
 
 import type { RefreshClass, SingleSourceReason } from "../../features/listings/types";
 
@@ -57,9 +57,9 @@ export function SingleSourceBadge({ reason }: { reason: SingleSourceReason }) {
   const copy = SINGLE_SOURCE_COPY[reason];
   return (
     <Tooltip label={copy.detail}>
-      <Badge size="xs" variant="light" color="yellow">
-        {copy.label}
-      </Badge>
+      <Box c="yellow.7" display="flex" style={{ flexShrink: 0 }}>
+        <IconLink size={14} stroke={1.5} aria-label={copy.label} />
+      </Box>
     </Tooltip>
   );
 }
