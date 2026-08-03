@@ -508,6 +508,8 @@ class GateFiring(BaseModel):
     key: str
     kind: Literal["dealbreaker", "non_negotiable"]
     set_score: float
+    value: Any = None
+    matched: OptionMatch | None = None
 
 
 class BreakdownCriterion(BaseModel):
@@ -519,8 +521,9 @@ class BreakdownCriterion(BaseModel):
 
 
 class ScoreBreakdown(BaseModel):
-    """When a gate fires: `total` = min set-score, `gates` populated, `criteria`
-    empty — the delta pass never ran (§9.3)."""
+    """When a gate fires: `total` = min set-score, `gates` populated with gate-pass
+    `value`/`matched`, and `criteria` holds informational point-scoring deltas
+    that do not affect `total` (§9.3, §20 2026-08-03)."""
 
     base: float = 10.0
     total: float

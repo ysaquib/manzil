@@ -113,7 +113,7 @@ def test_first_match_wins_on_overlapping_options() -> None:
     assert breakdown.criteria[0].delta == 0.5  # first option matched, second never reached
 
 
-def test_dealbreaker_sets_score_and_skips_delta_pass() -> None:
+def test_dealbreaker_caps_total_and_populates_informational_criteria() -> None:
     pets = crit(
         "pets_policy",
         [opt(MatchOp.EQ, "cats_and_dogs", 0.5), opt(MatchOp.EQ, "none", 0.0, dealbreaker=0.0)],
@@ -124,8 +124,24 @@ def test_dealbreaker_sets_score_and_skips_delta_pass() -> None:
         "total": 0.0,
         "rubric_version": 2,
         "clamped": False,
-        "gates": [{"key": "pets_policy", "kind": "dealbreaker", "set_score": 0.0}],
-        "criteria": [],  # delta pass never ran — UI should say so (§9.3)
+        "gates": [
+            {
+                "key": "pets_policy",
+                "kind": "dealbreaker",
+                "set_score": 0.0,
+                "value": "none",
+                "matched": {"op": "eq", "value": "none"},
+            }
+        ],
+        "criteria": [
+            {"key": "beds", "value": 2, "matched": {"op": "eq", "value": 2}, "delta": 0.5},
+            {
+                "key": "pets_policy",
+                "value": "none",
+                "matched": {"op": "eq", "value": "none"},
+                "delta": 0.0,
+            },
+        ],
     }
 
 
@@ -135,15 +151,42 @@ def test_non_negotiable_fires_on_negative_match_unmatched_and_unknown() -> None:
         [opt(MatchOp.EQ, "in_unit", 1.0), opt(MatchOp.EQ, "on_site", -0.5)],
         non_negotiable=0.0,
     )
-    for values in ({"in_unit_laundry": "on_site"}, {"in_unit_laundry": "hookups"}, {}):
-        breakdown = score([laundry_gate], values, rubric_version=1)
-        assert breakdown.gates == [
-            breakdown.gates[0].__class__(
-                key="in_unit_laundry", kind="non_negotiable", set_score=0.0
-            )
-        ], values
-        assert breakdown.total == 0.0
-        assert breakdown.criteria == []
+    on_site = score([laundry_gate], {"in_unit_laundry": "on_site"}, rubric_version=1)
+    assert on_site.to_contract()["gates"] == [
+        {
+            "key": "in_unit_laundry",
+            "kind": "non_negotiable",
+            "set_score": 0.0,
+            "value": "on_site",
+            "matched": {"op": "eq", "value": "on_site"},
+        }
+    ]
+    assert on_site.total == 0.0
+    assert on_site.criteria[0].delta == -0.5
+
+    hookups = score([laundry_gate], {"in_unit_laundry": "hookups"}, rubric_version=1)
+    assert hookups.to_contract()["gates"] == [
+        {
+            "key": "in_unit_laundry",
+            "kind": "non_negotiable",
+            "set_score": 0.0,
+            "value": "hookups",
+            "matched": None,
+        }
+    ]
+    assert hookups.criteria[0].delta == 0.0
+
+    unknown = score([laundry_gate], {}, rubric_version=1)
+    assert unknown.to_contract()["gates"] == [
+        {
+            "key": "in_unit_laundry",
+            "kind": "non_negotiable",
+            "set_score": 0.0,
+            "value": None,
+            "matched": None,
+        }
+    ]
+    assert unknown.criteria[0].unknown is True
 
 
 def test_non_negotiable_satisfied_by_acceptable_match() -> None:
@@ -165,8 +208,15 @@ def test_advertised_unconfirmed_never_satisfies_non_negotiable() -> None:
         rubric_version=1,
     )
     assert [gate.model_dump(mode="json") for gate in breakdown.gates] == [
-        {"key": "in_unit_laundry", "kind": "non_negotiable", "set_score": 2.0}
+        {
+            "key": "in_unit_laundry",
+            "kind": "non_negotiable",
+            "set_score": 2.0,
+            "value": "advertised_unconfirmed",
+            "matched": {"op": "eq", "value": "advertised_unconfirmed"},
+        }
     ]
+    assert len(breakdown.criteria) == 1
 
 
 def test_multiple_gates_take_min_never_average() -> None:
@@ -175,6 +225,7 @@ def test_multiple_gates_take_min_never_average() -> None:
     breakdown = score([g1, g2], {"beds": 0, "pets_policy": "none"}, rubric_version=3)
     assert breakdown.total == 1.0  # min(2.0, 1.0)
     assert [g.kind for g in breakdown.gates] == ["dealbreaker", "non_negotiable"]
+    assert len(breakdown.criteria) == 2
 
 
 def test_bonus_rubric_exceeds_ten_and_clamps_at_fifteen() -> None:
