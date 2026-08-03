@@ -8,7 +8,8 @@ from uuid import UUID, uuid4
 
 import pytest
 from api_helpers import FAKE_USER
-from httpx import AsyncClient
+from httpx import ASGITransport, AsyncClient
+from manzil_api.main import create_app
 from manzil_shared.models import CheckpointKind, CheckpointPrompt, JobState
 
 
@@ -84,6 +85,61 @@ async def test_list_jobs_comma_separated_states(client: AsyncClient, db_pool) ->
         assert "done" not in states
     finally:
         await db_pool.execute("delete from hunts where id = $1", hunt_id)
+
+
+@pytest.mark.asyncio
+async def test_site_admin_can_list_jobs_in_a_non_member_hunt(
+    db_pool, collab_hunt, seeded_users
+) -> None:
+    """Ghost View is a SELECT widening, so the existing per-Hunt Tasks read
+    must work without turning the Site Admin into a Hunt member."""
+    outsider = seeded_users["outsider"]
+    hunt_id = collab_hunt["hunt_id"]
+    job_id = await db_pool.fetchval(
+        "insert into jobs (hunt_id, type, state) "
+        "values ($1, 'rescore', 'queued') returning id",
+        hunt_id,
+    )
+    app = create_app()
+    app.state.db_pool = db_pool
+
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            headers={"Authorization": f"Bearer {outsider.token}"},
+        ) as ghost_client:
+            # The same non-member is hidden before the account-level grant.
+            hidden = await ghost_client.get(
+                f"/v1/hunts/{hunt_id}/jobs?state=queued,running,waiting_user"
+            )
+            assert hidden.status_code == 404
+
+            await db_pool.execute(
+                "insert into site_admins (user_id) values ($1) on conflict do nothing",
+                outsider.user_id,
+            )
+            try:
+                visible = await ghost_client.get(
+                    f"/v1/hunts/{hunt_id}/jobs?state=queued,running,waiting_user"
+                )
+                assert visible.status_code == 200
+                assert str(job_id) in {job["id"] for job in visible.json()}
+            finally:
+                await db_pool.execute(
+                    "delete from site_admins where user_id = $1", outsider.user_id
+                )
+
+        assert (
+            await db_pool.fetchval(
+                "select count(*) from hunt_members where hunt_id = $1 and user_id = $2",
+                hunt_id,
+                outsider.user_id,
+            )
+            == 0
+        )
+    finally:
+        await db_pool.execute("delete from jobs where id = $1", job_id)
 
 
 @pytest.mark.asyncio
