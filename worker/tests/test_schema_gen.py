@@ -32,7 +32,9 @@ EXPECTED_KEYS = {
     "ceiling_fans",
     "stainless_steel_appliances",
     "flooring_materials",
+    "is_renovated",
     "min_lease_months",
+    "year_built",
     "pool",
     "fitness_center",
     "clubhouse",
@@ -44,7 +46,6 @@ EXPECTED_KEYS = {
     "package_handling",
     "smoking_policy",
     "property_types",
-    "unit_types",
     "internet_readiness",
 }
 
@@ -72,6 +73,20 @@ def test_schema_has_one_field_per_criterion_plus_floor_plans() -> None:
         "one_time_fees",  # §9.5 §20 2026-07-18
         "property_contact",  # P3-21 §20 2026-07-27
     }
+
+
+def test_unit_types_derive_from_floor_plans_and_legacy_top_level_is_ignored() -> None:
+    schema = build_extraction_schema()
+    assert "unit_types" not in schema.model_fields
+
+    parsed = schema.model_validate(
+        extraction_payload(
+            unit_types=field_payload(["apartment"], "Legacy generalized claim"),
+            floor_plans=[{"response_key": "a1", "unit_types": ["loft"]}],
+        )
+    )
+
+    assert parsed.floor_plans[0].unit_types == ["loft"]
 
 
 def test_pet_costs_and_utilities_are_optional_and_default_none() -> None:

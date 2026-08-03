@@ -165,6 +165,7 @@ def test_skeleton_prefills_every_extractable_key_as_null(tmp_path: Path) -> None
         "fireplace",
         "ceiling_fans",
         "stainless_steel_appliances",
+        "is_renovated",
         "flooring_materials",
         "heating_type",
     }
