@@ -154,10 +154,16 @@ begin
 end $$;
 
 -- ── Self-check 1: every base table carries the guard ─────────────────────────
--- The failure mode this exists for is the next migration: someone adds a table,
--- writes sensible RLS for real members, and never thinks about demo accounts --
--- because there is no reason they would. This turns that into a failed
--- migration instead of a silent hole.
+-- Note what this does and does not catch. It runs at *this* migration's point
+-- in history, so it sees only the tables that exist by now -- a table added by
+-- a later migration will not be caught here, however much the phrasing "every
+-- table" suggests otherwise.
+--
+-- The durable check is therefore a test, not this block:
+-- `api/tests/test_demo_guard.py::test_every_public_table_carries_the_write_guard`
+-- runs against the schema as it finally stands and fails when a new table
+-- arrives without the guard. This block stays because it makes the migration
+-- refuse to land in a half-applied state, which is a different job.
 do $$
 declare
     v_missing text;
