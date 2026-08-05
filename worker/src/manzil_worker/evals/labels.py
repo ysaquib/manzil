@@ -23,7 +23,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from manzil_shared.catalog import P3_SC6_KEYS, SCOPED_UNIT_CLAIM_KEYS
+from manzil_shared.catalog import MULTI_CLAIM_IDENTITY_KEYS, P3_SC6_KEYS, SCOPED_UNIT_CLAIM_KEYS
 from manzil_shared.models import UnitApplicability
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -178,7 +178,12 @@ def validate_label(label: BenchLabel) -> None:
         entry = entries.get(key)
         if entry is None and key != "heating_type":
             continue
+        # Parity with schema_gen._validate_scoped_refs: multi-claim keys allow
+        # distinct values at the same target; boolean keys allow one per target.
+        multi_claim = key in MULTI_CLAIM_IDENTITY_KEYS
         seen_targets: set[str | None] = set()
+        seen_identities: set[tuple[str | None, str]] = set()
+        values_by_target: dict[str | None, set[str]] = {}
         for index, claim in enumerate(claims):
             if key == "heating_type":
                 if claim.value not in {"gas", "electric"}:
@@ -209,10 +214,42 @@ def validate_label(label: BenchLabel) -> None:
                     f"{sorted(unknown_refs)}"
                 )
             targets: list[str | None] = claim.floor_plan_refs or [None]
-            duplicates = seen_targets.intersection(targets)
-            if duplicates:
-                problems.append(f"scoped_claims.{key}[{index}] duplicates a concrete claim target")
-            seen_targets.update(targets)
+            value_key = json.dumps(claim.value, sort_keys=True, separators=(",", ":"))
+            if multi_claim:
+                identities = {(target, value_key) for target in targets}
+                duplicates = seen_identities.intersection(identities)
+                if duplicates:
+                    rendered = ", ".join(
+                        "generalized scope" if ref is None else ref for ref, _ in duplicates
+                    )
+                    problems.append(
+                        f"scoped_claims.{key}[{index}] duplicates the same value for "
+                        f"concrete target(s): {rendered}"
+                    )
+                for target in targets:
+                    existing_values = values_by_target.setdefault(target, set())
+                    none_key = json.dumps("none")
+                    if claim.value == "none" and any(
+                        value != none_key for value in existing_values
+                    ):
+                        problems.append(
+                            f"scoped_claims.{key}[{index}] none cannot coexist with a "
+                            "positive value at the same concrete target"
+                        )
+                    if claim.value != "none" and none_key in existing_values:
+                        problems.append(
+                            f"scoped_claims.{key}[{index}] positive value cannot coexist "
+                            "with none at the same concrete target"
+                        )
+                    existing_values.add(value_key)
+                seen_identities.update(identities)
+            else:
+                duplicates = seen_targets.intersection(targets)
+                if duplicates:
+                    problems.append(
+                        f"scoped_claims.{key}[{index}] duplicates a concrete claim target"
+                    )
+                seen_targets.update(targets)
 
     for association in label.diagram_associations or []:
         if association.ambiguous and association.floor_plan_refs:
@@ -243,11 +280,21 @@ def incomplete_reasons(label: BenchLabel) -> list[str]:
     return reasons
 
 
-def load_label(path: Path) -> BenchLabel:
+def parse_label_file(path: Path) -> BenchLabel:
     try:
-        label = BenchLabel.model_validate(json.loads(path.read_text()))
+        return BenchLabel.model_validate(json.loads(path.read_text()))
     except (json.JSONDecodeError, ValidationError) as error:
         raise LabelError(f"label file {path.name}: {error}") from error
+
+
+def validate_labels(labels: list[BenchLabel]) -> None:
+    """Trust-check every label before a bench run spends tokens."""
+    for label in labels:
+        validate_label(label)
+
+
+def load_label(path: Path) -> BenchLabel:
+    label = parse_label_file(path)
     validate_label(label)  # trust checks — a typo'd label fails loudly
     reasons = incomplete_reasons(label)
     if reasons:
@@ -377,18 +424,48 @@ def load_labels_split(
     """Load labels for a bench run, partitioning unfinished skeletons (null/empty
     values) out as `skipped` instead of aborting. Genuinely broken labels — bad
     JSON, non-catalog keys, schema violations, criteria/unknown overlap — still
-    raise LabelError so a typo can never silently mis-grade the bench."""
+    raise LabelError so a typo can never silently mis-grade the bench.
+
+    Every matching label file is trust-validated before any gradeable label is
+    returned, so one broken file late in the directory cannot leave earlier
+    labels half-loaded while the run is already underway."""
     loaded: list[BenchLabel] = []
     skipped: list[SkippedLabel] = []
     if not labels_dir.is_dir():
         return loaded, skipped
-    for path in sorted(labels_dir.glob("*.json")):
-        if slugs and path.stem not in slugs:
+    paths = [
+        path
+        for path in sorted(labels_dir.glob("*.json"))
+        if not slugs or path.stem in slugs
+    ]
+    parsed: list[tuple[Path, BenchLabel]] = []
+    problems: list[str] = []
+    for path in paths:
+        try:
+            label = parse_label_file(path)
+        except LabelError as error:
+            problems.append(str(error))
             continue
         try:
-            loaded.append(load_label(path))
-        except IncompleteLabelError as error:
-            skipped.append(SkippedLabel(slug=path.stem, reason=str(error)))
+            validate_label(label)
+        except LabelError as error:
+            problems.append(str(error))
+            continue
+        parsed.append((path, label))
+    if problems:
+        raise LabelError("; ".join(problems))
+
+    for path, label in parsed:
+        reasons = incomplete_reasons(label)
+        if reasons:
+            skipped.append(
+                SkippedLabel(
+                    slug=path.stem,
+                    reason=f"label {label.slug!r}: " + "; ".join(reasons),
+                )
+            )
+        else:
+            loaded.append(label)
     return loaded, skipped
 
 
