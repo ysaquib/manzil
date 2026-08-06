@@ -386,3 +386,294 @@ async def test_ordinary_membership_is_unaffected(db_pool, collab_hunt, seeded_us
             )
         finally:
             await tr.rollback()
+
+
+async def test_demo_role_must_be_exactly_curator(collab_hunt, demo_conn) -> None:
+    """M1: `member` was accepted, and DESIGN §3 says Curator and nothing else.
+
+    Not cosmetic -- permission-derived UI reads the role, so a demo account
+    holding `member` would quietly demo a different app.
+    """
+    conn, user_id = demo_conn
+    hunt_id = UUID(collab_hunt["hunt_id"])
+    await conn.execute("update site_settings set demo_hunt_id = $1", hunt_id)
+
+    inner = conn.transaction()
+    await inner.start()
+    try:
+        with pytest.raises(asyncpg.InsufficientPrivilegeError):
+            await conn.execute(
+                "insert into hunt_members (hunt_id, user_id, role)"
+                " values ($1, $2, 'member')",
+                hunt_id,
+                user_id,
+            )
+    finally:
+        await inner.rollback()
+
+
+# ── C1: the kill switch must reach Hunt-scoped data, not just global facts ───
+
+
+async def _demo_visible_counts(conn, user_id: UUID, hunt_id: UUID) -> dict:
+    inner = conn.transaction()
+    await inner.start()
+    try:
+        await conn.execute("set local role authenticated")
+        await conn.execute(
+            "select set_config('request.jwt.claims', $1, true)",
+            json.dumps({"sub": str(user_id), "role": "authenticated"}),
+        )
+        return {
+            "hunts": await conn.fetchval(
+                "select count(*) from hunts where id = $1", hunt_id
+            ),
+            "hunt_listings": await conn.fetchval(
+                "select count(*) from hunt_listings where hunt_id = $1", hunt_id
+            ),
+            "hunt_members": await conn.fetchval(
+                "select count(*) from hunt_members where hunt_id = $1", hunt_id
+            ),
+            "comments": await conn.fetchval("select count(*) from comments"),
+            "jobs": await conn.fetchval("select count(*) from jobs"),
+            "properties": await conn.fetchval("select count(*) from properties"),
+        }
+    finally:
+        await inner.rollback()
+
+
+async def test_kill_switch_darkens_hunt_scoped_reads(collab_hunt, demo_conn) -> None:
+    """The regression this exists for: the original scoping reached only the
+    eight global fact tables, so flipping the switch left a live token reading
+    hunts, listings, members, comments and jobs of the Demo Hunt.
+    """
+    conn, user_id = demo_conn
+    hunt_id = UUID(collab_hunt["hunt_id"])
+    await conn.execute(
+        "delete from hunt_members where hunt_id = $1 and user_id = $2",
+        hunt_id,
+        user_id,
+    )
+    await conn.execute(
+        "update site_settings set demo_enabled = true, demo_hunt_id = $1", hunt_id
+    )
+    await conn.execute(
+        "insert into hunt_members (hunt_id, user_id, role) values ($1, $2, 'curator')",
+        hunt_id,
+        user_id,
+    )
+    await conn.execute(
+        "insert into comments (hunt_listing_id, user_id, body) values ($1, $2, 'hi')",
+        UUID(collab_hunt["member_listing_id"]),
+        user_id,
+    )
+
+    on = await _demo_visible_counts(conn, user_id, hunt_id)
+    assert on["hunts"] == 1
+    assert on["hunt_listings"] > 0
+    assert on["hunt_members"] > 0
+    assert on["comments"] > 0
+
+    await conn.execute("update site_settings set demo_enabled = false")
+
+    off = await _demo_visible_counts(conn, user_id, hunt_id)
+    assert off == {
+        "hunts": 0,
+        "hunt_listings": 0,
+        "hunt_members": 0,
+        "comments": 0,
+        "jobs": 0,
+        "properties": 0,
+    }, f"kill switch left Hunt-scoped rows readable: {off}"
+
+
+async def test_demo_cannot_read_a_foreign_hunt_even_when_enabled(
+    collab_hunt, demo_conn, seeded_users
+) -> None:
+    conn, user_id = demo_conn
+    hunt_id = UUID(collab_hunt["hunt_id"])
+    other = await conn.fetchval(
+        "insert into hunts (name, owner_id) values ('Other Hunt', $1) returning id",
+        seeded_users["owner"].user_id,
+    )
+    await conn.execute(
+        "update site_settings set demo_enabled = true, demo_hunt_id = $1", hunt_id
+    )
+    assert (await _demo_visible_counts(conn, user_id, other))["hunts"] == 0
+
+
+# ── C2: private Storage respects Property scoping ────────────────────────────
+
+
+async def test_storage_objects_are_scoped_for_a_demo_account(
+    collab_hunt, demo_conn
+) -> None:
+    """`property-images` authorized every authenticated user for every object.
+
+    The original policy relied on object-path secrecy, which stops being a
+    control the moment a shared public account can list the bucket.
+    """
+    conn, user_id = demo_conn
+    hunt_id = UUID(collab_hunt["hunt_id"])
+    in_scope = UUID(collab_hunt["member_property_id"])
+    out_of_scope = await conn.fetchval(
+        "insert into properties (name, canonical_address)"
+        " values ('Foreign', '9 Elsewhere') returning id"
+    )
+    await conn.execute(
+        "update site_settings set demo_enabled = true, demo_hunt_id = $1", hunt_id
+    )
+    for prop in (in_scope, out_of_scope):
+        await conn.execute(
+            "insert into storage.objects (bucket_id, name) values ($1, $2)",
+            "property-images",
+            f"properties/{prop}/deadbeef.webp",
+        )
+
+    inner = conn.transaction()
+    await inner.start()
+    try:
+        await conn.execute("set local role authenticated")
+        await conn.execute(
+            "select set_config('request.jwt.claims', $1, true)",
+            json.dumps({"sub": str(user_id), "role": "authenticated"}),
+        )
+        names = [
+            r["name"]
+            for r in await conn.fetch(
+                "select name from storage.objects where bucket_id = 'property-images'"
+            )
+        ]
+    finally:
+        await inner.rollback()
+
+    assert any(str(in_scope) in n for n in names), "in-scope image should be visible"
+    assert not any(str(out_of_scope) in n for n in names), (
+        "a demo account listed an image belonging to a Property outside the Demo Hunt"
+    )
+
+
+# ── H1: the money-spending RPCs guard at entry ───────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("call", "args"),
+    [
+        ("select * from submit_listing($1, 'https://e.example/x', 'P', 'trust_link')", 1),
+        ("select answer_job_checkpoint($1, '{}'::jsonb, '{}'::jsonb)", 1),
+        ("select set_listing_source_policy($1, 'trust_link')", 1),
+        ("select correct_auto_resolved_checkpoint($1, '{}'::jsonb)", 1),
+    ],
+)
+async def test_money_spending_rpcs_reject_a_demo_account(
+    collab_hunt, demo_conn, call: str, args: int
+) -> None:
+    """Guarded at function entry, not by whichever INSERT they happen to reach.
+
+    These are SECURITY DEFINER and cost-bearing: a guard that depends on
+    reaching a particular write breaks as soon as one grows a side effect
+    before it.
+    """
+    conn, user_id = demo_conn
+    hunt_id = UUID(collab_hunt["hunt_id"])
+    before = await conn.fetchval("select count(*) from jobs")
+
+    state = await _sqlstate_as_demo(conn, user_id, call, hunt_id)
+    assert state == "42501", f"{call} was not refused (sqlstate {state})"
+
+    assert await conn.fetchval("select count(*) from jobs") == before
+
+
+# ── M2/M3/M4: metadata, cardinality, and settings integrity ─────────────────
+
+
+async def test_demo_metadata_is_not_directly_readable(collab_hunt, demo_conn) -> None:
+    """Operator notes, who granted the account, and future settings columns
+    were readable by every authenticated user."""
+    conn, user_id = demo_conn
+    inner = conn.transaction()
+    await inner.start()
+    try:
+        await conn.execute("set local role authenticated")
+        await conn.execute(
+            "select set_config('request.jwt.claims', $1, true)",
+            json.dumps({"sub": str(user_id), "role": "authenticated"}),
+        )
+        assert await conn.fetchval("select count(*) from demo_accounts") == 0
+        assert await conn.fetchval("select count(*) from site_settings") == 0
+    finally:
+        await inner.rollback()
+
+
+async def test_demo_context_exposes_exactly_two_facts(collab_hunt, demo_conn) -> None:
+    conn, user_id = demo_conn
+    hunt_id = UUID(collab_hunt["hunt_id"])
+    await conn.execute(
+        "update site_settings set demo_enabled = true, demo_hunt_id = $1", hunt_id
+    )
+    inner = conn.transaction()
+    await inner.start()
+    try:
+        await conn.execute("set local role authenticated")
+        await conn.execute(
+            "select set_config('request.jwt.claims', $1, true)",
+            json.dumps({"sub": str(user_id), "role": "authenticated"}),
+        )
+        ctx = json.loads(await conn.fetchval("select demo_context()::text"))
+    finally:
+        await inner.rollback()
+
+    assert set(ctx) == {"is_demo", "enabled", "hunt_id"}
+    assert ctx["is_demo"] is True
+    assert ctx["enabled"] is True
+    assert ctx["hunt_id"] == str(hunt_id)
+
+
+async def test_only_one_demo_account_may_exist(collab_hunt, demo_conn, seeded_users) -> None:
+    conn, _ = demo_conn
+    inner = conn.transaction()
+    await inner.start()
+    try:
+        with pytest.raises(asyncpg.UniqueViolationError):
+            await conn.execute(
+                "insert into demo_accounts (user_id) values ($1)",
+                seeded_users["member"].user_id,
+            )
+    finally:
+        await inner.rollback()
+
+
+async def test_demo_cannot_be_enabled_without_a_hunt(db_pool) -> None:
+    async with db_pool.acquire() as conn:
+        tr = conn.transaction()
+        await tr.start()
+        try:
+            with pytest.raises(asyncpg.CheckViolationError):
+                await conn.execute(
+                    "update site_settings set demo_enabled = true, demo_hunt_id = null"
+                )
+        finally:
+            await tr.rollback()
+
+
+async def test_preflight_refuses_to_enable_a_misconfigured_demo(
+    collab_hunt, demo_conn
+) -> None:
+    """The enable path runs the same coverage checks the tests do, in the same
+    transaction, so the switch cannot be flipped while a bypass exists."""
+    conn, _ = demo_conn
+    await conn.execute(
+        "update site_settings set demo_hunt_id = $1", UUID(collab_hunt["hunt_id"])
+    )
+    problems = await conn.fetchval("select private.demo_preflight()")
+    # collab_hunt is not owned by the primordial Site Admin, and the demo
+    # account is not a Curator of it, so enabling must be refused.
+    assert problems, "preflight should object to this configuration"
+
+    inner = conn.transaction()
+    await inner.start()
+    try:
+        with pytest.raises(asyncpg.InsufficientPrivilegeError):
+            await conn.execute("select set_demo_enabled(true, null)")
+    finally:
+        await inner.rollback()
