@@ -13,6 +13,7 @@ import { useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 
 import { PublicPageShell } from "../components/PublicPageShell";
+import { TryDemoButton } from "../features/demo/TryDemoButton";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "./useAuth";
 
@@ -110,5 +111,6 @@ export function LoginPage() {
       </>}
     </>
     {error && <Text c="red" size="sm">{error}</Text>}
+    <TryDemoButton />
   </Stack></Card></Center></PublicPageShell>;
 }

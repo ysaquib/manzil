@@ -22,6 +22,7 @@ import { RouterProvider } from "react-router-dom";
 
 import { AuthProvider } from "./auth/AuthProvider";
 import { COLOR_SCHEME_STORAGE_KEY } from "./lib/colorScheme";
+import { isDemo } from "./lib/demo";
 import { createOfflinePersister, installMutationDefaults, persistOptions } from "./lib/offline";
 import { queryClient } from "./lib/queryClient";
 import { router } from "./routes/router";
@@ -35,7 +36,11 @@ const colorSchemeManager = localStorageColorSchemeManager({
 // its function by mutation key, and one restored before the default is
 // registered never replays (VC-6).
 installMutationDefaults(queryClient);
-const persister = createOfflinePersister();
+// Demo sessions are not persisted. "Reload and everything you changed is gone"
+// is the demo's central promise, and a restored cache — or worse, a restored
+// paused mutation waiting to replay a write the database will refuse — would
+// quietly break it.
+const persister = isDemo() ? null : createOfflinePersister();
 
 // Where persistence is unavailable the app still runs — it is simply online-only.
 function Query({ children }: { children: React.ReactNode }) {

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "../../auth/useAuth";
 import { apiFetch } from "../../lib/apiClient";
+import { demoPrincipalId } from "../../lib/demo";
 import type { components } from "../../lib/generated/api";
 import { supabase } from "../../lib/supabase";
 
@@ -129,6 +130,32 @@ export function useCreateComment(listingId: string) {
         method: "POST",
         body,
       }),
+    // Applied before the request, and in demo mode it *is* the write: the
+    // request never leaves the tab and invalidation is disabled, so this cache
+    // entry is the whole result. For a real user it is an ordinary optimistic
+    // update that the refetch below replaces.
+    onMutate: async (body) => {
+      await qc.cancelQueries({ queryKey: ["comments", listingId] });
+      const previous = qc.getQueryData<Comment[]>(["comments", listingId]);
+      const author = demoPrincipalId();
+      if (author) {
+        qc.setQueryData<Comment[]>(["comments", listingId], (current = []) => [
+          ...current,
+          {
+            id: `optimistic:${crypto.randomUUID()}`,
+            hunt_listing_id: listingId,
+            user_id: author,
+            body: body.body,
+            unit_group_key: body.unit_group_key,
+            created_at: new Date().toISOString(),
+          } as Comment,
+        ]);
+      }
+      return { previous };
+    },
+    onError: (_error, _body, context) => {
+      if (context?.previous) qc.setQueryData(["comments", listingId], context.previous);
+    },
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["comments", listingId] }),
   });
 }
@@ -166,6 +193,33 @@ export function useSetRating(listingId: string, unitGroupKey: string) {
           { method: "PUT", body: { rating } },
         );
       }
+    },
+    onMutate: async (rating) => {
+      await qc.cancelQueries({ queryKey: ["ratings", listingId] });
+      const previous = qc.getQueryData<Rating[]>(["ratings", listingId]);
+      const author = demoPrincipalId();
+      if (author) {
+        qc.setQueryData<Rating[]>(["ratings", listingId], (current = []) => {
+          const rest = current.filter(
+            (r) => !(r.user_id === author && r.unit_group_key === unitGroupKey),
+          );
+          return rating === null
+            ? rest
+            : [
+                ...rest,
+                {
+                  hunt_listing_id: listingId,
+                  user_id: author,
+                  unit_group_key: unitGroupKey,
+                  rating,
+                } as Rating,
+              ];
+        });
+      }
+      return { previous };
+    },
+    onError: (_error, _rating, context) => {
+      if (context?.previous) qc.setQueryData(["ratings", listingId], context.previous);
     },
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["ratings", listingId] }),
   });
