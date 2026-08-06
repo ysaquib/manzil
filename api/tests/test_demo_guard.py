@@ -48,6 +48,12 @@ async def demo_conn(db_pool, seeded_users) -> AsyncIterator[tuple]:
         try:
             await conn.execute("set local statement_timeout = '15s'")
             await conn.execute("set local lock_timeout = '5s'")
+            # `demo_accounts` is a singleton by unique index, so a database that
+            # has already been through `scripts/seed_demo_hunt.py` -- which is
+            # every developer machine once the demo is set up -- would reject
+            # this insert. Clear it inside the transaction; the rollback puts
+            # the real principal back.
+            await conn.execute("delete from demo_accounts")
             await conn.execute(
                 "insert into demo_accounts (user_id, note) values ($1, 'test')",
                 user_id,
