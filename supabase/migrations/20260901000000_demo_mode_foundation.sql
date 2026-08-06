@@ -11,8 +11,15 @@
 -- migrations' worth of write policies gate on `private.member_role(hunt_id) is
 -- not null` -- "any member" -- which a demo Curator satisfies. Amending each is
 -- a wide diff whose failure mode is silent, and whose next author has to
--- remember. One trigger covers every table in `public`, including tables that
--- do not exist yet, and is independent of who wrote which policy.
+-- remember. One trigger covers every table in `public` and is independent of
+-- who wrote which policy.
+--
+-- It does **not** cover tables that do not exist yet: the loop below runs once,
+-- here, and a later migration can create an unguarded table. Three things
+-- address that, none of them this file alone -- `private.attach_demo_guards()`
+-- for the next author to call (20260901000003), the final-schema test in
+-- `api/tests/test_demo_guard.py`, and `private.demo_preflight()`, which refuses
+-- to enable the demo while any table is unguarded.
 --
 -- Known coverage limits, asserted at the bottom of this file rather than
 -- assumed: `public` only; not TRUNCATE unless separately attached; and views
@@ -101,8 +108,11 @@ grant execute on function private.is_demo_account(uuid) to authenticated;
 -- itself, but it makes the guard's behaviour depend on the data, which is not a
 -- property a security control should have).
 --
--- Foreign-key cascades are covered without further work: Postgres performs them
--- as ordinary UPDATE/DELETE against the referencing table, firing its triggers.
+-- On foreign-key cascades: Postgres performs referential actions as ordinary
+-- UPDATE/DELETE against the referencing table, so a guarded table's trigger
+-- fires. Stated as documentation rather than as a control, because for a demo
+-- account it is moot in the only direction that matters -- the parent statement
+-- is refused before any cascade begins, so a demo JWT can never originate one.
 create or replace function private.demo_write_guard()
 returns trigger
 language plpgsql
