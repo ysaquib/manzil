@@ -17,7 +17,12 @@ from pathlib import Path
 from uuid import UUID
 
 from dotenv import load_dotenv
-from local_supabase import LOCAL_ANON_KEY, LOCAL_SERVICE_ROLE_KEY, LOCAL_SUPABASE_URL
+from local_supabase import (
+    LOCAL_ANON_KEY,
+    LOCAL_JWT_SECRET,
+    LOCAL_SERVICE_ROLE_KEY,
+    LOCAL_SUPABASE_URL,
+)
 
 load_dotenv(Path(__file__).resolve().parents[2] / "infra" / ".env", override=False)
 load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=False)
@@ -28,6 +33,8 @@ if not os.environ.get("SUPABASE_ANON_KEY", "").strip():
     os.environ["SUPABASE_ANON_KEY"] = LOCAL_ANON_KEY
 if not os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip():
     os.environ["SUPABASE_SERVICE_ROLE_KEY"] = LOCAL_SERVICE_ROLE_KEY
+if not os.environ.get("SUPABASE_JWT_SECRET", "").strip():
+    os.environ["SUPABASE_JWT_SECRET"] = LOCAL_JWT_SECRET
 os.environ.setdefault("DATABASE_URL", "postgresql://postgres:postgres@127.0.0.1:54322/postgres")
 os.environ.setdefault("API_ENVIRONMENT", "local")
 os.environ.setdefault("MANZIL_WORKER_INPROCESS", "false")

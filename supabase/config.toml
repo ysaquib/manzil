@@ -236,7 +236,12 @@ double_confirm_changes = true
 # If enabled, users need to confirm their email address before signing in.
 enable_confirmations = true
 # If enabled, users will need to reauthenticate or have logged in recently to change their password.
-secure_password_change = false
+# Required by Demo Mode (DM-2, DESIGN §16). Reauthentication sends a nonce to the
+# account's email address, which for the shared Demo Account is the operator's --
+# so a visitor cannot complete it. This is defence in depth rather than the
+# control: DM-5 mints a demo token with no GoTrue session behind it, so
+# `supabase.auth.updateUser` has nothing to act on in the first place.
+secure_password_change = true
 # Controls the minimum amount of time that must pass before sending another signup confirmation or password reset email.
 max_frequency = "1s"
 # Number of characters used in the email OTP.

@@ -347,8 +347,12 @@ async def test_demo_account_cannot_own_a_hunt(collab_hunt, demo_conn) -> None:
         await inner.rollback()
 
 
-async def test_demo_account_may_curate_the_demo_hunt(collab_hunt, demo_conn) -> None:
-    """The seed path must work, or the feature cannot be set up at all."""
+async def test_demo_principal_holds_no_stored_membership(collab_hunt, demo_conn) -> None:
+    """v3.55: the Curator role is synthesised, never stored.
+
+    A virtual principal cannot hold a hunt_members row anyway (the FK), but a
+    real account marked demo could, and a stale row would grant real access.
+    """
     conn, user_id = demo_conn
     hunt_id = UUID(collab_hunt["hunt_id"])
     await conn.execute("update site_settings set demo_hunt_id = $1", hunt_id)
@@ -357,19 +361,58 @@ async def test_demo_account_may_curate_the_demo_hunt(collab_hunt, demo_conn) -> 
         hunt_id,
         user_id,
     )
+    inner = conn.transaction()
+    await inner.start()
+    try:
+        with pytest.raises(asyncpg.InsufficientPrivilegeError):
+            await conn.execute(
+                "insert into hunt_members (hunt_id, user_id, role)"
+                " values ($1, $2, 'curator')",
+                hunt_id,
+                user_id,
+            )
+    finally:
+        await inner.rollback()
+
+
+async def test_demo_role_is_synthesised_and_follows_the_kill_switch(
+    collab_hunt, demo_conn
+) -> None:
+    """The role exists only while the demo is on, and only for the Demo Hunt."""
+    conn, user_id = demo_conn
+    hunt_id = UUID(collab_hunt["hunt_id"])
     await conn.execute(
-        "insert into hunt_members (hunt_id, user_id, role) values ($1, $2, 'curator')",
-        hunt_id,
-        user_id,
+        "delete from hunt_members where hunt_id = $1 and user_id = $2", hunt_id, user_id
     )
-    assert (
-        await conn.fetchval(
-            "select role::text from hunt_members where hunt_id = $1 and user_id = $2",
-            hunt_id,
-            user_id,
-        )
-        == "curator"
+
+    async def role_for(target: UUID) -> str | None:
+        inner = conn.transaction()
+        await inner.start()
+        try:
+            await conn.execute("set local role authenticated")
+            await conn.execute(
+                "select set_config('request.jwt.claims', $1, true)",
+                json.dumps({"sub": str(user_id), "role": "authenticated"}),
+            )
+            return await conn.fetchval(
+                "select private.member_role($1)::text", target
+            )
+        finally:
+            await inner.rollback()
+
+    await conn.execute(
+        "update site_settings set demo_enabled = true, demo_hunt_id = $1", hunt_id
     )
+    assert await role_for(hunt_id) == "curator"
+
+    other = await conn.fetchval(
+        "insert into hunts (name, owner_id) values ('Elsewhere', $1) returning id",
+        await conn.fetchval("select owner_id from hunts where id = $1", hunt_id),
+    )
+    assert await role_for(other) is None
+
+    await conn.execute("update site_settings set demo_enabled = false")
+    assert await role_for(hunt_id) is None
 
 
 async def test_ordinary_membership_is_unaffected(db_pool, collab_hunt, seeded_users) -> None:
@@ -457,15 +500,12 @@ async def test_kill_switch_darkens_hunt_scoped_reads(collab_hunt, demo_conn) -> 
     await conn.execute(
         "update site_settings set demo_enabled = true, demo_hunt_id = $1", hunt_id
     )
-    await conn.execute(
-        "insert into hunt_members (hunt_id, user_id, role) values ($1, $2, 'curator')",
-        hunt_id,
-        user_id,
-    )
+    # The Curator role is synthesised, so no membership row is inserted. The
+    # comment is authored by a real member -- the demo principal cannot write.
     await conn.execute(
         "insert into comments (hunt_listing_id, user_id, body) values ($1, $2, 'hi')",
         UUID(collab_hunt["member_listing_id"]),
-        user_id,
+        await conn.fetchval("select owner_id from hunts where id = $1", hunt_id),
     )
 
     on = await _demo_visible_counts(conn, user_id, hunt_id)

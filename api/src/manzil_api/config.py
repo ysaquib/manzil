@@ -28,6 +28,22 @@ class Settings(BaseSettings):
     # Direct Postgres — the in-process worker loop's asyncpg pool.
     database_url: str = Field(alias="DATABASE_URL")
 
+    # Demo Mode (DM-5, DESIGN §16). The project's JWT signing secret, used to
+    # mint a short-lived demo viewer token. Deliberately NOT a GoTrue session:
+    # a token with no session behind it cannot be used to change the shared
+    # account's password or email, enrol MFA, or sign every other visitor out.
+    # Empty disables demo-session issuance entirely, which is the safe default
+    # for any deployment that has not set it.
+    supabase_jwt_secret: str = Field(default="", alias="SUPABASE_JWT_SECRET")
+    demo_session_ttl_seconds: int = Field(default=1800, alias="MANZIL_DEMO_TTL")
+    # Salt for the truncated client-key HMAC. Without it no per-caller ceiling
+    # is applied; the global ceiling still is.
+    demo_client_key_salt: str = Field(default="", alias="MANZIL_DEMO_KEY_SALT")
+    # Trusted reverse-proxy hops. `request.client.host` is the proxy on Render,
+    # and X-Forwarded-For is caller-controlled, so the count must be explicit
+    # rather than guessed from the header's length.
+    demo_trusted_proxy_hops: int = Field(default=0, alias="MANZIL_DEMO_PROXY_HOPS")
+
     # `local` | `staging` | `production` — gates OpenAPI docs exposure.
     environment: Environment = Field(default="local", alias="API_ENVIRONMENT")
 
