@@ -13,6 +13,7 @@ from __future__ import annotations
 from typing import Annotated
 
 import asyncpg
+import jwt
 from fastapi import Depends, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
@@ -33,6 +34,7 @@ class UserContext(BaseModel):
     id: str
     email: str | None = None
     access_token: str
+    is_demo: bool = False
 
 
 class NotAuthenticated(ManzilAPIError):
@@ -40,18 +42,69 @@ class NotAuthenticated(ManzilAPIError):
     code = "not_authenticated"
 
 
+class DemoReadOnly(ManzilAPIError):
+    status_code = status.HTTP_403_FORBIDDEN
+    code = "demo_read_only"
+
+
+DEMO_CLAIM = "manzil_demo"
+
+
+def _decode_demo_token(settings: Settings, token: str) -> str | None:
+    """Return the demo principal's id if this is one of our demo tokens.
+
+    Demo tokens are minted by `POST /v1/demo/session` for a subject that has no
+    `auth.users` row (DESIGN §20 v3.55), which is precisely why GoTrue answers
+    `user_not_found` for it -- so `auth.get_user()` cannot be the check here and
+    the signature is verified locally instead.
+
+    Returning None means "not a demo token", and the caller falls through to the
+    ordinary GoTrue path. It never means "valid": a token that carries the demo
+    claim but fails verification raises.
+    """
+    if not settings.supabase_jwt_secret:
+        return None
+    try:
+        unverified = jwt.decode(token, options={"verify_signature": False})
+    except jwt.PyJWTError:
+        return None
+    if not unverified.get(DEMO_CLAIM):
+        return None
+    try:
+        claims = jwt.decode(
+            token,
+            settings.supabase_jwt_secret,
+            algorithms=["HS256"],
+            audience="authenticated",
+        )
+    except jwt.PyJWTError as exc:
+        raise NotAuthenticated("Invalid or expired demo token") from exc
+    subject = claims.get("sub")
+    if not subject:
+        raise NotAuthenticated("Invalid or expired demo token")
+    return str(subject)
+
+
 async def get_current_user(
     settings: SettingsDep,
     creds: Annotated[HTTPAuthorizationCredentials, Depends(_bearer)],
 ) -> UserContext:
-    """Verify the bearer token via Supabase Auth and return the caller.
+    """Verify the bearer token and return the caller.
 
     Phase 1 uses `auth.get_user(token)` for simplicity (plan §1.2); revisit for
     latency with local JWT-secret verification if it ever matters.
+
+    Demo tokens are the one exception, and not for convenience: their subject
+    deliberately has no account, so there is nothing for GoTrue to return.
     """
     from manzil_api.database import create_anon_client
 
     token = creds.credentials
+
+    demo_subject = _decode_demo_token(settings, token)
+    if demo_subject is not None:
+        return UserContext(id=demo_subject, email=None, access_token=token, is_demo=True)
+
     client = create_anon_client(settings)
     try:
         response = client.auth.get_user(token)
@@ -63,6 +116,36 @@ async def get_current_user(
 
 
 CurrentUser = Annotated[UserContext, Depends(get_current_user)]
+
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+async def require_not_demo(
+    request: Request,
+    settings: SettingsDep,
+    creds: Annotated[HTTPAuthorizationCredentials | None, Depends(HTTPBearer(auto_error=False))],
+) -> None:
+    """Refuse unsafe methods from a demo principal (DM-5, DESIGN §16).
+
+    Explicitly **not** the security boundary -- the database is, and it refuses
+    these writes whether or not this runs. What this buys is a clean, catchable
+    `403 demo_read_only` instead of a raw SQLSTATE surfacing through a route,
+    and it stops demo traffic before any expensive validation or fan-out.
+
+    It reads the token directly rather than depending on `get_current_user`, so
+    it can be registered app-wide without forcing authentication onto the
+    unauthenticated demo and health routes.
+    """
+    if request.method in _SAFE_METHODS or creds is None:
+        return
+    try:
+        subject = _decode_demo_token(settings, creds.credentials)
+    except NotAuthenticated:
+        return  # a bad token is get_current_user's business, not ours
+    if subject is not None:
+        raise DemoReadOnly(
+            "Demo mode is read-only. Nothing you change here is saved."
+        )
 
 
 def get_user_client(settings: SettingsDep, user: CurrentUser) -> Client:

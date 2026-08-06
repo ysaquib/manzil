@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from manzil_api.admin.hunt_operations import router as admin_hunt_operations_router
@@ -24,6 +24,8 @@ from manzil_api.admin.router import router as admin_router
 from manzil_api.collaboration.router import router as collaboration_router
 from manzil_api.config import Settings, get_settings
 from manzil_api.database import create_db_pool
+from manzil_api.demo.router import router as demo_router
+from manzil_api.dependencies import require_not_demo
 from manzil_api.exceptions import CatchAllMiddleware, register_exception_handlers
 from manzil_api.feedback.router import router as feedback_router
 from manzil_api.fees.router import router as fees_router
@@ -94,7 +96,16 @@ def create_app() -> FastAPI:
     if not settings.docs_enabled:
         app_configs["openapi_url"] = None  # hide docs outside local/staging
 
-    app = FastAPI(lifespan=lifespan, **app_configs)
+    # `require_not_demo` is registered app-wide rather than per-router so a new
+    # route cannot forget it. It is deliberately not the security boundary --
+    # the database refuses these writes regardless (DESIGN §16) -- but it turns
+    # a raw SQLSTATE into a catchable `403 demo_read_only` and stops demo
+    # traffic before any expensive validation or fan-out. It reads the bearer
+    # token itself, so it does not force authentication onto the public demo
+    # and health routes.
+    app = FastAPI(
+        lifespan=lifespan, dependencies=[Depends(require_not_demo)], **app_configs
+    )
 
     # add_middleware prepends — register CatchAll first so CORSMiddleware stays outermost.
     app.add_middleware(CatchAllMiddleware)
@@ -109,6 +120,7 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
 
     for router in (
+        demo_router,
         hunts_router,
         collaboration_router,
         invites_router,

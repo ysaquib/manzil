@@ -17,8 +17,10 @@ from __future__ import annotations
 
 from uuid import UUID
 
+import asyncpg
 from fastapi import APIRouter, Query, status
 from manzil_shared.config import TIER3_FREE_MONTHLY_CREDITS
+from pydantic import BaseModel
 
 from manzil_api.admin.dependencies import AdminUser, Audit, NotSiteAdmin
 from manzil_api.admin.schemas import (
@@ -314,6 +316,62 @@ async def set_feedback_triage(
         after={"triage": body.triage},
     )
     return FeedbackReport(**dict(row))
+
+
+class DemoToggle(BaseModel):
+    enabled: bool
+
+
+class DemoPreflightFailed(ManzilAPIError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "demo_preflight_failed"
+
+
+@router.get("/demo", summary="Demo mode status and preflight")
+async def demo_status(admin: AdminUser, pool: DbPool) -> dict:
+    """Whether the demo is on, and what currently stands in the way of turning
+    it on. Surfacing the blockers is the point: an operator should be able to
+    see why the switch will refuse before they flip it."""
+    row = await pool.fetchrow(
+        "select demo_enabled, demo_hunt_id, updated_at from site_settings"
+    )
+    problems = await pool.fetchval("select private.demo_preflight()")
+    return {
+        "enabled": bool(row["demo_enabled"]),
+        "hunt_id": str(row["demo_hunt_id"]) if row["demo_hunt_id"] else None,
+        "updated_at": row["updated_at"],
+        "blockers": list(problems or []),
+    }
+
+
+@router.patch("/demo", summary="Enable or disable public demo mode")
+async def set_demo(
+    body: DemoToggle, admin: AdminUser, pool: DbPool, audit: Audit
+) -> dict:
+    """The kill switch.
+
+    Enabling runs `private.demo_preflight()` inside the same transaction as the
+    update, so the demo cannot be switched on while an unguarded table or a
+    writable view exists. Disabling never preflights -- an emergency shutoff
+    must not be blocked by the conditions that made it an emergency.
+    """
+    previous = await pool.fetchval("select demo_enabled from site_settings")
+    try:
+        await pool.fetchval(
+            "select set_demo_enabled($1, $2)", body.enabled, UUID(admin.id)
+        )
+    except asyncpg.InsufficientPrivilegeError as exc:
+        raise DemoPreflightFailed(
+            f"Demo mode cannot be enabled: {exc.detail or exc}"
+        ) from exc
+
+    await audit.record(
+        "demo.toggle",
+        target_type="site_settings",
+        before={"demo_enabled": previous},
+        after={"demo_enabled": body.enabled},
+    )
+    return {"enabled": body.enabled}
 
 
 __all__ = ["NotSiteAdmin", "router"]
