@@ -22,6 +22,7 @@ import { IconCloudOff, IconRefresh } from "@tabler/icons-react";
 import { useMutationState } from "@tanstack/react-query";
 
 import { SAVE_ENTRIES_KEY } from "../../lib/offline";
+import { isDemo } from "../../lib/demo";
 import { toneFor } from "./statusColors";
 import classes from "./SyncBadge.module.css";
 
@@ -31,6 +32,32 @@ export function pendingLabel(count: number): string {
 }
 
 export function SyncBadge() {
+  // In demo mode there is no queue and never will be: a demo write is
+  // intercepted before it reaches the network (apiClient.ts), so no mutation
+  // ever pauses and the ordinary badge would sit permanently silent — quietly
+  // implying everything had saved. Say the true thing instead, in the slot
+  // already reserved for it.
+  if (isDemo()) {
+    return (
+      <div className={classes.slot} aria-live="polite">
+        <Tooltip
+          multiline
+          w={240}
+          label="This is a demo. Your answers stay in this browser and are never sent anywhere — reload the page and the tour starts over."
+        >
+          <Badge
+            size="sm"
+            variant={toneFor("queued").variant}
+            color={toneFor("queued").color}
+            leftSection={<IconCloudOff size={12} aria-hidden />}
+          >
+            Demo — not saved
+          </Badge>
+        </Tooltip>
+      </div>
+    );
+  }
+
   // Paused mutations are the queue: TanStack marks a write paused when the
   // browser is offline and resumes it on reconnect.
   const paused = useMutationState({

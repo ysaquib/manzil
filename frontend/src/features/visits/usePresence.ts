@@ -13,6 +13,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
 import { supabase } from "../../lib/supabase";
+import { isDemo } from "../../lib/demo";
 
 export interface PresentMember {
   userId: string;
@@ -217,6 +218,13 @@ export function useVisitPresence(
   /** Subscribe and read the roster, but never announce yourself (AD-4). */
   observeOnly = false,
 ): PresentMember[] {
+  // A demo visitor observes and never announces, for the same reason a Site
+  // Admin's ghost view does not: they are not on this tour. It is also the only
+  // honest reading of a shared principal — every concurrent visitor is the same
+  // subject, so announcing would put one flickering phantom member in the room
+  // however many people were looking. Presence is not RLS-gated, so this is
+  // courtesy rather than a control (DESIGN §16).
+  observeOnly = observeOnly || isDemo();
   const [others, setOthers] = useState<PresentMember[]>([]);
   // Read at join time without making the section a subscribe dependency.
   const sectionKeyRef = useRef(sectionKey);

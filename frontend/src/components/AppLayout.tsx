@@ -20,6 +20,9 @@ import {
   UnstyledButton,
 } from "@mantine/core";
 import { useDisclosure, useMediaQuery } from "@mantine/hooks";
+
+import { DemoBanner } from "../features/demo/DemoBanner";
+import { isDemo } from "../lib/demo";
 import {
   IconArrowsLeftRight,
   IconChevronDown,
@@ -110,6 +113,8 @@ export function AppLayout() {
   const { data: ghostHunt } = useHunt(huntId ?? "");
 
   return (
+    <>
+      {isDemo() && <DemoBanner />}
     <AppShell
       header={{ height: 56 }}
       navbar={{ width: 224, breakpoint: "sm", collapsed: { mobile: !navOpened } }}
@@ -187,5 +192,6 @@ export function AppLayout() {
 
       <FeedbackModal opened={feedbackOpened} onClose={closeFeedback} />
     </AppShell>
+    </>
   );
 }

@@ -2,6 +2,7 @@ import type { QueryKey } from "@tanstack/react-query";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect } from "react";
 
+import { isDemo } from "./demo";
 import { supabase } from "./supabase";
 
 export type HuntRealtimeTable =
@@ -71,6 +72,13 @@ export function useHuntRealtime(huntId: string | undefined): void {
 
   useEffect(() => {
     if (!huntId) return;
+    // Demo sessions do not subscribe. This channel exists purely to invalidate
+    // queries, which demo mode has turned off (queryClient.ts) — so subscribing
+    // would do nothing except give a real member's write a chance to overwrite
+    // the visitor's local edits. The Owner ingesting a live listing into the
+    // Demo Hunt is exactly that case, and it should not wipe what the visitor
+    // is in the middle of.
+    if (isDemo()) return;
 
     const invalidate = (table: HuntRealtimeTable) => {
       for (const queryKey of invalidationKeysForRealtime(table, huntId)) {
