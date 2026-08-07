@@ -2878,6 +2878,7 @@ async def run_worker_loop(
     until_empty: bool = False,
     scheduler_tick: SchedulerTick | None = None,
     tick_interval: float = SCHEDULER_TICK_SECONDS,
+    on_tick: Callable[[], None] | None = None,
 ) -> None:
     """Tick: reclaim orphans → claim → dispatch by `job_type` → repeat.
 
@@ -2897,6 +2898,8 @@ async def run_worker_loop(
     last_tick = float("-inf")
 
     while not stop.is_set():
+        if on_tick is not None:
+            on_tick()
         if scheduler_tick is not None:
             now = asyncio.get_running_loop().time()
             if now - last_tick >= tick_interval:

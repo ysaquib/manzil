@@ -545,6 +545,19 @@ Add this non-secret environment variable:
 SUPABASE_PROJECT_ID=<production project ref>
 ```
 
+Also add this repository-level Actions variable (it is public configuration,
+not a secret):
+
+```text
+PRODUCTION_API_URL=https://api.example.com
+```
+
+The committed `production-readiness.yml` probes `/v1/ready` four times an hour
+and supports manual dispatch. Enable GitHub Actions failure notifications for
+the operators who own production. This is a baseline alarm, not paging-grade
+monitoring: scheduled Actions can be delayed, so add an independent uptime
+monitor before Manzil becomes time-critical.
+
 The access token comes from Supabase Dashboard → Account → Access Tokens. The
 database password is the project-specific password. Supabase recommends these
 as encrypted Actions secrets in its [Managing Environments](https://supabase.com/docs/guides/deployment/managing-environments)
@@ -640,7 +653,9 @@ OpenRouter, Maps, provider, SMTP, and model-download credentials.
 
 Verify in this order:
 
-1. `GET https://<staging-api>/v1/health` returns `{"status":"ok"}`.
+1. `GET https://<staging-api>/v1/health` returns `{"status":"ok"}`, and
+   `GET https://<staging-api>/v1/ready` returns 200 with database, worker, and
+   model checks all `ok`.
 2. `/openapi.json` is visible in staging but hidden after `API_ENVIRONMENT=production`.
 3. The frontend loads through a deep link such as `/admin` without a 404.
 4. Unknown-email sign-up/OTP cannot create an account.
@@ -677,7 +692,7 @@ Do not promote staging credentials or database contents into production.
 3. Confirm Supabase Pro/backups, MFA, SMTP, Auth signup gate, redirects, and
    production secrets.
 4. Run the production migration workflow and inspect `migration list`.
-5. Deploy the Render API; wait for `/v1/health` and stable logs.
+5. Deploy the Render API; wait for `/v1/health`, `/v1/ready`, and stable logs.
 6. Confirm exactly one in-process worker claimant.
 7. Deploy/rebuild the frontend against the final API/Supabase URLs.
 8. Verify custom-domain TLS and SPA rewrites.
@@ -739,12 +754,14 @@ At minimum, monitor:
 - Bright Data/ScrapingBee credits;
 - failed, retrying, checkpointed, and stale-lock Jobs in Manzil Admin.
 
-The current `/v1/health` endpoint is liveness only; it does not query Postgres,
-verify the model, or prove the worker loop is advancing. A separate readiness
-endpoint and alerting integration are worthwhile follow-up work before relying
-on automated uptime checks alone. Render recommends that HTTP health checks
-exercise operation-critical dependencies in its [Health Checks](https://render.com/docs/health-checks)
-guide.
+`/v1/health` remains dependency-free liveness. `/v1/ready` is the operational
+probe: it performs a two-second `select 1`, checks the pinned model digest
+captured at startup, and verifies that the in-process worker task is alive and
+has returned to its queue loop within six minutes. It returns only `ok`/`failed`
+labels, never paths or exception details. Keep Render's restart-oriented health
+check on `/v1/health` to avoid an external database incident causing restart
+loops; monitor and alert on `/v1/ready` separately. Also alert on stale Jobs,
+because a legitimate long Stage may exceed the coarse process heartbeat.
 
 ## 13. Secret-placement summary
 
