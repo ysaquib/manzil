@@ -159,6 +159,13 @@ async def test_inprocess_loop_processes_a_job_while_serving_and_drains(monkeypat
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 health = await client.get("/v1/health")
                 assert health.status_code == 200  # API serves while the loop runs
+                ready = await client.get("/v1/ready")
+                assert ready.status_code == 200
+                assert ready.json()["checks"] == {
+                    "database": "ok",
+                    "worker": "ok",
+                    "model": "ok",
+                }
 
                 async def job_state() -> str:
                     return await pool.fetchval(
