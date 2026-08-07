@@ -443,6 +443,8 @@ in Render, never committed. See [Render environment variables and secrets](https
 | `MANZIL_IMAGE_CLASSIFY_ONNX_DIR` | `.manzil/models/clip-vision-uint8` | no | yes |
 | Render secret file `manzil_clip_archive_url` | authenticated stable model archive URL | **yes** | build-time yes |
 | `OPENROUTER_API_KEY` | production-scoped OpenRouter key | **yes** | yes |
+| `OPENROUTER_HTTP_REFERER` | `https://manzil.yusufsaquib.com` (or same as `MANZIL_FRONTEND_URL`) | no | yes |
+| `OPENROUTER_APP_TITLE` | `Manzil` (default when unset) | no | yes |
 | `LANGFUSE_PUBLIC_KEY` | production Langfuse project | sensitive | yes |
 | `LANGFUSE_SECRET_KEY` | production Langfuse project | **yes** | yes |
 | `LANGFUSE_HOST` | region host, e.g. `https://us.cloud.langfuse.com` | no | yes |
@@ -457,7 +459,9 @@ DESIGN decisions. Do not add provider-vendor keys: OpenRouter is the sole LLM
 gateway.
 
 Create the OpenRouter key specifically for production and give it a bounded
-spending limit/alert. OpenRouter keys and credits are described in its
+spending limit/alert. Set `OPENROUTER_HTTP_REFERER=https://manzil.yusufsaquib.com`
+so Manzil appears as a named app in OpenRouter analytics (display name defaults
+to `Manzil` via `OPENROUTER_APP_TITLE`). OpenRouter keys and credits are described in its
 [official FAQ](https://openrouter.ai/docs/faq). Create Langfuse keys under the
 production project's settings; key pairs are project-scoped according to
 [Langfuse's API documentation](https://langfuse.com/docs/api-and-data-platform/features/public-api).

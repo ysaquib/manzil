@@ -59,6 +59,7 @@ ln -s CLAUDE.md AGENTS.md
 | Var | Used by | Notes |
 |---|---|---|
 | `OPENROUTER_API_KEY` | worker | sole LLM gateway (OpenRouter); replaces direct Anthropic/Google keys |
+| `OPENROUTER_HTTP_REFERER` / `OPENROUTER_APP_TITLE` | worker | optional OpenRouter app attribution headers; referer falls back to `MANZIL_FRONTEND_URL`; title defaults to `Manzil` |
 | `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` / `LANGFUSE_HOST` | worker | cloud free tier; wired before first LLM call (NFR6). The API makes no LLM calls and gets no Langfuse keys |
 | `DATABASE_URL` | worker, api | direct Postgres (worker uses service-level access) |
 | `SUPABASE_URL` / `SUPABASE_ANON_KEY` | frontend, api | anon key is RLS-safe by design |
