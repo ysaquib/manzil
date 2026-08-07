@@ -4,20 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Manzil</title>
-    <script>
-      try {
-        var _stored = window.localStorage.getItem("manzil-color-scheme");
-        var colorScheme =
-          _stored === "light" || _stored === "dark" || _stored === "auto" ? _stored : "auto";
-        var computed =
-          colorScheme !== "auto"
-            ? colorScheme
-            : window.matchMedia("(prefers-color-scheme: dark)").matches
-              ? "dark"
-              : "light";
-        document.documentElement.setAttribute("data-mantine-color-scheme", computed);
-      } catch (e) {}
-    </script>
+    <script src="/color-scheme.js"></script>
   </head>
   <body>
     <div id="root"></div>

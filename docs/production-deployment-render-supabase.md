@@ -370,11 +370,12 @@ In Render:
 Use the connected-repository flow, not the public Git URL flow. Connected repos
 support automatic deploys and previews; public URL services do not.
 
-For the initial launch, configuring the two services in the Dashboard is less
-risky than inventing an untested Blueprint. Once the build is proven, commit a
-`render.yaml` that mirrors it. Render Blueprints are rooted at `render.yaml` and
-support `buildCommand`, `startCommand`, `healthCheckPath`, domains, build
-filters, and `autoDeployTrigger: checksPass`; see the
+For the initial launch, configure the API service in the Dashboard. The
+committed `render.yaml` already owns the static frontend and its security
+headers; do not create a second frontend with divergent Dashboard settings.
+Once the API build is proven, extend the Blueprint to mirror it. Render
+Blueprints support `buildCommand`, `startCommand`, `healthCheckPath`, domains,
+build filters, and `autoDeployTrigger: checksPass`; see the
 [Blueprint specification](https://render.com/docs/blueprint-spec).
 
 ## 6. Create the Render API Web Service
@@ -509,6 +510,16 @@ and `/auth/...` return a static-site 404. See
 ### 7.1 Frontend build variables
 
 Every `VITE_*` value is public and recoverable from the built JavaScript.
+
+The committed root `render.yaml` encodes this rewrite and the production
+security headers. Before syncing it, replace `https://api.example.com` in the
+CSP with the final API origin. Do not weaken `script-src` with
+`'unsafe-inline'`: the pre-paint color-scheme script is deliberately an
+external same-origin file. Mantine requires `'unsafe-inline'` for generated
+styles, but scripts remain locked to the application and Google Maps origins.
+The policy also denies framing and objects, sends no referrer, prevents MIME
+sniffing, disables unused camera/microphone/geolocation capabilities, and sets
+one-year HSTS without `includeSubDomains` or preload.
 
 | Variable | Value | Secret? |
 |---|---|---:|
@@ -657,7 +668,11 @@ Verify in this order:
    `GET https://<staging-api>/v1/ready` returns 200 with database, worker, and
    model checks all `ok`.
 2. `/openapi.json` is visible in staging but hidden after `API_ENVIRONMENT=production`.
-3. The frontend loads through a deep link such as `/admin` without a 404.
+3. The frontend loads through a deep link such as `/admin` without a 404. Use
+   `curl -I` to confirm CSP, Referrer-Policy, frame denial, nosniff, HSTS, and
+   Permissions-Policy on both `/` and the deep link; then exercise Auth,
+   Realtime, private images, and Maps with the browser console free of CSP
+   violations.
 4. Unknown-email sign-up/OTP cannot create an account.
 5. The primordial admin can sign in and open Admin → People.
 6. Provision a second test account through Admin → People; verify the SMTP
@@ -794,7 +809,8 @@ deployment inputs:
    verified ONNX archive without retaining download credentials;
 2. a `.dockerignore` that excludes `.env`, local/eval fixtures, caches, `.git`,
    and unrelated artifacts while retaining all required workspace packages;
-3. `render.yaml` after the manual service has proven the exact commands;
+3. extend the existing frontend-only `render.yaml` with the API after its manual
+   service has proven the exact commands;
 4. the protected production database deployment job shown above;
 5. a readiness endpoint that checks a trivial Postgres query and reports model
    configuration without exposing paths or secrets;
