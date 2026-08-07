@@ -74,6 +74,7 @@ if TYPE_CHECKING:
 
 STRUCTURED_TOOL_NAME = "emit_result"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+OPENROUTER_APP_TITLE_DEFAULT = "Manzil"
 
 
 class SeamConfigError(RuntimeError):
@@ -120,6 +121,32 @@ def run_context(ctx: RunContext) -> Iterator[None]:
 
 
 # ── provider + tracer plumbing (private) ─────────────────────────────────────
+
+
+def _openrouter_http_referer() -> str | None:
+    return os.environ.get("OPENROUTER_HTTP_REFERER") or os.environ.get("MANZIL_FRONTEND_URL")
+
+
+def _openrouter_attribution_headers() -> dict[str, str]:
+    """OpenRouter app attribution (https://openrouter.ai/docs/app-attribution)."""
+    headers: dict[str, str] = {}
+    referer = _openrouter_http_referer()
+    if referer:
+        headers["HTTP-Referer"] = referer
+    title = os.environ.get("OPENROUTER_APP_TITLE", OPENROUTER_APP_TITLE_DEFAULT)
+    if title:
+        headers["X-OpenRouter-Title"] = title
+    return headers
+
+
+def _openrouter_client() -> Any:
+    from openai import AsyncOpenAI
+
+    return AsyncOpenAI(
+        api_key=os.environ["OPENROUTER_API_KEY"],
+        base_url=OPENROUTER_BASE_URL,
+        default_headers=_openrouter_attribution_headers(),
+    )
 
 
 @dataclass(frozen=True)
@@ -285,8 +312,6 @@ async def _live_call(plan: _CallPlan, schema: type[BaseModel]) -> ProviderRespon
 
 
 async def _live_call_openrouter(plan: _CallPlan, schema: type[BaseModel]) -> ProviderResponse:
-    from openai import AsyncOpenAI
-
     if not os.environ.get("OPENROUTER_API_KEY"):
         raise SeamConfigError("OPENROUTER_API_KEY unset — cannot make a live call")
 
@@ -306,10 +331,7 @@ async def _live_call_openrouter(plan: _CallPlan, schema: type[BaseModel]) -> Pro
         messages.append({"role": "system", "content": system_parts})
     messages.append({"role": "user", "content": plan.content})
 
-    client = AsyncOpenAI(
-        api_key=os.environ["OPENROUTER_API_KEY"],
-        base_url=OPENROUTER_BASE_URL,
-    )
+    client = _openrouter_client()
     response = await client.chat.completions.create(
         model=plan.model,
         max_tokens=max_tokens_for_stage(plan.stage),
@@ -369,8 +391,6 @@ async def _live_call_openrouter_vision(
     plan: _CallPlan, schema: type[BaseModel], images: list[VisionImage]
 ) -> ProviderResponse:
     """One real P4 call. Image bytes exist only in the provider request."""
-    from openai import AsyncOpenAI
-
     if not os.environ.get("OPENROUTER_API_KEY"):
         raise SeamConfigError("OPENROUTER_API_KEY unset — cannot make a live call")
     system_parts: list[dict[str, Any]] = []
@@ -407,7 +427,7 @@ async def _live_call_openrouter_vision(
     if system_parts:
         messages.append({"role": "system", "content": system_parts})
     messages.append({"role": "user", "content": content})
-    client = AsyncOpenAI(api_key=os.environ["OPENROUTER_API_KEY"], base_url=OPENROUTER_BASE_URL)
+    client = _openrouter_client()
     response = await client.chat.completions.create(
         model=plan.model,
         max_tokens=max_tokens_for_stage(plan.stage),
@@ -694,8 +714,6 @@ async def _live_agent_turn_openrouter(
     specs: list[ToolSpec],
     server_search_budget: int | None = None,
 ) -> _AgentTurnRaw:
-    from openai import AsyncOpenAI
-
     if not os.environ.get("OPENROUTER_API_KEY"):
         raise SeamConfigError("OPENROUTER_API_KEY unset — cannot make a live call")
 
@@ -716,7 +734,7 @@ async def _live_agent_turn_openrouter(
             convo.append({"role": "system", "content": system_parts})
     convo.extend(messages)
 
-    client = AsyncOpenAI(api_key=os.environ["OPENROUTER_API_KEY"], base_url=OPENROUTER_BASE_URL)
+    client = _openrouter_client()
     local_tools = [
         {
             "type": "function",

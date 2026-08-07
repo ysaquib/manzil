@@ -246,6 +246,28 @@ def test_openrouter_provider_order_pins_upstream_vendors() -> None:
     assert openrouter_provider_order("google/gemini-2.5-flash-lite") == ["Google AI Studio"]
 
 
+def test_openrouter_attribution_headers_default_title_and_explicit_referer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENROUTER_HTTP_REFERER", "https://manzil.yusufsaquib.com")
+    monkeypatch.delenv("OPENROUTER_APP_TITLE", raising=False)
+    assert client_mod._openrouter_attribution_headers() == {
+        "HTTP-Referer": "https://manzil.yusufsaquib.com",
+        "X-OpenRouter-Title": "Manzil",
+    }
+
+
+def test_openrouter_attribution_headers_fall_back_to_frontend_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("OPENROUTER_HTTP_REFERER", raising=False)
+    monkeypatch.setenv("MANZIL_FRONTEND_URL", "http://localhost:5173")
+    assert client_mod._openrouter_attribution_headers() == {
+        "HTTP-Referer": "http://localhost:5173",
+        "X-OpenRouter-Title": "Manzil",
+    }
+
+
 def test_model_override_env_swaps_the_pin(monkeypatch: pytest.MonkeyPatch) -> None:
     """P0-13 bench runs sweep models via MANZIL_MODEL_<STAGE> without editing
     pins; an unpriced override is refused so cost accounting never guesses."""
