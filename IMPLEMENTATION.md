@@ -62,7 +62,7 @@ ln -s CLAUDE.md AGENTS.md
 | `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` / `LANGFUSE_HOST` | worker | cloud free tier; wired before first LLM call (NFR6). The API makes no LLM calls and gets no Langfuse keys |
 | `DATABASE_URL` | worker, api | direct Postgres (worker uses service-level access) |
 | `SUPABASE_URL` / `SUPABASE_ANON_KEY` | frontend, api | anon key is RLS-safe by design |
-| `SUPABASE_SERVICE_ROLE_KEY` | worker, api | worker always; api holds it from Phase 1 only for the in-process lifespan worker loop (P1-3) — still never in frontend env |
+| `SUPABASE_SECRET_KEY` | worker, api | opaque `sb_secret_...` in hosted environments; the local CLI's legacy service-role JWT may occupy this variable for local-only compatibility. Worker always; API also needs it for narrowly privileged operations while hosting the in-process worker — never in frontend env |
 | `MANZIL_WORKER_INPROCESS` | api | `true` by default (DESIGN §5); set to `false` only after a separate worker process is deployed and validated per §8 |
 | `MANZIL_IMAGE_CLASSIFY_ONNX_DIR` | worker, api in-process loop | required canonical IMAGE_CLASSIFY artifact directory containing pinned `model.onnx` + `manifest.json`; deployed package needs the `vision-onnx` extra. Missing configuration fails a non-empty IMAGE_CLASSIFY Stage; there is no LLM fallback. The former `MANZIL_IMAGE_CLASSIFY_ONNX_SHADOW_DIR` is accepted temporarily as a path alias |
 | `API_CORS_ORIGINS` | api | frontend dev origin(s), comma-separated |

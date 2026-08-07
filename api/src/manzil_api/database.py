@@ -50,8 +50,8 @@ def create_service_client(settings: Settings) -> Client:
     user-token client so RLS (Phase 2) applies."""
     return _create_client(
         settings.supabase_url,
-        settings.supabase_service_role_key,
-        key_name="SUPABASE_SERVICE_ROLE_KEY",
+        settings.supabase_secret_key,
+        key_name="SUPABASE_SECRET_KEY",
     )
 
 
