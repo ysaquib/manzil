@@ -39,13 +39,18 @@ The application features and PR-1 admin-only provisioning code have landed, but
 the following deployment work remains:
 
 1. Create separate hosted Supabase **staging** and **production** projects.
-2. Add a production Dockerfile or prove the equivalent Render native-runtime
+2. Add a production API Dockerfile or prove the equivalent Render native-runtime
    build. Docker is recommended because the worker needs Playwright Chromium,
    ONNX Runtime, and their Linux system libraries. The repository currently has
-   neither a production Dockerfile nor `render.yaml`.
+   no production API Dockerfile yet. The committed `render.yaml` owns the
+   frontend service, rewrite, and security headers only.
 3. Put the 97 MB ONNX archive in a private, stable object/release store and make
-   it available during the Render build. Render secret files cannot hold it:
-   their combined limit is 1 MB.
+   it available during the Render build. Render secret files cannot hold the
+   archive (their combined limit is 1 MB), but **must** hold the small download
+   credential or authenticated URL used to fetch it. Do not put that secret in
+   a Render environment variable: Docker services translate environment
+   variables into build arguments, which risks retaining the credential in
+   image metadata or a build layer.
 4. Validate the API memory envelope on Render. The measured ONNX subprocess
    peak is about 213 MB before counting FastAPI, Python, and a possible
    Playwright browser. Render Free and Starter web instances currently have
@@ -160,7 +165,12 @@ and [IPv4/IPv6 compatibility](https://supabase.com/docs/guides/troubleshooting/s
 
 If the password contains URL-significant characters, use the exact URL copied
 from Supabase or percent-encode the password. Never assemble it in a checked-in
-file.
+file. Require TLS and certificate verification: retain the Dashboard URL's SSL
+parameters, or append `sslmode=verify-full` (use `?sslmode=verify-full` when the
+URL has no query string). Do not deploy with `sslmode=disable`, and do not use a
+client setting that skips certificate verification. Test this exact URL from
+staging before launch; a TLS failure is a deployment failure, not a reason to
+weaken verification.
 
 ### 3.3 Apply the schema
 
@@ -203,17 +213,23 @@ In Authentication settings for each hosted project:
    - keep anonymous sign-ins disabled.
 2. Authentication → URL Configuration:
    - Site URL: `https://app.example.com`;
-   - add exact production redirects:
+   - add the narrow production redirects required by the implemented flows:
 
 ```text
 https://app.example.com/auth/callback
 https://app.example.com/auth/reset-password
 https://app.example.com/invite/**
+https://app.example.com/join/**
 ```
 
-The wildcard is required because Hunt invitation emails carry a unique token in
-the `/invite/<token>` path. Do not use a blanket production `/**` allow-list if
-these narrower entries work. Keep localhost redirects only in staging if they
+The two token-path wildcards are required because Hunt invites and managed
+Invitation Links return to unique `/invite/<token>` and `/join/<token>` paths.
+The callback entry must also accept the frontend's `?next=/invite/...` or
+`?next=/join/...` query string; verify it with Supabase's redirect-URL glob
+tester and, if an exact callback entry does not match query strings in the
+hosted configuration, use the narrow
+`https://app.example.com/auth/callback**` pattern. Do not use a blanket
+production `/**` allow-list. Keep localhost redirects only in staging if they
 are genuinely needed. Supabase recommends exact production paths in
 [Redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls).
 
@@ -244,16 +260,33 @@ Public sign-up is intentionally disabled, so bootstrap exactly one account:
 1. In Supabase Authentication → Users, create or invite the production owner
    email through the Dashboard's administrative path.
 2. Complete password setup and confirm that the account exists.
-3. In SQL Editor, run this once with the real email:
+3. In SQL Editor, run this once with the real email. The block fails rather
+   than silently doing nothing if the email is wrong, refuses to create a
+   second primordial admin, and refuses to bootstrap on top of a non-primordial
+   first row:
 
 ```sql
-insert into public.site_admins (user_id, is_primordial, note)
-select id, true, 'Production system owner'
-from auth.users
-where email = 'you@example.com';
+do $$
+declare
+  target_user_id uuid;
+begin
+  select id into strict target_user_id
+  from auth.users
+  where lower(email) = lower('you@example.com');
+
+  if exists (select 1 from public.site_admins) then
+    raise exception 'site_admins is not empty; stop and investigate';
+  end if;
+
+  insert into public.site_admins (user_id, is_primordial, note)
+  values (target_user_id, true, 'Production system owner');
+end
+$$;
 ```
 
-4. Confirm exactly one row is primordial:
+4. Confirm that there is exactly one admin and it is the intended primordial
+   account. Treat zero rows, multiple rows, the wrong email, or `false` as a
+   failed bootstrap:
 
 ```sql
 select u.email, sa.is_primordial, sa.granted_at
@@ -275,26 +308,35 @@ tar -C worker/tests/fixtures/vision_benchmark/models/clip-vision-onnx-uint8 \
   model.onnx manifest.json
 ```
 
-Upload it to a private object store or authenticated release location. The
-download URL or token must be a Render API build secret named, for example,
-`MANZIL_CLIP_ONNX_ARCHIVE_URL`. It must be stable across automatic deploys;
-short-lived signed URLs are unsuitable unless CI refreshes them before every
-build.
+Upload it to a private object store or authenticated release location. Put the
+small download credential (or authenticated stable URL) in a Render **secret
+file** named `manzil_clip_archive_url`; do not use an environment variable or
+Docker `ARG`. It must be stable across automatic deploys; short-lived signed
+URLs are unsuitable unless CI refreshes them before every build. Restrict the
+credential to read-only access to this one object where the provider permits.
 
-The Render build must:
+The Dockerfile must use a BuildKit secret mount in the same `RUN` instruction
+that downloads and verifies the artifact, so the secret is absent from the
+resulting image and intermediate layers. For example (the production
+Dockerfile must also install `curl` and CA certificates):
 
-```bash
-uv sync --frozen --package manzil-api --extra vision-onnx --no-dev
-mkdir -p .manzil/models/clip-vision-uint8
-curl -fL --retry 5 "$MANZIL_CLIP_ONNX_ARCHIVE_URL" \
-  -o /tmp/manzil-clip-vision-uint8.tar.gz
-tar -xzf /tmp/manzil-clip-vision-uint8.tar.gz \
-  -C .manzil/models/clip-vision-uint8
-uv run --no-sync --package manzil-api python -c \
-  'from pathlib import Path; from manzil_worker.vision_onnx import artifact_digest; print(artifact_digest(Path(".manzil/models/clip-vision-uint8")))'
+```dockerfile
+# syntax=docker/dockerfile:1.7
+RUN --mount=type=secret,id=manzil_clip_archive_url \
+    set -eu; \
+    archive_url="$(cat /run/secrets/manzil_clip_archive_url)"; \
+    mkdir -p .manzil/models/clip-vision-uint8; \
+    curl --proto '=https' --tlsv1.2 --fail --location --retry 5 \
+      "$archive_url" -o /tmp/manzil-clip-vision-uint8.tar.gz; \
+    tar -xzf /tmp/manzil-clip-vision-uint8.tar.gz \
+      -C .manzil/models/clip-vision-uint8 \
+      --no-same-owner --no-same-permissions; \
+    uv run --no-sync --package manzil-api python -c \
+      'from pathlib import Path; from manzil_worker.vision_onnx import artifact_digest; expected="af06481c9b95daa042c9d89f7c2412c845f98aca3706e1cc2d23e7dad853a00b"; actual=artifact_digest(Path(".manzil/models/clip-vision-uint8")); assert actual == expected, f"ONNX artifact digest mismatch: {actual}"'; \
+    rm -f /tmp/manzil-clip-vision-uint8.tar.gz
 ```
 
-The final line must print:
+The build must fail unless the digest is:
 
 ```text
 af06481c9b95daa042c9d89f7c2412c845f98aca3706e1cc2d23e7dad853a00b
@@ -400,7 +442,7 @@ in Render, never committed. See [Render environment variables and secrets](https
 | `MANZIL_MODE` | `workflow` | no | yes |
 | `MANZIL_LLM_MODE` | `live` | no | yes |
 | `MANZIL_IMAGE_CLASSIFY_ONNX_DIR` | `.manzil/models/clip-vision-uint8` | no | yes |
-| `MANZIL_CLIP_ONNX_ARCHIVE_URL` | authenticated stable model archive URL | **yes** | build-time yes |
+| Render secret file `manzil_clip_archive_url` | authenticated stable model archive URL | **yes** | build-time yes |
 | `OPENROUTER_API_KEY` | production-scoped OpenRouter key | **yes** | yes |
 | `LANGFUSE_PUBLIC_KEY` | production Langfuse project | sensitive | yes |
 | `LANGFUSE_SECRET_KEY` | production Langfuse project | **yes** | yes |
@@ -720,7 +762,7 @@ guide.
 | Google server key | no | **secret** | never | no | Google source |
 | Google browser key | no | never | public build variable | no | Google source |
 | Tier-3 provider key | no | **secret** | never | no | provider source |
-| ONNX archive credential/URL | no | **build secret** | never | optional object store | object-store source |
+| ONNX archive credential/URL | no | **BuildKit-mounted secret file; never env/ARG** | never | optional object store | object-store source |
 | SMTP password | no | no | never | Auth SMTP setting | SMTP source |
 | Render deploy hook | only if using hook-based CD | source | source | no | Render source |
 
