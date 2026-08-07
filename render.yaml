@@ -1,0 +1,50 @@
+# Production Render configuration currently owns the static frontend only.
+# The API remains dashboard-managed until its production Dockerfile is proven
+# (docs/production-deployment-render-supabase.md §14).
+services:
+  - type: web
+    name: manzil-web
+    runtime: static
+    rootDir: frontend
+    buildCommand: pnpm install --frozen-lockfile && pnpm build
+    staticPublishPath: dist
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+      - key: VITE_API_BASE_URL
+        sync: false
+      - key: VITE_GOOGLE_MAPS_API_KEY
+        sync: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      - path: /*
+        name: Content-Security-Policy
+        value: >-
+          default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none';
+          form-action 'self'; script-src 'self' https://maps.googleapis.com
+          https://maps.gstatic.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:;
+          img-src 'self' data: blob: https://*.supabase.co https://*.googleapis.com
+          https://*.gstatic.com https://*.ggpht.com; connect-src 'self' https://api.example.com
+          https://*.supabase.co wss://*.supabase.co https://maps.googleapis.com
+          https://*.googleapis.com; worker-src 'self' blob:; upgrade-insecure-requests
+      - path: /*
+        name: Referrer-Policy
+        value: no-referrer
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Strict-Transport-Security
+        value: max-age=31536000
+      - path: /*
+        name: Permissions-Policy
+        value: camera=(), microphone=(), geolocation=()
