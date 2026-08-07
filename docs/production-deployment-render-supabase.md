@@ -511,10 +511,6 @@ Without it, direct visits and refreshes on `/admin`, `/h/...`, `/invite/...`,
 and `/auth/...` return a static-site 404. See
 [Static Site Redirects and Rewrites](https://render.com/docs/redirects-rewrites).
 
-### 7.1 Frontend build variables
-
-Every `VITE_*` value is public and recoverable from the built JavaScript.
-
 The committed root `render.yaml` encodes this rewrite and the production
 security headers. Before syncing it, replace `https://api.example.com` in the
 CSP with the final API origin. Do not weaken `script-src` with
@@ -524,6 +520,10 @@ styles, but scripts remain locked to the application and Google Maps origins.
 The policy also denies framing and objects, sends no referrer, prevents MIME
 sniffing, disables unused camera/microphone/geolocation capabilities, and sets
 one-year HSTS without `includeSubDomains` or preload.
+
+### 7.1 Frontend build variables
+
+Every `VITE_*` value is public and recoverable from the built JavaScript.
 
 | Variable | Value | Secret? |
 |---|---|---:|
@@ -816,11 +816,10 @@ deployment inputs:
 3. extend the existing frontend-only `render.yaml` with the API after its manual
    service has proven the exact commands;
 4. the protected production database deployment job shown above;
-5. a readiness endpoint that checks a trivial Postgres query and reports model
-   configuration without exposing paths or secrets;
+5. paging-grade external monitoring for the implemented `/v1/ready` endpoint;
+   the committed scheduled GitHub probe is the baseline, not the final pager;
 6. a staging smoke workflow or documented manual release sign-off;
-7. an engineering migration from the legacy Supabase `service_role` JWT to a
-   named `sb_secret_...` server key.
+7. alerting for readiness failures and stale worker heartbeats/Jobs.
 
 Those are the remaining infrastructure/code deliverables. The domain, provider
 accounts, hosted Auth switches, SMTP verification, secrets, billing, and first
