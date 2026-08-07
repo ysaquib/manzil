@@ -175,7 +175,7 @@ def purge_images_cmd(
         store = SupabaseImageStore.from_env()
         if store is None:
             typer.echo(
-                "SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are not set — "
+                "SUPABASE_URL / SUPABASE_SECRET_KEY are not set — "
                 "purge-images needs Storage credentials",
                 err=True,
             )
@@ -526,7 +526,7 @@ def vision_label_kit_cmd(
                 store = SupabaseImageStore.from_env()
                 if not dsn or store is None:
                     typer.echo(
-                        "DATABASE_URL, SUPABASE_URL, and SUPABASE_SERVICE_ROLE_KEY are "
+                        "DATABASE_URL, SUPABASE_URL, and SUPABASE_SECRET_KEY are "
                         "required to build a vision label kit",
                         err=True,
                     )

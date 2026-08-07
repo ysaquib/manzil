@@ -65,10 +65,9 @@ the following deployment work remains:
    configuration, Google Maps restrictions, and email templates to those final
    HTTPS origins.
 9. Run the staging and production acceptance checklists in this document.
-10. Migrate `SupabaseImageStore` from the legacy JWT `service_role` key to a
-    current `sb_secret_...` key before Supabase disables legacy keys. The current
-    raw Storage client sends the key in both `apikey` and Bearer headers, so this
-    is an engineering change, not just an environment-variable swap.
+10. Create a named, production-scoped `sb_secret_...` key for the API/worker.
+    Manzil's Storage client now sends opaque keys only in `apikey`; legacy JWT
+    Bearer behavior remains solely for the local Supabase CLI.
 
 Render documents its service, monorepo, health-check, environment, and domain
 behavior in [Web Services](https://render.com/docs/web-services),
@@ -131,14 +130,13 @@ Record, without committing, these values for each environment:
 | Database password | the value chosen at project creation | GitHub `SUPABASE_DB_PASSWORD` only |
 | Project URL | Connect or Settings → API | Render API `SUPABASE_URL`; frontend `VITE_SUPABASE_URL` |
 | Publishable key | Settings → API Keys | Render API `SUPABASE_ANON_KEY`; frontend `VITE_SUPABASE_ANON_KEY` |
-| Legacy `service_role` JWT | Settings → API Keys → Legacy API Keys | Render API `SUPABASE_SERVICE_ROLE_KEY` temporarily |
+| Secret API key | Settings → API Keys → Secret keys | Render API `SUPABASE_SECRET_KEY` |
 | Session pooler URL | Connect → Session pooler | Render API `DATABASE_URL` |
 
 Supabase now recommends `sb_publishable_...` and `sb_secret_...` keys. The
 publishable key can be used in Manzil's variables that retain the older
 `*_ANON_KEY` names. Do **not** put an `sb_secret_...` value into the frontend.
-For the server key, Manzil temporarily needs the legacy JWT `service_role` value
-until the raw Storage code is adapted. Both server key types bypass RLS and must
+Use a named opaque `sb_secret_...` key for the server. It bypasses RLS and must
 never enter Vite variables, logs, screenshots, source control, or browser code.
 See [Understanding API keys](https://supabase.com/docs/guides/getting-started/api-keys).
 
@@ -434,7 +432,7 @@ in Render, never committed. See [Render environment variables and secrets](https
 | `DATABASE_URL` | Supabase Session pooler URL, port 5432 | yes | yes |
 | `SUPABASE_URL` | `https://<project-ref>.supabase.co` | no | yes |
 | `SUPABASE_ANON_KEY` | Supabase publishable key | public but configure here | yes |
-| `SUPABASE_SERVICE_ROLE_KEY` | legacy JWT service-role key, temporarily | **yes** | yes |
+| `SUPABASE_SECRET_KEY` | named opaque `sb_secret_...` server key | **yes** | yes |
 | `MANZIL_WORKER_INPROCESS` | `true` | no | yes |
 | `API_ENVIRONMENT` | `production` | no | yes |
 | `API_CORS_ORIGINS` | `https://app.example.com` | no | yes |
@@ -756,7 +754,7 @@ guide.
 | Supabase DB password | production environment secret | only inside pooler URL | no | issued there | no |
 | `DATABASE_URL` | no | **secret** | never | source | no |
 | Supabase publishable key | no | yes | yes, public | source | no |
-| Supabase service-role JWT | no | **secret** | never | source | no |
+| Supabase secret API key | no | **secret** | never | source | no |
 | OpenRouter key | no | **secret** | never | no | OpenRouter source |
 | Langfuse public/secret pair | no | **secret** | never | no | Langfuse source |
 | Google server key | no | **secret** | never | no | Google source |

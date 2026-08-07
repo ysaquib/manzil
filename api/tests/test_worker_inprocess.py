@@ -100,7 +100,7 @@ def test_create_app_exports_dotenv_for_the_inprocess_worker(monkeypatch, tmp_pat
     env = {
         "SUPABASE_URL": "http://127.0.0.1:54321",
         "SUPABASE_ANON_KEY": "anon",
-        "SUPABASE_SERVICE_ROLE_KEY": "service",
+        "SUPABASE_SECRET_KEY": "service",
         "DATABASE_URL": DATABASE_URL,
         "BRIGHTDATA_API_KEY": "test-tier3-key",
     }
