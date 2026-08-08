@@ -412,34 +412,42 @@ async def download_image(url: str) -> bytes:
 
 
 class SupabaseImageStore:
-    """Private Storage bucket writer using the service-role REST surface."""
+    """Private Storage bucket writer using a server-only Supabase API key.
 
-    def __init__(self, url: str, service_role_key: str, bucket: str = "property-images") -> None:
+    Opaque ``sb_secret_`` keys authenticate through ``apikey``.  The local
+    Supabase CLI still exposes a legacy service-role JWT; only that JWT-shaped
+    development credential is also sent as a Bearer token.
+    """
+
+    def __init__(self, url: str, secret_key: str, bucket: str = "property-images") -> None:
         self._url = url.rstrip("/")
-        self._key = service_role_key
+        self._key = secret_key
         self._bucket = bucket
 
     @classmethod
     def from_env(cls) -> SupabaseImageStore | None:
         url = os.environ.get("SUPABASE_URL")
-        key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+        key = os.environ.get("SUPABASE_SECRET_KEY")
         return cls(url, key) if url and key else None
+
+    def _headers(self) -> dict[str, str]:
+        headers = {"apikey": self._key}
+        # Legacy service-role keys are JWTs. This compatibility branch is for
+        # the local Supabase CLI; hosted deployments use an opaque sb_secret_.
+        if self._key.count(".") == 2:
+            headers["Authorization"] = f"Bearer {self._key}"
+        return headers
 
     async def put(self, path: str, content: bytes) -> None:
         endpoint = f"{self._url}/storage/v1/object/{self._bucket}/{path}"
-        headers = {
-            "Authorization": f"Bearer {self._key}",
-            "apikey": self._key,
-            "Content-Type": "image/webp",
-            "x-upsert": "true",
-        }
+        headers = self._headers() | {"Content-Type": "image/webp", "x-upsert": "true"}
         async with httpx.AsyncClient(timeout=IMAGE_FETCH_TIMEOUT_SECONDS) as client:
             response = await client.post(endpoint, headers=headers, content=content)
             response.raise_for_status()
 
     async def get(self, path: str) -> bytes:
         endpoint = f"{self._url}/storage/v1/object/{self._bucket}/{path}"
-        headers = {"Authorization": f"Bearer {self._key}", "apikey": self._key}
+        headers = self._headers()
         async with httpx.AsyncClient(timeout=IMAGE_FETCH_TIMEOUT_SECONDS) as client:
             response = await client.get(endpoint, headers=headers)
             response.raise_for_status()
@@ -448,7 +456,7 @@ class SupabaseImageStore:
     async def delete(self, path: str) -> None:
         """Remove one stored object. Purge path only (P3-SC5)."""
         endpoint = f"{self._url}/storage/v1/object/{self._bucket}/{path}"
-        headers = {"Authorization": f"Bearer {self._key}", "apikey": self._key}
+        headers = self._headers()
         async with httpx.AsyncClient(timeout=IMAGE_FETCH_TIMEOUT_SECONDS) as client:
             response = await client.delete(endpoint, headers=headers)
             if response.status_code != 404:

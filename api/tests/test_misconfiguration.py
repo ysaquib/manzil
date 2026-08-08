@@ -42,7 +42,7 @@ def test_create_anon_client_rejects_empty_key(monkeypatch: pytest.MonkeyPatch) -
     settings = Settings(
         supabase_url="http://127.0.0.1:54321",
         supabase_anon_key="",
-        supabase_service_role_key="x",
+        supabase_secret_key="x",
         database_url="postgresql://postgres:postgres@127.0.0.1:54322/postgres",
     )
     with pytest.raises(BackendMisconfigured, match="SUPABASE_ANON_KEY"):

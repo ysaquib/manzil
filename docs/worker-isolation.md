@@ -101,14 +101,14 @@ part of the safe cutover.
 Configure these worker secrets/settings to match the API where applicable:
 
 - `DATABASE_URL`
-- `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_URL` and `SUPABASE_SECRET_KEY`
 - `OPENROUTER_API_KEY`
 - `LANGFUSE_*`
 - fetch-tier provider keys and `MANZIL_TIER3_PROVIDER`
 - Google Maps credentials once those Stages exist
 - `MANZIL_MODE`, `MANZIL_LLM_MODE`, Job retry/orphan timing, and model settings
 
-Do not expose `SUPABASE_SERVICE_ROLE_KEY` to the frontend. The standalone worker
+Do not expose `SUPABASE_SECRET_KEY` to the frontend. The standalone worker
 uses it for the same trusted global writes currently performed in-process.
 
 ## 3. Staging validation
