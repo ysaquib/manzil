@@ -39,13 +39,18 @@ The application features and PR-1 admin-only provisioning code have landed, but
 the following deployment work remains:
 
 1. Create separate hosted Supabase **staging** and **production** projects.
-2. Add a production Dockerfile or prove the equivalent Render native-runtime
+2. Add a production API Dockerfile or prove the equivalent Render native-runtime
    build. Docker is recommended because the worker needs Playwright Chromium,
    ONNX Runtime, and their Linux system libraries. The repository currently has
-   neither a production Dockerfile nor `render.yaml`.
+   no production API Dockerfile yet. The committed `render.yaml` owns the
+   frontend service, rewrite, and security headers only.
 3. Put the 97 MB ONNX archive in a private, stable object/release store and make
-   it available during the Render build. Render secret files cannot hold it:
-   their combined limit is 1 MB.
+   it available during the Render build. Render secret files cannot hold the
+   archive (their combined limit is 1 MB), but **must** hold the small download
+   credential or authenticated URL used to fetch it. Do not put that secret in
+   a Render environment variable: Docker services translate environment
+   variables into build arguments, which risks retaining the credential in
+   image metadata or a build layer.
 4. Validate the API memory envelope on Render. The measured ONNX subprocess
    peak is about 213 MB before counting FastAPI, Python, and a possible
    Playwright browser. Render Free and Starter web instances currently have
@@ -60,10 +65,9 @@ the following deployment work remains:
    configuration, Google Maps restrictions, and email templates to those final
    HTTPS origins.
 9. Run the staging and production acceptance checklists in this document.
-10. Migrate `SupabaseImageStore` from the legacy JWT `service_role` key to a
-    current `sb_secret_...` key before Supabase disables legacy keys. The current
-    raw Storage client sends the key in both `apikey` and Bearer headers, so this
-    is an engineering change, not just an environment-variable swap.
+10. Create a named, production-scoped `sb_secret_...` key for the API/worker.
+    Manzil's Storage client now sends opaque keys only in `apikey`; legacy JWT
+    Bearer behavior remains solely for the local Supabase CLI.
 
 Render documents its service, monorepo, health-check, environment, and domain
 behavior in [Web Services](https://render.com/docs/web-services),
@@ -126,14 +130,13 @@ Record, without committing, these values for each environment:
 | Database password | the value chosen at project creation | GitHub `SUPABASE_DB_PASSWORD` only |
 | Project URL | Connect or Settings → API | Render API `SUPABASE_URL`; frontend `VITE_SUPABASE_URL` |
 | Publishable key | Settings → API Keys | Render API `SUPABASE_ANON_KEY`; frontend `VITE_SUPABASE_ANON_KEY` |
-| Legacy `service_role` JWT | Settings → API Keys → Legacy API Keys | Render API `SUPABASE_SERVICE_ROLE_KEY` temporarily |
+| Secret API key | Settings → API Keys → Secret keys | Render API `SUPABASE_SECRET_KEY` |
 | Session pooler URL | Connect → Session pooler | Render API `DATABASE_URL` |
 
 Supabase now recommends `sb_publishable_...` and `sb_secret_...` keys. The
 publishable key can be used in Manzil's variables that retain the older
 `*_ANON_KEY` names. Do **not** put an `sb_secret_...` value into the frontend.
-For the server key, Manzil temporarily needs the legacy JWT `service_role` value
-until the raw Storage code is adapted. Both server key types bypass RLS and must
+Use a named opaque `sb_secret_...` key for the server. It bypasses RLS and must
 never enter Vite variables, logs, screenshots, source control, or browser code.
 See [Understanding API keys](https://supabase.com/docs/guides/getting-started/api-keys).
 
@@ -160,7 +163,12 @@ and [IPv4/IPv6 compatibility](https://supabase.com/docs/guides/troubleshooting/s
 
 If the password contains URL-significant characters, use the exact URL copied
 from Supabase or percent-encode the password. Never assemble it in a checked-in
-file.
+file. Require TLS and certificate verification: retain the Dashboard URL's SSL
+parameters, or append `sslmode=verify-full` (use `?sslmode=verify-full` when the
+URL has no query string). Do not deploy with `sslmode=disable`, and do not use a
+client setting that skips certificate verification. Test this exact URL from
+staging before launch; a TLS failure is a deployment failure, not a reason to
+weaken verification.
 
 ### 3.3 Apply the schema
 
@@ -203,17 +211,23 @@ In Authentication settings for each hosted project:
    - keep anonymous sign-ins disabled.
 2. Authentication → URL Configuration:
    - Site URL: `https://app.example.com`;
-   - add exact production redirects:
+   - add the narrow production redirects required by the implemented flows:
 
 ```text
 https://app.example.com/auth/callback
 https://app.example.com/auth/reset-password
 https://app.example.com/invite/**
+https://app.example.com/join/**
 ```
 
-The wildcard is required because Hunt invitation emails carry a unique token in
-the `/invite/<token>` path. Do not use a blanket production `/**` allow-list if
-these narrower entries work. Keep localhost redirects only in staging if they
+The two token-path wildcards are required because Hunt invites and managed
+Invitation Links return to unique `/invite/<token>` and `/join/<token>` paths.
+The callback entry must also accept the frontend's `?next=/invite/...` or
+`?next=/join/...` query string; verify it with Supabase's redirect-URL glob
+tester and, if an exact callback entry does not match query strings in the
+hosted configuration, use the narrow
+`https://app.example.com/auth/callback**` pattern. Do not use a blanket
+production `/**` allow-list. Keep localhost redirects only in staging if they
 are genuinely needed. Supabase recommends exact production paths in
 [Redirect URLs](https://supabase.com/docs/guides/auth/redirect-urls).
 
@@ -244,16 +258,33 @@ Public sign-up is intentionally disabled, so bootstrap exactly one account:
 1. In Supabase Authentication → Users, create or invite the production owner
    email through the Dashboard's administrative path.
 2. Complete password setup and confirm that the account exists.
-3. In SQL Editor, run this once with the real email:
+3. In SQL Editor, run this once with the real email. The block fails rather
+   than silently doing nothing if the email is wrong, refuses to create a
+   second primordial admin, and refuses to bootstrap on top of a non-primordial
+   first row:
 
 ```sql
-insert into public.site_admins (user_id, is_primordial, note)
-select id, true, 'Production system owner'
-from auth.users
-where email = 'you@example.com';
+do $$
+declare
+  target_user_id uuid;
+begin
+  select id into strict target_user_id
+  from auth.users
+  where lower(email) = lower('you@example.com');
+
+  if exists (select 1 from public.site_admins) then
+    raise exception 'site_admins is not empty; stop and investigate';
+  end if;
+
+  insert into public.site_admins (user_id, is_primordial, note)
+  values (target_user_id, true, 'Production system owner');
+end
+$$;
 ```
 
-4. Confirm exactly one row is primordial:
+4. Confirm that there is exactly one admin and it is the intended primordial
+   account. Treat zero rows, multiple rows, the wrong email, or `false` as a
+   failed bootstrap:
 
 ```sql
 select u.email, sa.is_primordial, sa.granted_at
@@ -275,26 +306,35 @@ tar -C worker/tests/fixtures/vision_benchmark/models/clip-vision-onnx-uint8 \
   model.onnx manifest.json
 ```
 
-Upload it to a private object store or authenticated release location. The
-download URL or token must be a Render API build secret named, for example,
-`MANZIL_CLIP_ONNX_ARCHIVE_URL`. It must be stable across automatic deploys;
-short-lived signed URLs are unsuitable unless CI refreshes them before every
-build.
+Upload it to a private object store or authenticated release location. Put the
+small download credential (or authenticated stable URL) in a Render **secret
+file** named `manzil_clip_archive_url`; do not use an environment variable or
+Docker `ARG`. It must be stable across automatic deploys; short-lived signed
+URLs are unsuitable unless CI refreshes them before every build. Restrict the
+credential to read-only access to this one object where the provider permits.
 
-The Render build must:
+The Dockerfile must use a BuildKit secret mount in the same `RUN` instruction
+that downloads and verifies the artifact, so the secret is absent from the
+resulting image and intermediate layers. For example (the production
+Dockerfile must also install `curl` and CA certificates):
 
-```bash
-uv sync --frozen --package manzil-api --extra vision-onnx --no-dev
-mkdir -p .manzil/models/clip-vision-uint8
-curl -fL --retry 5 "$MANZIL_CLIP_ONNX_ARCHIVE_URL" \
-  -o /tmp/manzil-clip-vision-uint8.tar.gz
-tar -xzf /tmp/manzil-clip-vision-uint8.tar.gz \
-  -C .manzil/models/clip-vision-uint8
-uv run --no-sync --package manzil-api python -c \
-  'from pathlib import Path; from manzil_worker.vision_onnx import artifact_digest; print(artifact_digest(Path(".manzil/models/clip-vision-uint8")))'
+```dockerfile
+# syntax=docker/dockerfile:1.7
+RUN --mount=type=secret,id=manzil_clip_archive_url \
+    set -eu; \
+    archive_url="$(cat /run/secrets/manzil_clip_archive_url)"; \
+    mkdir -p .manzil/models/clip-vision-uint8; \
+    curl --proto '=https' --tlsv1.2 --fail --location --retry 5 \
+      "$archive_url" -o /tmp/manzil-clip-vision-uint8.tar.gz; \
+    tar -xzf /tmp/manzil-clip-vision-uint8.tar.gz \
+      -C .manzil/models/clip-vision-uint8 \
+      --no-same-owner --no-same-permissions; \
+    uv run --no-sync --package manzil-api python -c \
+      'from pathlib import Path; from manzil_worker.vision_onnx import artifact_digest; expected="af06481c9b95daa042c9d89f7c2412c845f98aca3706e1cc2d23e7dad853a00b"; actual=artifact_digest(Path(".manzil/models/clip-vision-uint8")); assert actual == expected, f"ONNX artifact digest mismatch: {actual}"'; \
+    rm -f /tmp/manzil-clip-vision-uint8.tar.gz
 ```
 
-The final line must print:
+The build must fail unless the digest is:
 
 ```text
 af06481c9b95daa042c9d89f7c2412c845f98aca3706e1cc2d23e7dad853a00b
@@ -330,11 +370,12 @@ In Render:
 Use the connected-repository flow, not the public Git URL flow. Connected repos
 support automatic deploys and previews; public URL services do not.
 
-For the initial launch, configuring the two services in the Dashboard is less
-risky than inventing an untested Blueprint. Once the build is proven, commit a
-`render.yaml` that mirrors it. Render Blueprints are rooted at `render.yaml` and
-support `buildCommand`, `startCommand`, `healthCheckPath`, domains, build
-filters, and `autoDeployTrigger: checksPass`; see the
+For the initial launch, configure the API service in the Dashboard. The
+committed `render.yaml` already owns the static frontend and its security
+headers; do not create a second frontend with divergent Dashboard settings.
+Once the API build is proven, extend the Blueprint to mirror it. Render
+Blueprints support `buildCommand`, `startCommand`, `healthCheckPath`, domains,
+build filters, and `autoDeployTrigger: checksPass`; see the
 [Blueprint specification](https://render.com/docs/blueprint-spec).
 
 ## 6. Create the Render API Web Service
@@ -392,7 +433,7 @@ in Render, never committed. See [Render environment variables and secrets](https
 | `DATABASE_URL` | Supabase Session pooler URL, port 5432 | yes | yes |
 | `SUPABASE_URL` | `https://<project-ref>.supabase.co` | no | yes |
 | `SUPABASE_ANON_KEY` | Supabase publishable key | public but configure here | yes |
-| `SUPABASE_SERVICE_ROLE_KEY` | legacy JWT service-role key, temporarily | **yes** | yes |
+| `SUPABASE_SECRET_KEY` | named opaque `sb_secret_...` server key | **yes** | yes |
 | `MANZIL_WORKER_INPROCESS` | `true` | no | yes |
 | `API_ENVIRONMENT` | `production` | no | yes |
 | `API_CORS_ORIGINS` | `https://app.example.com` | no | yes |
@@ -400,8 +441,10 @@ in Render, never committed. See [Render environment variables and secrets](https
 | `MANZIL_MODE` | `workflow` | no | yes |
 | `MANZIL_LLM_MODE` | `live` | no | yes |
 | `MANZIL_IMAGE_CLASSIFY_ONNX_DIR` | `.manzil/models/clip-vision-uint8` | no | yes |
-| `MANZIL_CLIP_ONNX_ARCHIVE_URL` | authenticated stable model archive URL | **yes** | build-time yes |
+| Render secret file `manzil_clip_archive_url` | authenticated stable model archive URL | **yes** | build-time yes |
 | `OPENROUTER_API_KEY` | production-scoped OpenRouter key | **yes** | yes |
+| `OPENROUTER_HTTP_REFERER` | `https://manzil.yusufsaquib.com` (or same as `MANZIL_FRONTEND_URL`) | no | yes |
+| `OPENROUTER_APP_TITLE` | `Manzil` (default when unset) | no | yes |
 | `LANGFUSE_PUBLIC_KEY` | production Langfuse project | sensitive | yes |
 | `LANGFUSE_SECRET_KEY` | production Langfuse project | **yes** | yes |
 | `LANGFUSE_HOST` | region host, e.g. `https://us.cloud.langfuse.com` | no | yes |
@@ -416,7 +459,9 @@ DESIGN decisions. Do not add provider-vendor keys: OpenRouter is the sole LLM
 gateway.
 
 Create the OpenRouter key specifically for production and give it a bounded
-spending limit/alert. OpenRouter keys and credits are described in its
+spending limit/alert. Set `OPENROUTER_HTTP_REFERER=https://manzil.yusufsaquib.com`
+so Manzil appears as a named app in OpenRouter analytics (display name defaults
+to `Manzil` via `OPENROUTER_APP_TITLE`). OpenRouter keys and credits are described in its
 [official FAQ](https://openrouter.ai/docs/faq). Create Langfuse keys under the
 production project's settings; key pairs are project-scoped according to
 [Langfuse's API documentation](https://langfuse.com/docs/api-and-data-platform/features/public-api).
@@ -466,25 +511,15 @@ Without it, direct visits and refreshes on `/admin`, `/h/...`, `/invite/...`,
 and `/auth/...` return a static-site 404. See
 [Static Site Redirects and Rewrites](https://render.com/docs/redirects-rewrites).
 
-### 7.0 Security headers (required before Demo Mode is enabled)
-
-Until Demo Mode ships, every page behind this host requires a login. Once a
-public session-bearing page exists, these stop being hygiene. Add them as Render
-static-site custom headers on `/*`:
-
-| Header | Value |
-|---|---|
-| `Content-Security-Policy` | `default-src 'self'; connect-src 'self' https://<api-host> https://<project>.supabase.co wss://<project>.supabase.co; img-src 'self' data: blob: https://<project>.supabase.co; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'` |
-| `X-Content-Type-Options` | `nosniff` |
-| `Referrer-Policy` | `strict-origin-when-cross-origin` |
-| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` |
-
-`frame-ancestors 'none'` is the load-bearing one: it stops the public demo being
-framed by a third-party page that then drives it. Note that `img-src` must admit
-the Supabase Storage host, because the drawer carousel and Floor Plan diagrams
-render signed URLs from the private bucket. Verify the policy with the demo
-running — a CSP that breaks the carousel will be discovered by a visitor
-otherwise.
+The committed root `render.yaml` encodes this rewrite and the production
+security headers. Before syncing it, replace `https://api.example.com` in the
+CSP with the final API origin. Do not weaken `script-src` with
+`'unsafe-inline'`: the pre-paint color-scheme script is deliberately an
+external same-origin file. Mantine requires `'unsafe-inline'` for generated
+styles, but scripts remain locked to the application and Google Maps origins.
+The policy also denies framing and objects, sends no referrer, prevents MIME
+sniffing, disables unused camera/microphone/geolocation capabilities, and sets
+one-year HSTS without `includeSubDomains` or preload.
 
 ### 7.0.1 Edge rate limiting on the public demo routes
 
@@ -519,6 +554,15 @@ the first place. The database limiter bounds *storage*, which is what it was
 built for (a fixed 4097 rows an hour); it does not bound *work*. The edge limit
 is what bounds work, and it is owed before the demo is enabled in production —
 not after the first flood.
+
+### 7.0.2 One CSP note Demo Mode adds
+
+`render.yaml`'s policy is the source of truth; this is the one directive Demo
+Mode constrains. `img-src` must admit the Supabase Storage host, because the
+drawer carousel and the Floor Plan diagrams render signed URLs from the private
+`property-images` bucket. Verify it with the demo actually running — a CSP that
+breaks the carousel is otherwise discovered by a visitor rather than by us.
+
 
 ### 7.1 Frontend build variables
 
@@ -558,6 +602,19 @@ Add this non-secret environment variable:
 ```text
 SUPABASE_PROJECT_ID=<production project ref>
 ```
+
+Also add this repository-level Actions variable (it is public configuration,
+not a secret):
+
+```text
+PRODUCTION_API_URL=https://api.example.com
+```
+
+The committed `production-readiness.yml` probes `/v1/ready` four times an hour
+and supports manual dispatch. Enable GitHub Actions failure notifications for
+the operators who own production. This is a baseline alarm, not paging-grade
+monitoring: scheduled Actions can be delayed, so add an independent uptime
+monitor before Manzil becomes time-critical.
 
 The access token comes from Supabase Dashboard → Account → Access Tokens. The
 database password is the project-specific password. Supabase recommends these
@@ -654,9 +711,15 @@ OpenRouter, Maps, provider, SMTP, and model-download credentials.
 
 Verify in this order:
 
-1. `GET https://<staging-api>/v1/health` returns `{"status":"ok"}`.
+1. `GET https://<staging-api>/v1/health` returns `{"status":"ok"}`, and
+   `GET https://<staging-api>/v1/ready` returns 200 with database, worker, and
+   model checks all `ok`.
 2. `/openapi.json` is visible in staging but hidden after `API_ENVIRONMENT=production`.
-3. The frontend loads through a deep link such as `/admin` without a 404.
+3. The frontend loads through a deep link such as `/admin` without a 404. Use
+   `curl -I` to confirm CSP, Referrer-Policy, frame denial, nosniff, HSTS, and
+   Permissions-Policy on both `/` and the deep link; then exercise Auth,
+   Realtime, private images, and Maps with the browser console free of CSP
+   violations.
 4. Unknown-email sign-up/OTP cannot create an account.
 5. The primordial admin can sign in and open Admin → People.
 6. Provision a second test account through Admin → People; verify the SMTP
@@ -691,7 +754,7 @@ Do not promote staging credentials or database contents into production.
 3. Confirm Supabase Pro/backups, MFA, SMTP, Auth signup gate, redirects, and
    production secrets.
 4. Run the production migration workflow and inspect `migration list`.
-5. Deploy the Render API; wait for `/v1/health` and stable logs.
+5. Deploy the Render API; wait for `/v1/health`, `/v1/ready`, and stable logs.
 6. Confirm exactly one in-process worker claimant.
 7. Deploy/rebuild the frontend against the final API/Supabase URLs.
 8. Verify custom-domain TLS and SPA rewrites.
@@ -753,12 +816,14 @@ At minimum, monitor:
 - Bright Data/ScrapingBee credits;
 - failed, retrying, checkpointed, and stale-lock Jobs in Manzil Admin.
 
-The current `/v1/health` endpoint is liveness only; it does not query Postgres,
-verify the model, or prove the worker loop is advancing. A separate readiness
-endpoint and alerting integration are worthwhile follow-up work before relying
-on automated uptime checks alone. Render recommends that HTTP health checks
-exercise operation-critical dependencies in its [Health Checks](https://render.com/docs/health-checks)
-guide.
+`/v1/health` remains dependency-free liveness. `/v1/ready` is the operational
+probe: it performs a two-second `select 1`, checks the pinned model digest
+captured at startup, and verifies that the in-process worker task is alive and
+has returned to its queue loop within six minutes. It returns only `ok`/`failed`
+labels, never paths or exception details. Keep Render's restart-oriented health
+check on `/v1/health` to avoid an external database incident causing restart
+loops; monitor and alert on `/v1/ready` separately. Also alert on stale Jobs,
+because a legitimate long Stage may exceed the coarse process heartbeat.
 
 ## 13. Secret-placement summary
 
@@ -768,13 +833,13 @@ guide.
 | Supabase DB password | production environment secret | only inside pooler URL | no | issued there | no |
 | `DATABASE_URL` | no | **secret** | never | source | no |
 | Supabase publishable key | no | yes | yes, public | source | no |
-| Supabase service-role JWT | no | **secret** | never | source | no |
+| Supabase secret API key | no | **secret** | never | source | no |
 | OpenRouter key | no | **secret** | never | no | OpenRouter source |
 | Langfuse public/secret pair | no | **secret** | never | no | Langfuse source |
 | Google server key | no | **secret** | never | no | Google source |
 | Google browser key | no | never | public build variable | no | Google source |
 | Tier-3 provider key | no | **secret** | never | no | provider source |
-| ONNX archive credential/URL | no | **build secret** | never | optional object store | object-store source |
+| ONNX archive credential/URL | no | **BuildKit-mounted secret file; never env/ARG** | never | optional object store | object-store source |
 | SMTP password | no | no | never | Auth SMTP setting | SMTP source |
 | Render deploy hook | only if using hook-based CD | source | source | no | Render source |
 
@@ -791,13 +856,13 @@ deployment inputs:
    verified ONNX archive without retaining download credentials;
 2. a `.dockerignore` that excludes `.env`, local/eval fixtures, caches, `.git`,
    and unrelated artifacts while retaining all required workspace packages;
-3. `render.yaml` after the manual service has proven the exact commands;
+3. extend the existing frontend-only `render.yaml` with the API after its manual
+   service has proven the exact commands;
 4. the protected production database deployment job shown above;
-5. a readiness endpoint that checks a trivial Postgres query and reports model
-   configuration without exposing paths or secrets;
+5. paging-grade external monitoring for the implemented `/v1/ready` endpoint;
+   the committed scheduled GitHub probe is the baseline, not the final pager;
 6. a staging smoke workflow or documented manual release sign-off;
-7. an engineering migration from the legacy Supabase `service_role` JWT to a
-   named `sb_secret_...` server key.
+7. alerting for readiness failures and stale worker heartbeats/Jobs.
 
 Those are the remaining infrastructure/code deliverables. The domain, provider
 accounts, hosted Auth switches, SMTP verification, secrets, billing, and first

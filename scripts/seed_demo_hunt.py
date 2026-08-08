@@ -72,6 +72,20 @@ def _env(name: str) -> str:
     return value
 
 
+def _service_key() -> str:
+    """The server key, under either name.
+
+    Production moved to `SUPABASE_SECRET_KEY`; the local Supabase CLI still
+    emits only the legacy service-role JWT, so accept both rather than make the
+    seed runnable in exactly one of the two places it is used.
+    """
+    for name in ("SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY"):
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    sys.exit("SUPABASE_SECRET_KEY (or SUPABASE_SERVICE_ROLE_KEY) is required.")
+
+
 # ── The persona ──────────────────────────────────────────────────────────────
 # One additional member so the collaboration surfaces -- member colours,
 # per-member Visit impressions, comment attribution -- have more than one voice.
@@ -472,9 +486,7 @@ async def main() -> None:
             await _status(conn)
             return
 
-        persona = _ensure_persona(
-            _env("SUPABASE_URL"), _env("SUPABASE_SERVICE_ROLE_KEY")
-        )
+        persona = _ensure_persona(_env("SUPABASE_URL"), _service_key())
         try:
             async with conn.transaction():
                 await _seed(conn, persona)

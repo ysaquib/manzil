@@ -55,11 +55,11 @@ warn_missing_env() {
   fi
   local missing=()
   _env_var_empty SUPABASE_ANON_KEY "$ROOT/.env" && missing+=(SUPABASE_ANON_KEY)
-  _env_var_empty SUPABASE_SERVICE_ROLE_KEY "$ROOT/.env" && missing+=(SUPABASE_SERVICE_ROLE_KEY)
+  _env_var_empty SUPABASE_SECRET_KEY "$ROOT/.env" && missing+=(SUPABASE_SECRET_KEY)
   if ((${#missing[@]} > 0)); then
     echo "Warning: .env is missing values for: ${missing[*]}" >&2
     echo "  Run: supabase status -o env" >&2
-    echo "  Then copy ANON_KEY -> SUPABASE_ANON_KEY and SERVICE_ROLE_KEY -> SUPABASE_SERVICE_ROLE_KEY" >&2
+    echo "  Then copy ANON_KEY -> SUPABASE_ANON_KEY and SERVICE_ROLE_KEY -> SUPABASE_SECRET_KEY" >&2
     echo "  Authenticated API calls will 500 (browser reports this as a CORS error) until set." >&2
   fi
   if [[ ! -f "$ROOT/frontend/.env.local" ]]; then

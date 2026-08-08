@@ -31,9 +31,13 @@ if not os.environ.get("SUPABASE_URL", "").strip():
     os.environ["SUPABASE_URL"] = LOCAL_SUPABASE_URL
 if not os.environ.get("SUPABASE_ANON_KEY", "").strip():
     os.environ["SUPABASE_ANON_KEY"] = LOCAL_ANON_KEY
-if not os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip():
-    os.environ["SUPABASE_SERVICE_ROLE_KEY"] = LOCAL_SERVICE_ROLE_KEY
+if not os.environ.get("SUPABASE_SECRET_KEY", "").strip():
+    # The local CLI currently exposes only the legacy service-role JWT. The
+    # production variable deliberately has the new API-key name.
+    os.environ["SUPABASE_SECRET_KEY"] = LOCAL_SERVICE_ROLE_KEY
 if not os.environ.get("SUPABASE_JWT_SECRET", "").strip():
+    # Demo Mode mints its own viewer tokens with the project JWT secret
+    # (DESIGN §16); without this the demo suites cannot sign one.
     os.environ["SUPABASE_JWT_SECRET"] = LOCAL_JWT_SECRET
 os.environ.setdefault("DATABASE_URL", "postgresql://postgres:postgres@127.0.0.1:54322/postgres")
 os.environ.setdefault("API_ENVIRONMENT", "local")

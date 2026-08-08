@@ -146,16 +146,20 @@ class Env:
 
     @classmethod
     def load(cls) -> Env:
+        # Either key name. Production moved to `SUPABASE_SECRET_KEY`, while the
+        # local Supabase CLI still emits only the legacy service-role JWT, so a
+        # harness that insisted on one of them would refuse to run in one of the
+        # two places it is meant to run.
+        service_key = os.environ.get("SUPABASE_SECRET_KEY") or os.environ.get(
+            "SUPABASE_SERVICE_ROLE_KEY"
+        )
         missing = [
             name
-            for name in (
-                "SUPABASE_URL",
-                "SUPABASE_ANON_KEY",
-                "SUPABASE_SERVICE_ROLE_KEY",
-                "DATABASE_URL",
-            )
+            for name in ("SUPABASE_URL", "SUPABASE_ANON_KEY", "DATABASE_URL")
             if not os.environ.get(name)
         ]
+        if not service_key:
+            missing.append("SUPABASE_SECRET_KEY (or SUPABASE_SERVICE_ROLE_KEY)")
         secret = os.environ.get("SUPABASE_JWT_SECRET")
         if not secret:
             missing.append("SUPABASE_JWT_SECRET")
@@ -164,7 +168,7 @@ class Env:
         return cls(
             supabase_url=os.environ["SUPABASE_URL"].rstrip("/"),
             anon_key=os.environ["SUPABASE_ANON_KEY"],
-            service_key=os.environ["SUPABASE_SERVICE_ROLE_KEY"],
+            service_key=service_key,  # type: ignore[arg-type]
             jwt_secret=secret,  # type: ignore[arg-type]
             database_url=os.environ["DATABASE_URL"],
             api_base_url=(os.environ.get("MANZIL_API_BASE_URL") or "").rstrip("/") or None,
