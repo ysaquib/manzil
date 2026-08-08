@@ -25,7 +25,7 @@ Route: `/admin/*`, deliberately outside the `/h/:huntId` tree, with its own shel
 |---|---|---|
 | **AD-C** | Tier-3 fetch spend priced and folded into `cost_actual_usd`; per-stage cost persisted; monthly credit counter | ✅ 2.0.105 |
 | **AD-G** | The four places history was being destroyed: fee values, role changes, Listing curation, deletions | ✅ 2.0.106 |
-| **AD-F** | `hunt_activity` feed + `site_admins` identity primitive | ✅ 2.0.107 |
+| **AD-F** | Private activity union + Owner RPC + `site_admins` identity primitive | ✅ 2.0.107; hardened 2.0.133 |
 | **AD-0** | Design ratification — glossary, §4.2 column, workstream entry | ✅ |
 | **AD-1** | Admin identity, the gate, `admin_audit_log`, router | ✅ 2.0.108 |
 | **AD-2** | Panel shell, nav entry, feedback inbox | ✅ 2.0.109 |
@@ -70,10 +70,11 @@ happened.
 supabase/migrations/
   20260824000000_job_stage_costs.sql     AD-C  per-(job,stage) spend + tier3_credit_usage
   20260825000000_provenance_gaps.sql     AD-G  4 history tables, all trigger-filled
-  20260826000000_hunt_activity_feed.sql  AD-F  site_admins + is_site_admin() + hunt_activity
+  20260826000000_hunt_activity_feed.sql  AD-F  identity + original feed (access superseded below)
   20260827000000_admin_audit_log.sql     AD-1  append-only ledger
   20260828000000_feedback_triage.sql     AD-2  feedback.triage
   20260829000000_admin_read_predicate.sql AD-4 SELECT-only admin predicate (31 policies)
+  20260901000011_hunt_activity_access.sql AD-F private union + bounded Owner RPC
 
 api/src/manzil_api/admin/
   dependencies.py   require_site_admin (the gate) + AdminAudit (the ledger writer)
@@ -111,7 +112,7 @@ accounts only; neither may create one.
 | `GET /v1/admin/me` | anyone signed in | Answers `is_site_admin: false` rather than 403 — the frontend calls it on every load, and a 403 there is console noise for every ordinary user |
 | `GET /v1/admin/summary` | admin | Overview counters |
 | `GET /v1/admin/hunts` | admin | Roll-ups incl. LLM/fetch cost split |
-| `GET /v1/admin/hunts/{id}/activity` | admin | Reads `hunt_activity`; adds pagination, not permission |
+| `GET /v1/admin/hunts/{id}/activity` | admin | Reads grantless `private.hunt_activity_all` after the live admin gate |
 | `GET /v1/admin/audit` | admin | The ledger |
 | `POST /v1/admin/admins` · `DELETE /v1/admin/admins/{id}` | admin | Grant / revoke |
 | `GET /v1/admin/feedback` · `/counts` · `PATCH /v1/admin/feedback/{id}` | admin | The inbox |
@@ -134,15 +135,17 @@ accounts only; neither may create one.
   policies*.** That is deny-all, and it is deliberate — reads go through the
   service-role router. A direct Supabase query returns `[]`, not an error, which
   makes it look like the data is missing. It isn't; you used the wrong client.
-- **`hunt_activity` is not a `security_invoker` view.** Access is the view's own
-  `WHERE`. Weakening that line is a cross-tenant leak, not a bug. Read the
-  comment above it before touching it.
+- **The raw activity union is not a client surface.**
+  `private.hunt_activity_all` is a grantless security-barrier view. Owners use
+  `get_hunt_activity`, whose exact-role check and 500-row cap are the Hunt-local
+  boundary; Site Admins use the route above. Do not add a public compatibility
+  view or grant client SELECT on the private union.
 - **The primordial admin cannot be deleted by anything**, including a superuser
   `DELETE`, because it is guarded by a trigger rather than a policy. To remove it
   in a dev database you must disable `site_admins_protect_primordial` first.
 - **`admin_audit_log` refuses UPDATE and DELETE**, so test teardown cannot clean
   it up. That is the property under test.
-- Three Supabase advisor findings on these objects are **accepted, not
+- Two Supabase advisor findings on these objects are **accepted, not
   oversights** — see IMPLEMENTATION.md §7.
 
 ## Deleting people (AD-3)

@@ -4,6 +4,7 @@ import { useNavigate, useParams } from "react-router-dom";
 
 import { PublicPageShell } from "../../components/PublicPageShell";
 import { ApiError } from "../../lib/apiClient";
+import { isDemo } from "../../lib/demo";
 import { useJoinInvitationLink } from "./api";
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -19,13 +20,20 @@ export function InvitationLinkJoinPage() {
   const join = useJoinInvitationLink(token);
   const started = useRef(false);
 
+  // demo-guarded: useJoinInvitationLink — a demo visitor can reach this page
+  // simply by pasting a link they were sent, and joining is a write the database
+  // refuses. Say so plainly rather than attempting it: the demo principal has no
+  // account to add to a Hunt, so `onSuccess` would destructure an intercepted,
+  // empty response and throw.
+  const demo = isDemo();
+
   useEffect(() => {
-    if (!token || started.current) return;
+    if (!token || started.current || demo) return;
     started.current = true;
     join.mutate(undefined, {
       onSuccess: ({ hunt_id }) => navigate(`/h/${hunt_id}`, { replace: true }),
     });
-  }, [join, navigate, token]);
+  }, [demo, join, navigate, token]);
 
   const errorCode = join.error instanceof ApiError ? join.error.code : "unknown";
   return (
@@ -34,7 +42,13 @@ export function InvitationLinkJoinPage() {
         <Card withBorder w="100%" maw={440}>
           <Stack align="center">
             <Title order={2}>Joining Hunt</Title>
-            {join.error ? (
+            {demo ? (
+              <Alert color="yellow" title="Not available in the demo" w="100%">
+                You are browsing the demo, which is read-only and has no account
+                behind it. Sign in with your own account to accept this
+                invitation.
+              </Alert>
+            ) : join.error ? (
               <Alert color="red" title="Invitation Link unavailable" w="100%">
                 {ERROR_MESSAGES[errorCode] ?? "This Invitation Link could not be used."}
               </Alert>

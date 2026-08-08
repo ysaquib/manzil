@@ -11,6 +11,7 @@ these inside each package's `dependencies.py`.
 from __future__ import annotations
 
 from typing import Annotated
+from uuid import UUID
 
 import asyncpg
 import jwt
@@ -48,6 +49,16 @@ class DemoReadOnly(ManzilAPIError):
 
 
 DEMO_CLAIM = "manzil_demo"
+DEMO_GEN_CLAIM = "manzil_demo_gen"
+
+
+def demo_issuer(settings: Settings) -> str:
+    """The `iss` our demo tokens carry, matching GoTrue's own for this project.
+
+    Minted by `manzil_api.demo.service` and required by the verifier below, so
+    it lives here -- the one module both sides already share.
+    """
+    return f"{settings.supabase_url.rstrip('/')}/auth/v1"
 
 
 def _decode_demo_token(settings: Settings, token: str) -> str | None:
@@ -61,6 +72,15 @@ def _decode_demo_token(settings: Settings, token: str) -> str | None:
     Returning None means "not a demo token", and the caller falls through to the
     ordinary GoTrue path. It never means "valid": a token that carries the demo
     claim but fails verification raises.
+
+    The accepted profile is pinned to exactly what we emit (R2 M7). Signature,
+    audience and expiry are the load-bearing checks, but a token that reaches
+    PostgREST with a non-UUID subject or a role other than `authenticated`
+    behaves in ways this API never intended, and rejecting it here is clearer
+    than discovering it downstream in a cast error. Generation is deliberately
+    *not* checked here: only the database knows the current value, and RLS is
+    the boundary -- the API just refuses a token that carries no generation at
+    all, since we have never minted one.
     """
     if not settings.supabase_jwt_secret:
         return None
@@ -76,12 +96,20 @@ def _decode_demo_token(settings: Settings, token: str) -> str | None:
             settings.supabase_jwt_secret,
             algorithms=["HS256"],
             audience="authenticated",
+            issuer=demo_issuer(settings),
+            options={"require": ["exp", "iat", "sub", "aud", "iss"]},
         )
     except jwt.PyJWTError as exc:
         raise NotAuthenticated("Invalid or expired demo token") from exc
-    subject = claims.get("sub")
-    if not subject:
+
+    if claims.get("role") != "authenticated":
         raise NotAuthenticated("Invalid or expired demo token")
+    if not isinstance(claims.get(DEMO_GEN_CLAIM), int):
+        raise NotAuthenticated("Invalid or expired demo token")
+    try:
+        subject = UUID(str(claims.get("sub")))
+    except (TypeError, ValueError) as exc:
+        raise NotAuthenticated("Invalid or expired demo token") from exc
     return str(subject)
 
 

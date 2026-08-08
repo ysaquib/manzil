@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useAuth } from "../../auth/useAuth";
 import { apiFetch } from "../../lib/apiClient";
+import { demoPrincipalId } from "../../lib/demo";
 import type { components } from "../../lib/generated/api";
 import { supabase } from "../../lib/supabase";
 import { useGhostMutationPath } from "../admin/useGhostMode";
@@ -109,6 +110,12 @@ export function usePublishSharedFilters(huntId: string) {
       apiFetch<SharedFiltersRow>(mutationPath(`/v1/hunts/${huntId}/shared-filters`), {
         method: "PUT",
         body: { filters },
+        demoResult: () => ({
+          hunt_id: huntId,
+          filters: filters as Record<string, unknown>,
+          updated_by: demoPrincipalId() ?? "",
+          updated_at: new Date().toISOString(),
+        }),
       }),
     onSuccess: (saved) => {
       qc.setQueryData(["hunt_shared_filters", huntId], saved);

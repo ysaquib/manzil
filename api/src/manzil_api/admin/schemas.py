@@ -65,7 +65,7 @@ class AuditEntry(BaseModel):
 
 
 class ActivityEntry(BaseModel):
-    """One row of `hunt_activity` (AD-F)."""
+    """One row of the derived Hunt activity feed (AD-F)."""
 
     hunt_id: UUID
     occurred_at: datetime

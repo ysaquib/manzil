@@ -27,9 +27,51 @@ function storage(): Storage | null {
   }
 }
 
+type DemoClaims = { sub?: string; exp?: number; manzil_demo?: boolean };
+
+/** Decode a JWT payload without verifying it. Null if it is not a JWT at all. */
+function payloadOf(token: string): DemoClaims | null {
+  try {
+    const part = token.split(".")[1];
+    if (!part) return null;
+    const json = atob(part.replace(/-/g, "+").replace(/_/g, "/"));
+    const claims = JSON.parse(json) as DemoClaims;
+    return typeof claims === "object" && claims !== null ? claims : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Is this a demo token we would still send?
+ *
+ * Shape and expiry only, and only for the UI's benefit — the signature is the
+ * server's business and this code could not check it anyway. What it prevents is
+ * the failure mode where any junk under the storage key puts the whole app into
+ * a permanent read-only state with no way out but a manual exit (R2 M4): a
+ * malformed or expired value now simply is not a demo session.
+ */
+function usable(token: string): boolean {
+  const claims = payloadOf(token);
+  if (!claims || claims.manzil_demo !== true || typeof claims.sub !== "string") {
+    return false;
+  }
+  // A little slack, so a clock skewed by seconds does not eject a live visitor.
+  return typeof claims.exp === "number" && claims.exp * 1000 > Date.now() - 30_000;
+}
+
 /** The demo access token for this tab, or null. */
 export function demoToken(): string | null {
-  return storage()?.getItem(TOKEN_KEY) ?? null;
+  const token = storage()?.getItem(TOKEN_KEY) ?? null;
+  if (token === null) return null;
+  if (!usable(token)) {
+    // Clear it rather than leaving a value that keeps failing. Reading is a
+    // side-effect-free operation everywhere else, so this is the one place that
+    // can notice and the cheapest place to fix it.
+    clearDemo();
+    return null;
+  }
+  return token;
 }
 
 /** The Demo Hunt id, so the app can route straight into it. */
@@ -56,15 +98,7 @@ export function isDemo(): boolean {
  */
 export function demoPrincipalId(): string | null {
   const token = demoToken();
-  if (!token) return null;
-  try {
-    const payload = token.split(".")[1];
-    if (!payload) return null;
-    const json = atob(payload.replace(/-/g, "+").replace(/_/g, "/"));
-    return (JSON.parse(json) as { sub?: string }).sub ?? null;
-  } catch {
-    return null;
-  }
+  return token ? (payloadOf(token)?.sub ?? null) : null;
 }
 
 /**
@@ -84,12 +118,32 @@ export function enterDemo(token: string, huntId: string | null): void {
   window.location.assign(huntId ? `/hunts/${huntId}` : "/");
 }
 
-/** End the demo session and return to a clean, signed-out app. */
-export function exitDemo(): void {
+/** Forget the session without navigating. */
+export function clearDemo(): void {
   const store = storage();
   store?.removeItem(TOKEN_KEY);
   store?.removeItem(HUNT_KEY);
+}
+
+/** End the demo session and return to a clean, signed-out app. */
+export function exitDemo(): void {
+  clearDemo();
   window.location.assign("/login");
+}
+
+/**
+ * The session has expired or been revoked server-side — send the visitor
+ * somewhere honest rather than leaving them on a page that has quietly stopped
+ * loading data.
+ *
+ * Revocation is real, not theoretical: every kill-switch toggle rotates
+ * `site_settings.demo_generation`, and a token minted under the old generation
+ * stops reading immediately rather than at `exp` (DESIGN §16).
+ */
+export function demoSessionEnded(): void {
+  if (!isDemo()) return;
+  clearDemo();
+  window.location.assign("/login?demo=expired");
 }
 
 /**

@@ -129,7 +129,7 @@ async def test_an_admin_reads_across_hunts_they_do_not_belong_to(
     assert summary.json()["tier3_credits_allowance"] == 5000
 
     feed = await as_admin.get(f"/v1/admin/hunts/{collab_hunt['hunt_id']}/activity")
-    assert feed.status_code == 200
+    assert feed.status_code == 200, feed.text
 
 
 # ── the ledger ───────────────────────────────────────────────────────────────

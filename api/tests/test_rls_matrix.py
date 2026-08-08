@@ -645,6 +645,12 @@ async def test_job_own_vs_any_and_curator_checkpoint(
             .supabase.table("jobs")
             .update({"state": "cancelled"})
             .eq("id", str(queued_job))
+            # `select("id")` rather than the default `*`: `jobs.payload` is
+            # withheld from `authenticated`, so a `*` representation is a
+            # permission denied that would mask the RLS result this asserts.
+            # An id list is still a representation, so `[]` still means the
+            # policy refused the row.
+            .select("id")
             .execute()
         )
         assert raw_cancel.data == []

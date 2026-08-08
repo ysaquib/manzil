@@ -6,10 +6,11 @@ import { Alert, Box, Center, Loader, Stack, Text, useComputedColorScheme } from 
 import { IconMapOff } from "@tabler/icons-react";
 import { useEffect, useRef, useState } from "react";
 
+import { isDemo } from "../../lib/demo";
 import { loadGoogleMaps, mapsConfigured } from "../../lib/googleMaps";
 import { BASE_MAP_OPTIONS, basemapStyle } from "./mapTheme";
 
-type Status = "unconfigured" | "loading" | "ready" | "error";
+type Status = "unconfigured" | "loading" | "ready" | "error" | "demo";
 
 export function MapFrame({
   height,
@@ -17,6 +18,7 @@ export function MapFrame({
   onReady,
   radius = "md",
   emptyLabel,
+  demoStaticUrl = null,
 }: {
   /** CSS height — a number is px, a string passes through (e.g. "100%"). */
   height: number | string;
@@ -27,17 +29,30 @@ export function MapFrame({
   radius?: string;
   /** Shown over the map when there is nothing to plot. */
   emptyLabel?: string | null;
+  /**
+   * A pre-captured still for demo sessions (DM-9).
+   *
+   * The demo must never call the Maps JS API: every load is billable, and the
+   * browser key would be handed to the public along with the session. When one
+   * of these exists it renders instead; when it does not, the surface says so
+   * rather than silently loading the real map.
+   */
+  demoStaticUrl?: string | null;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
   const [status, setStatus] = useState<Status>(
-    mapsConfigured() ? "loading" : "unconfigured",
+    isDemo() ? "demo" : mapsConfigured() ? "loading" : "unconfigured",
   );
   const scheme = useComputedColorScheme("light");
 
   useEffect(() => {
+    // DESIGN §16/DM-9: `loadGoogleMaps()` is never called in a demo session.
+    // The guard is here, at the single seam both map surfaces go through,
+    // rather than at each caller — a new surface inherits it for free.
+    if (isDemo()) return;
     if (!mapsConfigured()) return;
     let cancelled = false;
     void loadGoogleMaps().then(
@@ -95,6 +110,28 @@ export function MapFrame({
           <Loader size="sm" />
         </Center>
       )}
+
+      {status === "demo" &&
+        (demoStaticUrl ? (
+          <Box
+            pos="absolute"
+            inset={0}
+            style={{
+              backgroundImage: `url(${demoStaticUrl})`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+            }}
+          />
+        ) : (
+          <Center pos="absolute" inset={0} p="md">
+            <Alert color="gray" icon={<IconMapOff size={18} stroke={1.5} />} title="Map not shown">
+              <Text size="sm">
+                Live maps are switched off in the demo, so nothing here calls Google. The
+                address and the &ldquo;Open in Maps&rdquo; link still work.
+              </Text>
+            </Alert>
+          </Center>
+        ))}
 
       {status === "unconfigured" && (
         <Center pos="absolute" inset={0} p="md">

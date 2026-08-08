@@ -152,7 +152,14 @@ export function usePatchVisit(huntId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ visitId, body }: { visitId: string; body: VisitPatch }) =>
-      apiFetch<VisitResponse>(`/v1/visits/${visitId}`, { method: "PATCH", body }),
+      apiFetch<VisitResponse>(`/v1/visits/${visitId}`, {
+        method: "PATCH",
+        body,
+        // `onSuccess` reads `visit.id`, and a demo write resolves without a
+        // response — so without this the control throws instead of quietly
+        // doing nothing (R2 M5). Only the id is read, so only the id is needed.
+        demoResult: () => ({ id: visitId }) as VisitResponse,
+      }),
     onSuccess: (visit) => {
       invalidateVisits(qc, huntId);
       void qc.invalidateQueries({ queryKey: ["visit", visit.id] });
@@ -514,6 +521,12 @@ export function useDecideFeeProposal(huntId: string) {
       apiFetch<VisitFeeProposal>(`/v1/visits/${visitId}/fee-proposals/${proposalId}/decision`, {
         method: "POST",
         body: { action },
+        // `onSuccess` reads three fields off the response. In demo mode the
+        // decision is never sent, so report it as rejected: that is the branch
+        // which invalidates nothing, and claiming an acceptance would tell the
+        // cache a fee was written when none was (R2 M5).
+        demoResult: () =>
+          ({ id: proposalId, visit_id: visitId, status: "rejected" }) as VisitFeeProposal,
       }),
     onSuccess: (proposal) => {
       invalidateProposals(qc, proposal.visit_id);

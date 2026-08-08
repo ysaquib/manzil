@@ -35,6 +35,7 @@ import secrets
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 from uuid import UUID, uuid5
 
 import asyncpg
@@ -128,6 +129,80 @@ async def _owner_id(conn: asyncpg.Connection) -> UUID:
     return owner
 
 
+class DemoPrincipalConflict(RuntimeError):
+    """The configured principal is not virtual, so seeding must not proceed."""
+
+
+async def reconcile_demo_principal(
+    conn: asyncpg.Connection, owner: UUID
+) -> list[str]:
+    """Make `demo_accounts` hold exactly the virtual principal. Returns warnings.
+
+    Order matters here, and it used to be wrong (R2 H1): the seed inserted first
+    and deleted the stale singleton afterwards, so the unique index rejected the
+    insert and the delete never ran. An installation carrying an *earlier* Demo
+    Account -- which is every installation seeded before v3.55, when the
+    principal was still a real Auth user -- could therefore not be upgraded at
+    all, and `demo_preflight()` would then refuse to enable the demo because
+    that surviving principal still has an `auth.users` row.
+
+    Reconcile first, then insert. Callers run this inside a transaction, so
+    there is no window in which no principal exists.
+    """
+    warnings: list[str] = []
+
+    stale = await conn.fetch(
+        "select user_id from demo_accounts where user_id <> $1", DEMO_PRINCIPAL_ID
+    )
+    await conn.execute(
+        "delete from demo_accounts where user_id <> $1", DEMO_PRINCIPAL_ID
+    )
+    await conn.execute(
+        """
+        insert into demo_accounts (user_id, created_by, note)
+        values ($1, $2, 'Public demo principal - deliberately has no auth.users row')
+        on conflict (user_id) do update set note = excluded.note
+        """,
+        DEMO_PRINCIPAL_ID,
+        owner,
+    )
+
+    # A stale principal that was a real account leaves an Auth user behind. It is
+    # no longer the demo identity, but silently stranding it would leave a
+    # password-bearing account nobody is watching -- so say so rather than
+    # deleting an account this script was not asked to manage.
+    for row in stale:
+        if await conn.fetchval(
+            "select exists (select 1 from auth.users where id = $1)", row["user_id"]
+        ):
+            warnings.append(
+                f"former Demo Account {row['user_id']} still has an auth.users row. "
+                "It is no longer the demo principal; remove it through the audited "
+                "Site Admin path, or confirm it is a real account that should keep "
+                "existing."
+            )
+
+    # The principal must have no account behind it: that is the entire C3
+    # defence (DESIGN §20 v3.55). Asserted rather than assumed, because a
+    # collision here would be silent and would reintroduce the whole GoTrue
+    # takeover surface.
+    if await conn.fetchval(
+        "select exists (select 1 from auth.users where id = $1)", DEMO_PRINCIPAL_ID
+    ):
+        raise DemoPrincipalConflict(
+            f"The demo principal {DEMO_PRINCIPAL_ID} has an auth.users row. It must "
+            "be virtual -- an account behind it can have its password changed and "
+            "every visitor signed out."
+        )
+
+    # It must hold no stored membership either: its Curator role is synthesised
+    # by private.member_role(), and the membership guard refuses stored rows.
+    await conn.execute(
+        "delete from hunt_members where user_id = $1", DEMO_PRINCIPAL_ID
+    )
+    return warnings
+
+
 async def _seed(conn: asyncpg.Connection, persona: UUID | None) -> None:
     owner = await _owner_id(conn)
 
@@ -180,18 +255,8 @@ async def _seed(conn: asyncpg.Connection, persona: UUID | None) -> None:
         )
 
     # ── The virtual principal ────────────────────────────────────────────────
-    await conn.execute(
-        """
-        insert into demo_accounts (user_id, created_by, note)
-        values ($1, $2, 'Public demo principal - deliberately has no auth.users row')
-        on conflict (user_id) do nothing
-        """,
-        DEMO_PRINCIPAL_ID,
-        owner,
-    )
-    # The singleton index means a stale principal from an earlier run would block
-    # this one; reconcile rather than fail.
-    await conn.execute("delete from demo_accounts where user_id <> $1", DEMO_PRINCIPAL_ID)
+    for warning in await reconcile_demo_principal(conn, owner):
+        print(f"  ! {warning}")
 
     await conn.execute(
         "update site_settings set demo_hunt_id = $1, updated_by = $2, updated_at = now()",
@@ -223,6 +288,59 @@ async def _seed(conn: asyncpg.Connection, persona: UUID | None) -> None:
         )
 
     await _seed_opinions(conn, owner, persona)
+    await _stage_replay_listing(conn)
+
+
+# The exported capture's `listing.id` is the one Listing the DM-9 replay
+# publishes back onto the Overview on "submission" (DESIGN §20 v3.57). It must
+# not also be visible on ordinary page load, or the demo would show the same
+# Property twice -- once for real, once again when a visitor "adds" it. Hiding
+# it costs no new machinery: `useListings` already filters `status = 'active'`
+# (`frontend/src/features/listings/api.ts:43`), so `archived` is invisible with
+# no demo-specific branch anywhere in the read path, and the replay's own
+# `publish()` sets the cached row's status to `active` when it lands
+# (`frontend/src/features/demo/replay/replayEngine.ts`).
+_CAPTURE_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "frontend/src/features/demo/replay/capture.json"
+)
+
+
+async def _stage_replay_listing(conn: asyncpg.Connection) -> None:
+    if not _CAPTURE_PATH.exists():
+        print(
+            "  ! no capture.json yet -- run `manzil export-demo-capture <job_id>` "
+            "after ingesting the listing that will play back, then re-run this "
+            "script so it gets hidden until 'submitted'."
+        )
+        return
+
+    capture = json.loads(_CAPTURE_PATH.read_text())
+    listing_id = UUID(capture["listing"]["id"])
+
+    row = await conn.fetchrow(
+        "select hunt_id, status from hunt_listings where id = $1", listing_id
+    )
+    if row is None:
+        print(f"  ! capture.json names Listing {listing_id}, which no longer exists.")
+        return
+    if row["hunt_id"] != DEMO_HUNT_ID:
+        print(
+            f"  ! capture.json names Listing {listing_id} in a different Hunt "
+            f"({row['hunt_id']}), not the Demo Hunt. Leaving it alone."
+        )
+        return
+
+    # Idempotent: re-running with the row already archived is a no-op update,
+    # not an error, and re-exporting a different capture re-stages cleanly.
+    await conn.execute(
+        "update hunt_listings set status = 'archived' where id = $1", listing_id
+    )
+    if row["status"] != "archived":
+        print(
+            f"  staged Listing {listing_id} as archived -- it appears only when "
+            "the demo visitor 'submits' its URL."
+        )
 
 
 async def _seed_opinions(
@@ -313,12 +431,26 @@ async def _status(conn: asyncpg.Connection) -> None:
         "select count(*) from hunt_members where hunt_id = $1", DEMO_HUNT_ID
     )
     blockers = await conn.fetchval("select private.demo_preflight()")
+    staged = None
+    if _CAPTURE_PATH.exists():
+        capture = json.loads(_CAPTURE_PATH.read_text())
+        staged = await conn.fetchval(
+            "select status from hunt_listings where id = $1",
+            UUID(capture["listing"]["id"]),
+        )
 
     print(f"demo enabled : {row['demo_enabled']}")
     print(f"demo hunt    : {row['demo_hunt_id']}")
     print(f"principal    : {principal}")
     print(f"members      : {members}")
     print(f"listings     : {listings}")
+    staging_note = (
+        "no capture.json"
+        if staged is None
+        else f"status={staged}"
+        + (" (ready)" if staged == "archived" else " (!! re-run without --status)")
+    )
+    print(f"replay staged: {staging_note}")
     if blockers:
         print("blockers     :")
         for problem in blockers:
@@ -343,8 +475,11 @@ async def main() -> None:
         persona = _ensure_persona(
             _env("SUPABASE_URL"), _env("SUPABASE_SERVICE_ROLE_KEY")
         )
-        async with conn.transaction():
-            await _seed(conn, persona)
+        try:
+            async with conn.transaction():
+                await _seed(conn, persona)
+        except DemoPrincipalConflict as exc:
+            sys.exit(f"{exc}\nRefusing to seed.")
         print("Demo Hunt reconciled.\n")
         await _status(conn)
         print(

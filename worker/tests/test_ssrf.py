@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
-import json
 
 import httpx
 import pytest
@@ -395,8 +394,10 @@ async def test_fetch_page_dns_resolving_private_returns_tool_error() -> None:
     ctx = ToolContext(fetchers={1: fetcher}, registry=InMemoryRegistry())
     with tool_context(ctx):
         result = await fetch_page("https://host.example/anything")
-    payload = json.loads(result)
-    assert "refused" in payload["error"]
+    # A refusal is a dict, a fetched page is a str — the type discrimination the
+    # job-event summary relies on (`llm/tools.py:_fetch_page_event_summary`).
+    assert isinstance(result, dict)
+    assert "refused" in result["error"]
     assert rec.dialed_urls == []  # the model could not steer a connection to the private host
 
 

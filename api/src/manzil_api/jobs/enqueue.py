@@ -1,4 +1,9 @@
-"""Enqueue hunt-level rescore jobs (rescore-on-mutation, plan §1.7)."""
+"""Enqueue hunt-level rescore jobs (rescore-on-mutation, plan §1.7).
+
+`returning="minimal"` on both inserts: neither caller wants the row back, and a
+representation is a `select *` on `jobs`, whose `payload` column is withheld
+from `authenticated` (`20260901000010_jobs_payload_projection.sql`).
+"""
 
 from __future__ import annotations
 
@@ -14,7 +19,8 @@ async def enqueue_rescore(client: Client, hunt_id: UUID) -> None:
             "type": "rescore",
             "state": "queued",
             "payload": {"hunt_id": str(hunt_id)},
-        }
+        },
+        returning="minimal",
     ).execute()
 
 
@@ -27,5 +33,6 @@ async def enqueue_enrich_refresh(client: Client, hunt_id: UUID) -> None:
             "type": "refresh",
             "state": "queued",
             "payload": {"hunt_id": str(hunt_id), "scope": "enrich"},
-        }
+        },
+        returning="minimal",
     ).execute()

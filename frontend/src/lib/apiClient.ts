@@ -1,7 +1,7 @@
 // Typed API client (Phase 1 plan §1.6): every mutation + the one polled read
 // (GET /v1/hunts/{id}/jobs). Attaches the caller's Supabase bearer token and
 // throws ApiError carrying the ErrorResponse{detail, code} envelope.
-import { demoToken, isDemo } from "./demo";
+import { demoSessionEnded, demoToken, isDemo } from "./demo";
 import { supabase } from "./supabase";
 
 const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string) ?? "http://localhost:8000";
@@ -32,13 +32,25 @@ async function authHeader(): Promise<Record<string, string>> {
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
-export interface ApiRequest {
+export interface ApiRequest<T = unknown> {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
   signal?: AbortSignal;
+  /**
+   * What this write "returns" in demo mode.
+   *
+   * Required for any mutation whose `onSuccess` reads the response: the demo
+   * branch below resolves without a round trip, so a handler that dereferences
+   * an undefined result throws a TypeError and the visitor sees a broken
+   * control rather than a read-only one (R2 M5). Supplying a synthetic row
+   * built from the request keeps the cache update honest — it is exactly the
+   * row the server would have written, and it vanishes on reload like every
+   * other demo write.
+   */
+  demoResult?: () => T;
 }
 
-export async function apiFetch<T>(path: string, req: ApiRequest = {}): Promise<T> {
+export async function apiFetch<T>(path: string, req: ApiRequest<T> = {}): Promise<T> {
   const method = req.method ?? "GET";
 
   // Demo mode: a write never leaves the tab.
@@ -50,7 +62,7 @@ export async function apiFetch<T>(path: string, req: ApiRequest = {}): Promise<T
   // rather than throwing is what lets each mutation's optimistic `onMutate`
   // stand as the demo's write.
   if (isDemo() && !SAFE_METHODS.has(method)) {
-    return undefined as T;
+    return (req.demoResult?.() ?? undefined) as T;
   }
 
   const headers: Record<string, string> = {
@@ -65,6 +77,12 @@ export async function apiFetch<T>(path: string, req: ApiRequest = {}): Promise<T
   });
 
   if (!response.ok) {
+    // A demo session that stops authenticating has expired or been revoked —
+    // every kill-switch toggle rotates the demo generation, so this is a real
+    // path, not only a clock running out. Leaving the visitor on a page whose
+    // reads have silently stopped is the worst option available.
+    if (response.status === 401 && isDemo()) demoSessionEnded();
+
     let code = "unknown";
     let detail = response.statusText;
     try {

@@ -35,7 +35,14 @@ class Settings(BaseSettings):
     # Empty disables demo-session issuance entirely, which is the safe default
     # for any deployment that has not set it.
     supabase_jwt_secret: str = Field(default="", alias="SUPABASE_JWT_SECRET")
-    demo_session_ttl_seconds: int = Field(default=1800, alias="MANZIL_DEMO_TTL")
+    # Bounded at both ends, and validated here rather than clamped at mint time
+    # (R2 H3): the old `max(60, ...)` had a floor and no ceiling, so a
+    # seconds-for-milliseconds typo would have minted tokens valid for weeks
+    # against a principal that cannot be signed out. 1800s is the Owner-ruled
+    # hard maximum (2026-08-06); out of range fails startup, not a request.
+    demo_session_ttl_seconds: int = Field(
+        default=1800, ge=60, le=1800, alias="MANZIL_DEMO_TTL"
+    )
     # Salt for the truncated client-key HMAC. Without it no per-caller ceiling
     # is applied; the global ceiling still is.
     demo_client_key_salt: str = Field(default="", alias="MANZIL_DEMO_KEY_SALT")
