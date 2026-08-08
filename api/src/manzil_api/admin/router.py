@@ -15,6 +15,8 @@ console for every non-admin user.
 
 from __future__ import annotations
 
+import json
+import logging
 from uuid import UUID
 
 import asyncpg
@@ -34,10 +36,12 @@ from manzil_api.admin.schemas import (
     GrantAdmin,
     HuntSummary,
 )
+from manzil_api.demo.router import reset_config_cache
 from manzil_api.dependencies import CurrentUser, DbPool
 from manzil_api.exceptions import ManzilAPIError
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+logger = logging.getLogger("manzil_api")
 
 
 class PrimordialAdminProtected(ManzilAPIError):
@@ -153,14 +157,28 @@ async def hunt_activity(
     pool: DbPool,
     limit: int = Query(100, ge=1, le=500),
 ) -> list[ActivityEntry]:
-    """Reads `hunt_activity` (AD-F), whose own gate already admits Site Admins —
-    so this route adds pagination, not permission."""
+    """Read the internal AD-F union after the live ``AdminUser`` check above.
+
+    The raw union deliberately has no PostgREST grant. Hunt Owners use the
+    bounded ``get_hunt_activity`` RPC; this service-role route is the separate
+    Site Admin boundary.
+    """
     rows = await pool.fetch(
-        "select * from hunt_activity where hunt_id = $1 order by occurred_at desc limit $2",
+        "select * from private.hunt_activity_all "
+        "where hunt_id = $1 order by occurred_at desc limit $2",
         hunt_id,
         limit,
     )
-    return [ActivityEntry(**dict(row)) for row in rows]
+    entries: list[ActivityEntry] = []
+    for row in rows:
+        values = dict(row)
+        # This pool intentionally has no process-global jsonb codec. Keep the
+        # database's structured contract at the API boundary instead of
+        # returning a JSON-encoded string inside JSON.
+        if isinstance(values["detail"], str):
+            values["detail"] = json.loads(values["detail"])
+        entries.append(ActivityEntry(**values))
+    return entries
 
 
 @router.get("/audit", response_model=list[AuditEntry], summary="Admin audit log")
@@ -354,23 +372,56 @@ async def set_demo(
     update, so the demo cannot be switched on while an unguarded table or a
     writable view exists. Disabling never preflights -- an emergency shutoff
     must not be blocked by the conditions that made it an emergency.
+
+    The two directions also differ in how they treat the Admin Audit Log, and
+    the asymmetry is deliberate (R2 H4, DESIGN §20). **Enabling** commits the
+    setting and its audit entry in one transaction: making the app publicly
+    reachable with no record of who did it is not an acceptable outcome, and if
+    the ledger is unavailable the safe answer is to stay private. **Disabling**
+    commits the setting first and audits afterwards, because the one thing worse
+    than an unaudited shutoff is a shutoff that a failing audit table can
+    refuse. A failure there is logged loudly rather than raised.
+
+    Either way `set_demo_enabled` rotates `demo_generation`, so every token
+    issued before this call stops working -- a disable is a revocation, not a
+    pause.
     """
     previous = await pool.fetchval("select demo_enabled from site_settings")
-    try:
-        await pool.fetchval(
-            "select set_demo_enabled($1, $2)", body.enabled, UUID(admin.id)
-        )
-    except asyncpg.InsufficientPrivilegeError as exc:
-        raise DemoPreflightFailed(
-            f"Demo mode cannot be enabled: {exc.detail or exc}"
-        ) from exc
+    actor = UUID(admin.id)
 
-    await audit.record(
-        "demo.toggle",
-        target_type="site_settings",
-        before={"demo_enabled": previous},
-        after={"demo_enabled": body.enabled},
-    )
+    if body.enabled:
+        async with pool.acquire() as conn, conn.transaction():
+            try:
+                await conn.fetchval("select set_demo_enabled($1, $2)", True, actor)
+            except asyncpg.InsufficientPrivilegeError as exc:
+                raise DemoPreflightFailed(
+                    f"Demo mode cannot be enabled: {exc.detail or exc}"
+                ) from exc
+            await audit.record(
+                "demo.toggle",
+                target_type="site_settings",
+                before={"demo_enabled": previous},
+                after={"demo_enabled": True},
+                conn=conn,
+            )
+    else:
+        await pool.fetchval("select set_demo_enabled($1, $2)", False, actor)
+        try:
+            await audit.record(
+                "demo.toggle",
+                target_type="site_settings",
+                before={"demo_enabled": previous},
+                after={"demo_enabled": False},
+            )
+        except Exception:  # the shutoff already succeeded; never re-raise
+            logger.error(
+                "Demo mode was disabled by %s but the audit entry failed to "
+                "write. The shutoff stands; reconcile the ledger by hand.",
+                actor,
+                exc_info=True,
+            )
+
+    reset_config_cache()
     return {"enabled": body.enabled}
 
 

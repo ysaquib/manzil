@@ -108,7 +108,20 @@ export function usePatchUnitGroupState(huntId: string) {
       interest_status: UnitGroupState["interest_status"]; visited: boolean;
     }) => apiFetch<UnitGroupState>(
       mutationPath(`/v1/listings/${listingId}/unit-groups/${unitGroupKey}/state`),
-      { method: "PATCH", body: { interest_status, visited } },
+      {
+        method: "PATCH",
+        body: { interest_status, visited },
+        // In demo mode nothing is sent, so `onSuccess` below would dereference
+        // an undefined row and throw. The synthetic row is exactly what the
+        // server would have returned, so the pill updates and then vanishes on
+        // reload like every other demo write (R2 M5).
+        demoResult: () => ({
+          hunt_listing_id: listingId,
+          unit_group_key: unitGroupKey,
+          interest_status,
+          visited,
+        }) as UnitGroupState,
+      },
     ),
     onSuccess: (saved) => {
       qc.setQueryData<UnitGroupState[]>(["listing_unit_group_states", huntId], (current = []) => [

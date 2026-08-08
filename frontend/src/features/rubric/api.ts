@@ -139,6 +139,21 @@ export function useClassifyCustomRouting(huntId: string) {
       apiFetch<CustomRoutingResponse>(mutationPath(`/v1/hunts/${huntId}/rubric/custom-routing`), {
         method: "POST",
         body,
+        // Classification is an LLM call, so the demo genuinely cannot run it —
+        // and its caller reads four fields off the response (R2 M5). Answer
+        // `supported: false`, which is the branch the modal already renders as
+        // "we can't route this", rather than inventing a routing decision that
+        // no model made.
+        demoResult: () => ({
+          key: body.label
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "_")
+            .replace(/^_|_$/g, ""),
+          suggested_requires_tool: null as CustomRoute,
+          reason: "Custom Criteria are not classified in the demo.",
+          supported: false,
+        }),
       }),
   });
 }

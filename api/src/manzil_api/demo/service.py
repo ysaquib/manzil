@@ -24,7 +24,7 @@ import jwt
 from fastapi import Request
 
 from manzil_api.config import Settings
-from manzil_api.dependencies import DEMO_CLAIM
+from manzil_api.dependencies import DEMO_CLAIM, DEMO_GEN_CLAIM, demo_issuer
 
 
 @dataclass(frozen=True)
@@ -65,18 +65,32 @@ def client_key(settings: Settings, request: Request) -> str | None:
     return digest[:32]
 
 
-def mint_token(settings: Settings, subject: str) -> DemoSession:
-    ttl = max(60, settings.demo_session_ttl_seconds)
+def mint_token(settings: Settings, subject: str, generation: int) -> DemoSession:
+    """Mint a demo viewer token.
+
+    The TTL is validated at settings load (60..1800s) rather than clamped here,
+    so a misconfigured deployment fails at startup instead of quietly minting a
+    long-lived token for a principal that cannot be signed out.
+
+    `manzil_demo_gen` is the revocation lever. `private.demo_identity()` refuses
+    any token whose generation is not the current `site_settings.demo_generation`,
+    and every kill-switch toggle bumps it -- so disabling during an incident and
+    re-enabling afterwards does not hand access back to tokens issued before it
+    (R2 H2).
+    """
+    ttl = settings.demo_session_ttl_seconds
     now = int(time.time())
     claims = {
         "sub": subject,
         "aud": "authenticated",
         "role": "authenticated",
+        "iss": demo_issuer(settings),
         "iat": now,
         "exp": now + ttl,
         # Distinguishes our token from a GoTrue one so `get_current_user` knows
         # to verify it locally. Not a privilege: RLS keys on the subject.
         DEMO_CLAIM: True,
+        DEMO_GEN_CLAIM: generation,
         # Per-visit identifier, for correlating abuse in the issuance log
         # without recording anything about the visitor.
         "demo_session": str(uuid.uuid4()),

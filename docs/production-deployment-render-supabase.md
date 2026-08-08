@@ -466,6 +466,60 @@ Without it, direct visits and refreshes on `/admin`, `/h/...`, `/invite/...`,
 and `/auth/...` return a static-site 404. See
 [Static Site Redirects and Rewrites](https://render.com/docs/redirects-rewrites).
 
+### 7.0 Security headers (required before Demo Mode is enabled)
+
+Until Demo Mode ships, every page behind this host requires a login. Once a
+public session-bearing page exists, these stop being hygiene. Add them as Render
+static-site custom headers on `/*`:
+
+| Header | Value |
+|---|---|
+| `Content-Security-Policy` | `default-src 'self'; connect-src 'self' https://<api-host> https://<project>.supabase.co wss://<project>.supabase.co; img-src 'self' data: blob: https://<project>.supabase.co; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'` |
+| `X-Content-Type-Options` | `nosniff` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` |
+
+`frame-ancestors 'none'` is the load-bearing one: it stops the public demo being
+framed by a third-party page that then drives it. Note that `img-src` must admit
+the Supabase Storage host, because the drawer carousel and Floor Plan diagrams
+render signed URLs from the private bucket. Verify the policy with the demo
+running — a CSP that breaks the carousel will be discovered by a visitor
+otherwise.
+
+### 7.0.1 Edge rate limiting on the public demo routes
+
+`POST /v1/demo/session` and `GET /v1/demo/config` are the only unauthenticated
+routes in the system. The database limiter behind them is deliberate defence in
+depth — it is shared across instances and cannot be reset by a restart — but it
+is not the first packet sink, and every request that reaches it costs a
+connection and a lock acquisition.
+
+Put a per-IP limit in front of both at the edge (Cloudflare rate-limiting rules
+if the domain is proxied there, otherwise Render's). Suggested starting point,
+tightened after observing real traffic:
+
+| Path | Limit |
+|---|---|
+| `POST /v1/demo/session` | 10 / minute / IP |
+| `GET /v1/demo/config` | 60 / minute / IP |
+
+The API-side ceilings (`20 / hour / caller`, `600 / hour` globally) stay as they
+are; the edge limit exists to keep floods away from the database, not to replace
+them.
+
+**This is the named remedy for an accepted residual, not an optional
+nice-to-have.** Every request to `POST /v1/demo/session` — including one that is
+refused, and including one that arrives while the demo is switched off — upserts
+the single global counter row `(window, -1)`. So unauthenticated traffic
+contends on one tuple's row lock and leaves one dead tuple and one WAL record
+per request, whatever the outcome. That cannot be fixed in SQL: moving the
+advisory lock only relocates the contention, because the counter row is touched
+either way, and the counter is what makes the ceiling shared across instances in
+the first place. The database limiter bounds *storage*, which is what it was
+built for (a fixed 4097 rows an hour); it does not bound *work*. The edge limit
+is what bounds work, and it is owed before the demo is enabled in production —
+not after the first flood.
+
 ### 7.1 Frontend build variables
 
 Every `VITE_*` value is public and recoverable from the built JavaScript.

@@ -69,8 +69,17 @@ class AdminAudit:
         before: dict[str, Any] | None = None,
         after: dict[str, Any] | None = None,
         via_ghost_view: bool = False,
+        conn: asyncpg.Connection | None = None,
     ) -> None:
-        await self._pool.execute(
+        """Append one audit entry.
+
+        `conn` writes the entry on a caller-supplied connection instead of the
+        pool, so an action and its audit record can commit or fail together.
+        `PATCH /admin/demo` uses it: enabling the public demo without an audit
+        entry would change the system's exposure with no record of who did it
+        (R2 H4).
+        """
+        await (conn or self._pool).execute(
             """
             insert into admin_audit_log (
                 admin_user_id, action, target_type, target_id, target_label,

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlsplit
@@ -12,7 +11,7 @@ from manzil_worker.fetching.slug_hint import search_hint
 
 from manzil_api.hunts.exceptions import InsufficientRole
 from manzil_api.jobs.schemas import JobResponse
-from manzil_api.jobs.service import row_to_response
+from manzil_api.jobs.service import JOB_COLUMNS, job_payload, row_to_response
 from manzil_api.listings.schemas import (
     ListingCreate,
     ListingResponse,
@@ -168,14 +167,11 @@ async def patch_source_policy(
     return _to_response(row)
 
 
-def _json(raw: Any) -> dict[str, Any]:
-    if isinstance(raw, str):
-        return json.loads(raw)
-    return raw or {}
-
-
 def _refresh_matches(row: dict[str, Any], fields: list[RefreshClass]) -> bool:
-    payload = _json(row.get("payload"))
+    # `scope` and `fields` are not page bodies, so they survive the projection
+    # `job_payload` reads (`jobs/service.py`). This is the third payload
+    # consumer under a user JWT, and the one an enumeration is likeliest to miss.
+    payload = job_payload(row)
     return payload.get("scope") == "classes" and payload.get("fields") == fields
 
 
@@ -216,7 +212,7 @@ async def enqueue_listing_refresh(
     fields = RefreshRequest.normalized_fields(body.fields)
     active = (
         client.table("jobs")
-        .select("*")
+        .select(JOB_COLUMNS)
         .eq("hunt_listing_id", listing["id"])
         .eq("type", "refresh")
         .in_("state", ["queued", "running", "waiting_user"])
@@ -247,6 +243,9 @@ async def enqueue_listing_refresh(
                 "payload": payload,
             }
         )
+        # The returned representation is a SELECT like any other, so it needs the
+        # same column list; the default `*` would be a permission denied.
+        .select(JOB_COLUMNS)
         .execute()
         .data
         or []

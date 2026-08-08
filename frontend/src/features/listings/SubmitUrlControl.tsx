@@ -10,6 +10,10 @@ import { useState } from "react";
 
 import { ApiError } from "../../lib/apiClient";
 import { SOURCE_POLICIES, type SourcePolicy } from "../../lib/contracts";
+import { isDemo } from "../../lib/demo";
+import { useDemoCapture } from "../demo/replay/useDemoCapture";
+import { ReplayDisclosureModal } from "../demo/replay/ReplayDisclosureModal";
+import { useDemoReplay } from "../demo/replay/useDemoReplay";
 import { useCreateListing } from "./api";
 import { findDuplicateListing } from "./duplicateCheck";
 import type { Listing } from "./types";
@@ -28,6 +32,9 @@ export function SubmitUrlControl({
   const [url, setUrl] = useState("");
   const [policy, setPolicy] = useState<SourcePolicy>(defaultPolicy);
   const [duplicateOf, setDuplicateOf] = useState<Listing | null>(null);
+  const [replayPrompt, setReplayPrompt] = useState(false);
+  const demoCapture = useDemoCapture();
+  const replay = useDemoReplay(huntId, demoCapture ? { capture: demoCapture } : {});
 
   const enqueue = () =>
     createListing.mutate(
@@ -51,12 +58,41 @@ export function SubmitUrlControl({
     );
 
   const submit = () => {
+    // Demo mode never enqueues: `submit_listing` rejects the demo subject at
+    // function entry and the write guard would refuse the row regardless, so
+    // the honest path is to say the link will not be fetched and offer the
+    // recording instead (DM-9, DESIGN §3).
+    if (isDemo()) {
+      if (demoCapture) {
+        setReplayPrompt(true);
+      } else {
+        // No recording in this build. Say so rather than falling through to a
+        // write the database will refuse and a toast that would claim success.
+        notifications.show({
+          title: "Not available in this demo",
+          message: "This demo has no recorded ingest to show. Everything else is explorable.",
+          color: "yellow",
+        });
+      }
+      return;
+    }
     const duplicate = findDuplicateListing(listings, url);
     if (duplicate) {
       setDuplicateOf(duplicate);
       return;
     }
     enqueue();
+  };
+
+  const startReplay = () => {
+    setReplayPrompt(false);
+    setUrl("");
+    replay.start();
+    notifications.show({
+      title: "Playing a recorded ingest",
+      message: "Progress lives in the Tasks tab — it will ask you a question part-way through.",
+      color: "green",
+    });
   };
 
   return (
@@ -106,6 +142,16 @@ export function SubmitUrlControl({
           </Group>
         </Stack>
       </Modal>
+
+      {demoCapture && (
+        <ReplayDisclosureModal
+          capture={demoCapture}
+          submittedUrl={url}
+          opened={replayPrompt}
+          onCancel={() => setReplayPrompt(false)}
+          onConfirm={startReplay}
+        />
+      )}
     </Group>
   );
 }

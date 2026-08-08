@@ -31,6 +31,7 @@ import { OverviewRowList } from "./OverviewRowList";
 import { resolveSettings } from "../../lib/contracts";
 import { sentenceCase } from "../../lib/text";
 import { useHunt } from "../hunts/api";
+import { isDemo } from "../../lib/demo";
 import { useGhostMode } from "../admin/useGhostMode";
 import { usePatchListingStatus, usePatchUnitGroupState } from "./api";
 import {
@@ -293,16 +294,23 @@ export function OverviewPage() {
         </Box>
         <Paper withBorder p={3} radius="md">
           <Group gap={2} wrap="nowrap">
-            <SegmentedControl
-              size="xs"
-              variant="subtle"
-              value={view}
-              onChange={(next) => setView(next as "active" | "archived")}
-              data={[
-                { value: "active", label: "Active" },
-                { value: "archived", label: "Archived" },
-              ]}
-            />
+            {/* DM-9: the Demo Hunt's staged Listing sits `archived` until
+                "submitted" (`scripts/seed_demo_hunt.py`), so opening this view
+                early would spoil it. Hiding the toggle is UX, not a security
+                boundary -- the row is genuinely there and RLS scopes it the
+                same as any other Listing. */}
+            {!isDemo() && (
+              <SegmentedControl
+                size="xs"
+                variant="subtle"
+                value={view}
+                onChange={(next) => setView(next as "active" | "archived")}
+                data={[
+                  { value: "active", label: "Active" },
+                  { value: "archived", label: "Archived" },
+                ]}
+              />
+            )}
             {!isCompact && (
               <>
                 <Divider orientation="vertical" my={4} />

@@ -256,5 +256,7 @@ async def put_rubric(client: Client, hunt_id: UUID, body: RubricPut) -> list[Rub
                 }
             )
         if jobs:
-            client.table("jobs").insert(jobs).execute()
+            # `minimal`: the rows are not read back, and a representation is a
+            # `select *` on `jobs`, whose `payload` is withheld from members.
+            client.table("jobs").insert(jobs, returning="minimal").execute()
     return await get_rubric(client, hunt_id)

@@ -6,6 +6,7 @@ The CLI and the Phase 1+ queue worker are two entry points calling the same
 """
 
 import asyncio
+import json
 import os
 from logging import INFO, basicConfig, getLogger
 from pathlib import Path
@@ -204,6 +205,69 @@ def purge_images_cmd(
             typer.echo(f"  deleted {result.deleted_rows} row(s)")
         if result.retained_shared:
             typer.echo(f"  kept {result.retained_shared} object(s) still shared by other rows")
+
+    asyncio.run(run())
+
+
+@app.command("export-demo-capture")
+def export_demo_capture_cmd(
+    job_id: str = typer.Argument(..., help="A finished ingest Job to record"),
+    out: Path = typer.Option(
+        Path("frontend/src/features/demo/replay/capture.json"),
+        "--out",
+        help="Where to write the bundle",
+    ),
+) -> None:
+    """Export a Replay Capture from a real ingest (DM-9, DESIGN §3).
+
+    The demo never runs the pipeline: a Demo Account's submission is disclosed
+    and then served by this recording, played back in the browser. Nothing is
+    fetched, no Job is enqueued, and no row is written -- which is why the
+    bundle has to come from a run that really happened.
+
+    Any Job works, checkpoint or not: rendering a checkpoint prompt was cut from
+    scope (DESIGN §20 v3.58) because it needed either publishing page excerpts
+    into `capture.json` -- a world-readable build artifact, not something the
+    demo session gates -- or a per-checkpoint-kind allow-list. A recorded
+    checkpoint still replays, as an ordinary timeline beat.
+
+    Service-role: connects via DATABASE_URL below the RLS boundary.
+    """
+    import uuid
+
+    import asyncpg
+
+    from manzil_worker.ops.export_demo_capture import CaptureError, export_demo_capture
+
+    async def run() -> None:
+        dsn = os.environ.get("DATABASE_URL")
+        if not dsn:
+            typer.echo("DATABASE_URL is not set", err=True)
+            raise typer.Exit(code=2)
+        conn = await asyncpg.connect(dsn)
+        try:
+            bundle = await export_demo_capture(conn, uuid.UUID(job_id))
+        except CaptureError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=1) from exc
+        finally:
+            await conn.close()
+
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n")
+
+        events = bundle["events"]
+        real = bundle["job"]["real_duration_ms"]
+        console.print(
+            f"[green]Wrote[/green] {out} — {len(events)} events, "
+            f"{len({e['stage'] for e in events})} stages, "
+            f"real duration {real / 1000:.0f}s"
+            + (", includes a checkpoint" if bundle["has_checkpoint"] else "")
+        )
+        console.print(
+            "[dim]Playback compresses this; see replayTiming.ts. Review the bundle "
+            "for anything you would not publish before committing it.[/dim]"
+        )
 
     asyncio.run(run())
 

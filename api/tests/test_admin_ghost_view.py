@@ -14,6 +14,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
+from manzil_api.jobs.service import JOB_COLUMNS
 
 pytestmark = pytest.mark.asyncio
 
@@ -34,6 +35,13 @@ READABLE = [
     "visit_units",
     "visit_entries",
 ]
+
+# `select("*")` everywhere except `jobs`, where `payload` is withheld from
+# `authenticated` and a `*` is therefore a permission denied for a Site Admin's
+# own JWT too. The admin panel reads Jobs through the service-role client, which
+# the grant does not touch; this loop is about the read *predicate*, so it names
+# the same projection the API does.
+PROJECTION = {"jobs": JOB_COLUMNS}
 
 
 @pytest.fixture
@@ -82,8 +90,8 @@ async def test_the_predicate_reaches_every_hunt_scoped_table(
     await _grant(db_pool, ghost.user_id)
     try:
         for table in READABLE:
-            result = ghost.supabase.table(table).select("*").limit(1).execute()
-            assert isinstance(result.data, list), f"{table} did not answer"
+            result = ghost.supabase.table(table).select(PROJECTION.get(table, "*")).limit(1)
+            assert isinstance(result.execute().data, list), f"{table} did not answer"
     finally:
         await _revoke(db_pool, ghost.user_id)
 

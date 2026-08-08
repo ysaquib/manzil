@@ -136,6 +136,10 @@ export function useAnswerCheckpoint(huntId: string) {
         method: "POST",
         body: checkpointAnswer(choice, text),
       }),
+    // Demo mode never reaches this: a Replay Capture animates through a
+    // recorded checkpoint as an ordinary timeline beat rather than parking, so
+    // there is no answer control to click (DESIGN §20 v3.58). This hook is for
+    // a real Hunt's real checkpoint.
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["jobs", huntId] }),
   });
 }

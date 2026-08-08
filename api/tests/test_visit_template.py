@@ -27,7 +27,7 @@ MIGRATIONS = REPO_ROOT / "supabase" / "migrations"
 # against the module — that is what freezing means.
 SEEDING_MIGRATIONS = {
     1: MIGRATIONS / "20260817000000_visits.sql",
-    2: MIGRATIONS / "20260826000000_visit_template_v2.sql",
+    2: MIGRATIONS / "20260826000001_visit_template_v2.sql",
 }
 
 # Row counts of superseded versions, frozen at the point they were superseded.
