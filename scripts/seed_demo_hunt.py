@@ -20,6 +20,12 @@ Usage:
     uv run python scripts/seed_demo_hunt.py            # set up / reconcile
     uv run python scripts/seed_demo_hunt.py --status   # report, change nothing
 
+The Demo Hunt id is derived, so re-running reconciles the same rows. Set
+`MANZIL_DEMO_HUNT_ID` to adopt a Hunt that already exists instead -- one the
+Owner created through the UI and has already ingested into. An adopted Hunt is
+treated as somebody else's work: its name, owner and Rubric are left alone
+(`--force-rubric` overrides the last of those, destructively).
+
 Enabling the demo is deliberately NOT done here. Use the audited admin route
 (`PATCH /v1/admin/demo`), which runs `private.demo_preflight()` in the same
 transaction and writes the Admin Audit Log entry.
@@ -47,7 +53,34 @@ from manzil_worker.phase0_rubric import phase0_rubric  # noqa: E402
 
 # Deterministic identities: re-running reconciles the same rows.
 _NS = UUID("00000000-0000-0000-0000-00000d3e0000")
-DEMO_HUNT_ID = uuid5(_NS, "demo-hunt")
+_DEFAULT_DEMO_HUNT_ID = uuid5(_NS, "demo-hunt")
+
+
+def _demo_hunt_id() -> tuple[UUID, bool]:
+    """The Demo Hunt to manage, and whether it was named rather than derived.
+
+    The id is normally derived so re-running reconciles the same rows without
+    anyone having to record it. But the Demo Hunt is an ordinary Hunt the Owner
+    ingests into and is billed for (DESIGN §3), and that Hunt may already exist
+    -- created through the UI, with real listings and a Rubric somebody tuned.
+    Deriving a *different* id in that case does not adopt it; it silently builds
+    a second, empty Demo Hunt beside it.
+
+    `MANZIL_DEMO_HUNT_ID` names the Hunt to adopt instead. Adoption is
+    deliberately gentler than creation: an adopted Hunt keeps its own name,
+    owner and Rubric (see `_seed`), because everything in it predates this
+    script and none of it is ours to overwrite.
+    """
+    raw = os.environ.get("MANZIL_DEMO_HUNT_ID", "").strip()
+    if not raw:
+        return _DEFAULT_DEMO_HUNT_ID, False
+    try:
+        return UUID(raw), True
+    except ValueError:
+        sys.exit(f"MANZIL_DEMO_HUNT_ID is not a UUID: {raw!r}")
+
+
+DEMO_HUNT_ID, DEMO_HUNT_ADOPTED = _demo_hunt_id()
 DEMO_PRINCIPAL_ID = uuid5(_NS, "demo-principal")
 
 PERSONA_EMAIL = os.environ.get("MANZIL_DEMO_PERSONA_EMAIL", "sam@manzil.local")
@@ -132,9 +165,7 @@ def _ensure_persona(api_url: str, service_key: str) -> UUID | None:
 
 
 async def _owner_id(conn: asyncpg.Connection) -> UUID:
-    owner = await conn.fetchval(
-        "select user_id from site_admins where is_primordial limit 1"
-    )
+    owner = await conn.fetchval("select user_id from site_admins where is_primordial limit 1")
     if owner is None:
         sys.exit(
             "No primordial Site Admin exists. Bootstrap the local admin first "
@@ -147,9 +178,7 @@ class DemoPrincipalConflict(RuntimeError):
     """The configured principal is not virtual, so seeding must not proceed."""
 
 
-async def reconcile_demo_principal(
-    conn: asyncpg.Connection, owner: UUID
-) -> list[str]:
+async def reconcile_demo_principal(conn: asyncpg.Connection, owner: UUID) -> list[str]:
     """Make `demo_accounts` hold exactly the virtual principal. Returns warnings.
 
     Order matters here, and it used to be wrong (R2 H1): the seed inserted first
@@ -168,9 +197,7 @@ async def reconcile_demo_principal(
     stale = await conn.fetch(
         "select user_id from demo_accounts where user_id <> $1", DEMO_PRINCIPAL_ID
     )
-    await conn.execute(
-        "delete from demo_accounts where user_id <> $1", DEMO_PRINCIPAL_ID
-    )
+    await conn.execute("delete from demo_accounts where user_id <> $1", DEMO_PRINCIPAL_ID)
     await conn.execute(
         """
         insert into demo_accounts (user_id, created_by, note)
@@ -211,27 +238,40 @@ async def reconcile_demo_principal(
 
     # It must hold no stored membership either: its Curator role is synthesised
     # by private.member_role(), and the membership guard refuses stored rows.
-    await conn.execute(
-        "delete from hunt_members where user_id = $1", DEMO_PRINCIPAL_ID
-    )
+    await conn.execute("delete from hunt_members where user_id = $1", DEMO_PRINCIPAL_ID)
     return warnings
 
 
-async def _seed(conn: asyncpg.Connection, persona: UUID | None) -> None:
+async def _seed(
+    conn: asyncpg.Connection, persona: UUID | None, *, force_rubric: bool = False
+) -> None:
     owner = await _owner_id(conn)
 
     # ── Hunt ─────────────────────────────────────────────────────────────────
-    await conn.execute(
-        """
-        insert into hunts (id, name, owner_id, settings)
-        values ($1, $2, $3, $4::jsonb)
-        on conflict (id) do update
-            set name = excluded.name, owner_id = excluded.owner_id
-        """,
-        DEMO_HUNT_ID,
-        "Detroit 2026 (demo)",
-        owner,
-        json.dumps(HUNT_SETTINGS),
+    # An adopted Hunt (MANZIL_DEMO_HUNT_ID) is left as its Owner made it: name,
+    # owner and settings all predate this script. Only a Hunt this script
+    # creates gets this script's opinions about those three things.
+    existing_name = await conn.fetchval("select name from hunts where id = $1", DEMO_HUNT_ID)
+    if existing_name is not None and DEMO_HUNT_ADOPTED:
+        print(f"  adopted existing Hunt {DEMO_HUNT_ID} ({existing_name!r}) -- left as-is")
+    else:
+        await conn.execute(
+            """
+            insert into hunts (id, name, owner_id, settings)
+            values ($1, $2, $3, $4::jsonb)
+            on conflict (id) do update
+                set name = excluded.name, owner_id = excluded.owner_id
+            """,
+            DEMO_HUNT_ID,
+            "Detroit 2026 (demo)",
+            owner,
+            json.dumps(HUNT_SETTINGS),
+        )
+
+    # An adopted Hunt already has an owner, and it is not necessarily the Site
+    # Admin running this script.
+    hunt_owner = (
+        await conn.fetchval("select owner_id from hunts where id = $1", DEMO_HUNT_ID) or owner
     )
 
     # The Owner membership is created by a trigger on `hunts`; set the per-Hunt
@@ -244,7 +284,26 @@ async def _seed(conn: asyncpg.Connection, persona: UUID | None) -> None:
             set display_name = excluded.display_name, color = excluded.color
         """,
         DEMO_HUNT_ID,
-        owner,
+        hunt_owner,
+        OWNER_DEMO_NAME,
+    )
+    # The upsert above cannot actually set the name, and neither could any
+    # upsert: `hunt_members_inherit_default_name` is a BEFORE INSERT trigger
+    # that nulls `display_name`/`color` for any user who has a profile, and in
+    # `INSERT ... ON CONFLICT DO UPDATE` it fires on the *proposed* row before
+    # the conflict is detected -- so `excluded.display_name` is already NULL by
+    # the time the update reads it. The override has to be a separate UPDATE,
+    # which is what the trigger's own comment prescribes ("only a later explicit
+    # UPDATE creates an override"). Without this the public demo publishes the
+    # Owner's real account name, which is the exact thing DM-6's privacy pass
+    # exists to prevent.
+    await conn.execute(
+        """
+        update hunt_members set display_name = $3, color = 'dusk'
+         where hunt_id = $1 and user_id = $2
+        """,
+        DEMO_HUNT_ID,
+        hunt_owner,
         OWNER_DEMO_NAME,
     )
 
@@ -267,6 +326,15 @@ async def _seed(conn: asyncpg.Connection, persona: UUID | None) -> None:
             DEMO_HUNT_ID,
             persona,
         )
+        # Same BEFORE INSERT trigger, same separate UPDATE (see above).
+        await conn.execute(
+            """
+            update hunt_members set display_name = 'Sam', color = 'moss'
+             where hunt_id = $1 and user_id = $2
+            """,
+            DEMO_HUNT_ID,
+            persona,
+        )
 
     # ── The virtual principal ────────────────────────────────────────────────
     for warning in await reconcile_demo_principal(conn, owner):
@@ -281,6 +349,25 @@ async def _seed(conn: asyncpg.Connection, persona: UUID | None) -> None:
     # ── Rubric ───────────────────────────────────────────────────────────────
     # Rebuilt wholesale: a rubric is a set, and reconciling it row by row would
     # leave criteria somebody removed.
+    #
+    # But "wholesale" is a `delete`, and an adopted Hunt's Rubric was tuned by a
+    # person and is what every existing `scores` row was computed against --
+    # replacing it silently invalidates them and makes the scores baked into
+    # each Replay Capture disagree with the live Listing a visitor opens after
+    # the replay. So an adopted Hunt that already has criteria keeps them, and
+    # `--force-rubric` is the explicit way to say otherwise.
+    existing_criteria = await conn.fetchval(
+        "select count(*) from rubric_criteria where hunt_id = $1", DEMO_HUNT_ID
+    )
+    if existing_criteria and DEMO_HUNT_ADOPTED and not force_rubric:
+        print(
+            f"  kept the adopted Hunt's Rubric ({existing_criteria} criteria) -- "
+            "pass --force-rubric to replace it with phase0_rubric and rescore."
+        )
+        await _seed_opinions(conn, owner, persona)
+        await _stage_replay_listing(conn)
+        return
+
     await conn.execute("delete from rubric_criteria where hunt_id = $1", DEMO_HUNT_ID)
     for crit in phase0_rubric():
         await conn.execute(
@@ -314,52 +401,56 @@ async def _seed(conn: asyncpg.Connection, persona: UUID | None) -> None:
 # no demo-specific branch anywhere in the read path, and the replay's own
 # `publish()` sets the cached row's status to `active` when it lands
 # (`frontend/src/features/demo/replay/replayEngine.ts`).
-_CAPTURE_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "frontend/src/features/demo/replay/capture.json"
-)
+#
+# The demo ships a *slate* of recordings -- `capture.json`, `capture-2.json`,
+# and so on -- played one per submission until the visitor exhausts them. This
+# glob and its sort must match `useDemoCapture.ts`, which decides play order the
+# same way; a mismatch would stage the wrong rows.
+_REPLAY_DIR = Path(__file__).resolve().parents[1] / "frontend/src/features/demo/replay"
+
+
+def _capture_paths() -> list[Path]:
+    return sorted(_REPLAY_DIR.glob("capture*.json"))
 
 
 async def _stage_replay_listing(conn: asyncpg.Connection) -> None:
-    if not _CAPTURE_PATH.exists():
+    paths = _capture_paths()
+    if not paths:
         print(
-            "  ! no capture.json yet -- run `manzil export-demo-capture <job_id>` "
-            "after ingesting the listing that will play back, then re-run this "
-            "script so it gets hidden until 'submitted'."
+            "  ! no capture*.json yet -- run `manzil export-demo-capture <job_id>` "
+            "for each listing that will play back, then re-run this script so "
+            "they get hidden until 'submitted'."
         )
         return
 
-    capture = json.loads(_CAPTURE_PATH.read_text())
-    listing_id = UUID(capture["listing"]["id"])
+    for path in paths:
+        capture = json.loads(path.read_text())
+        listing_id = UUID(capture["listing"]["id"])
 
-    row = await conn.fetchrow(
-        "select hunt_id, status from hunt_listings where id = $1", listing_id
-    )
-    if row is None:
-        print(f"  ! capture.json names Listing {listing_id}, which no longer exists.")
-        return
-    if row["hunt_id"] != DEMO_HUNT_ID:
-        print(
-            f"  ! capture.json names Listing {listing_id} in a different Hunt "
-            f"({row['hunt_id']}), not the Demo Hunt. Leaving it alone."
+        row = await conn.fetchrow(
+            "select hunt_id, status from hunt_listings where id = $1", listing_id
         )
-        return
+        if row is None:
+            print(f"  ! {path.name} names Listing {listing_id}, which no longer exists.")
+            continue
+        if row["hunt_id"] != DEMO_HUNT_ID:
+            print(
+                f"  ! {path.name} names Listing {listing_id} in a different Hunt "
+                f"({row['hunt_id']}), not the Demo Hunt. Leaving it alone."
+            )
+            continue
 
-    # Idempotent: re-running with the row already archived is a no-op update,
-    # not an error, and re-exporting a different capture re-stages cleanly.
-    await conn.execute(
-        "update hunt_listings set status = 'archived' where id = $1", listing_id
-    )
-    if row["status"] != "archived":
-        print(
-            f"  staged Listing {listing_id} as archived -- it appears only when "
-            "the demo visitor 'submits' its URL."
-        )
+        # Idempotent: re-running with the row already archived is a no-op update,
+        # not an error, and re-exporting a different capture re-stages cleanly.
+        await conn.execute("update hunt_listings set status = 'archived' where id = $1", listing_id)
+        if row["status"] != "archived":
+            print(
+                f"  staged Listing {listing_id} ({path.name}) as archived -- it "
+                "appears only when the demo visitor 'submits' its URL."
+            )
 
 
-async def _seed_opinions(
-    conn: asyncpg.Connection, owner: UUID, persona: UUID | None
-) -> None:
+async def _seed_opinions(conn: asyncpg.Connection, owner: UUID, persona: UUID | None) -> None:
     """Comments, ratings and Interest Status over whatever listings exist.
 
     Skipped silently when the Hunt is still empty: listings arrive by real
@@ -434,9 +525,7 @@ async def _seed_opinions(
 
 
 async def _status(conn: asyncpg.Connection) -> None:
-    row = await conn.fetchrow(
-        "select demo_enabled, demo_hunt_id from site_settings"
-    )
+    row = await conn.fetchrow("select demo_enabled, demo_hunt_id from site_settings")
     principal = await conn.fetchval("select user_id from demo_accounts limit 1")
     listings = await conn.fetchval(
         "select count(*) from hunt_listings where hunt_id = $1", DEMO_HUNT_ID
@@ -445,12 +534,20 @@ async def _status(conn: asyncpg.Connection) -> None:
         "select count(*) from hunt_members where hunt_id = $1", DEMO_HUNT_ID
     )
     blockers = await conn.fetchval("select private.demo_preflight()")
-    staged = None
-    if _CAPTURE_PATH.exists():
-        capture = json.loads(_CAPTURE_PATH.read_text())
-        staged = await conn.fetchval(
-            "select status from hunt_listings where id = $1",
-            UUID(capture["listing"]["id"]),
+    # One line per recording on the slate: a demo whose fourth capture is still
+    # `active` shows that Property twice, and a single aggregate count would
+    # hide which one.
+    staged: list[tuple[str, str | None]] = []
+    for path in _capture_paths():
+        capture = json.loads(path.read_text())
+        staged.append(
+            (
+                path.name,
+                await conn.fetchval(
+                    "select status from hunt_listings where id = $1",
+                    UUID(capture["listing"]["id"]),
+                ),
+            )
         )
 
     print(f"demo enabled : {row['demo_enabled']}")
@@ -458,25 +555,42 @@ async def _status(conn: asyncpg.Connection) -> None:
     print(f"principal    : {principal}")
     print(f"members      : {members}")
     print(f"listings     : {listings}")
-    staging_note = (
-        "no capture.json"
-        if staged is None
-        else f"status={staged}"
-        + (" (ready)" if staged == "archived" else " (!! re-run without --status)")
+    ready = sum(1 for _, status in staged if status == "archived")
+    print(
+        f"replay slate : {len(staged)} capture(s), {ready} staged"
+        if staged
+        else "replay slate : no capture*.json"
     )
-    print(f"replay staged: {staging_note}")
+    for name, status in staged:
+        note = (
+            "(ready)"
+            if status == "archived"
+            else "(!! Listing missing)"
+            if status is None
+            else "(!! re-run without --status)"
+        )
+        print(f"  · {name}: status={status} {note}")
     if blockers:
         print("blockers     :")
         for problem in blockers:
             print(f"  - {problem}")
     else:
-        print("blockers     : none - `PATCH /v1/admin/demo {\"enabled\":true}` will succeed")
+        print('blockers     : none - `PATCH /v1/admin/demo {"enabled":true}` will succeed')
 
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--status", action="store_true", help="report configuration, change nothing"
+    )
+    parser.add_argument(
+        "--force-rubric",
+        action="store_true",
+        help=(
+            "replace an adopted Hunt's Rubric with phase0_rubric. Destructive: "
+            "every existing score was computed against the Rubric being deleted, "
+            "so the Hunt needs a rescore and any Replay Capture needs re-exporting."
+        ),
     )
     args = parser.parse_args()
 
@@ -489,7 +603,7 @@ async def main() -> None:
         persona = _ensure_persona(_env("SUPABASE_URL"), _service_key())
         try:
             async with conn.transaction():
-                await _seed(conn, persona)
+                await _seed(conn, persona, force_rubric=args.force_rubric)
         except DemoPrincipalConflict as exc:
             sys.exit(f"{exc}\nRefusing to seed.")
         print("Demo Hunt reconciled.\n")
