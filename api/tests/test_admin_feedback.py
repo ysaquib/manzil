@@ -136,9 +136,7 @@ async def test_not_even_the_reporter_can_read_their_own_report(report, seeded_us
         assert result.data == [], f"{role} must not read feedback"
 
 
-async def test_a_non_admin_is_refused_by_the_inbox_routes(
-    admin_app, seeded_users, report
-) -> None:
+async def test_a_non_admin_is_refused_by_the_inbox_routes(admin_app, seeded_users, report) -> None:
     async with AsyncClient(
         transport=ASGITransport(app=admin_app),
         base_url="http://test",

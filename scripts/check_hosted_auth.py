@@ -177,9 +177,7 @@ def check_declared_config(ref: str, token: str, frontend_url: str | None, report
     else:
         report.skip("redirect allow-list: set MANZIL_FRONTEND_URL to check it")
 
-    limits = {
-        key: value for key, value in config.items() if key.startswith("rate_limit_")
-    }
+    limits = {key: value for key, value in config.items() if key.startswith("rate_limit_")}
     report.record(
         "config",
         "rate limits are configured",
@@ -217,9 +215,7 @@ def check_observed_behaviour(url: str, anon_key: str, report: Report) -> None:
             f"POST /signup (no credentials) -> {anon.status_code} {anon.text[:120]}",
         )
 
-        otp = client.post(
-            "/otp", json={"email": PROBE_EMAIL, "create_user": True}
-        )
+        otp = client.post("/otp", json={"email": PROBE_EMAIL, "create_user": True})
         # The frontend sends `shouldCreateUser: false`; this asks for the
         # opposite on purpose, because the control has to be the server's.
         report.record(
@@ -299,9 +295,7 @@ def main() -> int:
     if ref and token:
         check_declared_config(ref, token, frontend_url, report)
     else:
-        report.skip(
-            "declared configuration: set SUPABASE_PROJECT_REF and SUPABASE_ACCESS_TOKEN"
-        )
+        report.skip("declared configuration: set SUPABASE_PROJECT_REF and SUPABASE_ACCESS_TOKEN")
 
     if url and anon_key:
         check_observed_behaviour(url, anon_key, report)
@@ -309,9 +303,7 @@ def main() -> int:
         report.skip("observed behaviour: set SUPABASE_URL and SUPABASE_ANON_KEY")
 
     if not report.findings:
-        sys.exit(
-            "Nothing was checked. Provide a Management API token, an anon key, or both."
-        )
+        sys.exit("Nothing was checked. Provide a Management API token, an anon key, or both.")
 
     write_evidence(args.evidence, report, ref, url)
 

@@ -324,11 +324,15 @@ async def test_total_member_readable_page_text_across_every_store(db_pool, bodie
     )
     async with db_pool.acquire() as conn:
         jobs_text = await _read_everything_as(
-            conn, bodies_hunt["member"].user_id, "jobs",
+            conn,
+            bodies_hunt["member"].user_id,
+            "jobs",
             where=f"hunt_id = '{bodies_hunt['hunt_id']}'",
         )
         events_text = await _read_everything_as(
-            conn, bodies_hunt["member"].user_id, "job_events",
+            conn,
+            bodies_hunt["member"].user_id,
+            "job_events",
             where=f"job_id in ('{job_ids[0]}', '{job_ids[1]}')",
         )
     assert SENTINEL not in jobs_text + events_text
@@ -426,9 +430,7 @@ async def test_transform_is_total(db_pool, shape) -> None:
     incident, not a caller's problem. Table-driven over the shapes the worker
     never writes but another writer could.
     """
-    out = await db_pool.fetchval(
-        "select private.strip_cleaned_text($1::jsonb, 0)", shape
-    )
+    out = await db_pool.fetchval("select private.strip_cleaned_text($1::jsonb, 0)", shape)
     if shape is None:
         assert out is None
         return
@@ -472,9 +474,7 @@ async def _as_member(conn: asyncpg.Connection, subject: str) -> None:
     )
 
 
-async def test_correct_auto_resolved_checkpoint_returns_no_page_text(
-    db_pool, bodies_hunt
-) -> None:
+async def test_correct_auto_resolved_checkpoint_returns_no_page_text(db_pool, bodies_hunt) -> None:
     """`returns setof jobs` is a disclosure channel the column revoke does not
     close: column ACLs apply to table references, not to composite rows returned
     by a function, and PostgREST serialises every column of an RPC result."""
@@ -833,13 +833,9 @@ async def test_refresh_coalescing_still_finds_a_matching_job(
         bodies_hunt["property_id"],
     )
     listing_id = bodies_hunt["listing_id"]
-    first = await as_owner.post(
-        f"/v1/listings/{listing_id}/refresh", json={"fields": ["pricing"]}
-    )
+    first = await as_owner.post(f"/v1/listings/{listing_id}/refresh", json={"fields": ["pricing"]})
     assert first.status_code == 202, first.text
-    second = await as_owner.post(
-        f"/v1/listings/{listing_id}/refresh", json={"fields": ["pricing"]}
-    )
+    second = await as_owner.post(f"/v1/listings/{listing_id}/refresh", json={"fields": ["pricing"]})
     assert second.status_code == 202, second.text
     assert second.json()["id"] == first.json()["id"], "the second refresh did not coalesce"
 
@@ -907,9 +903,7 @@ async def test_the_admin_ghost_checkpoint_answer_also_preserves_the_bodies(
     assert all(source.cleaned_text.startswith(SENTINEL) for source in resumed.sources)
 
 
-async def test_the_demo_entry_guard_still_fires_on_the_new_signature(
-    db_pool, bodies_hunt
-) -> None:
+async def test_the_demo_entry_guard_still_fires_on_the_new_signature(db_pool, bodies_hunt) -> None:
     """DESIGN §16 control 4, against the *rewritten* function.
 
     Worth its own test because this exact regression has already happened once:
@@ -949,9 +943,9 @@ async def test_the_demo_entry_guard_still_fires_on_the_new_signature(
         finally:
             await tr.rollback()
     assert excinfo.value.sqlstate == "42501"
-    assert excinfo.value.detail == (
-        "blocked public.answer_job_checkpoint(uuid,jsonb,jsonb)"
-    ), "the refusal did not come from the entry guard"
+    assert excinfo.value.detail == ("blocked public.answer_job_checkpoint(uuid,jsonb,jsonb)"), (
+        "the refusal did not come from the entry guard"
+    )
 
 
 async def test_a_service_role_write_computes_the_projection(bodies_hunt) -> None:
@@ -984,9 +978,7 @@ async def test_a_service_role_write_computes_the_projection(bodies_hunt) -> None
                 json.dumps({"run_state": {"sources": [{"cleaned_text": BODY}]}}),
             )
             await conn.execute("reset role")
-            public = await conn.fetchval(
-                "select payload_public from jobs where id = $1", job_id
-            )
+            public = await conn.fetchval("select payload_public from jobs where id = $1", job_id)
         finally:
             await tr.rollback()
     finally:

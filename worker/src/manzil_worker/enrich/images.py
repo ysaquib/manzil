@@ -356,8 +356,10 @@ def difference_hash(data: bytes) -> str:
     """Return a deterministic 64-bit dHash as 16 lowercase hex chars."""
     try:
         with Image.open(io.BytesIO(data)) as opened:
-            gray = ImageOps.exif_transpose(opened).convert("L").resize(
-                (9, 8), Image.Resampling.LANCZOS
+            gray = (
+                ImageOps.exif_transpose(opened)
+                .convert("L")
+                .resize((9, 8), Image.Resampling.LANCZOS)
             )
             pixels = list(gray.get_flattened_data())
     except (Image.DecompressionBombError, UnidentifiedImageError, OSError) as error:
@@ -365,9 +367,7 @@ def difference_hash(data: bytes) -> str:
     bits = 0
     for row in range(8):
         for column in range(8):
-            bits = (bits << 1) | int(
-                pixels[row * 9 + column] > pixels[row * 9 + column + 1]
-            )
+            bits = (bits << 1) | int(pixels[row * 9 + column] > pixels[row * 9 + column + 1])
     return f"{bits:016x}"
 
 

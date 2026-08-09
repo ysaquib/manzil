@@ -82,9 +82,7 @@ async def test_ready_fails_closed_without_exposing_internal_details(
         app.state.worker_heartbeat_at = time.monotonic() - 999
         app.state.model_artifact_ready = False
 
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as client:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
             response = await client.get("/v1/ready")
     finally:
         # The cache holds the pinned settings; drop it so the next caller reads

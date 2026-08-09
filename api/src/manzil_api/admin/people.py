@@ -144,7 +144,7 @@ async def _blocking_references(pool: asyncpg.Pool, user_id: UUID) -> list[tuple[
     blocking: list[tuple[str, int]] = []
     for fk in fks:
         count = await pool.fetchval(
-            f'select count(*) from {fk["tbl"]} where {fk["col"]} = $1', user_id
+            f"select count(*) from {fk['tbl']} where {fk['col']} = $1", user_id
         )
         if count:
             blocking.append((fk["tbl"], count))
@@ -231,11 +231,7 @@ async def provision_person(
     try:
         response = service.auth.admin.invite_user_by_email(
             body.email,
-            {
-                "redirect_to": (
-                    f"{_settings().frontend_url.rstrip('/')}/auth/reset-password"
-                )
-            },
+            {"redirect_to": (f"{_settings().frontend_url.rstrip('/')}/auth/reset-password")},
         )
     except Exception as exc:
         raise AuthOperationFailed(f"Supabase could not provision the account: {exc}") from exc
@@ -312,9 +308,7 @@ async def suspend_person(
     if str(user_id) == admin.id:
         raise CannotDeleteSelf("An admin cannot suspend their own account")
     try:
-        _service().auth.admin.update_user_by_id(
-            str(user_id), {"ban_duration": SUSPEND_DURATION}
-        )
+        _service().auth.admin.update_user_by_id(str(user_id), {"ban_duration": SUSPEND_DURATION})
     except Exception as exc:
         raise AuthOperationFailed(f"Supabase rejected the suspension: {exc}") from exc
 
@@ -441,9 +435,7 @@ async def remove_membership(
     return await get_person(user_id, admin, pool)
 
 
-@router.delete(
-    "/{user_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete an account"
-)
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete an account")
 async def delete_person(user_id: UUID, admin: AdminUser, pool: DbPool, audit: Audit) -> None:
     if str(user_id) == admin.id:
         raise CannotDeleteSelf("An admin cannot delete their own account")
@@ -484,6 +476,9 @@ async def delete_person(user_id: UUID, admin: AdminUser, pool: DbPool, audit: Au
         raise AuthOperationFailed(f"Supabase could not delete the account: {exc}") from exc
 
     await audit.record(
-        "user.delete", target_type="user", target_id=user_id, target_label=email,
+        "user.delete",
+        target_type="user",
+        target_id=user_id,
+        target_label=email,
         before={"email": email},
     )

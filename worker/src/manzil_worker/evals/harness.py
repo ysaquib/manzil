@@ -267,9 +267,7 @@ def _grade(
         ]
         expected_set = set(expected_rows)
         got_set = set(got_rows)
-        expected_exact = {
-            row for row in expected_set if row[1] == "specific_floor_plans"
-        }
+        expected_exact = {row for row in expected_set if row[1] == "specific_floor_plans"}
         got_exact = {row for row in got_set if row[1] == "specific_floor_plans"}
         result.scoped_claims[key] = ScopedClaimGrade(
             expected=[

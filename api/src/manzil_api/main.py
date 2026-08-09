@@ -82,6 +82,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     worker_task: asyncio.Task[None] | None = None
     app.state.worker_heartbeat_at = None
     if settings.worker_inprocess:
+
         def worker_tick() -> None:
             app.state.worker_heartbeat_at = time.monotonic()
 
@@ -157,9 +158,7 @@ def create_app() -> FastAPI:
     # traffic before any expensive validation or fan-out. It reads the bearer
     # token itself, so it does not force authentication onto the public demo
     # and health routes.
-    app = FastAPI(
-        lifespan=lifespan, dependencies=[Depends(require_not_demo)], **app_configs
-    )
+    app = FastAPI(lifespan=lifespan, dependencies=[Depends(require_not_demo)], **app_configs)
 
     # add_middleware prepends — register CatchAll first so CORSMiddleware stays outermost.
     app.add_middleware(CatchAllMiddleware)

@@ -96,8 +96,7 @@ async def test_site_admin_can_list_jobs_in_a_non_member_hunt(
     outsider = seeded_users["outsider"]
     hunt_id = collab_hunt["hunt_id"]
     job_id = await db_pool.fetchval(
-        "insert into jobs (hunt_id, type, state) "
-        "values ($1, 'rescore', 'queued') returning id",
+        "insert into jobs (hunt_id, type, state) values ($1, 'rescore', 'queued') returning id",
         hunt_id,
     )
     app = create_app()

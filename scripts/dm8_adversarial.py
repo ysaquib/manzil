@@ -219,8 +219,7 @@ async def build_world(conn: asyncpg.Connection) -> World:
     owner = await conn.fetchval("select user_id from site_admins where is_primordial limit 1")
     if owner is None:
         sys.exit(
-            "No primordial Site Admin. Bootstrap the local admin first (AGENTS.md), "
-            "then re-run."
+            "No primordial Site Admin. Bootstrap the local admin first (AGENTS.md), then re-run."
         )
 
     hunt_id = await conn.fetchval(
@@ -335,9 +334,7 @@ async def teardown(
     ) as client:
         for name in (world.in_scope_object, world.out_of_scope_object):
             try:
-                await client.request(
-                    "DELETE", "/object/property-images", json={"prefixes": [name]}
-                )
+                await client.request("DELETE", "/object/property-images", json={"prefixes": [name]})
             except httpx.HTTPError as exc:  # cleanup must never mask the results
                 print(f"  (cleanup) could not remove {name}: {exc}")
     # Jobs, Job Events, costs and listings all cascade from the Hunt.
@@ -453,9 +450,7 @@ class Minter:
         return token if ok else None
 
 
-async def check_self_test(
-    env: Env, world: World, minter: Minter, report: Report
-) -> None:
+async def check_self_test(env: Env, world: World, minter: Minter, report: Report) -> None:
     """Before any security check: can this instrument tell the two states apart?
 
     A harness that reports PASS for a refusal has said nothing until it has also
@@ -872,8 +867,7 @@ async def check_realtime(
             delivered = True  # never let an error read as a pass
         report.record(
             "Realtime",
-            "with the switch off, a token minted at the current generation "
-            "receives nothing",
+            "with the switch off, a token minted at the current generation receives nothing",
             not delivered,
             f"subscribed={subscribed}; the same INSERT was "
             + ("NOT delivered" if not delivered else "DELIVERED")
@@ -1057,8 +1051,7 @@ async def check_api(env: Env, world: World, minter: Minter, report: Report) -> N
     print("\nFastAPI — the legible 403, and the public routes")
     if not env.api_base_url:
         report.skip(
-            "FastAPI: set MANZIL_API_BASE_URL to include the API plane "
-            "(5 checks not exercised)"
+            "FastAPI: set MANZIL_API_BASE_URL to include the API plane (5 checks not exercised)"
         )
         return
 
@@ -1222,8 +1215,7 @@ async def main() -> int:
 
     conn = await asyncpg.connect(env.database_url)
     preserved = [
-        dict(row)
-        for row in await conn.fetch("select user_id, created_by, note from demo_accounts")
+        dict(row) for row in await conn.fetch("select user_id, created_by, note from demo_accounts")
     ]
     world = await build_world(conn)
     minter = Minter(env, world, conn, report, flaw=args.broken_token)
@@ -1259,14 +1251,10 @@ async def main() -> int:
         for check in report.failed:
             print(f"  - [{check.plane}] {check.name}: {check.detail}")
         return 1
-    print(
-        f"\n\033[32m{report.passed_count} of {report.attempted} "
-        f"attempted checks passed.\033[0m"
-    )
+    print(f"\n\033[32m{report.passed_count} of {report.attempted} attempted checks passed.\033[0m")
     if report.skipped:
         print(
-            f"\033[33m{len(report.skipped)} plane(s) not exercised "
-            f"— see the evidence file.\033[0m"
+            f"\033[33m{len(report.skipped)} plane(s) not exercised — see the evidence file.\033[0m"
         )
     return 0
 

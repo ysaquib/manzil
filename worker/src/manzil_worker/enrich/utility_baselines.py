@@ -112,9 +112,7 @@ async def due_baseline_regions(
     )
     candidates: dict[tuple[str, str, str], BaselineRegion] = {}
     for row in rows:
-        region = select_baseline_region(
-            city=row["city"], state=row["state"], county=row["county"]
-        )
+        region = select_baseline_region(city=row["city"], state=row["state"], county=row["county"])
         if region is None:
             continue
         candidates[(region.geo_level, region.state, region.region_name)] = region

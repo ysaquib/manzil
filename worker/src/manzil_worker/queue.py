@@ -2016,9 +2016,7 @@ def _successful_refresh_fields(state: RunState, fields: list[str]) -> list[str]:
     # text success markers honest while leaving only `images` due for retry.
     if partial_images:
         successful.extend(
-            field
-            for field in ("pricing", "listing_details")
-            if field not in successful
+            field for field in ("pricing", "listing_details") if field not in successful
         )
     return successful
 
@@ -2161,9 +2159,7 @@ async def _persist_custom_only_refresh(
     for claim in state.custom_claims:
         floor_plan_id = claim.floor_plan_id
         if floor_plan_id is None and claim.floor_plan_ref is not None:
-            floor_plan_id = floor_plan_ids.get(
-                (claim.source_id or state.url, claim.floor_plan_ref)
-            )
+            floor_plan_id = floor_plan_ids.get((claim.source_id or state.url, claim.floor_plan_ref))
         await append_candidate_resolution(
             conn,
             property_id=property_id,

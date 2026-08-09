@@ -433,11 +433,7 @@ def load_labels_split(
     skipped: list[SkippedLabel] = []
     if not labels_dir.is_dir():
         return loaded, skipped
-    paths = [
-        path
-        for path in sorted(labels_dir.glob("*.json"))
-        if not slugs or path.stem in slugs
-    ]
+    paths = [path for path in sorted(labels_dir.glob("*.json")) if not slugs or path.stem in slugs]
     parsed: list[tuple[Path, BenchLabel]] = []
     problems: list[str] = []
     for path in paths:

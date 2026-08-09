@@ -50,9 +50,7 @@ def _text_names_a_plan(value: object) -> bool:
         return False
     if any(phrase in text for phrase in _DIAGRAM_PHRASES):
         return True
-    return len(text.split()) <= _WEAK_MAX_WORDS and any(
-        phrase in text for phrase in _WEAK_PHRASES
-    )
+    return len(text.split()) <= _WEAK_MAX_WORDS and any(phrase in text for phrase in _WEAK_PHRASES)
 
 
 def looks_like_diagram(context: object) -> bool:

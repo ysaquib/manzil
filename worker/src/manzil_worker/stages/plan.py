@@ -99,9 +99,7 @@ async def plan_stage(state: RunState, ctx: StageCtx) -> RunState:
     not-yet-landed stages are absent."""
     from manzil_worker.runner import INGEST_STAGE_NAMES
 
-    if state.job_type.value == "refresh" and (
-        state.refresh_fields or state.custom_criterion_keys
-    ):
+    if state.job_type.value == "refresh" and (state.refresh_fields or state.custom_criterion_keys):
         return await _plan_refresh(state, ctx)
 
     fresh = await ctx.fresh_source_lookup(state.property_id, state.url)
