@@ -20,6 +20,39 @@ Rules:
 2. Follow the §1 reading path for the area you are touching.
 3. `DESIGN.md` is authoritative for design intent. If code or reality contradicts it, STOP and flag the conflict — never silently pick a side. (`IMPLEMENTATION.md`, once it exists, owns current mechanics and may churn freely; DESIGN.md still wins on intent.)
 
+## The working tree is shared — never revert what you did not write
+
+**More than one agent works in this checkout.** Codex sessions run here in parallel
+(`~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`, cwd is this repo), and the Owner
+edits by hand. Modified files you did not create are therefore the normal case, not
+a defect, and **the git status captured at the start of your session is a snapshot
+that goes stale immediately** — "the tree was clean when I started" is never evidence
+that a change is not someone's live work.
+
+1. **Changes you did not make, you do not touch.** No `git checkout --`, `git stash`,
+   `git restore`, `git clean`, or overwrite — however unrelated the change looks, and
+   however much tidier it would make your own diff. Diff hygiene is not a reason; it is
+   never worth someone else's work.
+2. **Report and work around.** If unexpected modifications appear, say so plainly in
+   your response, name the files, and continue your task around them. If they collide
+   with your scope, ask.
+3. **If reverting is genuinely necessary, ask first and show the diff.** State exactly
+   which files, paste the diff, and wait. Do not infer a cause and act on it — a
+   formatter, a hook, a stray command are all *hypotheses*. Verify: check
+   `.claude/settings.json` / `settings.local.json` for hooks, and the Codex rollouts
+   above for a concurrent agent. Sampling one file and generalising to sixty is how
+   this rule got written.
+4. **Recovery, when something is already lost.** Unstaged changes discarded by
+   `git checkout --` are gone from git (`git fsck` only helps if they were ever
+   staged). The real sources are the Codex rollouts, which carry full
+   `*** Update File` patch bodies and can be replayed verbatim, then editor local
+   history (`~/Library/Application Support/Cursor|Code/User/History`), then Time
+   Machine.
+
+*(2026-08-08: a repo-wide `ruff format .` from a live Codex session was mistaken for
+hook noise and reverted wholesale; 59 files were pure formatting, three were not, and
+`fetching/corpus.py` lost a real B006 mutable-default fix. Restored from the rollout.)*
+
 ## Hard rules
 - Never implement anything listed in DESIGN.md §18 (Deferred / Backlog) unless explicitly asked.
 - Ambiguous or missing design detail → ask, don't guess. The answer gets recorded in DESIGN.md.
