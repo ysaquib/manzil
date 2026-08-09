@@ -1,0 +1,1246 @@
+{
+  "events": [
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 0,
+      "stage": "PLAN"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 6,
+      "stage": "VALIDATE_URL"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 4210,
+      "stage": "FETCH"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 5794,
+      "stage": "VALIDATE"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 13877,
+      "stage": "EXTRACT"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 14340,
+      "stage": "DEDUPE"
+    },
+    {
+      "detail": {},
+      "event": "tool_called",
+      "offset_ms": 22590,
+      "stage": "discover"
+    },
+    {
+      "detail": {},
+      "event": "tool_called",
+      "offset_ms": 23268,
+      "stage": "discover"
+    },
+    {
+      "detail": {},
+      "event": "tool_called",
+      "offset_ms": 24091,
+      "stage": "discover"
+    },
+    {
+      "detail": {},
+      "event": "tool_called",
+      "offset_ms": 33525,
+      "stage": "discover"
+    },
+    {
+      "detail": {},
+      "event": "tool_called",
+      "offset_ms": 38180,
+      "stage": "discover"
+    },
+    {
+      "detail": {},
+      "event": "tool_called",
+      "offset_ms": 38776,
+      "stage": "discover"
+    },
+    {
+      "detail": {},
+      "event": "tool_called",
+      "offset_ms": 45311,
+      "stage": "discover"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 47351,
+      "stage": "DISCOVER"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 61303,
+      "stage": "FETCH"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 66910,
+      "stage": "EXTRACT"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 69637,
+      "stage": "VERIFY"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 71450,
+      "stage": "RECONCILE"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 89136,
+      "stage": "IMAGE_FETCH"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 91736,
+      "stage": "IMAGE_CLASSIFY"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 104242,
+      "stage": "VISION"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 105544,
+      "stage": "ENRICH"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 105595,
+      "stage": "CUSTOM_MATCH"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 105646,
+      "stage": "SCORE"
+    }
+  ],
+  "exported_at": "2026-08-09T01:15:00.247325-04:00",
+  "has_checkpoint": false,
+  "job": {
+    "attempts": 1,
+    "cost_actual_usd": 0.0849,
+    "plan": {
+      "est_cost_usd": 0.14,
+      "job_type": "ingest",
+      "skipped": {},
+      "source_policy": "tiers_1_2_3",
+      "sources": [
+        {
+          "action": "fetch",
+          "tier": 1,
+          "url": "https://www.zumper.com/apartment-buildings/p190835/reverie-beacon-hill-north-beacon-hill-seattle-wa"
+        },
+        {
+          "action": "skip",
+          "tier": 1,
+          "url": "https://www.redsidepartners.com/property/reverie/",
+          "why": "official_arbiter_only"
+        },
+        {
+          "action": "fetch",
+          "tier": 1,
+          "url": "https://www.showmetherent.com/listing/details/3309-Beacon-Ave-S-Seattle-WA-98144/198b7892-4a5f-11f1-adf0-0a1730a9f0b7"
+        },
+        {
+          "action": "fetch",
+          "tier": 3,
+          "url": "https://www.apartments.com/reverie-seattle-wa/dh7bsbl/"
+        },
+        {
+          "action": "skip",
+          "tier": 3,
+          "url": "https://www.zillow.com/apartments/seattle-wa/reverie-apartments/9WG3DT/",
+          "why": "candidate_pool"
+        },
+        {
+          "action": "skip",
+          "tier": 3,
+          "url": "https://www.realtor.com/rentals/details/3309-Beacon-Ave-S_Seattle_WA_98144_M91338-97681",
+          "why": "candidate_pool"
+        },
+        {
+          "action": "skip",
+          "tier": 3,
+          "url": "https://www.trulia.com/building/reverie-apartments-3309-beacon-ave-s-seattle-wa-98144-2122861470",
+          "why": "candidate_pool"
+        }
+      ],
+      "stages": [
+        "PLAN",
+        "VALIDATE_URL",
+        "FETCH",
+        "VALIDATE",
+        "EXTRACT",
+        "DEDUPE",
+        "DISCOVER",
+        "FETCH",
+        "EXTRACT",
+        "VERIFY",
+        "RECONCILE",
+        "IMAGE_FETCH",
+        "IMAGE_CLASSIFY",
+        "VISION",
+        "ENRICH",
+        "CUSTOM_MATCH",
+        "SCORE"
+      ],
+      "trigger": "user:submit"
+    },
+    "real_duration_ms": 105889,
+    "type": "ingest",
+    "warnings": [
+      {
+        "code": "image_fetch_partial",
+        "detail": {
+          "cap_saturated": true,
+          "failed_candidates": 8,
+          "prepared_images": 30
+        },
+        "message": "8 image candidates could not be downloaded; the gallery is at capacity (30 photos) so this pass is treated as complete.",
+        "stage": "IMAGE_FETCH"
+      }
+    ]
+  },
+  "listing": {
+    "all_in_components": {
+      "badges": [
+        "fees_unverified",
+        "heat_unknown"
+      ],
+      "components": [
+        {
+          "amount": 2075.0,
+          "name": "rent",
+          "tag": "actual"
+        },
+        {
+          "amount": 15.0,
+          "name": "Renter's Insurance (if not provided)",
+          "tag": "actual"
+        },
+        {
+          "amount": 85.0,
+          "name": "electric",
+          "note": "heating type unknown \u2014 priced as gas heat (the costlier setup)",
+          "tag": "estimated"
+        },
+        {
+          "amount": 110.0,
+          "name": "gas",
+          "note": "winter-weighted; heating type unknown \u2014 priced as gas heat (the costlier setup)",
+          "tag": "estimated"
+        },
+        {
+          "amount": 65.0,
+          "name": "water",
+          "tag": "estimated"
+        },
+        {
+          "amount": 75.0,
+          "name": "sewer",
+          "tag": "estimated"
+        },
+        {
+          "amount": 40.0,
+          "name": "trash",
+          "tag": "estimated"
+        }
+      ],
+      "estimated_total": 375.0,
+      "mode": "conservative",
+      "total": 2465.0
+    },
+    "created_at": "2026-08-09T04:55:32.779620+00:00",
+    "hunt_id": "28119bc4-c91e-4c16-8021-079feef45957",
+    "id": "01c09853-f555-422e-b826-4c0843e7c222",
+    "move_in_components": {
+      "badges": [],
+      "charges": [
+        {
+          "amount": 2075.0,
+          "counted": true,
+          "name": "first_month",
+          "note": "base rent \u2014 one full month, no prorated schedule stated",
+          "refundable": false,
+          "required": true,
+          "tag": "actual"
+        },
+        {
+          "amount": 750.0,
+          "counted": true,
+          "name": "security_deposit",
+          "refundable": true,
+          "required": true,
+          "tag": "actual"
+        },
+        {
+          "amount": 50.0,
+          "counted": true,
+          "name": "Application Fee",
+          "refundable": null,
+          "required": true,
+          "tag": "actual"
+        },
+        {
+          "amount": 0.0,
+          "counted": false,
+          "name": "Pet Deposit",
+          "note": "$150.0 per pet x 0",
+          "refundable": true,
+          "required": false,
+          "tag": "actual"
+        }
+      ],
+      "incomplete": false,
+      "non_refundable_total": 2075.0,
+      "refundable_total": 750.0,
+      "subtotal": 2875.0,
+      "total": 2875.0,
+      "unclassified_total": 50.0
+    },
+    "pins": {},
+    "property": {
+      "canonical_address": "3309 Beacon Ave S, Seattle, WA 98144, USA",
+      "city": "Seattle",
+      "county": "King County",
+      "floor_plans": [
+        {
+          "availability_date": "2026-08-09",
+          "available_units": null,
+          "baths": 1.0,
+          "beds": 0.0,
+          "deposit": 750.0,
+          "detail_url": null,
+          "id": "c740106c-3d5a-4e2e-bd8c-faf2cb59ca48",
+          "is_current": true,
+          "plan_name": "0BR/1.0BA",
+          "property_id": "6339ae7d-aa4d-42cf-a086-c9c46829bff4",
+          "rent_max": 1150.0,
+          "rent_min": 1150.0,
+          "source_id": "13d5b6a7-cdba-4b19-8e6b-d96c1d6df08e",
+          "source_native_id": null,
+          "sqft_max": 300,
+          "sqft_min": 300,
+          "unit_types": [
+            "apartment"
+          ]
+        },
+        {
+          "availability_date": "2026-08-09",
+          "available_units": null,
+          "baths": 1.0,
+          "beds": 1.0,
+          "deposit": 750.0,
+          "detail_url": null,
+          "id": "b3da63b8-fb9c-400b-beef-e9baf0e90e87",
+          "is_current": true,
+          "plan_name": "1BR/1.0BA",
+          "property_id": "6339ae7d-aa4d-42cf-a086-c9c46829bff4",
+          "rent_max": 2075.0,
+          "rent_min": 1999.0,
+          "source_id": "13d5b6a7-cdba-4b19-8e6b-d96c1d6df08e",
+          "source_native_id": null,
+          "sqft_max": 570,
+          "sqft_min": 570,
+          "unit_types": [
+            "apartment"
+          ]
+        },
+        {
+          "availability_date": "2026-05-13",
+          "available_units": null,
+          "baths": 1.0,
+          "beds": 1.0,
+          "deposit": 0.0,
+          "detail_url": null,
+          "id": "ad193b09-68b0-4e36-ac88-9b43c2655e29",
+          "is_current": true,
+          "plan_name": "206",
+          "property_id": "6339ae7d-aa4d-42cf-a086-c9c46829bff4",
+          "rent_max": 1999.0,
+          "rent_min": 1999.0,
+          "source_id": "e7f2214e-6246-4800-8ea7-6f66374ce327",
+          "source_native_id": null,
+          "sqft_max": 570,
+          "sqft_min": 570,
+          "unit_types": [
+            "apartment"
+          ]
+        },
+        {
+          "availability_date": "2026-06-10",
+          "available_units": null,
+          "baths": 1.0,
+          "beds": 1.0,
+          "deposit": 0.0,
+          "detail_url": null,
+          "id": "f2cbc430-9dc1-4de5-b247-ee4f9f2cab63",
+          "is_current": true,
+          "plan_name": "403",
+          "property_id": "6339ae7d-aa4d-42cf-a086-c9c46829bff4",
+          "rent_max": 2075.0,
+          "rent_min": 2075.0,
+          "source_id": "e7f2214e-6246-4800-8ea7-6f66374ce327",
+          "source_native_id": null,
+          "sqft_max": 570,
+          "sqft_min": 570,
+          "unit_types": [
+            "apartment"
+          ]
+        }
+      ],
+      "id": "6339ae7d-aa4d-42cf-a086-c9c46829bff4",
+      "lat": 47.57370969999999,
+      "lng": -122.3092692,
+      "name": "Reverie on Beacon Hill",
+      "official_url": "https://www.zumper.com/apartment-buildings/p190835/reverie-beacon-hill-north-beacon-hill-seattle-wa",
+      "sources": [
+        {
+          "id": "61a0ef10-e1cc-4a90-9f3d-ddfcd5f71468",
+          "is_official": true,
+          "last_fetched_at": null,
+          "last_success_at": null,
+          "property_id": "6339ae7d-aa4d-42cf-a086-c9c46829bff4",
+          "site_domain": "redsidepartners.com",
+          "url": "https://www.redsidepartners.com/property/reverie/"
+        },
+        {
+          "id": "c4fe086b-bf2a-44fd-9345-62a5fea238e5",
+          "is_official": false,
+          "last_fetched_at": null,
+          "last_success_at": null,
+          "property_id": "6339ae7d-aa4d-42cf-a086-c9c46829bff4",
+          "site_domain": "apartments.com",
+          "url": "https://www.apartments.com/reverie-seattle-wa/dh7bsbl/"
+        },
+        {
+          "id": "00c8c578-d24c-4a6b-8591-99a157d988d4",
+          "is_official": false,
+          "last_fetched_at": null,
+          "last_success_at": null,
+          "property_id": "6339ae7d-aa4d-42cf-a086-c9c46829bff4",
+          "site_domain": "realtor.com",
+          "url": "https://www.realtor.com/rentals/details/3309-Beacon-Ave-S_Seattle_WA_98144_M91338-97681"
+        },
+        {
+          "id": "e7f2214e-6246-4800-8ea7-6f66374ce327",
+          "is_official": false,
+          "last_fetched_at": "2026-08-09T04:57:18.954703+00:00",
+          "last_success_at": "2026-08-09T04:57:18.954703+00:00",
+          "property_id": "6339ae7d-aa4d-42cf-a086-c9c46829bff4",
+          "site_domain": "showmetherent.com",
+          "url": "https://www.showmetherent.com/listing/details/3309-Beacon-Ave-S-Seattle-WA-98144/198b7892-4a5f-11f1-adf0-0a1730a9f0b7"
+        },
+        {
+          "id": "5dde582b-87e5-4f23-b27b-af4beaf46904",
+          "is_official": false,
+          "last_fetched_at": null,
+          "last_success_at": null,
+          "property_id": "6339ae7d-aa4d-42cf-a086-c9c46829bff4",
+          "site_domain": "trulia.com",
+          "url": "https://www.trulia.com/building/reverie-apartments-3309-beacon-ave-s-seattle-wa-98144-2122861470"
+        },
+        {
+          "id": "533227e2-4856-4547-9ddf-eb02f5531352",
+          "is_official": false,
+          "last_fetched_at": null,
+          "last_success_at": null,
+          "property_id": "6339ae7d-aa4d-42cf-a086-c9c46829bff4",
+          "site_domain": "zillow.com",
+          "url": "https://www.zillow.com/apartments/seattle-wa/reverie-apartments/9WG3DT/"
+        },
+        {
+          "id": "13d5b6a7-cdba-4b19-8e6b-d96c1d6df08e",
+          "is_official": false,
+          "last_fetched_at": "2026-08-09T04:57:18.954703+00:00",
+          "last_success_at": "2026-08-09T04:57:18.954703+00:00",
+          "property_id": "6339ae7d-aa4d-42cf-a086-c9c46829bff4",
+          "site_domain": "zumper.com",
+          "url": "https://www.zumper.com/apartment-buildings/p190835/reverie-beacon-hill-north-beacon-hill-seattle-wa"
+        }
+      ],
+      "state": "WA"
+    },
+    "property_id": "6339ae7d-aa4d-42cf-a086-c9c46829bff4",
+    "scores": [
+      {
+        "all_in_components": {
+          "badges": [
+            "fees_unverified",
+            "heat_unknown"
+          ],
+          "components": [
+            {
+              "amount": 1150.0,
+              "name": "rent",
+              "tag": "actual"
+            },
+            {
+              "amount": 15.0,
+              "name": "Renter's Insurance (if not provided)",
+              "tag": "actual"
+            },
+            {
+              "amount": 65.0,
+              "name": "electric",
+              "note": "heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 85.0,
+              "name": "gas",
+              "note": "winter-weighted; heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 55.0,
+              "name": "water",
+              "tag": "estimated"
+            },
+            {
+              "amount": 60.0,
+              "name": "sewer",
+              "tag": "estimated"
+            },
+            {
+              "amount": 35.0,
+              "name": "trash",
+              "tag": "estimated"
+            }
+          ],
+          "estimated_total": 300.0,
+          "mode": "conservative",
+          "total": 1465.0
+        },
+        "breakdown": {
+          "base": 10.0,
+          "clamped": false,
+          "criteria": [
+            {
+              "delta": -0.5,
+              "key": "beds",
+              "matched": {
+                "op": "eq",
+                "value": 0
+              },
+              "value": 0
+            },
+            {
+              "delta": 0.0,
+              "key": "baths",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1.0
+            },
+            {
+              "delta": -0.5,
+              "key": "sqft",
+              "matched": {
+                "op": "lt",
+                "value": 700
+              },
+              "value": 300
+            },
+            {
+              "delta": 0.0,
+              "key": "dishwasher",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "patio_balcony",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "private_entry",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "in_unit_laundry",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "in_unit"
+                ]
+              },
+              "value": [
+                "in_unit"
+              ]
+            },
+            {
+              "delta": 0.0,
+              "key": "parking",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "pool",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            }
+          ],
+          "gates": [],
+          "rubric_version": 1,
+          "total": 9.0
+        },
+        "computed_at": "2026-08-09T04:57:18.954703+00:00",
+        "floor_plan_id": "c740106c-3d5a-4e2e-bd8c-faf2cb59ca48",
+        "hunt_listing_id": "01c09853-f555-422e-b826-4c0843e7c222",
+        "move_in_components": {
+          "badges": [],
+          "charges": [
+            {
+              "amount": 1150.0,
+              "counted": true,
+              "name": "first_month",
+              "note": "base rent \u2014 one full month, no prorated schedule stated",
+              "refundable": false,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 750.0,
+              "counted": true,
+              "name": "security_deposit",
+              "refundable": true,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 50.0,
+              "counted": true,
+              "name": "Application Fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Deposit",
+              "note": "$150.0 per pet x 0",
+              "refundable": true,
+              "required": false,
+              "tag": "actual"
+            }
+          ],
+          "incomplete": false,
+          "non_refundable_total": 1150.0,
+          "refundable_total": 750.0,
+          "subtotal": 1950.0,
+          "total": 1950.0,
+          "unclassified_total": 50.0
+        },
+        "rubric_version": 1,
+        "total": 9.0
+      },
+      {
+        "all_in_components": {
+          "badges": [
+            "fees_unverified",
+            "heat_unknown"
+          ],
+          "components": [
+            {
+              "amount": 2075.0,
+              "name": "rent",
+              "tag": "actual"
+            },
+            {
+              "amount": 15.0,
+              "name": "Renter's Insurance (if not provided)",
+              "tag": "actual"
+            },
+            {
+              "amount": 85.0,
+              "name": "electric",
+              "note": "heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 110.0,
+              "name": "gas",
+              "note": "winter-weighted; heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 65.0,
+              "name": "water",
+              "tag": "estimated"
+            },
+            {
+              "amount": 75.0,
+              "name": "sewer",
+              "tag": "estimated"
+            },
+            {
+              "amount": 40.0,
+              "name": "trash",
+              "tag": "estimated"
+            }
+          ],
+          "estimated_total": 375.0,
+          "mode": "conservative",
+          "total": 2465.0
+        },
+        "breakdown": {
+          "base": 10.0,
+          "clamped": false,
+          "criteria": [
+            {
+              "delta": 0.0,
+              "key": "beds",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1
+            },
+            {
+              "delta": 0.0,
+              "key": "baths",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1.0
+            },
+            {
+              "delta": -0.5,
+              "key": "sqft",
+              "matched": {
+                "op": "lt",
+                "value": 700
+              },
+              "value": 570
+            },
+            {
+              "delta": 0.0,
+              "key": "dishwasher",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "patio_balcony",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "private_entry",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "in_unit_laundry",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "in_unit"
+                ]
+              },
+              "value": [
+                "in_unit"
+              ]
+            },
+            {
+              "delta": 0.0,
+              "key": "parking",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "pool",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            }
+          ],
+          "gates": [],
+          "rubric_version": 1,
+          "total": 9.5
+        },
+        "computed_at": "2026-08-09T04:57:18.954703+00:00",
+        "floor_plan_id": "b3da63b8-fb9c-400b-beef-e9baf0e90e87",
+        "hunt_listing_id": "01c09853-f555-422e-b826-4c0843e7c222",
+        "move_in_components": {
+          "badges": [],
+          "charges": [
+            {
+              "amount": 2075.0,
+              "counted": true,
+              "name": "first_month",
+              "note": "base rent \u2014 one full month, no prorated schedule stated",
+              "refundable": false,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 750.0,
+              "counted": true,
+              "name": "security_deposit",
+              "refundable": true,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 50.0,
+              "counted": true,
+              "name": "Application Fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Deposit",
+              "note": "$150.0 per pet x 0",
+              "refundable": true,
+              "required": false,
+              "tag": "actual"
+            }
+          ],
+          "incomplete": false,
+          "non_refundable_total": 2075.0,
+          "refundable_total": 750.0,
+          "subtotal": 2875.0,
+          "total": 2875.0,
+          "unclassified_total": 50.0
+        },
+        "rubric_version": 1,
+        "total": 9.5
+      },
+      {
+        "all_in_components": {
+          "badges": [
+            "fees_unverified",
+            "heat_unknown"
+          ],
+          "components": [
+            {
+              "amount": 1999.0,
+              "name": "rent",
+              "tag": "actual"
+            },
+            {
+              "amount": 15.0,
+              "name": "Renter's Insurance (if not provided)",
+              "tag": "actual"
+            },
+            {
+              "amount": 85.0,
+              "name": "electric",
+              "note": "heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 110.0,
+              "name": "gas",
+              "note": "winter-weighted; heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 65.0,
+              "name": "water",
+              "tag": "estimated"
+            },
+            {
+              "amount": 75.0,
+              "name": "sewer",
+              "tag": "estimated"
+            },
+            {
+              "amount": 40.0,
+              "name": "trash",
+              "tag": "estimated"
+            }
+          ],
+          "estimated_total": 375.0,
+          "mode": "conservative",
+          "total": 2389.0
+        },
+        "breakdown": {
+          "base": 10.0,
+          "clamped": false,
+          "criteria": [
+            {
+              "delta": 0.0,
+              "key": "beds",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1
+            },
+            {
+              "delta": 0.0,
+              "key": "baths",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1.0
+            },
+            {
+              "delta": -0.5,
+              "key": "sqft",
+              "matched": {
+                "op": "lt",
+                "value": 700
+              },
+              "value": 570
+            },
+            {
+              "delta": 0.0,
+              "key": "dishwasher",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "patio_balcony",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "private_entry",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "in_unit_laundry",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "in_unit"
+                ]
+              },
+              "value": [
+                "in_unit"
+              ]
+            },
+            {
+              "delta": 0.0,
+              "key": "parking",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "pool",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            }
+          ],
+          "gates": [],
+          "rubric_version": 1,
+          "total": 9.5
+        },
+        "computed_at": "2026-08-09T04:57:18.954703+00:00",
+        "floor_plan_id": "ad193b09-68b0-4e36-ac88-9b43c2655e29",
+        "hunt_listing_id": "01c09853-f555-422e-b826-4c0843e7c222",
+        "move_in_components": {
+          "badges": [],
+          "charges": [
+            {
+              "amount": 1999.0,
+              "counted": true,
+              "name": "first_month",
+              "note": "base rent \u2014 one full month, no prorated schedule stated",
+              "refundable": false,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": true,
+              "name": "security_deposit",
+              "refundable": true,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 50.0,
+              "counted": true,
+              "name": "Application Fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Deposit",
+              "note": "$150.0 per pet x 0",
+              "refundable": true,
+              "required": false,
+              "tag": "actual"
+            }
+          ],
+          "incomplete": false,
+          "non_refundable_total": 1999.0,
+          "refundable_total": 0.0,
+          "subtotal": 2049.0,
+          "total": 2049.0,
+          "unclassified_total": 50.0
+        },
+        "rubric_version": 1,
+        "total": 9.5
+      },
+      {
+        "all_in_components": {
+          "badges": [
+            "fees_unverified",
+            "heat_unknown"
+          ],
+          "components": [
+            {
+              "amount": 2075.0,
+              "name": "rent",
+              "tag": "actual"
+            },
+            {
+              "amount": 15.0,
+              "name": "Renter's Insurance (if not provided)",
+              "tag": "actual"
+            },
+            {
+              "amount": 85.0,
+              "name": "electric",
+              "note": "heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 110.0,
+              "name": "gas",
+              "note": "winter-weighted; heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 65.0,
+              "name": "water",
+              "tag": "estimated"
+            },
+            {
+              "amount": 75.0,
+              "name": "sewer",
+              "tag": "estimated"
+            },
+            {
+              "amount": 40.0,
+              "name": "trash",
+              "tag": "estimated"
+            }
+          ],
+          "estimated_total": 375.0,
+          "mode": "conservative",
+          "total": 2465.0
+        },
+        "breakdown": {
+          "base": 10.0,
+          "clamped": false,
+          "criteria": [
+            {
+              "delta": 0.0,
+              "key": "beds",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1
+            },
+            {
+              "delta": 0.0,
+              "key": "baths",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1.0
+            },
+            {
+              "delta": -0.5,
+              "key": "sqft",
+              "matched": {
+                "op": "lt",
+                "value": 700
+              },
+              "value": 570
+            },
+            {
+              "delta": 0.0,
+              "key": "dishwasher",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "patio_balcony",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "private_entry",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "in_unit_laundry",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "in_unit"
+                ]
+              },
+              "value": [
+                "in_unit"
+              ]
+            },
+            {
+              "delta": 0.0,
+              "key": "parking",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "pool",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            }
+          ],
+          "gates": [],
+          "rubric_version": 1,
+          "total": 9.5
+        },
+        "computed_at": "2026-08-09T04:57:18.954703+00:00",
+        "floor_plan_id": "f2cbc430-9dc1-4de5-b247-ee4f9f2cab63",
+        "hunt_listing_id": "01c09853-f555-422e-b826-4c0843e7c222",
+        "move_in_components": {
+          "badges": [],
+          "charges": [
+            {
+              "amount": 2075.0,
+              "counted": true,
+              "name": "first_month",
+              "note": "base rent \u2014 one full month, no prorated schedule stated",
+              "refundable": false,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": true,
+              "name": "security_deposit",
+              "refundable": true,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 50.0,
+              "counted": true,
+              "name": "Application Fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Deposit",
+              "note": "$150.0 per pet x 0",
+              "refundable": true,
+              "required": false,
+              "tag": "actual"
+            }
+          ],
+          "incomplete": false,
+          "non_refundable_total": 2075.0,
+          "refundable_total": 0.0,
+          "subtotal": 2125.0,
+          "total": 2125.0,
+          "unclassified_total": 50.0
+        },
+        "rubric_version": 1,
+        "total": 9.5
+      }
+    ],
+    "single_source_reason": null,
+    "source_policy": "tiers_1_2_3",
+    "status": "active",
+    "unavailable_at": null
+  },
+  "source": {
+    "job_id": "0cc50e57-708b-4e21-9aba-1fdcc6f933d9",
+    "property_name": "Reverie on Beacon Hill",
+    "source_policy": "tiers_1_2_3",
+    "url": "https://www.zumper.com/apartment-buildings/p190835/reverie-beacon-hill-north-beacon-hill-seattle-wa"
+  },
+  "version": 1
+}
