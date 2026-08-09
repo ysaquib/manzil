@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from manzil_shared.models import Confidence, TargetScope, UnitApplicability
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from manzil_worker.llm import VisionImage
 from manzil_worker.llm.config import model_for_stage
@@ -28,7 +28,13 @@ class KitchenAssessment(BaseModel):
     visibility: Literal["visible", "not_visible"]
     rating: int | None = Field(default=None, ge=1, le=5)
     confidence: Literal["high", "medium", "low"]
-    rationale: str = Field(max_length=300)
+    rationale: str = Field(max_length=360)
+
+    @field_validator("rationale", mode="before")
+    @classmethod
+    def normalize_rationale(cls, value: object) -> object:
+        """Keep provider verbosity from invalidating an otherwise usable assessment."""
+        return value.strip()[:360] if isinstance(value, str) else value
 
 
 class KitchenAssessmentBatch(BaseModel):
@@ -88,9 +94,7 @@ async def vision_stage(state: RunState, ctx: StageCtx) -> RunState:
             state.plan.skipped["VISION"] = "missing_kitchen_reference_set"
         return state
     selected_hashes = state.vision_targets.get("kitchen_quality", [])
-    selected = [
-        image for image in state.property_images if image.content_hash in selected_hashes
-    ]
+    selected = [image for image in state.property_images if image.content_hash in selected_hashes]
     if not selected or ctx.image_store is None:
         if state.plan is not None:
             state.plan.skipped["VISION"] = "no_classified_kitchen_targets"

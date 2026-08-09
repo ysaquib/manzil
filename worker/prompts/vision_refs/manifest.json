@@ -3,7 +3,7 @@
   "profiles": {
     "kitchen_quality": {
       "version": 1,
-      "prompt_version": 1,
+      "prompt_version": 2,
       "status": "approved",
       "quality_status": "approved",
       "quality_benchmark_status": "deferred_owner_override",
