@@ -20,12 +20,16 @@ from manzil_worker.fetching.tiers import site_domain
 CORPUS_DIR = Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "corpus"
 
 
-def corpus_pages(slugs: list[str] = [], corpus_dir: Path = CORPUS_DIR) -> list[Path]:
+def corpus_pages(slugs: list[str] | None = None, corpus_dir: Path = CORPUS_DIR) -> list[Path]:
     """Saved pages, or [] on a fresh clone — the corpus is a local eval asset
     (gitignored, DESIGN §20 v2.8), so its absence must never break collection."""
     if not corpus_dir.is_dir():
         return []
-    return sorted(p for p in corpus_dir.iterdir() if (p / "raw.html").exists() and (not slugs or p.name in slugs))
+    return sorted(
+        page_dir
+        for page_dir in corpus_dir.iterdir()
+        if (page_dir / "raw.html").exists() and (not slugs or page_dir.name in slugs)
+    )
 
 
 def clean_page(slug: str, corpus_dir: Path = CORPUS_DIR) -> None:
@@ -39,7 +43,7 @@ def clean_page(slug: str, corpus_dir: Path = CORPUS_DIR) -> None:
     return cleaned
 
 
-def regenerate_cleaned(slugs: list[str] = []) -> list[tuple[str, int, int]]:
+def regenerate_cleaned(slugs: list[str] | None = None) -> list[tuple[str, int, int]]:
     """Re-run the cleaner over every corpus page (runbook: regenerate when the
     cleaner changes). Returns (slug, raw_bytes, cleaned_chars) per page."""
     report: list[tuple[str, int, int]] = []
