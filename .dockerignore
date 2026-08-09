@@ -3,6 +3,17 @@
 **/__pycache__
 **/.pytest_cache
 **/.ruff_cache
+.env
+.env.*
+**/.env.local
+frontend/
+supabase/
+infra/
+docs/
+graphify-out/
+.github/
+.cursor/
+.claude/
 frontend/node_modules
 frontend/dist
 worker/evals/reports
