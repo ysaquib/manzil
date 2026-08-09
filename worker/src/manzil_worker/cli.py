@@ -215,7 +215,7 @@ def export_demo_capture_cmd(
     out: Path = typer.Option(
         Path("frontend/src/features/demo/replay/capture.json"),
         "--out",
-        help="Where to write the bundle",
+        help="Where to write the bundle (capture.json, capture-2.json, ...)",
     ),
 ) -> None:
     """Export a Replay Capture from a real ingest (DM-9, DESIGN §3).
@@ -224,6 +224,13 @@ def export_demo_capture_cmd(
     and then served by this recording, played back in the browser. Nothing is
     fetched, no Job is enqueued, and no row is written -- which is why the
     bundle has to come from a run that really happened.
+
+    A demo ships a *slate* of recordings, played one per submission until the
+    visitor exhausts them. Export each from its own finished Job into
+    `capture.json`, `capture-2.json`, `capture-3.json` and so on -- the frontend
+    globs `capture*.json` and plays them in sorted filename order -- then re-run
+    `scripts/seed_demo_hunt.py` so every captured Listing is staged as
+    `archived` and appears only when "submitted".
 
     Any Job works, checkpoint or not: rendering a checkpoint prompt was cut from
     scope (DESIGN §20 v3.58) because it needed either publishing page excerpts
