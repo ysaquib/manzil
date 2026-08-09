@@ -350,9 +350,7 @@ async def demo_status(admin: AdminUser, pool: DbPool) -> dict:
     """Whether the demo is on, and what currently stands in the way of turning
     it on. Surfacing the blockers is the point: an operator should be able to
     see why the switch will refuse before they flip it."""
-    row = await pool.fetchrow(
-        "select demo_enabled, demo_hunt_id, updated_at from site_settings"
-    )
+    row = await pool.fetchrow("select demo_enabled, demo_hunt_id, updated_at from site_settings")
     problems = await pool.fetchval("select private.demo_preflight()")
     return {
         "enabled": bool(row["demo_enabled"]),
@@ -363,9 +361,7 @@ async def demo_status(admin: AdminUser, pool: DbPool) -> dict:
 
 
 @router.patch("/demo", summary="Enable or disable public demo mode")
-async def set_demo(
-    body: DemoToggle, admin: AdminUser, pool: DbPool, audit: Audit
-) -> dict:
+async def set_demo(body: DemoToggle, admin: AdminUser, pool: DbPool, audit: Audit) -> dict:
     """The kill switch.
 
     Enabling runs `private.demo_preflight()` inside the same transaction as the

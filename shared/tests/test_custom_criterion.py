@@ -39,9 +39,7 @@ def test_controlled_enum_rejects_duplicates_after_trimming() -> None:
 
 
 def test_maps_route_is_property_only_and_derives_location_refresh() -> None:
-    CustomCriterionDef.model_validate(
-        _definition(requires_tool="maps", refresh_class="location")
-    )
+    CustomCriterionDef.model_validate(_definition(requires_tool="maps", refresh_class="location"))
     with pytest.raises(ValidationError, match="Property-scoped"):
         CustomCriterionDef.model_validate(
             _definition(
@@ -54,9 +52,7 @@ def test_maps_route_is_property_only_and_derives_location_refresh() -> None:
 
 def test_deferred_routes_cannot_be_confirmed() -> None:
     with pytest.raises(ValidationError, match="deferred"):
-        CustomCriterionDef.model_validate(
-            _definition(requires_tool="vision")
-        )
+        CustomCriterionDef.model_validate(_definition(requires_tool="vision"))
 
 
 def test_maps_route_modifiers_round_trip() -> None:

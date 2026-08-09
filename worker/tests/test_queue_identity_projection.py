@@ -138,9 +138,7 @@ async def test_cleaned_text_persists_and_updates_on_reingest(pg_pool: asyncpg.Po
 
 
 async def test_geocode_locality_coalesces_without_overwriting(pg_pool: asyncpg.Pool) -> None:
-    hunt_id, property_id, listing_id = await _seed(
-        pg_pool, name="listing-4", address="listing-4"
-    )
+    hunt_id, property_id, listing_id = await _seed(pg_pool, name="listing-4", address="listing-4")
     try:
         state = _state("https://x.test/geocode-locality", None)
         state.geocode = GeocodeIn(

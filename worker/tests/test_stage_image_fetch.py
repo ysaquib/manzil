@@ -254,9 +254,7 @@ def test_labelled_diagram_uses_the_full_size_target_and_diagram_profile() -> Non
                     _candidate(1, "https://img.test/kitchen.jpg", alt="Kitchen"),
                 ]
             ),
-            StageCtx(
-                download_image=fetch, image_store=store, existing_image_hashes=_no_previous
-            ),
+            StageCtx(download_image=fetch, image_store=store, existing_image_hashes=_no_previous),
         )
     )
 
@@ -288,9 +286,7 @@ def test_full_size_failure_falls_back_to_the_thumbnail() -> None:
                     )
                 ]
             ),
-            StageCtx(
-                download_image=fetch, image_store=store, existing_image_hashes=_no_previous
-            ),
+            StageCtx(download_image=fetch, image_store=store, existing_image_hashes=_no_previous),
         )
     )
     assert len(state.property_images) == 1
@@ -311,9 +307,7 @@ def test_diagram_budget_is_separate_so_photos_cannot_evict_a_late_diagram() -> N
     state = asyncio.run(
         image_fetch_stage(
             _diagram_state([*photos, late]),
-            StageCtx(
-                download_image=fetch, image_store=store, existing_image_hashes=_no_previous
-            ),
+            StageCtx(download_image=fetch, image_store=store, existing_image_hashes=_no_previous),
         )
     )
     kinds = [image.kind for image in state.property_images]
@@ -334,9 +328,7 @@ def test_property_diagram_cap_holds() -> None:
     state = asyncio.run(
         image_fetch_stage(
             _diagram_state(candidates),
-            StageCtx(
-                download_image=fetch, image_store=store, existing_image_hashes=_no_previous
-            ),
+            StageCtx(download_image=fetch, image_store=store, existing_image_hashes=_no_previous),
         )
     )
     diagrams = [i for i in state.property_images if i.kind == "floor_plan_diagram"]

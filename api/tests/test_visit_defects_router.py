@@ -249,7 +249,10 @@ async def test_editing_a_deleted_defect_is_a_404(collab_hunt, as_member: AsyncCl
     await as_member.delete(f"/v1/visits/{visit['id']}/defects/{defect_id}")
 
     assert (
-        await as_member.patch(f"/v1/visits/{visit['id']}/defects/{defect_id}", json={"severity": "major"})
+        await as_member.patch(
+            f"/v1/visits/{visit['id']}/defects/{defect_id}",
+            json={"severity": "major"},
+        )
     ).status_code == 404
     assert (
         await as_member.delete(f"/v1/visits/{visit['id']}/defects/{defect_id}")

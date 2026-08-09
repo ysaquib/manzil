@@ -275,9 +275,7 @@ async def _place_details_call(place_id: str, *, transport: Any = None) -> dict[s
         _DETAILS_URL,
         {
             "place_id": place_id,
-            "fields": (
-                "name,rating,user_ratings_total,reviews,formatted_phone_number,website"
-            ),
+            "fields": ("name,rating,user_ratings_total,reviews,formatted_phone_number,website"),
         },
         transport=transport,
     )

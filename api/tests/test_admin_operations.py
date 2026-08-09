@@ -96,15 +96,15 @@ async def test_a_stale_lock_is_identified_and_releasable(
         assert released.status_code == 200
 
         # Re-queued, not failed: nothing is known to be wrong with the work.
-        assert await db_pool.fetchval(
-            "select state::text from jobs where id = $1", stale_id
-        ) == "queued"
-        assert await db_pool.fetchval(
-            "select locked_by from jobs where id = $1", stale_id
-        ) is None
-        assert await db_pool.fetchval(
-            "select state::text from jobs where id = $1", fresh_id
-        ) == "running"
+        assert (
+            await db_pool.fetchval("select state::text from jobs where id = $1", stale_id)
+            == "queued"
+        )
+        assert await db_pool.fetchval("select locked_by from jobs where id = $1", stale_id) is None
+        assert (
+            await db_pool.fetchval("select state::text from jobs where id = $1", fresh_id)
+            == "running"
+        )
     finally:
         await db_pool.execute("delete from jobs where id = any($1::uuid[])", [stale_id, fresh_id])
 
@@ -113,9 +113,7 @@ async def test_retry_requeues_and_resets_the_backoff_ladder(
     as_admin: AsyncClient, db_pool, collab_hunt
 ) -> None:
     job_id = await _job(db_pool, collab_hunt, "failed")
-    await db_pool.execute(
-        "update jobs set attempts = 3, error = 'blocked' where id = $1", job_id
-    )
+    await db_pool.execute("update jobs set attempts = 3, error = 'blocked' where id = $1", job_id)
     try:
         response = await as_admin.post(f"/v1/admin/jobs/{job_id}/retry")
         assert response.status_code == 200
@@ -239,9 +237,7 @@ async def test_system_reports_pins_and_key_presence_but_never_a_value(
 # ── the gate ─────────────────────────────────────────────────────────────────
 
 
-async def test_a_non_admin_is_refused_on_every_operations_route(
-    admin_app, seeded_users
-) -> None:
+async def test_a_non_admin_is_refused_on_every_operations_route(admin_app, seeded_users) -> None:
     async with AsyncClient(
         transport=ASGITransport(app=admin_app),
         base_url="http://test",

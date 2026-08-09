@@ -28,9 +28,12 @@ async def test_anonymous_signup_is_disabled(db_pool) -> None:  # type: ignore[no
             )
 
         assert response.status_code in {400, 403, 422}
-        assert await db_pool.fetchval(
-            "select count(*) from auth.users where lower(email) = lower($1)", email
-        ) == 0
+        assert (
+            await db_pool.fetchval(
+                "select count(*) from auth.users where lower(email) = lower($1)", email
+            )
+            == 0
+        )
     finally:
         # If a developer runs this against stale, signup-enabled containers,
         # fail loudly without leaving the probe account behind.
@@ -54,6 +57,9 @@ async def test_unknown_email_otp_cannot_create_an_account(db_pool) -> None:  # t
         # assertion is the security claim that matters.
         await client.post("/auth/v1/otp", json={"email": email, "create_user": False})
 
-    assert await db_pool.fetchval(
-        "select count(*) from auth.users where lower(email) = lower($1)", email
-    ) == 0
+    assert (
+        await db_pool.fetchval(
+            "select count(*) from auth.users where lower(email) = lower($1)", email
+        )
+        == 0
+    )

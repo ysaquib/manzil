@@ -505,9 +505,7 @@ async def test_rescore_uses_manual_unmapped_mandatory_fee_slots(pg_pool: asyncpg
             )
         )
         amenity = next(
-            component
-            for component in corrected["components"]
-            if component["name"] == "amenity fee"
+            component for component in corrected["components"] if component["name"] == "amenity fee"
         )
         assert amenity["amount"] == 18.0
         # Baseline ingest total is 1905 (amenity 10); manual 18 adds 8 → 1913.

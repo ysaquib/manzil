@@ -82,9 +82,7 @@ async def test_a_non_member_sees_nothing_until_they_are_an_admin(
         await _revoke(db_pool, ghost.user_id)
 
 
-async def test_the_predicate_reaches_every_hunt_scoped_table(
-    db_pool, collab_hunt, ghost
-) -> None:
+async def test_the_predicate_reaches_every_hunt_scoped_table(db_pool, collab_hunt, ghost) -> None:
     """A table that forgot the predicate shows up as one silently empty section
     in the panel — which nobody notices until support needs it."""
     await _grant(db_pool, ghost.user_id)
@@ -149,17 +147,18 @@ async def test_an_admin_cannot_answer_a_visit_entry(
                 }
             ).execute()
 
-        assert await db_pool.fetchval(
-            "select count(*) from visit_entries where visit_id = $1", visit_id
-        ) == 0
+        assert (
+            await db_pool.fetchval(
+                "select count(*) from visit_entries where visit_id = $1", visit_id
+            )
+            == 0
+        )
     finally:
         await _revoke(db_pool, ghost.user_id)
         await db_pool.execute("delete from visits where id = $1", visit_id)
 
 
-async def test_an_admin_cannot_write_through_postgrest_at_all(
-    db_pool, collab_hunt, ghost
-) -> None:
+async def test_an_admin_cannot_write_through_postgrest_at_all(db_pool, collab_hunt, ghost) -> None:
     """If any of these succeeded, an admin could change a Hunt without the
     action ever reaching `admin_audit_log`."""
     await _grant(db_pool, ghost.user_id)
@@ -199,9 +198,12 @@ async def test_an_admin_cannot_write_through_postgrest_at_all(
             .execute()
         )
         assert updated.data == []
-        assert await db_pool.fetchval(
-            "select status from hunt_listings where id = $1", collab_hunt["owner_listing_id"]
-        ) == "active"
+        assert (
+            await db_pool.fetchval(
+                "select status from hunt_listings where id = $1", collab_hunt["owner_listing_id"]
+            )
+            == "active"
+        )
     finally:
         await _revoke(db_pool, ghost.user_id)
 
@@ -212,9 +214,7 @@ async def test_an_admin_does_not_become_a_member(db_pool, collab_hunt, ghost) ->
     policies — the two things §4.2 says must not happen."""
     await _grant(db_pool, ghost.user_id)
     try:
-        role = await db_pool.fetchval(
-            "select private.member_role($1)", collab_hunt["hunt_id"]
-        )
+        role = await db_pool.fetchval("select private.member_role($1)", collab_hunt["hunt_id"])
         assert role is None
 
         members = (
@@ -240,7 +240,8 @@ async def test_an_ordinary_member_is_unaffected_by_the_predicate(
     )
     try:
         visible = (
-            seeded_users["member"].supabase.table("hunts")
+            seeded_users["member"]
+            .supabase.table("hunts")
             .select("id")
             .eq("id", str(other_hunt))
             .execute()

@@ -26,13 +26,7 @@ from manzil_worker.stages.image_fetch import image_fetch_stage
 from manzil_worker.state import FloorPlanIn, PlanManifest, RunState, SourceState
 from PIL import Image
 
-PAGE = (
-    Path(__file__).parent
-    / "fixtures"
-    / "corpus"
-    / "realtor.com--springs-at-canton"
-    / "raw.html"
-)
+PAGE = Path(__file__).parent / "fixtures" / "corpus" / "realtor.com--springs-at-canton" / "raw.html"
 
 # Exactly as EXTRACT names them for this Property.
 PLAN_NAMES = [
@@ -101,11 +95,7 @@ def test_a_real_listing_page_links_every_labelled_diagram_to_its_plan() -> None:
 
     name_by_ref = {plan.response_key: plan.plan_name for plan in state.floor_plans}
     diagrams = [image for image in out.property_images if image.kind == "floor_plan_diagram"]
-    linked = {
-        name_by_ref[ref]
-        for image in diagrams
-        for ref in image.exact_floor_plan_refs
-    }
+    linked = {name_by_ref[ref] for image in diagrams for ref in image.exact_floor_plan_refs}
 
     # The page carries four labelled diagrams; each names exactly one plan.
     assert len(diagrams) == 4

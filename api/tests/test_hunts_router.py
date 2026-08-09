@@ -406,9 +406,7 @@ async def test_shared_filters_upsert_and_role_gate(client: AsyncClient, db_pool)
             hunt_id,
             FAKE_USER.id,
         )
-        resp = await client.put(
-            f"/v1/hunts/{hunt_id}/shared-filters", json={"filters": {}}
-        )
+        resp = await client.put(f"/v1/hunts/{hunt_id}/shared-filters", json={"filters": {}})
         assert resp.status_code == 403
     finally:
         await db_pool.execute("delete from hunts where id = $1", hunt_id)

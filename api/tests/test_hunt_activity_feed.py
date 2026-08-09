@@ -47,12 +47,8 @@ async def test_owner_sees_the_feed_and_other_roles_are_refused(
 
     first_page = _activity(seeded_users["owner"], hunt_id, limit=1)
     assert len(first_page.data) == 1
-    older_page = _activity(
-        seeded_users["owner"], hunt_id, before=first_page.data[0]["occurred_at"]
-    )
-    assert all(
-        row["occurred_at"] < first_page.data[0]["occurred_at"] for row in older_page.data
-    )
+    older_page = _activity(seeded_users["owner"], hunt_id, before=first_page.data[0]["occurred_at"])
+    assert all(row["occurred_at"] < first_page.data[0]["occurred_at"] for row in older_page.data)
 
     # Refusal is preferable to an empty result: callers cannot mistake missing
     # authorization for a Hunt with no history.

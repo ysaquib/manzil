@@ -84,9 +84,7 @@ async def test_completed_job_persists_plan_and_cost(
         )
 
         monkeypatch.setitem(STAGE_REGISTRY, "cost", _cost_stage)
-        final = await run_job(
-            state, ctx, [("PLAN", _test_plan_stage), ("cost", _cost_stage)]
-        )
+        final = await run_job(state, ctx, [("PLAN", _test_plan_stage), ("cost", _cost_stage)])
         assert final.status is JobState.DONE
         assert final.plan is not None
 

@@ -95,9 +95,7 @@ async def test_there_are_unsafe_routes_to_cover(unsafe_routes) -> None:
 async def test_every_unsafe_route_refuses_a_demo_token(app, unsafe_routes) -> None:
     token = demo_token()
     failures: list[str] = []
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         for method, path in unsafe_routes:
             response = await client.request(
                 method,
@@ -113,12 +111,8 @@ async def test_every_unsafe_route_refuses_a_demo_token(app, unsafe_routes) -> No
 async def test_safe_methods_are_not_refused(app) -> None:
     """The guard must not turn the demo into a blank page."""
     token = demo_token()
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        response = await client.get(
-            "/v1/hunts", headers={"Authorization": f"Bearer {token}"}
-        )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/v1/hunts", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code != 403
 
 
@@ -143,23 +137,15 @@ async def test_a_forged_demo_token_is_rejected(app) -> None:
         "not-the-projects-signing-secret",
         algorithm="HS256",
     )
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        response = await client.get(
-            "/v1/hunts", headers={"Authorization": f"Bearer {forged}"}
-        )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/v1/hunts", headers={"Authorization": f"Bearer {forged}"})
     assert response.status_code == 401
 
 
 async def test_an_expired_demo_token_is_rejected(app) -> None:
     stale = demo_token(exp=int(time.time()) - 60)
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        response = await client.get(
-            "/v1/hunts", headers={"Authorization": f"Bearer {stale}"}
-        )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/v1/hunts", headers={"Authorization": f"Bearer {stale}"})
     assert response.status_code == 401
 
 
@@ -167,9 +153,7 @@ async def test_an_expired_demo_token_is_rejected(app) -> None:
 
 
 async def test_demo_config_reports_disabled_by_default(app) -> None:
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/v1/demo/config")
     assert response.status_code == 200
     assert response.json() == {"enabled": False}
@@ -178,9 +162,7 @@ async def test_demo_config_reports_disabled_by_default(app) -> None:
 async def test_session_is_not_discoverable_while_disabled(app, db_pool) -> None:
     """404 rather than 403: a disabled demo should not reveal that it exists."""
     await db_pool.execute("update site_settings set demo_enabled = false")
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post("/v1/demo/session")
     assert response.status_code == 404
     assert response.json()["code"] == "demo_unavailable"
@@ -198,9 +180,7 @@ async def test_disabled_attempts_are_still_counted(app, db_pool) -> None:
         f"select coalesce(sum(disabled), 0) from demo_session_counters"
         f" where window_start = {window}"
     )
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         await client.post("/v1/demo/session")
     after = await db_pool.fetchval(
         f"select coalesce(sum(disabled), 0) from demo_session_counters"
@@ -228,9 +208,7 @@ async def test_refused_requests_cannot_grow_the_database(db_pool) -> None:
         try:
             before = await conn.fetchval("select count(*) from demo_session_counters")
             for _ in range(200):
-                await conn.fetchval(
-                    "select issue_demo_session($1, $2, $3)", "a" * 32, 20, 600
-                )
+                await conn.fetchval("select issue_demo_session($1, $2, $3)", "a" * 32, 20, 600)
             after = await conn.fetchval("select count(*) from demo_session_counters")
         finally:
             await tr.rollback()
@@ -282,9 +260,7 @@ async def _enable_demo_in_transaction(conn, seeded_users) -> None:
     )
 
     owner = seeded_users["owner"].user_id
-    primordial = await conn.fetchval(
-        "select user_id from site_admins where is_primordial limit 1"
-    )
+    primordial = await conn.fetchval("select user_id from site_admins where is_primordial limit 1")
     if primordial is None:
         await conn.execute(
             "insert into site_admins (user_id, is_primordial, note)"
@@ -304,9 +280,7 @@ async def _enable_demo_in_transaction(conn, seeded_users) -> None:
         "insert into demo_accounts (user_id, note) values ($1, 'issuance test')",
         uuid.uuid4(),
     )
-    await conn.execute(
-        "update site_settings set demo_enabled = true, demo_hunt_id = $1", hunt
-    )
+    await conn.execute("update site_settings set demo_enabled = true, demo_hunt_id = $1", hunt)
 
 
 async def test_issuance_stops_at_the_per_key_ceiling(db_pool, seeded_users) -> None:
@@ -322,9 +296,7 @@ async def test_issuance_stops_at_the_per_key_ceiling(db_pool, seeded_users) -> N
             await _enable_demo_in_transaction(conn, seeded_users)
             statuses = [
                 json.loads(
-                    await conn.fetchval(
-                        "select issue_demo_session($1, $2, $3)", "a" * 32, 2, 600
-                    )
+                    await conn.fetchval("select issue_demo_session($1, $2, $3)", "a" * 32, 2, 600)
                 )["status"]
                 for _ in range(4)
             ]
@@ -344,9 +316,7 @@ async def test_issuance_stops_at_the_global_ceiling(db_pool, seeded_users) -> No
             await _enable_demo_in_transaction(conn, seeded_users)
             statuses = [
                 json.loads(
-                    await conn.fetchval(
-                        "select issue_demo_session($1, $2, $3)", f"{i:032x}", 20, 3
-                    )
+                    await conn.fetchval("select issue_demo_session($1, $2, $3)", f"{i:032x}", 20, 3)
                 )["status"]
                 for i in range(5)
             ]
@@ -374,9 +344,7 @@ async def test_issuance_is_serialized_against_a_concurrent_caller(db_pool) -> No
         outer = first.transaction()
         await outer.start()
         try:
-            await first.fetchval(
-                "select issue_demo_session($1, $2, $3)", "b" * 32, 20, 600
-            )
+            await first.fetchval("select issue_demo_session($1, $2, $3)", "b" * 32, 20, 600)
 
             # 8274531 is the constant in 20260901000007. A bigint advisory key
             # of that size lands in (classid 0, objid <key>).
@@ -438,9 +406,7 @@ def _seed_module():
     """Load the seed script by path; `scripts/` is not an installed package."""
     import importlib.util
 
-    path = (
-        pathlib.Path(__file__).resolve().parents[2] / "scripts" / "seed_demo_hunt.py"
-    )
+    path = pathlib.Path(__file__).resolve().parents[2] / "scripts" / "seed_demo_hunt.py"
     spec = importlib.util.spec_from_file_location("seed_demo_hunt", path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -501,9 +467,7 @@ async def test_reconciling_is_idempotent(db_pool, seeded_users) -> None:
             await tr.rollback()
 
 
-async def test_seeding_refuses_a_principal_that_has_an_account(
-    db_pool, seeded_users
-) -> None:
+async def test_seeding_refuses_a_principal_that_has_an_account(db_pool, seeded_users) -> None:
     """The virtual principal is the whole C3 defence; a collision must stop the
     seed rather than quietly reintroduce a takeable GoTrue identity."""
     seed = _seed_module()
@@ -586,9 +550,7 @@ async def demo_toggle_admin(db_pool, seeded_users):
     app.state.db_pool = db_pool
     identity = seeded_users["outsider"]
 
-    before = await db_pool.fetchrow(
-        "select demo_enabled, demo_hunt_id from site_settings"
-    )
+    before = await db_pool.fetchrow("select demo_enabled, demo_hunt_id from site_settings")
     markers = [
         dict(row)
         for row in await db_pool.fetch("select user_id, created_by, note from demo_accounts")
@@ -612,9 +574,7 @@ async def demo_toggle_admin(db_pool, seeded_users):
         "insert into demo_accounts (user_id, note) values ($1, 'toggle route test')",
         uuid.uuid4(),
     )
-    await db_pool.execute(
-        "update site_settings set demo_enabled = false, demo_hunt_id = $1", hunt
-    )
+    await db_pool.execute("update site_settings set demo_enabled = false, demo_hunt_id = $1", hunt)
     try:
         async with AsyncClient(
             transport=ASGITransport(app=app),
@@ -637,9 +597,7 @@ async def demo_toggle_admin(db_pool, seeded_users):
                 row["note"],
             )
         await db_pool.execute("delete from hunts where id = $1", hunt)
-        await db_pool.execute(
-            "delete from site_admins where user_id = $1", identity.user_id
-        )
+        await db_pool.execute("delete from site_admins where user_id = $1", identity.user_id)
         # `admin_audit_log` is deliberately append-only, so nothing is removed
         # from it here. Neither test below writes to it: the enable test's audit
         # write is the thing that fails, and the disable test reaches the
@@ -679,9 +637,7 @@ async def test_disabling_the_demo_survives_a_failing_audit(
     shutoff must not be refusable by the conditions that made it an emergency.
     Disabling commits first and audits afterwards; a failure there is logged
     loudly and the shutoff stands."""
-    admin_id = await db_pool.fetchval(
-        "select user_id from site_admins where is_primordial limit 1"
-    )
+    admin_id = await db_pool.fetchval("select user_id from site_admins where is_primordial limit 1")
     await db_pool.fetchval("select set_demo_enabled(true, $1)", admin_id)
     assert await db_pool.fetchval("select demo_enabled from site_settings")
 
@@ -727,8 +683,7 @@ async def test_the_kill_switch_is_read_under_the_issuance_lock(db_pool) -> None:
     observe the interleaving that is being ruled out.
     """
     body = await db_pool.fetchval(
-        "select pg_get_functiondef("
-        "'public.issue_demo_session(text,integer,integer)'::regprocedure)"
+        "select pg_get_functiondef('public.issue_demo_session(text,integer,integer)'::regprocedure)"
     )
     lock_at = body.index("pg_advisory_xact_lock")
     read_at = body.index("from site_settings")
@@ -749,8 +704,7 @@ async def test_the_bucket_expression_cannot_raise_or_reach_the_sentinel(db_pool)
     200k sampled keys a signed remainder puts 22 of them on it.
     """
     body = await db_pool.fetchval(
-        "select pg_get_functiondef("
-        "'public.issue_demo_session(text,integer,integer)'::regprocedure)"
+        "select pg_get_functiondef('public.issue_demo_session(text,integer,integer)'::regprocedure)"
     )
     assert "abs(hashtextextended" not in body, "abs() raises on bigint min"
     assert (
@@ -763,9 +717,7 @@ async def test_the_bucket_expression_cannot_raise_or_reach_the_sentinel(db_pool)
     with pytest.raises(asyncpg.NumericValueOutOfRangeError):
         await db_pool.fetchval("select abs((-9223372036854775808)::bigint) % 4096")
     assert (
-        await db_pool.fetchval(
-            "select (((-9223372036854775808)::bigint % 4096) + 4096) % 4096"
-        )
+        await db_pool.fetchval("select (((-9223372036854775808)::bigint % 4096) + 4096) % 4096")
         == 0
     )
 
@@ -837,8 +789,7 @@ async def test_an_image_key_must_carry_the_properties_prefix(db_pool, seeded_use
                 " values ('R7 prefix', '1 Prefix Way') returning id"
             )
             await conn.execute(
-                "insert into hunt_listings (hunt_id, property_id, added_by)"
-                " values ($1, $2, $3)",
+                "insert into hunt_listings (hunt_id, property_id, added_by) values ($1, $2, $3)",
                 hunt,
                 prop,
                 owner,
@@ -849,9 +800,7 @@ async def test_an_image_key_must_carry_the_properties_prefix(db_pool, seeded_use
             )
 
             async def readable(name: str) -> bool:
-                return await conn.fetchval(
-                    "select private.can_read_property_image($1)", name
-                )
+                return await conn.fetchval("select private.can_read_property_image($1)", name)
 
             # The positive control: without it a function that refused
             # everything would satisfy every assertion below.

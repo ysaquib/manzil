@@ -171,9 +171,7 @@ async def require_not_demo(
     except NotAuthenticated:
         return  # a bad token is get_current_user's business, not ours
     if subject is not None:
-        raise DemoReadOnly(
-            "Demo mode is read-only. Nothing you change here is saved."
-        )
+        raise DemoReadOnly("Demo mode is read-only. Nothing you change here is saved.")
 
 
 def get_user_client(settings: SettingsDep, user: CurrentUser) -> Client:

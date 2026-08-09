@@ -399,8 +399,17 @@ def test_is_renovated_presence_enum() -> None:
             opt(MatchOp.EQ, "none", 0.0),
         ],
     )
-    assert score([renovated], {"is_renovated": "confirmed"}, rubric_version=1).criteria[0].delta == 0.25
     assert (
-        score([renovated], {"is_renovated": "advertised_unconfirmed"}, rubric_version=1).criteria[0].delta
+        score([renovated], {"is_renovated": "confirmed"}, rubric_version=1).criteria[0].delta
+        == 0.25
+    )
+    assert (
+        score(
+            [renovated],
+            {"is_renovated": "advertised_unconfirmed"},
+            rubric_version=1,
+        )
+        .criteria[0]
+        .delta
         == 0.0
     )

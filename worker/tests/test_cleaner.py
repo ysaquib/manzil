@@ -45,6 +45,7 @@ def test_unit_rows_extracts_identifier_rows_and_skips_headers() -> None:
     assert not any("Base Price" in r for r in rows)
     assert not any("Available units" in r for r in rows)
 
+
 LISTING_HTML = """
 <html><head><title>Maple Court Apartments</title></head><body>
 <nav>Home | Floor Plans | Contact</nav>
@@ -172,8 +173,7 @@ def test_floor_plan_cards_survive_when_unit_prices_mask_primary_loss(monkeypatch
         cleaner_module,
         "_extract_primary",
         lambda html: (
-            "Apartments in Canton. Unit price $1,320. Unit price $1,480. "
-            "Advertised minimum $1,395."
+            "Apartments in Canton. Unit price $1,320. Unit price $1,480. Advertised minimum $1,395."
         ),
     )
 

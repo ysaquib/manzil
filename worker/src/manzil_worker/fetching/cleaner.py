@@ -151,9 +151,7 @@ def _text_without_actions(element: lxml.html.HtmlElement) -> str:
     return " ".join(parts)
 
 
-def _unit_rows(
-    card: lxml.html.HtmlElement, header: lxml.html.HtmlElement
-) -> list[str]:
+def _unit_rows(card: lxml.html.HtmlElement, header: lxml.html.HtmlElement) -> list[str]:
     """Compact text of unit rows inside ``card`` but outside its ``header``.
 
     A unit row carries a price (or rent-status) *and* a unit identifier such as
@@ -190,9 +188,7 @@ def _unit_rows(
         if not _is_unit(row) or row in seen:
             continue
         # Skip containers: keep only the minimal element with no matching child.
-        if any(
-            _is_unit(_normalize(_text_without_actions(child))) for child in element
-        ):
+        if any(_is_unit(_normalize(_text_without_actions(child))) for child in element):
             continue
         seen.add(row)
         rows.append(row)
@@ -263,9 +259,7 @@ def _floor_plan_lines(html: str) -> list[tuple[str, str]]:
             name_hits = sum(
                 1
                 for node in card.iter()
-                if _PLAN_NAME_HINT.search(
-                    " ".join((node.get("class", ""), node.get("id", "")))
-                )
+                if _PLAN_NAME_HINT.search(" ".join((node.get("class", ""), node.get("id", ""))))
             )
             if name_hits > 1:
                 break

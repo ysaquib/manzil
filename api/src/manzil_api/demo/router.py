@@ -119,9 +119,7 @@ async def demo_config(settings: SettingsDep) -> DemoConfigResponse:
     response_model=DemoSessionResponse,
     summary="Mint a short-lived, read-only demo token",
 )
-async def create_demo_session(
-    request: Request, settings: SettingsDep
-) -> DemoSessionResponse:
+async def create_demo_session(request: Request, settings: SettingsDep) -> DemoSessionResponse:
     if not settings.supabase_jwt_secret:
         raise DemoUnavailable("The demo is not available.")
 
@@ -129,9 +127,7 @@ async def create_demo_session(
 
     def _issue() -> dict:
         client = create_service_client(settings)
-        return client.rpc(
-            "issue_demo_session", {"p_client_key": key}
-        ).execute().data or {}
+        return client.rpc("issue_demo_session", {"p_client_key": key}).execute().data or {}
 
     # Off the event loop, for the same reason as `/demo/config` above: this is
     # the endpoint an attacker gets to call without credentials.
@@ -139,9 +135,7 @@ async def create_demo_session(
 
     status_value = outcome.get("status")
     if status_value == "rate_limited":
-        raise DemoRateLimited(
-            "The demo is busy right now. Please try again shortly."
-        )
+        raise DemoRateLimited("The demo is busy right now. Please try again shortly.")
     if status_value != "issued":
         raise DemoUnavailable("The demo is not available.")
 

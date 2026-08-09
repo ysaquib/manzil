@@ -261,8 +261,7 @@ async def test_successful_pass_enqueues_scope_matched_rescores(
     try:
         await queue_mod._run_region_baselines(pg_pool, region)
         jobs = await pg_pool.fetch(
-            "select payload from jobs where hunt_id = $1 and type = 'rescore' "
-            "and state = 'queued'",
+            "select payload from jobs where hunt_id = $1 and type = 'rescore' and state = 'queued'",
             hunt_id,
         )
         assert len(jobs) == 1

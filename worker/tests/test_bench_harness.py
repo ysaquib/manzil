@@ -99,8 +99,7 @@ def truth_label(**overrides: Any) -> BenchLabel:
             for claim in claims
         ]
         for key, claims in payload.items()
-        if isinstance(claims, list)
-        and key != "floor_plans"
+        if isinstance(claims, list) and key != "floor_plans"
     }
     data: dict[str, Any] = {
         "slug": SLUG,

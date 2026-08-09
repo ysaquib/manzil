@@ -75,9 +75,10 @@ def test_low_confidence_vision_scores_points_but_never_enters_gate_values() -> N
         resolution_rule="vision_weighted_median_gallery",
         confidence=Confidence.LOW,
     )
-    assert scoring_values_for_policy(
-        {"exact": exact, "gallery": gallery}, "full_rubric"
-    ) == ({"exact": 3, "gallery": 4}, {})
+    assert scoring_values_for_policy({"exact": exact, "gallery": gallery}, "full_rubric") == (
+        {"exact": 3, "gallery": 4},
+        {},
+    )
 
     criterion = RubricCriterion(
         hunt_id=uuid4(),

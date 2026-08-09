@@ -214,9 +214,7 @@ def test_custom_backfill_uses_cached_evidence_without_fetching() -> None:
         required_tier=1,
     )
 
-    out = asyncio.run(
-        plan_stage(state, StageCtx(refresh_source_lookup=_refresh_lookup([source])))
-    )
+    out = asyncio.run(plan_stage(state, StageCtx(refresh_source_lookup=_refresh_lookup([source]))))
 
     assert out.plan is not None
     assert out.plan.stages == ["PLAN", "CUSTOM_MATCH", "SCORE"]

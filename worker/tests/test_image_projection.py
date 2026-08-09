@@ -97,8 +97,7 @@ async def test_image_projection_upserts_and_prunes_complete_set(pg_pool: asyncpg
             property_id,
         )
         assert [
-            (row["content_hash"], row["vision_assessment"], row["is_current"])
-            for row in rows
+            (row["content_hash"], row["vision_assessment"], row["is_current"]) for row in rows
         ] == [
             ("a", '{"kind": "kitchen"}', True),
             ("b", None, False),

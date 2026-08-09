@@ -59,12 +59,7 @@ async def create_feedback(
     # empty regardless of what the body claimed.
     if body.hunt_id is not None:
         visible = (
-            client.table("hunts")
-            .select("id")
-            .eq("id", str(body.hunt_id))
-            .limit(1)
-            .execute()
-            .data
+            client.table("hunts").select("id").eq("id", str(body.hunt_id)).limit(1).execute().data
             or []
         )
         if not visible:

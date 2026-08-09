@@ -185,9 +185,7 @@ def maple_extraction() -> dict[str, Any]:
         parking=scoped_claim_payload(
             "dedicated_lot", "Dedicated parking lot with one assigned space"
         ),
-        cooling=scoped_claim_payload(
-            "central", "Central air conditioning and forced-air heating"
-        ),
+        cooling=scoped_claim_payload("central", "Central air conditioning and forced-air heating"),
         dishwasher=scoped_claim_payload(True, "Dishwasher, garbage disposal"),
         min_lease_months=field_payload(12, "Minimum lease term | 12 months"),
     )

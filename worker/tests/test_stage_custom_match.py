@@ -119,9 +119,7 @@ def test_floor_plan_custom_match_is_source_local() -> None:
     )
 
     with pytest.raises(StageRetryable, match="Source-local"):
-        asyncio.run(
-            custom_match_stage(state, StageCtx(rubric=[criterion], call_structured=llm))
-        )
+        asyncio.run(custom_match_stage(state, StageCtx(rubric=[criterion], call_structured=llm)))
 
 
 def test_custom_match_rejects_values_outside_the_author_schema() -> None:
@@ -143,6 +141,4 @@ def test_custom_match_rejects_values_outside_the_author_schema() -> None:
     )
 
     with pytest.raises(StageRetryable, match="violates its schema"):
-        asyncio.run(
-            custom_match_stage(_state(), StageCtx(rubric=[criterion], call_structured=llm))
-        )
+        asyncio.run(custom_match_stage(_state(), StageCtx(rubric=[criterion], call_structured=llm)))

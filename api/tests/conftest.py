@@ -70,7 +70,6 @@ class TestIdentity:
         return create_user_client(get_settings(), self.token)
 
 
-
 async def _purge_user_references(pool, user_id: str) -> None:
     """Delete everything that would block removing this account.
 
@@ -97,7 +96,7 @@ async def _purge_user_references(pool, user_id: str) -> None:
     )
     for fk in fks:
         with suppress(Exception):
-            await pool.execute(f'delete from {fk["tbl"]} where {fk["col"]} = $1', UUID(user_id))
+            await pool.execute(f"delete from {fk['tbl']} where {fk['col']} = $1", UUID(user_id))
 
 
 @pytest.fixture(scope="session")
@@ -308,9 +307,7 @@ async def no_primordial_admin(db_pool):  # type: ignore[no-untyped-def]
         await db_pool.execute(
             "alter table site_admins disable trigger site_admins_protect_primordial"
         )
-        await db_pool.execute(
-            "delete from site_admins where user_id = $1", existing["user_id"]
-        )
+        await db_pool.execute("delete from site_admins where user_id = $1", existing["user_id"])
         await db_pool.execute(
             "alter table site_admins enable trigger site_admins_protect_primordial"
         )

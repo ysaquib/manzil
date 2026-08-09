@@ -40,9 +40,7 @@ class Settings(BaseSettings):
     # seconds-for-milliseconds typo would have minted tokens valid for weeks
     # against a principal that cannot be signed out. 1800s is the Owner-ruled
     # hard maximum (2026-08-06); out of range fails startup, not a request.
-    demo_session_ttl_seconds: int = Field(
-        default=1800, ge=60, le=1800, alias="MANZIL_DEMO_TTL"
-    )
+    demo_session_ttl_seconds: int = Field(default=1800, ge=60, le=1800, alias="MANZIL_DEMO_TTL")
     # Salt for the truncated client-key HMAC. Without it no per-caller ceiling
     # is applied; the global ceiling still is.
     demo_client_key_salt: str = Field(default="", alias="MANZIL_DEMO_KEY_SALT")

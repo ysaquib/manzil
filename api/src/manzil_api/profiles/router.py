@@ -29,10 +29,5 @@ async def put_profile(
     # PUT must not clear a previously chosen default.
     if "default_color" in body.model_fields_set:
         payload["default_color"] = body.default_color
-    row = (
-        client.table("user_profiles")
-        .upsert(payload, on_conflict="user_id")
-        .execute()
-        .data[0]
-    )
+    row = client.table("user_profiles").upsert(payload, on_conflict="user_id").execute().data[0]
     return ProfileResponse.model_validate(row)

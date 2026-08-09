@@ -182,9 +182,7 @@ def compose_move_in(
 
     subtotal = round(
         sum(
-            charge.cash or 0.0
-            for charge in ledger
-            if charge.counted and charge.amount is not None
+            charge.cash or 0.0 for charge in ledger if charge.counted and charge.amount is not None
         ),
         2,
     )

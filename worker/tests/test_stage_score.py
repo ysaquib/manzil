@@ -29,9 +29,7 @@ def _all_in(breakdown: dict) -> float | None:  # type: ignore[type-arg]
     return entry["value"]
 
 
-def _gate(
-    gates: list[dict[str, object]], *, key: str, kind: str
-) -> dict[str, object]:
+def _gate(gates: list[dict[str, object]], *, key: str, kind: str) -> dict[str, object]:
     return next(g for g in gates if g["key"] == key and g["kind"] == kind)
 
 
@@ -251,9 +249,7 @@ def test_low_confidence_vision_is_kept_for_points_but_cannot_pass_gate() -> None
     assert gate["value"] is None
     assert gate["matched"] is None
     kitchen = next(
-        c
-        for c in state.scores[0].breakdown["criteria"]
-        if c["key"] == "kitchen_quality"
+        c for c in state.scores[0].breakdown["criteria"] if c["key"] == "kitchen_quality"
     )
     assert kitchen["value"] == 4
     assert kitchen["delta"] == 1.0
