@@ -1,4 +1,4 @@
-import { AspectRatio, Box, Group, Image, Skeleton, Stack, Text, UnstyledButton } from "@mantine/core";
+import { AspectRatio, Box, Group, Image, Skeleton, Spoiler, Stack, Text, UnstyledButton } from "@mantine/core";
 import { Carousel } from "@mantine/carousel";
 import type { EmblaCarouselType } from "embla-carousel";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -64,6 +64,7 @@ export function DrawerImageGallery({ images, loading }: { images: PropertyImage[
 
   const many = images.length > 1;
   const displayScene = (scene: string) => scene.replaceAll("_", " ");
+  const kitchenAssessment = images[index]?.kitchenAssessment;
   return (
     <div className={classes.gallery}>
       <div className={classes.primaryWrap}>
@@ -104,9 +105,6 @@ export function DrawerImageGallery({ images, loading }: { images: PropertyImage[
                           </Text>
                         )}
                       </Group>
-                      <Text component="span" className={classes.assessmentHint}>
-                        Kitchen probability {Math.round(img.classification.kitchenProbability * 100)}%
-                      </Text>
                     </Stack>
                   );
                 })()}
@@ -142,6 +140,25 @@ export function DrawerImageGallery({ images, loading }: { images: PropertyImage[
             </Box>
           ))}
         </div>
+      )}
+      {kitchenAssessment && (
+        <Stack gap={2} mt="xs">
+          <Group gap="xs">
+            <Text size="xs" fw={600}>
+              Kitchen assessment
+            </Text>
+            <Text size="xs" c="dimmed">
+              {kitchenAssessment.visibility === "visible" && kitchenAssessment.rating !== null
+                ? `Rated ${kitchenAssessment.rating}/5 · ${kitchenAssessment.confidence} confidence`
+                : "Kitchen not visible"}
+            </Text>
+          </Group>
+          <Spoiler maxHeight={40} showLabel="Show assessment" hideLabel="Hide assessment">
+            <Text size="xs" c="dimmed">
+              {kitchenAssessment.rationale}
+            </Text>
+          </Spoiler>
+        </Stack>
       )}
       <ImageLightbox images={images} index={lightbox} onNavigate={setLightbox} onClose={() => setLightbox(null)} />
     </div>

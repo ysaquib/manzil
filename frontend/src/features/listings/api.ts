@@ -28,8 +28,14 @@ type OverrideResponse = components["schemas"]["OverrideResponse"];
 type FeeEntryUpsert = components["schemas"]["FeeEntryUpsert"];
 type FeeEntryResponse = components["schemas"]["FeeEntryResponse"];
 
-const LISTING_SELECT =
-  "*, property:properties(*, floor_plans(*), sources:property_sources(*)), scores(*)";
+// `property_sources.cleaned_text` is deliberately service-role-only (DESIGN
+// §16). A wildcard nested select requests that protected column and PostgREST
+// rejects the whole Listing query, including for a Site Admin in Ghost View.
+const PROPERTY_SOURCE_SELECT =
+  "id,property_id,url,site_domain,is_official,last_fetched_at,last_success_at";
+
+export const LISTING_SELECT =
+  `*, property:properties(*, floor_plans(*), sources:property_sources(${PROPERTY_SOURCE_SELECT})), scores(*)`;
 
 export function useListings(huntId: string) {
   return useQuery({
@@ -437,6 +443,12 @@ export interface PropertyImage {
     primaryScene: string;
     kitchenProbability: number;
   };
+  kitchenAssessment?: {
+    visibility: "visible" | "not_visible";
+    rating: number | null;
+    confidence: "high" | "medium" | "low";
+    rationale: string;
+  };
   floorPlanAssociations?: string[];
 }
 
@@ -452,7 +464,7 @@ function assessmentRecord(value: unknown, classifier: "classification" | "classi
 
 export function projectImageClassifications(
   visionAssessment: unknown,
-): Pick<PropertyImage, "classification"> {
+): Pick<PropertyImage, "classification" | "kitchenAssessment"> {
   const canonical = assessmentRecord(visionAssessment, "classification");
   // Migration compatibility: rows classified during shadow rollout become
   // visible as ONNX immediately and are promoted on their next image refresh.
@@ -460,11 +472,41 @@ export function projectImageClassifications(
   const onnx = typeof canonical?.predicted_scene === "string" ? canonical : legacyShadow;
   const predictedScene = onnx?.predicted_scene;
   const kitchenScore = onnx?.kitchen_score;
+  const kitchenQuality = (visionAssessment as Record<string, unknown> | null)?.kitchen_quality;
+  const kitchenAssessment = kitchenQuality && typeof kitchenQuality === "object"
+    ? (kitchenQuality as Record<string, unknown>).assessment
+    : null;
+  const visibility = kitchenAssessment && typeof kitchenAssessment === "object"
+    ? (kitchenAssessment as Record<string, unknown>).visibility
+    : null;
+  const rating = kitchenAssessment && typeof kitchenAssessment === "object"
+    ? (kitchenAssessment as Record<string, unknown>).rating
+    : null;
+  const confidence = kitchenAssessment && typeof kitchenAssessment === "object"
+    ? (kitchenAssessment as Record<string, unknown>).confidence
+    : null;
+  const rationale = kitchenAssessment && typeof kitchenAssessment === "object"
+    ? (kitchenAssessment as Record<string, unknown>).rationale
+    : null;
+  const validVisibility = visibility === "visible" || visibility === "not_visible";
+  const validConfidence = confidence === "high" || confidence === "medium" || confidence === "low";
+
   return {
     classification: typeof predictedScene === "string" && typeof kitchenScore === "number"
       ? {
           primaryScene: predictedScene,
           kitchenProbability: kitchenScore,
+        }
+      : undefined,
+    kitchenAssessment: validVisibility
+      && validConfidence
+      && typeof rationale === "string"
+      && (rating === null || (typeof rating === "number" && rating >= 1 && rating <= 5))
+      ? {
+          visibility: visibility as NonNullable<PropertyImage["kitchenAssessment"]>["visibility"],
+          rating: rating as number | null,
+          confidence: confidence as NonNullable<PropertyImage["kitchenAssessment"]>["confidence"],
+          rationale,
         }
       : undefined,
   };

@@ -20,8 +20,22 @@ describe("projectImageClassifications", () => {
       classification: {
         assessment: { predicted_scene: "residential_kitchen", kitchen_score: 0.72 },
       },
+      kitchen_quality: {
+        assessment: {
+          visibility: "visible",
+          rating: 4,
+          confidence: "high",
+          rationale: "Modern flat-panel cabinets and updated appliances are visible.",
+        },
+      },
     })).toEqual({
       classification: { primaryScene: "residential_kitchen", kitchenProbability: 0.72 },
+      kitchenAssessment: {
+        visibility: "visible",
+        rating: 4,
+        confidence: "high",
+        rationale: "Modern flat-panel cabinets and updated appliances are visible.",
+      },
     });
   });
 
