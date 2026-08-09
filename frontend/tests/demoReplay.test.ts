@@ -10,6 +10,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Capture } from "../src/features/demo/replay/capture";
 import { jobAt } from "../src/features/demo/replay/capture";
 import {
+  __resetDemoSlateForTests,
+  claimDemoRun,
+  demoSlateSnapshot,
+  subscribeToDemoSlate,
+} from "../src/features/demo/replay/demoSlate";
+import {
   __resetReplayForTests,
   replaySnapshot,
   startReplay,
@@ -441,5 +447,91 @@ describe("the replay writes nothing", () => {
     startReplay(qc, "hunt-1", capture(), { targetMs: 10_000, variance: 0 });
     vi.advanceTimersByTime(60_000);
     expect(replaySnapshot().finished).toBe(true);
+  });
+});
+
+describe("the demo slate", () => {
+  // A demo ships several recordings and spends one per submission. The rule
+  // that matters is that the allowance is *reload-scoped*: `resetDemo()` is a
+  // reload, and DESIGN §16 promises a reload puts everything back — so the
+  // counter lives in module memory, with nothing persisted that could outlive
+  // it and leave a visitor with a demo they can no longer run.
+  beforeEach(() => {
+    __resetDemoSlateForTests();
+  });
+
+  afterEach(() => {
+    __resetDemoSlateForTests();
+  });
+
+  it("hands out each run once, in order", () => {
+    expect(claimDemoRun(5)).toBe(0);
+    expect(claimDemoRun(5)).toBe(1);
+    expect(claimDemoRun(5)).toBe(2);
+    expect(demoSlateSnapshot().used).toBe(3);
+  });
+
+  it("refuses once the slate is spent, and keeps refusing", () => {
+    for (let i = 0; i < 5; i += 1) expect(claimDemoRun(5)).toBe(i);
+    expect(claimDemoRun(5)).toBeNull();
+    expect(claimDemoRun(5)).toBeNull();
+    // The count does not drift past the slate: the badge reads "0 of 5 left",
+    // not a negative remainder.
+    expect(demoSlateSnapshot().used).toBe(5);
+  });
+
+  it("offers nothing when the build ships no recordings", () => {
+    expect(claimDemoRun(0)).toBeNull();
+    expect(demoSlateSnapshot().used).toBe(0);
+  });
+
+  it("returns a stable snapshot between changes", () => {
+    // `useSyncExternalStore` calls the getter on every render and compares by
+    // identity; a fresh object each call would loop forever.
+    const first = demoSlateSnapshot();
+    expect(demoSlateSnapshot()).toBe(first);
+    claimDemoRun(2);
+    expect(demoSlateSnapshot()).not.toBe(first);
+  });
+
+  it("notifies subscribers when a run is claimed", () => {
+    const listener = vi.fn();
+    const unsubscribe = subscribeToDemoSlate(listener);
+    claimDemoRun(2);
+    expect(listener).toHaveBeenCalledTimes(1);
+    // A refusal is not a change, so it must not re-render the counter.
+    claimDemoRun(2);
+    claimDemoRun(2);
+    expect(listener).toHaveBeenCalledTimes(2);
+    unsubscribe();
+    __resetDemoSlateForTests();
+  });
+
+  it("plays a different recording on each run", () => {
+    // The engine is single-slot, so a second run overwrites `active` — but the
+    // query cache keeps both Jobs, because `paint` upserts by Job id and
+    // `publish` appends by Listing id. Two submissions leave two rows on the
+    // Overview, which is the whole point of shipping a slate.
+    vi.useFakeTimers();
+    const qc = new QueryClient();
+    __resetReplayForTests();
+
+    const first = capture();
+    const second = capture();
+    second.source.job_id = "job-2";
+    second.listing = { ...second.listing, id: "listing-2" };
+
+    startReplay(qc, "hunt-1", first, { targetMs: 5_000, variance: 0 });
+    vi.advanceTimersByTime(60_000);
+    startReplay(qc, "hunt-1", second, { targetMs: 5_000, variance: 0 });
+    vi.advanceTimersByTime(60_000);
+
+    const listings = qc.getQueryData(["hunt_listings", "hunt-1"]) as { id: string }[];
+    expect(listings.map((l) => l.id)).toEqual(["listing-1", "listing-2"]);
+    const history = qc.getQueryData(["jobs", "hunt-1", "history"]) as { id: string }[];
+    expect(history.map((j) => j.id).sort()).toEqual(["job-1", "job-2"]);
+
+    __resetReplayForTests();
+    vi.useRealTimers();
   });
 });
