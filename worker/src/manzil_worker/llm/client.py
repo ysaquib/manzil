@@ -37,7 +37,7 @@ from manzil_shared.config import (
     DISCOVER_WEB_SEARCH_REQUEST_USD,
 )
 from manzil_shared.errors import AgentBudgetExceeded
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 # The tally lives outside the seam (AD-C) so tier-3 fetching can bill to it
 # without importing LLM code. Re-exported here: `from manzil_worker.llm.client
@@ -159,6 +159,18 @@ class ProviderResponse:
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
     reported_cost_usd: float | None = None  # OpenRouter usage.cost cross-check
+
+
+class StructuredValidationError(ValueError):
+    """Schema rejection that retains the forced tool's invalid structured output."""
+
+    def __init__(self, error: ValidationError, output: dict[str, Any]) -> None:
+        self.error = error
+        self.output = output
+        super().__init__(str(error))
+
+    def error_count(self) -> int:
+        return self.error.error_count()
 
 
 @dataclass(frozen=True)
@@ -626,7 +638,10 @@ async def call_structured[T: BaseModel](stage: str, schema: type[T], content: st
             )
 
     _tally(_usage_from(model, response))
-    return schema.model_validate(response.output)
+    try:
+        return schema.model_validate(response.output)
+    except ValidationError as error:
+        raise StructuredValidationError(error, response.output) from error
 
 
 @dataclass(frozen=True)

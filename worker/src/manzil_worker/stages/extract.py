@@ -21,6 +21,7 @@ from manzil_shared.errors import ExtractionInvalid
 from manzil_shared.models import Confidence, FactScope, TargetScope, UnitApplicability
 from pydantic import ValidationError
 
+from manzil_worker.llm.client import StructuredValidationError
 from manzil_worker.llm.config import model_for_stage
 from manzil_worker.llm.prompt_loader import load_prompt
 from manzil_worker.stages.base import StageCtx
@@ -46,6 +47,26 @@ log = structlog.get_logger()
 AVAILABLE_NOW_SENTINEL = "available_now"
 
 
+def _invalid_output_fragment(error: ValidationError | StructuredValidationError) -> str | None:
+    """Return only the output fields implicated by a retained schema rejection.
+
+    EXTRACT's root-level scoped-claim validation names its field in the error
+    text. Returning only those fields gives the corrective call the malformed
+    claim without echoing an entire page-sized tool result back to the model.
+    """
+    if not isinstance(error, StructuredValidationError):
+        return None
+    fields = [key for key in error.output if key in str(error)]
+    if not fields:
+        return None
+    return json.dumps(
+        {key: error.output[key] for key in fields},
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+
 def normalize_availability_dates(state: RunState, today_iso: str) -> None:
     """Rewrite available_now sentinels to the run date in place."""
     for claim in state.source_claims:
@@ -62,7 +83,7 @@ async def _extract_single(state: RunState, ctx: StageCtx) -> RunState:
     content = f"URL: {source.url}\n\n{source.cleaned_text}"
     try:
         extraction = await ctx.call_structured("extract", schema, content)
-    except ValidationError as first_error:
+    except (ValidationError, StructuredValidationError) as first_error:
         log.warning(
             "extract_invalid_retry",
             job_id=str(state.job_id),
@@ -71,17 +92,28 @@ async def _extract_single(state: RunState, ctx: StageCtx) -> RunState:
         )
         # Correction leads the content: appended at the end of a 30k-char page
         # it gets ignored (observed: byte-identical retry output at temp 0).
+        invalid_fragment = _invalid_output_fragment(first_error)
+        prior_output = (
+            "\n\nThe invalid portion of your prior structured output follows. "
+            "Correct it; do not repeat it blindly:\n"
+            f"{invalid_fragment}"
+            if invalid_fragment is not None
+            else ""
+        )
         corrective = (
             "Your previous attempt failed schema validation — emit a corrected "
             "result. Most common cause: a field emitted as a JSON-encoded "
             "STRING. Property criterion fields must be JSON OBJECTS; scoped "
             "unit criterion fields and floor_plans must be JSON ARRAYS. The "
+            "same scoped value may appear only once for each concrete target; "
+            "never merge claims from distinct targets. The "
             "tool call handles all escaping, including quotes "
-            f"inside evidence. The validation errors:\n{first_error}\n\n{content}"
+            f"inside evidence. The validation errors:\n{first_error}"
+            f"{prior_output}\n\n{content}"
         )
         try:
             extraction = await ctx.call_structured("extract", schema, corrective)
-        except ValidationError as second_error:
+        except (ValidationError, StructuredValidationError) as second_error:
             raise ExtractionInvalid(
                 f"extraction failed schema validation twice: {second_error}"
             ) from second_error

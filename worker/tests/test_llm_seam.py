@@ -17,6 +17,7 @@ from manzil_worker.llm import client as client_mod
 from manzil_worker.llm.client import (
     ProviderResponse,
     SeamConfigError,
+    StructuredValidationError,
     VisionImage,
     call_structured,
     call_vision,
@@ -52,6 +53,12 @@ def test_reconcile_equivalence_prompt_uses_batched_item_contract() -> None:
     assert prompt.version == 2
     assert "item_id exactly once" in prompt.per_call
     assert "within the same target_key" in " ".join(prompt.per_call.split())
+
+
+def test_vision_prompt_has_a_target_below_its_hard_rationale_cap() -> None:
+    prompt = load_prompt("vision")
+    assert prompt.version == 2
+    assert "under 320 characters" in prompt.cacheable_prefix
 
 
 def test_prompt_without_marker_is_all_per_call(tmp_path: Path) -> None:
@@ -166,6 +173,27 @@ def test_record_then_replay_round_trip(monkeypatch: pytest.MonkeyPatch, tmp_path
             cache_write_tokens=10,
         )
     )
+
+
+def test_structured_validation_error_retains_the_invalid_tool_output(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("MANZIL_RECORDED_DIR", str(tmp_path))
+    monkeypatch.setenv("MANZIL_LLM_MODE", "record")
+
+    async def fake_traced_live_call(plan: object, schema: object) -> ProviderResponse:
+        return ProviderResponse(
+            output={"echo": 42, "model_family": "stub"},
+            input_tokens=1,
+            output_tokens=1,
+        )
+
+    monkeypatch.setattr(client_mod, "_traced_live_call", fake_traced_live_call)
+    with pytest.raises(StructuredValidationError) as raised:
+        asyncio.run(call_structured("smoke", SmokeResult, "Token: bad-output"))
+
+    assert raised.value.output == {"echo": 42, "model_family": "stub"}
+    assert raised.value.error_count() == 1
 
 
 def test_vision_recording_hashes_images_without_storing_bytes(

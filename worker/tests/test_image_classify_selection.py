@@ -175,6 +175,18 @@ def test_weighted_median_tie_chooses_lower_and_spread_guard() -> None:
     assert aggregate_kitchen(spread) is None
 
 
+def test_kitchen_rationale_is_trimmed_to_the_hard_cap() -> None:
+    assessment = KitchenAssessment(
+        content_hash="a" * 64,
+        visibility="visible",
+        rating=3,
+        confidence="medium",
+        rationale=f"  {'x' * 400}  ",
+    )
+
+    assert assessment.rationale == "x" * 360
+
+
 def test_unchanged_classifier_cache_makes_zero_calls_and_reads() -> None:
     image = _onnx_image("a" * 64, phash="0" * 16)
     cached = image.vision_assessment
