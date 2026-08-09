@@ -32,8 +32,15 @@ describe("AllInCell", () => {
         composition={{ ...composition, badges: ["fees_unverified", "heat_unknown"] }}
       />,
     );
-    expect(screen.getByLabelText("2 all-in warnings")).toBeInTheDocument();
+    expect(screen.getByLabelText("1 all-in warning")).toBeInTheDocument();
     expect(screen.queryByText("Fees unverified")).not.toBeInTheDocument(); // tooltip-only
+  });
+
+  it("keeps unknown heating as drawer provenance, not an Overview warning", () => {
+    renderWithProviders(
+      <AllInCell allIn={2055} composition={{ ...composition, badges: ["heat_unknown"] }} />,
+    );
+    expect(screen.queryByLabelText(/all-in warning/)).not.toBeInTheDocument();
   });
 
   it("shows no warning icon when the composition is clean", () => {
