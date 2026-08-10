@@ -10,6 +10,7 @@ import {
   Box,
   Button,
   Center,
+  Divider,
   Drawer,
   Group,
   Loader,
@@ -583,6 +584,7 @@ function DrawerShell({
                     Ratings become available with a Unit Group.
                   </Text>
                 )}
+                <Divider />
                 <CommentsSection
                   listingId={listing.id}
                   members={members}

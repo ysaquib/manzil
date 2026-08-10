@@ -67,7 +67,7 @@ export function SingleSourceBadge({ reason }: { reason: SingleSourceReason }) {
 export function ProblematicBadge() {
   return (
     <Tooltip label="Decision-relevant Sources still disagree; review the evidence or waiting task.">
-      <Box c="yellow.6" display="flex" style={{ flexShrink: 0 }}>
+      <Box c="dimmed" display="flex" style={{ flexShrink: 0 }}>
         <IconAlertTriangle
           size={14}
           stroke={1.5}

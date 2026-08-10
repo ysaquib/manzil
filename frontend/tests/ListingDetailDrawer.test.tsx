@@ -178,6 +178,9 @@ it("shows Problematic when reconciliation used a conservative disputed fallback"
   );
 
   expect(screen.getByLabelText("Problematic")).toBeInTheDocument();
+  expect(screen.getByLabelText("Problematic").parentElement).toHaveStyle({
+    color: "var(--mantine-color-dimmed)",
+  });
 });
 
 describe("ListingDetailDrawer", () => {

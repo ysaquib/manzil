@@ -22,7 +22,7 @@
   /* Pinned column widths — optical, and the sticky offsets derive from them so
      the two can never disagree. */
   --sel-w: 0px;
-  --score-w: 5.5rem;
+  --score-w: 6.75rem;
 
   border-collapse: separate; /* required: collapsed borders drop sticky backgrounds */
   border-spacing: 0;
