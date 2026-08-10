@@ -242,6 +242,13 @@ are genuinely needed. Supabase recommends exact production paths in
    messages before production.
 5. Review Authentication → Rate Limits after SMTP is enabled.
 
+This SMTP configuration is only for authentication and security messages:
+account invitations/provisioning, recovery, OTP or magic-link flows, and
+security-change notices. Hunt invitations and other product notifications use
+the API's separate Resend HTTPS path (§6.1). Keep both paths on verified sender
+identities, but do not put Hunt copy into a GoTrue template or turn a Hunt
+invitation into a login session.
+
 Supabase's built-in mail server is not a production service and ordinarily
 limits delivery to project-team addresses with a very low rate limit. See
 [Custom SMTP](https://supabase.com/docs/guides/auth/auth-smtp).
@@ -439,6 +446,11 @@ in Render, never committed. See [Render environment variables and secrets](https
 | `API_ENVIRONMENT` | `production` | no | yes |
 | `API_CORS_ORIGINS` | `https://app.example.com` | no | yes |
 | `MANZIL_FRONTEND_URL` | `https://app.example.com` | no | yes |
+| `MANZIL_EMAIL_MODE` | `resend` | no | yes; production startup refuses any other value |
+| `RESEND_API_KEY` | production-scoped Resend sending key | **yes** | yes |
+| `RESEND_WEBHOOK_SECRET` | signing secret for the Resend webhook configured below | **yes** | yes |
+| `MANZIL_MAIL_FROM` | verified product sender, e.g. `alerts@example.com` | no | yes |
+| `MANZIL_MAIL_FROM_NAME` | `Manzil` | no | optional |
 | `MANZIL_MODE` | `workflow` | no | yes |
 | `MANZIL_LLM_MODE` | `live` | no | yes |
 | `MANZIL_IMAGE_CLASSIFY_ONNX_DIR` | `.manzil/models/clip-vision-uint8` | no | yes |
@@ -458,6 +470,13 @@ in Render, never committed. See [Render environment variables and secrets](https
 Do not set any `MANZIL_MODEL_*` overrides in production. Model pins are code and
 DESIGN decisions. Do not add provider-vendor keys: OpenRouter is the sole LLM
 gateway.
+
+In Resend, add a webhook for
+`https://api.example.com/v1/webhooks/resend` and subscribe to sent, delivered,
+delivery-delayed, failed, bounced, suppressed, and complained email events.
+Copy that endpoint's signing secret to `RESEND_WEBHOOK_SECRET`. The endpoint
+verifies the raw Svix signature and deduplicates by `svix-id`; never place it
+behind a body-rewriting proxy.
 
 `SUPABASE_JWT_SECRET` is **not** the Supabase secret API key and the values are
 not interchangeable. Ordinary database, Auth-admin, and Storage operations use
@@ -713,6 +732,7 @@ After the domains are live, update and rebuild/redeploy:
 - Supabase Auth Site URL and redirect allow-list;
 - Google browser-key referrer restrictions;
 - SMTP/email branding and links.
+- the product-mail sender identity and Resend webhook URL.
 
 Keep the Render `onrender.com` URLs available during staging. After custom
 domains are proven, optionally disable the Render subdomains. If they remain
@@ -727,8 +747,8 @@ OpenRouter, Maps, provider, SMTP, and model-download credentials.
 Verify in this order:
 
 1. `GET https://<staging-api>/v1/health` returns `{"status":"ok"}`, and
-   `GET https://<staging-api>/v1/ready` returns 200 with database, worker, and
-   model checks all `ok`.
+   `GET https://<staging-api>/v1/ready` returns 200 with database, worker,
+   model, and email-dispatcher checks all `ok`.
 2. `/openapi.json` is visible in staging but hidden after `API_ENVIRONMENT=production`.
 3. The frontend loads through a deep link such as `/admin` without a 404. Use
    `curl -I` to confirm CSP, Referrer-Policy, frame denial, nosniff, HSTS, and
@@ -739,27 +759,30 @@ Verify in this order:
 5. The primordial admin can sign in and open Admin → People.
 6. Provision a second test account through Admin → People; verify the SMTP
    message and password setup redirect.
-7. Create a Hunt, Rubric, and Listing through the UI.
-8. Confirm one Job is claimed and progresses; confirm no duplicate claimant.
-9. Confirm Langfuse receives every LLM call and OpenRouter usage is charged to
+7. Invite that account to a Hunt; verify the subject names the inviter and Hunt,
+   the CTA is the bare `/invite/<token>` URL (not an Auth action link), and the
+   Resend webhook advances its delivery to `delivered`.
+8. Create a Hunt, Rubric, and Listing through the UI.
+9. Confirm one Job is claimed and progresses; confirm no duplicate claimant.
+10. Confirm Langfuse receives every LLM call and OpenRouter usage is charged to
    the production/staging-scoped key as expected.
-10. Confirm images land in the private `property-images` Storage bucket.
-11. Confirm IMAGE_CLASSIFY emits `image_classify_onnx_complete`, makes no LLM
+11. Confirm images land in the private `property-images` Storage bucket.
+12. Confirm IMAGE_CLASSIFY emits `image_classify_onnx_complete`, makes no LLM
     classifier call, and persists the expected artifact digest.
-12. Confirm the gallery displays ONNX scene and kitchen probability.
-13. Confirm the three highest `kitchen_score` eligible images become kitchen
+13. Confirm the gallery displays ONNX scene and kitchen probability.
+14. Confirm the three highest `kitchen_score` eligible images become kitchen
     VISION targets and the anchored VISION result appears.
-14. Exercise a Tier-2 Playwright fetch. This proves Chromium and its Linux
+15. Exercise a Tier-2 Playwright fetch. This proves Chromium and its Linux
     dependencies were actually packaged.
-15. Exercise Google Maps ENRICH and the frontend map with the two separate keys.
-16. Exercise Realtime with two browsers and the Visit Presence path.
-17. Restart/redeploy the API during a queued Job; confirm the durable Job
+16. Exercise Google Maps ENRICH and the frontend map with the two separate keys.
+17. Exercise Realtime with two browsers and the Visit Presence path.
+18. Restart/redeploy the API during a queued Job; confirm the durable Job
     resumes at a persisted Stage boundary.
-18. Verify RLS with an ordinary member, another Hunt, and a Site Admin Ghost
+19. Verify RLS with an ordinary member, another Hunt, and a Site Admin Ghost
     View. Frontend hiding is not evidence; unauthorized reads/writes must fail.
-19. Review Supabase Security Advisor, database logs, Auth logs, Storage access,
+20. Review Supabase Security Advisor, database logs, Auth logs, Storage access,
     Render logs/memory, OpenRouter spend, and Langfuse traces.
-20. While Demo Mode is still off, sign in as a Site Admin, create an ordinary
+21. While Demo Mode is still off, sign in as a Site Admin, create an ordinary
     test Hunt that account owns, give every Hunt member an explicit per-Hunt
     display name, keep one Listing active, archive one Listing with a completed
     ingest, and publish it through Admin → Demo Mode. Confirm the publication
@@ -892,9 +915,10 @@ At minimum, monitor:
 
 `/v1/health` remains dependency-free liveness. `/v1/ready` is the operational
 probe: it performs a two-second `select 1`, checks the pinned model digest
-captured at startup, and verifies that the in-process worker task is alive and
-has returned to its queue loop within six minutes. It returns only `ok`/`failed`
-labels, never paths or exception details. Keep Render's restart-oriented health
+captured at startup, verifies that the in-process worker task is alive and has
+returned to its queue loop within six minutes, and verifies that the product
+email dispatcher task has not exited. It returns only `ok`/`failed` labels,
+never paths or exception details. Keep Render's restart-oriented health
 check on `/v1/health` to avoid an external database incident causing restart
 loops; monitor and alert on `/v1/ready` separately. Also alert on stale Jobs,
 because a legitimate long Stage may exceed the coarse process heartbeat.
@@ -916,6 +940,7 @@ because a legitimate long Stage may exceed the coarse process heartbeat.
 | Tier-3 provider key | no | **secret** | never | no | provider source |
 | ONNX archive credential/URL | no | **BuildKit-mounted secret file; never env/ARG** | never | optional object store | object-store source |
 | SMTP password | no | no | never | Auth SMTP setting | SMTP source |
+| Resend product-mail API key / webhook secret | no | **secret** | never | no | Resend source |
 | Render deploy hook | only if using hook-based CD | source | source | no | Render source |
 
 No production secret belongs in `.env`, `frontend/.env.local`, `render.yaml`, a
