@@ -12,6 +12,7 @@ import { SignOutPage } from "../auth/SignOutPage";
 import { AppLayout } from "../components/AppLayout";
 import { ColorsPage } from "../dev/ColorsPage";
 import { AdminFeedbackPage } from "../features/admin/AdminFeedbackPage";
+import { AdminDemoPage } from "../features/admin/AdminDemoPage";
 import { AdminAuditPage } from "../features/admin/AdminAuditPage";
 import { AdminCostsPage } from "../features/admin/AdminCostsPage";
 import { AdminHuntsPage } from "../features/admin/AdminHuntsPage";
@@ -73,6 +74,7 @@ export const router = createBrowserRouter([
       { path: "system", element: <AdminSystemPage /> },
       { path: "audit", element: <AdminAuditPage /> },
       { path: "feedback", element: <AdminFeedbackPage /> },
+      { path: "demo", element: <AdminDemoPage /> },
     ],
   },
   {
