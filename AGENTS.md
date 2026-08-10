@@ -53,10 +53,36 @@ that a change is not someone's live work.
 hook noise and reverted wholesale; 59 files were pure formatting, three were not, and
 `fetching/corpus.py` lost a real B006 mutable-default fix. Restored from the rollout.)*
 
+### Standing exemption: appending to the logs
+
+**Appending a new row to DESIGN.md's §20 Decision Log or IMPLEMENTATION.md's
+changelog table is pre-authorized. Do it; do not ask.** This holds even when the
+file already carries another agent's uncommitted work, because an append adds a
+line rather than rewriting one — rule 1 is about *someone else's* changes, and a
+new row is yours. Recording the decision is part of doing the work, not a
+separate permission-worthy act, and the logs are worth more than the small risk
+of a merge conflict on a table row.
+
+What the exemption does **not** cover, because these are edits rather than
+appends:
+
+- Editing, renumbering, reordering, or deleting rows you did not write — still
+  rule 1. If your version number collides with one already in the table (it
+  happens; two agents append the same hour), take the next free number and say
+  so in your response rather than renumbering theirs.
+- Reformatting or reflowing the file. Append in the surrounding style and leave
+  the rest alone.
+
+In-place updates to the affected DESIGN.md **body** sections — which the §20
+update protocol requires alongside the log entry for a material change — are
+likewise yours to make without asking. Pause only when the specific lines you
+would rewrite are already modified in the working tree by someone else; then
+report the collision and ask, per rule 2.
+
 ## Hard rules
 - Never implement anything listed in DESIGN.md §18 (Deferred / Backlog) unless explicitly asked.
 - Ambiguous or missing design detail → ask, don't guess. The answer gets recorded in DESIGN.md.
-- Material design changes require a §20 Decision Log entry (append to decision log table) plus in-place updates to affected sections.
+- Material design changes require a §20 Decision Log entry (append to decision log table) plus in-place updates to affected sections. Both are pre-authorized — see [Standing exemption: appending to the logs](#standing-exemption-appending-to-the-logs). Write them as part of the change; do not ask first, and do not leave the log entry as a follow-up offer.
 - No provider SDK imports outside `worker/pipeline/llm/`. Every model call goes through the client seam: `call_structured` / `call_agent` / `call_vision`.
 - `shared/` stays domain-blind (no rental-specific assumptions) and LLM-free. The scoring engine is pure and deterministic — facts in, points out, nothing else.
 - Pipeline stages persist state BEFORE advancing the cursor. Stages are idempotent and resumable.
