@@ -101,8 +101,8 @@ async def export_demo_capture(conn: asyncpg.Connection, job_id: UUID) -> dict[st
     Deliberately does not require or reject a checkpoint. Reconstructing a
     renderable, honestly-scoped prompt turned out to need either widening
     `checkpoint_asked` to carry the full §10.10 shape (which a security review
-    showed could publish page excerpts and model-authored prose to a
-    world-readable build artifact, `frontend/.../useDemoCapture.ts`) or a
+    showed could publish page excerpts and model-authored prose if this legacy
+    export were copied into a public frontend build) or a
     per-checkpoint-kind allow-list keyed to the originating flag's `check` --
     real work, deferred (DESIGN §20 v3.58). Any recorded checkpoint events
     still replay, just as ordinary timeline beats: `capture.ts` treats
@@ -214,9 +214,10 @@ async def _listing_payload(conn: asyncpg.Connection, listing_id: UUID | None) ->
     service-role on a direct pool, where `select ps.*` on `property_sources`
     returns `cleaned_text` -- the column that is revoked from every
     authenticated member precisely so page bodies are not published, and this
-    bundle is a world-readable build artifact
-    (`frontend/.../useDemoCapture.ts` imports it at build time, not inside a
-    demo session).
+    legacy bundle was historically copied into a world-readable frontend build.
+    The supported v3.72 runtime stores sanitized captures privately and serves
+    only the current release through authenticated API routes, but this exporter
+    remains conservative because its output can still be mishandled manually.
     """
     if listing_id is None:
         raise CaptureError("The Job has no Listing; there is nothing to show at the end.")

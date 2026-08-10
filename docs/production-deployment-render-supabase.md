@@ -434,6 +434,7 @@ in Render, never committed. See [Render environment variables and secrets](https
 | `SUPABASE_URL` | `https://<project-ref>.supabase.co` | no | yes |
 | `SUPABASE_ANON_KEY` | Supabase publishable key | public but configure here | yes |
 | `SUPABASE_SECRET_KEY` | named opaque `sb_secret_...` server key | **yes** | yes |
+| `SUPABASE_JWT_SECRET` | hosted project's **current symmetric JWT signing secret** | **yes** | yes while Demo Mode is supported |
 | `MANZIL_WORKER_INPROCESS` | `true` | no | yes |
 | `API_ENVIRONMENT` | `production` | no | yes |
 | `API_CORS_ORIGINS` | `https://app.example.com` | no | yes |
@@ -458,6 +459,14 @@ Do not set any `MANZIL_MODEL_*` overrides in production. Model pins are code and
 DESIGN decisions. Do not add provider-vendor keys: OpenRouter is the sole LLM
 gateway.
 
+`SUPABASE_JWT_SECRET` is **not** the Supabase secret API key and the values are
+not interchangeable. Ordinary database, Auth-admin, and Storage operations use
+`SUPABASE_SECRET_KEY`; Demo Mode alone needs the JWT signing secret because its
+virtual principal has no Auth account and the API must mint its short-lived
+HS256 token. Keep the hosted project's symmetric key current while Demo Mode is
+supported (DESIGN §20 v3.71); promoting an asymmetric standby key makes the
+demo unavailable until the signing design changes. Never print either secret.
+
 Create the OpenRouter key specifically for production and give it a bounded
 spending limit/alert. Set `OPENROUTER_HTTP_REFERER=https://manzil.yusufsaquib.com`
 so Manzil appears as a named app in OpenRouter analytics (display name defaults
@@ -470,7 +479,8 @@ production project's settings; key pairs are project-scoped according to
 
 Create two different Google keys:
 
-- `GOOGLE_MAPS_API_KEY`: server-side key, stored only on the Render API;
+- `GOOGLE_MAPS_API_KEY`: server-side key, stored only on the Render API; used by
+  ENRICH and by explicit Demo publication;
 - `VITE_GOOGLE_MAPS_API_KEY`: browser key compiled into the frontend.
 
 Restrict the browser key by Website/HTTP referrer:
@@ -480,7 +490,9 @@ https://app.example.com/*
 ```
 
 and restrict it to Maps JavaScript API and the browser libraries the app uses.
-Restrict the server key to the server-side Maps APIs used by ENRICH. Render does
+Restrict the server key to the server-side Maps APIs used by ENRICH **plus
+Static Maps API**, which Admin → Demo Mode invokes when an operator publishes a
+release. Render does
 not promise a fixed outbound IP by default, so do not add an IP restriction
 until a stable-egress design exists. Set budgets and alerts. Google explicitly
 recommends separate keys and both application/API restrictions in its
@@ -558,10 +570,13 @@ not after the first flood.
 ### 7.0.2 One CSP note Demo Mode adds
 
 `render.yaml`'s policy is the source of truth; this is the one directive Demo
-Mode constrains. `img-src` must admit the Supabase Storage host, because the
-drawer carousel and the Floor Plan diagrams render signed URLs from the private
-`property-images` bucket. Verify it with the demo actually running — a CSP that
-breaks the carousel is otherwise discovered by a visitor rather than by us.
+Mode constrains. `img-src` must admit both the Supabase Storage host (ordinary
+signed `property-images`) and `blob:` (the frontend turns authenticated Demo map
+responses into object URLs). The `demo-assets` bucket itself is never admitted
+to the browser: it has no client read policy and the API proxies only a path in
+the current release manifest. Verify both themes with the demo actually
+running — a CSP that breaks a map or carousel is otherwise discovered by a
+visitor rather than by us.
 
 
 ### 7.1 Frontend build variables
@@ -744,6 +759,18 @@ Verify in this order:
     View. Frontend hiding is not evidence; unauthorized reads/writes must fail.
 19. Review Supabase Security Advisor, database logs, Auth logs, Storage access,
     Render logs/memory, OpenRouter spend, and Langfuse traces.
+20. While Demo Mode is still off, sign in as a Site Admin, create an ordinary
+    test Hunt that account owns, give every Hunt member an explicit per-Hunt
+    display name, keep one Listing active, archive one Listing with a completed
+    ingest, and publish it through Admin → Demo Mode. Confirm the publication
+    moves queued → building → ready, the active Listing count stays live, and
+    the replay/map counts describe the release.
+21. Enable Demo Mode and test a new visitor tab: a replay completes without new
+    `jobs`, `job_events`, or `job_stage_costs`; drawer and Hunt maps render in
+    light and dark without a browser request to `maps.googleapis.com` or direct
+    `demo-assets` Storage; then disable Demo Mode and confirm the open tab loses
+    access. Re-enable only after publishing again, so an old token is proved
+    unable to revive.
 
 Do not promote staging credentials or database contents into production.
 
@@ -763,7 +790,10 @@ Do not promote staging credentials or database contents into production.
     canonical ONNX classification, VISION output, SCORE, costs, and traces.
 11. Provision intended users through Admin → People.
 12. Remove any temporary staging/Render origins from production Auth and CORS.
-13. Unfreeze merges.
+13. Keep Demo Mode disabled until its Admin publication and disable/re-enable
+    drill in §10 passes against the production deployment. Enabling it is a
+    separate public-release decision, not an automatic consequence of deploy.
+14. Unfreeze merges.
 
 ## 12. Operations, rollback, and secret rotation
 
@@ -788,6 +818,47 @@ toggle. Roll back to the previous known-good Render deployment/artifact.
 - On shutdown, the API stops claiming and drains the in-flight Job.
 - If a process dies, use Admin → Jobs stale-lock release/requeue after verifying
   the worker is gone.
+
+### Demo Hunt publication
+
+Do not run `scripts/seed_demo_hunt.py`, set `MANZIL_DEMO_HUNT_ID`, export replay
+JSON, or commit map images as the production workflow. Those paths predate
+DESIGN v3.72 and remain only as legacy/local tooling.
+
+The supported operation is:
+
+1. As a Site Admin, create and curate a normal Hunt that **the same account
+   owns**. Configure its Rubric and collaboration content normally.
+2. Leave Listings that visitors should see immediately `active`. Archive every
+   Listing that should be offered as a replay; each needs a completed ingest
+   Job. Ensure every human Hunt member has an explicit per-Hunt display name.
+3. Open Admin → Demo Mode, select that owned Hunt, review the complete exposure
+   inventory, type its exact name, and publish. The in-process worker builds at
+   most 50 sanitized captures (1 MiB each) and map stills for at most 100 mapped
+   Properties, with three attempts. A building publication heartbeats its lease;
+   a stale lease is reclaimed and retried rather than occupying the singleton
+   publication slot forever after a process crash.
+4. Wait for **Ready**. The prior release remains public during the build and on
+   failure. A superseded result means the Hunt/config/ownership changed during
+   capture; review and publish again.
+5. Enable Demo Mode only after the browser drill. Disable is immediate, revokes
+   current generations, and deliberately retains the selected Hunt/release.
+
+Updates are **manual**. Active Listing and ordinary Hunt reads stay live, but
+archived replay membership, replay payloads, coordinates, and map stills change
+only after **Publish updates**. This gives the operator a public-content review
+point and prevents edits from silently spending Static Maps quota. Publishing
+updates while Demo Mode is off keeps it off.
+
+The selected Demo Hunt cannot be deleted until another Hunt is promoted. An
+individual Listing may still be archived or permanently deleted under its
+ordinary rules. Captures are immutable release data rather than live foreign-key
+views: restoring or deleting their source Listing does not break the currently
+published replay. Publish updates afterward to intentionally replace its
+derived replay/map state. Old versioned `demo-assets` objects are inert because no browser has a
+bucket policy and only current manifest paths are proxied, but their Storage
+growth should still be monitored and pruned by a future retention job rather
+than by ad-hoc object deletion during an active release.
 
 ### Rotation order
 
@@ -814,7 +885,10 @@ At minimum, monitor:
 - Langfuse missing traces, cost, latency, and Stage failures;
 - Google Maps budgets/quotas and unauthorized-key traffic;
 - Bright Data/ScrapingBee credits;
-- failed, retrying, checkpointed, and stale-lock Jobs in Manzil Admin.
+- failed, retrying, checkpointed, and stale-lock Jobs in Manzil Admin;
+- Demo publications stuck in queued/building, failed/superseded publications,
+  stale derived inputs, and unexpected growth of the private `demo-assets`
+  bucket.
 
 `/v1/health` remains dependency-free liveness. `/v1/ready` is the operational
 probe: it performs a two-second `select 1`, checks the pinned model digest
@@ -834,6 +908,7 @@ because a legitimate long Stage may exceed the coarse process heartbeat.
 | `DATABASE_URL` | no | **secret** | never | source | no |
 | Supabase publishable key | no | yes | yes, public | source | no |
 | Supabase secret API key | no | **secret** | never | source | no |
+| Supabase symmetric JWT signing secret | no | **secret; Demo token minting only** | never | source | no |
 | OpenRouter key | no | **secret** | never | no | OpenRouter source |
 | Langfuse public/secret pair | no | **secret** | never | no | Langfuse source |
 | Google server key | no | **secret** | never | no | Google source |

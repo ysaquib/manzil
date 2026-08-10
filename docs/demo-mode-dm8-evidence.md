@@ -1,9 +1,9 @@
 # DM-8 adversarial pass — evidence
 
-Run: 2026-08-07T21:50:48.400292-04:00
-Target: `http://127.0.0.1:54321`
-API plane: `http://127.0.0.1:8399`
-Demo principal: `a46ad4ec-1cf9-47f2-9b7b-acbbc6d97d6d` · Demo Hunt: `78036c8c-48da-4c85-8362-1136d3b61ba1`
+Run: 2026-08-10T01:30:38.289281-04:00
+Target: `https://glpbxuslcrnnegbdnwml.supabase.co`
+API plane: `https://api.manzil.yusufsaquib.com`
+Demo principal: `ac8d9199-be47-4d23-b0a3-9b9ce528b316` · Demo Hunt: `b10950c6-e4c8-4c20-a3f2-9011a8605a86`
 
 Produced by `scripts/dm8_adversarial.py`, which drives PostgREST, Storage,
 GoTrue, Realtime and FastAPI over HTTP with a token minted exactly as a
@@ -21,12 +21,12 @@ reporting PASS for a token that had already gone dark for an unrelated reason.
 | Plane | Check | Result | Detail |
 |---|---|---|---|
 | Self-test | precondition: the token reads the Demo Hunt before the security checks run | ✅ | GET /properties?id=eq.<in-scope> -> 200, 1 rows |
-| Self-test | a validly-signed token at a stale generation reads nothing | ✅ | 0 Properties visible at generation 322 while the database is at 323 |
+| Self-test | a validly-signed token at a stale generation reads nothing | ✅ | 0 Properties visible at generation 29 while the database is at 30 |
 | PostgREST | precondition: the token reads the Demo Hunt before reading global facts | ✅ | GET /properties?id=eq.<in-scope> -> 200, 1 rows |
 | PostgREST | only Demo Hunt Properties are visible | ✅ | 1 Properties visible; in-scope present, out-of-scope absent |
 | PostgREST | asking for an out-of-scope Property by id returns nothing | ✅ | 200 [] |
 | PostgREST | cleaned_text is not selectable | ✅ | 403 — column grant revoked for authenticated |
-| PostgREST | only the Demo Hunt is visible | ✅ | visible hunts: ['78036c8c-48da-4c85-8362-1136d3b61ba1'] |
+| PostgREST | only the Demo Hunt is visible | ✅ | visible hunts: ['b10950c6-e4c8-4c20-a3f2-9011a8605a86'] |
 | PostgREST | precondition: the token reads the Demo Hunt before attempting writes | ✅ | GET /properties?id=eq.<in-scope> -> 200, 1 rows |
 | PostgREST | INSERT into comments is refused | ✅ | 403 (42501 insufficient_privilege) |
 | PostgREST | INSERT into hunt_listings is refused | ✅ | 403 (42501 insufficient_privilege) |
@@ -39,11 +39,11 @@ reporting PASS for a token that had already gone dark for an unrelated reason.
 | PostgREST | answer_job_checkpoint refuses a demo subject at entry | ✅ | 403 42501 (assert_not_demo, at entry) |
 | PostgREST | set_listing_source_policy refuses a demo subject at entry | ✅ | 403 42501 (assert_not_demo, at entry) |
 | PostgREST | correct_auto_resolved_checkpoint refuses a demo subject at entry | ✅ | 403 42501 (assert_not_demo, at entry) |
-| PostgREST | no Job, Job Event or cost row was created | ✅ | jobs 6→6, events 54→54, costs 42→42 |
+| PostgREST | no Job, Job Event or cost row was created | ✅ | jobs 2→2, events 1→1, costs 0→0 |
 | Storage | precondition: the token reads the Demo Hunt before reaching for objects | ✅ | GET /properties?id=eq.<in-scope> -> 200, 1 rows |
 | Storage | listing the bucket does not reveal out-of-scope objects | ✅ | 200, 1 entries; no out-of-scope Property id present |
-| Storage | signing an in-scope object succeeds | ✅ | 200 for properties/abf3ba1f-9f14-4a52-a849-43107b00b929/dm8efc35403.webp |
-| Storage | signing an out-of-scope object is refused | ✅ | 400 for properties/5db13f80-6873-4549-b066-c7c8f8421a6c/dm8293e4b83.webp |
+| Storage | signing an in-scope object succeeds | ✅ | 200 for properties/2c50abbf-25dd-4c45-aaff-e64642d2abaa/dm8e12a616f.webp |
+| Storage | signing an out-of-scope object is refused | ✅ | 400 for properties/06b34c7d-766b-43e2-891c-0f4fca3eeb5f/dm8aab1ba02.webp |
 | GoTrue | precondition: the token reads the Demo Hunt before probing the account endpoints | ✅ | GET /properties?id=eq.<in-scope> -> 200, 1 rows |
 | GoTrue | GET /user is refused | ✅ | 403 |
 | GoTrue | PUT /user (password) is refused | ✅ | 403 |
@@ -57,11 +57,11 @@ reporting PASS for a token that had already gone dark for an unrelated reason.
 | Realtime | after a generation rotation, a pre-rotation token receives nothing | ✅ | subscribed=True; the INSERT was NOT delivered; demo enabled and the marker intact, so the stale generation alone darkens it |
 | FastAPI | GET /v1/demo/config reports the demo as available | ✅ | 200 {"enabled":true} (cached briefly; the cache gates the button, never access) |
 | FastAPI | POST /v1/demo/session mints a token over real HTTP | ✅ | 200 |
-| FastAPI | the issued token carries the demo claim and a generation | ✅ | gen=325, ttl=1800s |
+| FastAPI | the issued token carries the demo claim and a generation | ✅ | gen=32, ttl=1800s |
 | FastAPI | the issued TTL is within the bounded range | ✅ | 1800s (bound: 60..1800) |
 | FastAPI | precondition: the token reads the Demo Hunt before an unsafe route is called | ✅ | GET /properties?id=eq.<in-scope> -> 200, 1 rows |
 | FastAPI | an unsafe route answers 403 demo_read_only | ✅ | 403 {"detail":"Demo mode is read-only. Nothing you change here is saved.","code":"de |
-| Issuance | 25 concurrent callers cannot exceed a global ceiling of 5 | ✅ | 5 issued of 25 concurrent attempts (without the advisory lock this over-issues under READ COMMITTED) |
+| Issuance | 25 concurrent callers cannot exceed a global ceiling of 5 | ✅ | 4 issued of 4 concurrent attempts (without the advisory lock this over-issues under READ COMMITTED) |
 | Issuance | sixty requests on one client key add at most two counter rows | ✅ | 1 new counter rows after 60 requests on a single key (the old per-request log added one row each) |
 | Kill switch | precondition: the token reads the Demo Hunt before the marker row is deleted | ✅ | GET /properties?id=eq.<in-scope> -> 200, 1 rows |
 | Kill switch | deleting the marker row darkens a live token | ✅ | 0 Properties visible with no demo_accounts row (before the C1 fix: every Property in the database) |

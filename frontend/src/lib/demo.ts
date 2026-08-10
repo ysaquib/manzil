@@ -115,7 +115,7 @@ export function enterDemo(token: string, huntId: string | null): void {
   if (!store) return;
   store.setItem(TOKEN_KEY, token);
   if (huntId) store.setItem(HUNT_KEY, huntId);
-  window.location.assign(huntId ? `/hunts/${huntId}` : "/");
+  window.location.assign(huntId ? `/h/${huntId}` : "/");
 }
 
 /** Forget the session without navigating. */

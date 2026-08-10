@@ -20,6 +20,19 @@ import { useAdminIdentity } from "../admin/api";
 import { ApiError } from "../../lib/apiClient";
 import { useCreateHunt, useHunts } from "./api";
 
+const huntCreatedDate = (createdAt: string) => {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).formatToParts(new Date(createdAt));
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((candidate) => candidate.type === type)?.value ?? "";
+  return `${part("weekday")}, ${part("day")} ${part("month")}, ${part("year")}`;
+};
+
 export function HuntSwitcherPage() {
   const { data: hunts, isLoading, error } = useHunts();
   const admin = useAdminIdentity();
@@ -89,7 +102,7 @@ export function HuntSwitcherPage() {
               component={Link}
               to={`/h/${hunt.id}`}
               label={hunt.name}
-              description={`rubric v${hunt.rubric_version}`}
+              description={`Created ${huntCreatedDate(hunt.created_at)}`}
               p="sm"
               style={{
                 border: "1px solid var(--mantine-color-default-border)",

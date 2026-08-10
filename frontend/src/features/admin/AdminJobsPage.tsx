@@ -20,6 +20,7 @@ import {
 import { IconAlertTriangle, IconLockOpen } from "@tabler/icons-react";
 import { useState } from "react";
 
+import { TablePagination, usePagedRows } from "../../components/TablePagination";
 import { useAdminJobs, useJobAction, useReleaseLocks, type JobRow } from "./api";
 
 const STATES = ["failed", "running", "queued", "waiting_user", "done", "cancelled"];
@@ -88,12 +89,13 @@ export function AdminJobsPage() {
   const releaseLocks = useReleaseLocks();
 
   const staleCount = (jobs.data ?? []).filter((job) => job.stale).length;
+  const paged = usePagedRows(jobs.data ?? [], "admin-jobs");
 
   return (
     <Stack gap="md">
-      <Group justify="space-between" align="center">
+      <Group justify="space-between" align="center" wrap="wrap" gap="xs">
         <Title order={2}>Jobs</Title>
-        <Group gap="xs">
+        <Group gap="xs" wrap="wrap">
           <Switch
             size="xs"
             label="Stale locks only"
@@ -160,6 +162,7 @@ export function AdminJobsPage() {
           </Text>
         )}
         {jobs.data && jobs.data.length > 0 && (
+          <>
           <Table.ScrollContainer minWidth={760}>
             <Table highlightOnHover verticalSpacing="xs">
               <Table.Thead>
@@ -175,7 +178,7 @@ export function AdminJobsPage() {
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
-                {jobs.data.map((job) => (
+                {paged.items.map((job) => (
                   <Table.Tr key={job.id}>
                     <Table.Td>
                       <Text size="xs" ff="monospace">
@@ -229,6 +232,8 @@ export function AdminJobsPage() {
               </Table.Tbody>
             </Table>
           </Table.ScrollContainer>
+          <TablePagination state={paged} noun="Jobs" />
+          </>
         )}
       </Card>
     </Stack>

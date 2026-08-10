@@ -62,6 +62,22 @@ describe("demo session state", () => {
     expect(demoToken()).toBe(window.sessionStorage.getItem(TOKEN_KEY));
   });
 
+  it("enters the Demo Hunt through the real Hunt route", async () => {
+    const assign = vi.fn();
+    Object.defineProperty(window, "location", {
+      value: { assign, reload: vi.fn() },
+      writable: true,
+    });
+    const token = fakeToken("abc");
+    const { enterDemo } = await import("../src/lib/demo");
+
+    enterDemo(token, "hunt-1");
+
+    expect(window.sessionStorage.getItem(TOKEN_KEY)).toBe(token);
+    expect(window.sessionStorage.getItem(HUNT_KEY)).toBe("hunt-1");
+    expect(assign).toHaveBeenCalledWith("/h/hunt-1");
+  });
+
   it("clears both keys when leaving", async () => {
     window.sessionStorage.setItem(TOKEN_KEY, fakeToken("abc"));
     window.sessionStorage.setItem(HUNT_KEY, "hunt-1");

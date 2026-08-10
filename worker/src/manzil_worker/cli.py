@@ -218,25 +218,19 @@ def export_demo_capture_cmd(
         help="Where to write the bundle (capture.json, capture-2.json, ...)",
     ),
 ) -> None:
-    """Export a Replay Capture from a real ingest (DM-9, DESIGN §3).
+    """Export a legacy/local Replay Capture artifact from a real ingest.
 
-    The demo never runs the pipeline: a Demo Account's submission is disclosed
-    and then served by this recording, played back in the browser. Nothing is
-    fetched, no Job is enqueued, and no row is written -- which is why the
-    bundle has to come from a run that really happened.
+    DESIGN v3.72 superseded committed capture files: Admin → Demo Mode now calls
+    the same sanitizer directly and stores its protected result in a durable
+    release. This command remains useful for inspecting/snapshot-testing that
+    sanitizer, but writing `capture*.json` no longer changes the running demo.
 
-    A demo ships a *slate* of recordings, played one per submission until the
-    visitor exhausts them. Export each from its own finished Job into
-    `capture.json`, `capture-2.json`, `capture-3.json` and so on -- the frontend
-    globs `capture*.json` and plays them in sorted filename order -- then re-run
-    `scripts/seed_demo_hunt.py` so every captured Listing is staged as
-    `archived` and appears only when "submitted".
+    The production publisher takes each archived Listing's latest completed
+    ingest, so the recording still has to come from a run that really happened.
 
     Any Job works, checkpoint or not: rendering a checkpoint prompt was cut from
-    scope (DESIGN §20 v3.58) because it needed either publishing page excerpts
-    into `capture.json` -- a world-readable build artifact, not something the
-    demo session gates -- or a per-checkpoint-kind allow-list. A recorded
-    checkpoint still replays, as an ordinary timeline beat.
+    scope (DESIGN §20 v3.58) because it needs a per-checkpoint-kind allow-list.
+    A recorded checkpoint still replays as an ordinary timeline beat.
 
     Service-role: connects via DATABASE_URL below the RLS boundary.
     """

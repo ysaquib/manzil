@@ -24,6 +24,7 @@ import { useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { PageHeader } from "../../components/PageHeader";
+import { TablePagination, usePagedRows } from "../../components/TablePagination";
 import { useAnswerCheckpoint, useJobs } from "../jobs/api";
 import { useVisitUnitGroupScores, visitScoreKey } from "../visits/api";
 import { jobsByListing, rowPipelineState, type RowPipeline } from "./rowState";
@@ -149,6 +150,9 @@ export function OverviewPage() {
   const allRows = buildRows(listings ?? [], unitGroupStates);
   const filterResult = analyzeOverviewFilters(allRows, filters);
   const rows = sortRows(filterResult.rows, sort);
+  // Paged *after* sorting and filtering, so page 1 is the top of the hunt by
+  // whatever the viewer sorted on rather than an arbitrary window.
+  const paged = usePagedRows(rows, "overview");
   const staleClassesByListing = useMemo(
     () => statusesByListing(
       refreshStatuses,
@@ -197,8 +201,11 @@ export function OverviewPage() {
       else next.add(key);
       return next;
     });
+  // Select-all is the header checkbox above a page of rows, so it means "this
+  // page" — not a silent selection of 4,000 rows nobody has looked at. The bulk
+  // bar still counts selections made on other pages.
   const toggleAll = () => {
-    const keys = rows.map(rowKey);
+    const keys = paged.items.map(rowKey);
     setSelected((prev) =>
       keys.every((key) => prev.has(key)) ? new Set() : new Set(keys),
     );
@@ -293,11 +300,10 @@ export function OverviewPage() {
         </Box>
         <Paper withBorder p={3} radius="md">
           <Group gap={2} wrap="nowrap">
-            {/* DM-9: the Demo Hunt's staged Listing sits `archived` until
-                "submitted" (`scripts/seed_demo_hunt.py`), so opening this view
-                early would spoil it. Hiding the toggle is UX, not a security
-                boundary -- the row is genuinely there and RLS scopes it the
-                same as any other Listing. */}
+            {/* DM-9: archived Demo-Hunt Listings are the published replay slate,
+                so opening this view would spoil what each submission reveals.
+                Hiding the toggle is UX, not a security boundary -- the rows are
+                genuinely there and RLS scopes them like every other Listing. */}
             {!isDemo() && (
               <SegmentedControl
                 size="xs"
@@ -409,7 +415,7 @@ export function OverviewPage() {
         (isCompact ? (
           <OverviewRowList
             huntId={huntId}
-            rows={rows}
+            rows={paged.items}
             pipeline={pipeline}
             staleClassesByListing={staleClassesByListing}
             autoResolvedListingIds={autoResolvedListingIds}
@@ -419,7 +425,7 @@ export function OverviewPage() {
         ) : (
           <OverviewTable
             huntId={huntId}
-            rows={rows}
+            rows={paged.items}
             sort={sort}
             density={density}
             columns={columns}
@@ -435,6 +441,11 @@ export function OverviewPage() {
             visitScores={visitScoreIndex}
           />
         ))}
+      {view === "active" && rows.length > 0 && (
+        <Paper withBorder radius="md">
+          <TablePagination state={paged} noun="unit groups" />
+        </Paper>
+      )}
 
       <ListingDetailDrawer
         huntId={huntId}

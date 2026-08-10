@@ -17,6 +17,7 @@
 // refusing its writes. Anyone can reset this from devtools and gain nothing.
 
 let used = 0;
+let releaseId: string | null = null;
 let listeners = new Set<() => void>();
 
 /** Runs consumed so far this page load. */
@@ -57,9 +58,18 @@ export function claimDemoRun(total: number): number | null {
   return index;
 }
 
+/** A promoted release is a new slate; never combine its ordinals with an old cursor. */
+export function syncDemoSlateRelease(nextReleaseId: string | null): void {
+  if (releaseId === nextReleaseId) return;
+  releaseId = nextReleaseId;
+  used = 0;
+  emit();
+}
+
 /** Test seam: forget the cursor and every subscriber between cases. */
 export function __resetDemoSlateForTests(): void {
   used = 0;
+  releaseId = null;
   snapshot = { used: 0 };
   listeners = new Set();
 }

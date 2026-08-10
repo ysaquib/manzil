@@ -36,6 +36,7 @@ class UserContext(BaseModel):
     email: str | None = None
     access_token: str
     is_demo: bool = False
+    demo_generation: int | None = None
 
 
 class NotAuthenticated(ManzilAPIError):
@@ -61,7 +62,7 @@ def demo_issuer(settings: Settings) -> str:
     return f"{settings.supabase_url.rstrip('/')}/auth/v1"
 
 
-def _decode_demo_token(settings: Settings, token: str) -> str | None:
+def _decode_demo_token(settings: Settings, token: str) -> tuple[str, int] | None:
     """Return the demo principal's id if this is one of our demo tokens.
 
     Demo tokens are minted by `POST /v1/demo/session` for a subject that has no
@@ -110,7 +111,7 @@ def _decode_demo_token(settings: Settings, token: str) -> str | None:
         subject = UUID(str(claims.get("sub")))
     except (TypeError, ValueError) as exc:
         raise NotAuthenticated("Invalid or expired demo token") from exc
-    return str(subject)
+    return str(subject), int(claims[DEMO_GEN_CLAIM])
 
 
 async def get_current_user(
@@ -129,9 +130,16 @@ async def get_current_user(
 
     token = creds.credentials
 
-    demo_subject = _decode_demo_token(settings, token)
-    if demo_subject is not None:
-        return UserContext(id=demo_subject, email=None, access_token=token, is_demo=True)
+    demo_identity = _decode_demo_token(settings, token)
+    if demo_identity is not None:
+        demo_subject, generation = demo_identity
+        return UserContext(
+            id=demo_subject,
+            email=None,
+            access_token=token,
+            is_demo=True,
+            demo_generation=generation,
+        )
 
     client = create_anon_client(settings)
     try:
@@ -167,10 +175,10 @@ async def require_not_demo(
     if request.method in _SAFE_METHODS or creds is None:
         return
     try:
-        subject = _decode_demo_token(settings, creds.credentials)
+        identity = _decode_demo_token(settings, creds.credentials)
     except NotAuthenticated:
         return  # a bad token is get_current_user's business, not ours
-    if subject is not None:
+    if identity is not None:
         raise DemoReadOnly("Demo mode is read-only. Nothing you change here is saved.")
 
 

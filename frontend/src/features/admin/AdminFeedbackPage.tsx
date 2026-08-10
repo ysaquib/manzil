@@ -21,6 +21,7 @@ import {
 import { IconChevronDown, IconInbox } from "@tabler/icons-react";
 import { useState } from "react";
 
+import { TablePagination, usePagedRows } from "../../components/TablePagination";
 import {
   FEEDBACK_CATEGORY_LABELS,
   TRIAGE_STATES,
@@ -115,6 +116,7 @@ export function AdminFeedbackPage() {
   const [triage, setTriage] = useState<TriageState | null>("new");
   const reports = useAdminFeedback(triage);
   const counts = useFeedbackCounts();
+  const paged = usePagedRows(reports.data ?? [], "admin-feedback");
 
   return (
     <Stack gap="md">
@@ -160,10 +162,11 @@ export function AdminFeedbackPage() {
       )}
 
       <Stack gap="xs">
-        {reports.data?.map((report) => (
+        {paged.items.map((report) => (
           <ReportCard key={report.id} report={report} />
         ))}
       </Stack>
+      <TablePagination state={paged} noun="reports" />
     </Stack>
   );
 }

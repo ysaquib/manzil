@@ -295,9 +295,41 @@ async def test_demo_principal_cannot_read_page_text_through_jobs(db_pool, bodies
                 "insert into demo_accounts (user_id, note) values ($1, 'projection test')",
                 UUID(demo_subject),
             )
+            # DESIGN v3.72 makes a ready release and Site-Admin ownership part
+            # of demo identity. Without both, the token is correctly dark and
+            # this test's positive control would be an empty read.
             await conn.execute(
-                "update site_settings set demo_enabled = true, demo_hunt_id = $1",
+                "insert into site_admins (user_id) values ($1) on conflict do nothing",
+                bodies_hunt["owner"].user_id,
+            )
+            await conn.execute(
+                """
+                update hunt_members
+                   set display_name = coalesce(display_name, 'Projection collaborator')
+                 where hunt_id = $1
+                """,
                 bodies_hunt["hunt_id"],
+            )
+            generation = await conn.fetchval("select demo_generation from site_settings")
+            release_id = await conn.fetchval(
+                """
+                insert into private.demo_publications
+                    (hunt_id, requested_by, state, expected_generation,
+                     source_fingerprint, published_at, finished_at)
+                values ($1, $2, 'ready', $3, 'payload-projection-test', now(), now())
+                returning id
+                """,
+                bodies_hunt["hunt_id"],
+                bodies_hunt["owner"].user_id,
+                generation,
+            )
+            await conn.execute(
+                """
+                update site_settings
+                   set demo_enabled = true, demo_hunt_id = $1, demo_release_id = $2
+                """,
+                bodies_hunt["hunt_id"],
+                release_id,
             )
             everything = await _read_everything_as(
                 conn, demo_subject, "jobs", where=f"hunt_id = '{bodies_hunt['hunt_id']}'"

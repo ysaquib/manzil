@@ -81,7 +81,7 @@ from dotenv import load_dotenv
 # rather than the security result. Env is read in Env.load(), so this is early
 # enough. Note the consequence: if .env carries the hosted values, this runs
 # against the hosted project -- which is the DM-8 step, but check the banner.
-load_dotenv()
+load_dotenv(".env.prod")
 
 DEMO_CLAIM = "manzil_demo"
 DEMO_GEN_CLAIM = "manzil_demo_gen"

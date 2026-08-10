@@ -22,6 +22,7 @@ from httpx import ASGITransport, AsyncClient
 from local_supabase import LOCAL_JWT_SECRET, LOCAL_SUPABASE_URL
 from manzil_api.admin.dependencies import AdminAudit
 from manzil_api.main import create_app
+from manzil_worker.ops.demo_publication import build_demo_snapshot
 
 pytestmark = pytest.mark.asyncio
 
@@ -273,6 +274,10 @@ async def _enable_demo_in_transaction(conn, seeded_users) -> None:
         "insert into hunts (name, owner_id) values ('Issuance test', $1) returning id",
         primordial,
     )
+    await conn.execute(
+        "update hunt_members set display_name = 'Issuance owner' where hunt_id = $1",
+        hunt,
+    )
     await conn.execute("delete from demo_accounts")
     # A UUID with no auth.users row: the virtual principal the preflight insists
     # on (DESIGN §20 v3.55).
@@ -280,7 +285,27 @@ async def _enable_demo_in_transaction(conn, seeded_users) -> None:
         "insert into demo_accounts (user_id, note) values ($1, 'issuance test')",
         uuid.uuid4(),
     )
-    await conn.execute("update site_settings set demo_enabled = true, demo_hunt_id = $1", hunt)
+    generation = await conn.fetchval("select demo_generation from site_settings")
+    release = await conn.fetchval(
+        """
+        insert into private.demo_publications
+            (hunt_id, requested_by, state, expected_generation, source_fingerprint,
+             published_at, finished_at)
+        values ($1, $2, 'ready', $3, 'issuance-test', now(), now())
+        returning id
+        """,
+        hunt,
+        primordial,
+        generation,
+    )
+    await conn.execute(
+        """
+        update site_settings
+           set demo_enabled = true, demo_hunt_id = $1, demo_release_id = $2
+        """,
+        hunt,
+        release,
+    )
 
 
 async def test_issuance_stops_at_the_per_key_ceiling(db_pool, seeded_users) -> None:
@@ -550,7 +575,9 @@ async def demo_toggle_admin(db_pool, seeded_users):
     app.state.db_pool = db_pool
     identity = seeded_users["outsider"]
 
-    before = await db_pool.fetchrow("select demo_enabled, demo_hunt_id from site_settings")
+    before = await db_pool.fetchrow(
+        "select demo_enabled, demo_hunt_id, demo_release_id from site_settings"
+    )
     markers = [
         dict(row)
         for row in await db_pool.fetch("select user_id, created_by, note from demo_accounts")
@@ -561,20 +588,47 @@ async def demo_toggle_admin(db_pool, seeded_users):
     if primordial is None:
         pytest.skip("no primordial Site Admin; bootstrap the local admin first (AGENTS.md)")
 
-    hunt = await db_pool.fetchval(
-        "insert into hunts (name, owner_id) values ('Demo toggle test', $1) returning id",
-        primordial,
-    )
     await db_pool.execute(
         "insert into site_admins (user_id) values ($1) on conflict do nothing",
         identity.user_id,
     )
+    hunt = await db_pool.fetchval(
+        "insert into hunts (name, owner_id) values ('Demo toggle test', $1) returning id",
+        identity.user_id,
+    )
+    await db_pool.execute(
+        "update hunt_members set display_name = 'Demo toggle owner' where hunt_id = $1",
+        hunt,
+    )
+    async with db_pool.acquire() as conn:
+        snapshot = await build_demo_snapshot(conn, hunt)
     await db_pool.execute("delete from demo_accounts")
     await db_pool.execute(
         "insert into demo_accounts (user_id, note) values ($1, 'toggle route test')",
         uuid.uuid4(),
     )
-    await db_pool.execute("update site_settings set demo_enabled = false, demo_hunt_id = $1", hunt)
+    generation = await db_pool.fetchval("select demo_generation from site_settings")
+    release = await db_pool.fetchval(
+        """
+        insert into private.demo_publications
+            (hunt_id, requested_by, state, expected_generation, source_fingerprint,
+             published_at, finished_at)
+        values ($1, $2, 'ready', $3, $4, now(), now())
+        returning id
+        """,
+        hunt,
+        identity.user_id,
+        generation,
+        snapshot.fingerprint,
+    )
+    await db_pool.execute(
+        """
+        update site_settings
+           set demo_enabled = false, demo_hunt_id = $1, demo_release_id = $2
+        """,
+        hunt,
+        release,
+    )
     try:
         async with AsyncClient(
             transport=ASGITransport(app=app),
@@ -584,9 +638,13 @@ async def demo_toggle_admin(db_pool, seeded_users):
             yield client
     finally:
         await db_pool.execute(
-            "update site_settings set demo_enabled = $1, demo_hunt_id = $2",
+            """
+            update site_settings
+               set demo_enabled = $1, demo_hunt_id = $2, demo_release_id = $3
+            """,
             before["demo_enabled"],
             before["demo_hunt_id"],
+            before["demo_release_id"],
         )
         await db_pool.execute("delete from demo_accounts")
         for row in markers:
@@ -596,6 +654,7 @@ async def demo_toggle_admin(db_pool, seeded_users):
                 row["created_by"],
                 row["note"],
             )
+        await db_pool.execute("delete from private.demo_publications where id = $1", release)
         await db_pool.execute("delete from hunts where id = $1", hunt)
         await db_pool.execute("delete from site_admins where user_id = $1", identity.user_id)
         # `admin_audit_log` is deliberately append-only, so nothing is removed

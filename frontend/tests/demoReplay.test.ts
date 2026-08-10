@@ -14,6 +14,7 @@ import {
   claimDemoRun,
   demoSlateSnapshot,
   subscribeToDemoSlate,
+  syncDemoSlateRelease,
 } from "../src/features/demo/replay/demoSlate";
 import {
   __resetReplayForTests,
@@ -492,6 +493,16 @@ describe("the demo slate", () => {
     expect(demoSlateSnapshot()).toBe(first);
     claimDemoRun(2);
     expect(demoSlateSnapshot()).not.toBe(first);
+  });
+
+  it("resets the cursor when an atomic Demo release is promoted", () => {
+    syncDemoSlateRelease("release-a");
+    expect(claimDemoRun(3)).toBe(0);
+    expect(demoSlateSnapshot().used).toBe(1);
+
+    syncDemoSlateRelease("release-b");
+    expect(demoSlateSnapshot().used).toBe(0);
+    expect(claimDemoRun(3)).toBe(0);
   });
 
   it("notifies subscribers when a run is claimed", () => {
