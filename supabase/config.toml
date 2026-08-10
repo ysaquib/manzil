@@ -286,6 +286,45 @@ content_path = "./supabase/templates/email_change.html"
 subject = "Your Manzil verification code"
 content_path = "./supabase/templates/reauthentication.html"
 
+# Security notification emails — sent after an account-affecting action already
+# happened (no link to confirm, just an alert). Disabled by default upstream;
+# enabled here so users actually get them. Same base.html shell, "notification"
+# pattern — see that file's header comment.
+[auth.email.notification.password_changed]
+enabled = true
+subject = "Your password was changed"
+content_path = "./supabase/templates/password_changed.html"
+
+[auth.email.notification.email_changed]
+enabled = true
+subject = "Your email address was changed"
+content_path = "./supabase/templates/email_changed.html"
+
+[auth.email.notification.phone_changed]
+enabled = true
+subject = "Your phone number was changed"
+content_path = "./supabase/templates/phone_changed.html"
+
+[auth.email.notification.mfa_factor_enrolled]
+enabled = true
+subject = "A new verification method was added to your account"
+content_path = "./supabase/templates/mfa_factor_enrolled.html"
+
+[auth.email.notification.mfa_factor_unenrolled]
+enabled = true
+subject = "A verification method was removed from your account"
+content_path = "./supabase/templates/mfa_factor_unenrolled.html"
+
+[auth.email.notification.identity_linked]
+enabled = true
+subject = "A sign-in method was linked to your account"
+content_path = "./supabase/templates/identity_linked.html"
+
+[auth.email.notification.identity_unlinked]
+enabled = true
+subject = "A sign-in method was removed from your account"
+content_path = "./supabase/templates/identity_unlinked.html"
+
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]
 # enabled = true
