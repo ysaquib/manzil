@@ -1,22 +1,14 @@
-import {
-  Alert,
-  Button,
-  Group,
-  List,
-  Loader,
-  Modal,
-  Stack,
-  Text,
-  TextInput,
-} from "@mantine/core";
+// Permanently deleting a Listing — the Hunt-local half of a Property (§3).
+//
+// The confirmation itself is the shared `ConfirmDeleteModal`; what is local
+// here is the impact query, which counts what actually dies before anyone is
+// asked to type anything, and the active-Job block.
+import { Alert, Group, List, Loader, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { useEffect, useState } from "react";
 
+import { ConfirmDeleteModal } from "../../components/ConfirmDeleteModal";
 import { ApiError } from "../../lib/apiClient";
-import {
-  useListingDeletionImpact,
-  usePermanentDeleteListing,
-} from "./api";
+import { useListingDeletionImpact, usePermanentDeleteListing } from "./api";
 
 export interface PermanentDeleteTarget {
   id: string;
@@ -34,26 +26,24 @@ export function PermanentDeleteListingModal({
   onClose: () => void;
   onDeleted: (listingId: string) => void;
 }) {
-  const [confirmation, setConfirmation] = useState("");
   const impact = useListingDeletionImpact(huntId, target?.id ?? null, target !== null);
   const remove = usePermanentDeleteListing(huntId);
 
-  useEffect(() => {
-    setConfirmation("");
-  }, [target?.id]);
-
-  const close = () => {
-    if (!remove.isPending) onClose();
-  };
   const propertyName = impact.data?.property_name ?? target?.propertyName ?? "";
   const activeJobs = impact.data?.active_jobs ?? 0;
-  const confirmed = target !== null && impact.data !== undefined && confirmation === propertyName;
-  const blocked = activeJobs > 0;
+  // Not loaded is not deletable: the operator is being asked to confirm an
+  // impact nobody has counted yet.
+  const blockedReason =
+    activeJobs > 0
+      ? `${activeJobs} queued, running, or waiting Job${activeJobs === 1 ? "" : "s"} — cancel or finish them in Tasks first`
+      : impact.data === undefined
+        ? "still counting the affected records"
+        : undefined;
 
   const permanentlyDelete = () => {
-    if (!target || !confirmed || blocked) return;
+    if (!target) return;
     remove.mutate(
-      { listingId: target.id, confirmationName: confirmation },
+      { listingId: target.id, confirmationName: propertyName },
       {
         onSuccess: () => {
           notifications.show({
@@ -75,66 +65,58 @@ export function PermanentDeleteListingModal({
 
   const counts = impact.data?.counts;
   return (
-    <Modal
+    <ConfirmDeleteModal
       opened={target !== null}
-      onClose={close}
+      onClose={onClose}
+      noun={{ singular: "listing", plural: "listings" }}
       title="Permanently delete listing?"
-      closeOnClickOutside={!remove.isPending}
-      closeOnEscape={!remove.isPending}
+      confirmLabel="Permanently delete"
+      loading={remove.isPending}
+      warning="This removes the Listing and all of its Hunt-local history. The shared Property and any Listing for it in another Hunt are not deleted. A minimal deletion record is retained."
+      targets={
+        target
+          ? [{ id: target.id, label: propertyName, description: "Archived listing", blockedReason }]
+          : []
+      }
+      onConfirm={permanentlyDelete}
     >
-      <Stack>
-        <Alert color="red" title="This cannot be undone">
-          This removes the Listing and all of its Hunt-local history. The shared Property and any
-          Listing for it in another Hunt are not deleted. A minimal deletion record is retained.
-        </Alert>
-
-        {impact.isLoading && (
-          <Group gap="sm">
-            <Loader size="sm" />
-            <Text size="sm" c="dimmed">Counting affected records…</Text>
-          </Group>
-        )}
-        {impact.error && (
-          <Alert color="red" title="Couldn't load deletion impact">
-            {impact.error.message}
-          </Alert>
-        )}
-        {counts && (
-          <List size="sm" spacing="xs">
-            <List.Item>{counts.unit_groups} Unit Group{counts.unit_groups === 1 ? "" : "s"} and {counts.scores} score record{counts.scores === 1 ? "" : "s"}</List.Item>
-            <List.Item>{counts.manual_values} manual value{counts.manual_values === 1 ? "" : "s"} and {counts.collaboration_records} collaboration record{counts.collaboration_records === 1 ? "" : "s"}</List.Item>
-            <List.Item>{counts.task_records} task-history record{counts.task_records === 1 ? "" : "s"}</List.Item>
-            <List.Item>{counts.visits} Visit{counts.visits === 1 ? "" : "s"} containing {counts.visit_records} record{counts.visit_records === 1 ? "" : "s"}</List.Item>
-            <List.Item>{counts.hunt_scoped_extractions} Hunt-scoped custom Extraction{counts.hunt_scoped_extractions === 1 ? "" : "s"}</List.Item>
-          </List>
-        )}
-        {blocked && (
-          <Alert color="orange" title="Active work must finish first">
-            This Listing has {activeJobs} queued, running, or waiting Job{activeJobs === 1 ? "" : "s"}. Cancel or finish them in Tasks before deleting it.
-          </Alert>
-        )}
-
-        <TextInput
-          label={`Type “${propertyName}” to confirm`}
-          value={confirmation}
-          onChange={(event) => setConfirmation(event.currentTarget.value)}
-          autoComplete="off"
-          disabled={remove.isPending}
-          error={confirmation.length > 0 && !confirmed ? "Property name does not match" : undefined}
-        />
-
-        <Group justify="flex-end">
-          <Button variant="default" onClick={close} disabled={remove.isPending}>Cancel</Button>
-          <Button
-            color="red"
-            onClick={permanentlyDelete}
-            loading={remove.isPending}
-            disabled={!confirmed || blocked || impact.isLoading || Boolean(impact.error)}
-          >
-            Permanently delete
-          </Button>
+      {impact.isLoading && (
+        <Group gap="sm">
+          <Loader size="sm" />
+          <Text size="sm" c="dimmed">
+            Counting affected records…
+          </Text>
         </Group>
-      </Stack>
-    </Modal>
+      )}
+      {impact.error && (
+        <Alert color="red" title="Couldn't load deletion impact">
+          {impact.error.message}
+        </Alert>
+      )}
+      {counts && (
+        <List size="sm" spacing="xs">
+          <List.Item>
+            {counts.unit_groups} Unit Group{counts.unit_groups === 1 ? "" : "s"} and{" "}
+            {counts.scores} score record{counts.scores === 1 ? "" : "s"}
+          </List.Item>
+          <List.Item>
+            {counts.manual_values} manual value{counts.manual_values === 1 ? "" : "s"} and{" "}
+            {counts.collaboration_records} collaboration record
+            {counts.collaboration_records === 1 ? "" : "s"}
+          </List.Item>
+          <List.Item>
+            {counts.task_records} task-history record{counts.task_records === 1 ? "" : "s"}
+          </List.Item>
+          <List.Item>
+            {counts.visits} Visit{counts.visits === 1 ? "" : "s"} containing {counts.visit_records}{" "}
+            record{counts.visit_records === 1 ? "" : "s"}
+          </List.Item>
+          <List.Item>
+            {counts.hunt_scoped_extractions} Hunt-scoped custom Extraction
+            {counts.hunt_scoped_extractions === 1 ? "" : "s"}
+          </List.Item>
+        </List>
+      )}
+    </ConfirmDeleteModal>
   );
 }
