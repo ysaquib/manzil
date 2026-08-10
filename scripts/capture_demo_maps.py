@@ -1,4 +1,8 @@
-"""Capture the demo's pre-rendered basemap stills (DM-9, DESIGN §16).
+"""Legacy committed-map helper (DM-9; superseded by DESIGN v3.72).
+
+Admin → Demo Mode now queues versioned private map assets through the worker.
+This file remains for historical/local fixtures only and refuses a real capture
+unless `--allow-legacy` is explicit. A dry run remains read-only.
 
 A demo session must never call the Maps JS API: every load is billable, and the
 browser key would be handed to the public along with the session. `MapFrame`
@@ -21,7 +25,7 @@ Both colour schemes are captured, because `mapTheme.basemapStyle()` restyles the
 real map at runtime and a single still would be wrong in one of them.
 
 Usage:
-    uv run python scripts/capture_demo_maps.py            # capture all
+    uv run python scripts/capture_demo_maps.py --allow-legacy  # legacy capture
     uv run python scripts/capture_demo_maps.py --dry-run  # print plan, fetch nothing
 
 Reads `GOOGLE_MAPS_API_KEY` (the **server** key) from the environment or `.env`.
@@ -205,12 +209,22 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dry-run", action="store_true", help="print the plan, fetch nothing")
     parser.add_argument(
+        "--allow-legacy",
+        action="store_true",
+        help="acknowledge that Admin → Demo Mode is the supported publication path",
+    )
+    parser.add_argument(
         "--places",
         type=Path,
         default=None,
         help="JSON list of {slug,name,lat,lng}; defaults to reading stdin",
     )
     args = parser.parse_args()
+    if not args.dry_run and not args.allow_legacy:
+        parser.error(
+            "committed Demo maps were superseded by Admin → Demo Mode; "
+            "use --allow-legacy only for an intentional historical/local fixture"
+        )
 
     raw = (args.places.read_text() if args.places else sys.stdin.read()).strip()
     if not raw:
