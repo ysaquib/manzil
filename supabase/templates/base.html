@@ -1,6 +1,12 @@
 <!--
   Manzil base email shell — design source of truth for supabase/templates/*.html.
 
+  Wiring a new one into config.toml: the two blocks take DIFFERENT path
+  prefixes — `auth.email.template.*` is resolved from the repo root
+  (./supabase/templates/x) and `auth.email.notification.*` from supabase/
+  (./templates/x). Get it wrong and `supabase start` fails before Docker.
+  See the comment in config.toml and scripts/check_supabase_config.py.
+
   Supabase's `content_path` templates are compiled independently; it does not
   support shared includes across files. This file is not wired into
   config.toml and is never sent — it exists so the shared chrome (wordmark,

@@ -262,29 +262,42 @@ otp_expiry = 3600
 # Custom auth email templates — Manzil-themed HTML sharing supabase/templates/base.html's
 # design (dusky/clay palette, light + dark). See that file's header comment for how the
 # six templates below derive from it.
+#
+# ⚠ The two blocks below resolve `content_path` from DIFFERENT base directories.
+# This is a CLI asymmetry (verified against CLI 2.98.2), not a typo, and it has
+# now broken `supabase start` twice by being "fixed" in one direction:
+#
+#   auth.email.template.*      → resolved from the PROCESS WORKING DIRECTORY,
+#                                which is the repo root → "./supabase/templates/x"
+#   auth.email.notification.*  → resolved from the CONFIG DIRECTORY (supabase/)
+#                                → "./templates/x"
+#
+# Getting either wrong fails config validation before Docker is even contacted,
+# and the CLI iterates a Go map, so the entry it names in the error is random.
+# `scripts/check_supabase_config.py` (CI lint job) checks both rules.
 [auth.email.template.confirmation]
 subject = "Confirm your email for Manzil"
-content_path = "./templates/confirmation.html"
+content_path = "./supabase/templates/confirmation.html"
 
 [auth.email.template.invite]
 subject = "You've been invited to Manzil"
-content_path = "./templates/invite.html"
+content_path = "./supabase/templates/invite.html"
 
 [auth.email.template.magic_link]
 subject = "Your Manzil sign-in link"
-content_path = "./templates/magic_link.html"
+content_path = "./supabase/templates/magic_link.html"
 
 [auth.email.template.recovery]
 subject = "Reset your Manzil password"
-content_path = "./templates/recovery.html"
+content_path = "./supabase/templates/recovery.html"
 
 [auth.email.template.email_change]
 subject = "Confirm your new email for Manzil"
-content_path = "./templates/email_change.html"
+content_path = "./supabase/templates/email_change.html"
 
 [auth.email.template.reauthentication]
 subject = "Your Manzil verification code"
-content_path = "./templates/reauthentication.html"
+content_path = "./supabase/templates/reauthentication.html"
 
 # Security notification emails — sent after an account-affecting action already
 # happened (no link to confirm, just an alert). Disabled by default upstream.
