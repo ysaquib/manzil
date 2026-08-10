@@ -2873,6 +2873,7 @@ async def run_worker_loop(
     idle_backoff: float = WORKER_IDLE_BACKOFF_SECONDS,
     until_empty: bool = False,
     scheduler_tick: SchedulerTick | None = None,
+    priority_tick: Callable[[asyncpg.Pool], Awaitable[bool]] | None = None,
     tick_interval: float = SCHEDULER_TICK_SECONDS,
     on_tick: Callable[[], None] | None = None,
 ) -> None:
@@ -2882,6 +2883,12 @@ async def run_worker_loop(
     in-flight job (already claimed this tick) runs to completion before exit.
     `until_empty` returns when the queue drains instead of idling — the bounded
     drain the dev-seed and tests use.
+
+    `priority_tick` is for a small, durable operator queue whose work should be
+    claimed promptly but must not be represented as a Hunt Job. Demo release
+    publication uses it: visitors can read Hunt Jobs, while publication is an
+    administrative operation. It is opt-in so ordinary queue tests keep their
+    exact claim contract.
 
     `scheduler_tick` is the P3-9 scheduler scaffold (P3-11/P3-12 extend it):
     a duty callable invoked at most every `tick_interval` seconds, deliberately
@@ -2896,6 +2903,12 @@ async def run_worker_loop(
     while not stop.is_set():
         if on_tick is not None:
             on_tick()
+        if priority_tick is not None:
+            try:
+                if await priority_tick(pool):
+                    continue
+            except Exception as error:
+                log.warning("priority_tick_failed", error=str(error))
         if scheduler_tick is not None:
             now = asyncio.get_running_loop().time()
             if now - last_tick >= tick_interval:

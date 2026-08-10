@@ -12,6 +12,7 @@ import asyncio
 from collections.abc import Callable
 
 import asyncpg
+from manzil_worker.ops.demo_publication import process_next_demo_publication
 from manzil_worker.queue import build_dispatch, run_worker_loop, scheduler_tick
 
 from manzil_api.config import Settings
@@ -35,6 +36,7 @@ async def run_inprocess_worker(
         pool,
         stop=stop,
         dispatch=dispatch,
+        priority_tick=process_next_demo_publication,
         scheduler_tick=scheduler_tick,
         on_tick=on_tick,
     )
