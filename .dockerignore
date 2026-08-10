@@ -1,22 +1,41 @@
-.git
+# Secrets and local env — never enter the build context.
+.env
+.env.*
+.envrc
+**/.env.local
+
+# Python caches and local virtualenvs.
 .venv
 **/__pycache__
 **/.pytest_cache
 **/.ruff_cache
-.env
-.env.*
-**/.env.local
+**/.mypy_cache
+**/*.pyc
+
+# Local ONNX cache — artifact is fetched at build time inside the image.
+.manzil
+
+# Test suites and replay/eval fixtures (not copied by Dockerfile).
+api/tests
+shared/tests
+worker/tests
+worker/fixtures
+worker/evals
+
+# VISION reference originals — approved webp sheets in worker/prompts/vision_refs/ are kept.
+worker/prompts/vision_refs/originals
+
+# Unrelated monorepo areas (API image needs shared/, api/, worker/ only).
 frontend/
 supabase/
 infra/
 docs/
 graphify-out/
+scripts/
+archive/
+
+# VCS, CI, and editor metadata.
+.git
 .github/
 .cursor/
 .claude/
-frontend/node_modules
-frontend/dist
-worker/evals/reports
-worker/tests/fixtures
-worker/prompts/vision_refs/originals
-.manzil
