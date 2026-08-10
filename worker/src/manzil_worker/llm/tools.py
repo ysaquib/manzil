@@ -23,6 +23,7 @@ pseudocode invokes a tool with only ``**call.input``.
 
 from __future__ import annotations
 
+import hashlib
 import inspect
 import json
 import types
@@ -66,6 +67,10 @@ class ToolSpec:
     description: str
     parameters: dict[str, Any]  # JSON Schema (object) derived from the signature
     func: Callable[..., Awaitable[Any]]
+    # How this tool's result should be recorded in its `tool_called` job event,
+    # when the default -- truncate the result -- would disclose something. See
+    # `_summarize`. None means the default.
+    summarize: Callable[[Any], str] | None = None
 
 
 REGISTRY: dict[str, ToolSpec] = {}
@@ -121,11 +126,16 @@ def tool(
     func: Callable[..., Awaitable[Any]] | None = None,
     *,
     name: str | None = None,
+    summarize: Callable[[Any], str] | None = None,
 ) -> Any:
     """Register an async function as a tool. The JSON schema is derived from the
     signature (every parameter is LLM-facing — runtime deps come from
     ``ToolContext``); the description is the docstring's first line. The wrapped
-    function is returned unchanged, so tools remain directly callable/testable."""
+    function is returned unchanged, so tools remain directly callable/testable.
+
+    ``summarize`` overrides how the result is recorded in the tool's job event —
+    declared here, next to the tool, because whether a result is safe to store
+    is a property of the tool and not of the loop."""
 
     def wrap(f: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
         if not inspect.iscoroutinefunction(f):
@@ -136,6 +146,7 @@ def tool(
             description=doc.split("\n", 1)[0],
             parameters=_schema_from_signature(f),
             func=f,
+            summarize=summarize,
         )
         REGISTRY[spec.name] = spec
         f._tool_spec = spec  # type: ignore[attr-defined]
@@ -235,9 +246,23 @@ class AgentResult:
 TurnFn = Callable[[list[dict[str, Any]], "list[ToolSpec]"], Awaitable[TurnResponse]]
 
 
-def _summarize(result: Any) -> tuple[str, str]:
-    """(full JSON string for the model, capped summary for the job event)."""
+def _summarize(result: Any, spec: ToolSpec | None = None) -> tuple[str, str]:
+    """(full JSON string for the model, capped summary for the job event).
+
+    The two halves are not the same text for every tool, and assuming they were
+    is what put a raw page prefix in `job_events.detail`: `fetch_page` returns a
+    whole cleaned page body, the default summary stored its first 2 KB, and that
+    table is member- and demo-readable. Truncation is not redaction. A tool whose
+    result is not safe to store declares its own event summary (`@tool(
+    summarize=...)`); the default stays for tools whose results are already
+    bounded facts.
+
+    Structural residual: this is per-tool, so the next body-returning tool
+    inherits the same hazard unless its author remembers. A general fix belongs
+    with the tool registry (DESIGN §17)."""
     full = result if isinstance(result, str) else json.dumps(result, default=str)
+    if spec is not None and spec.summarize is not None:
+        return full, spec.summarize(result)[:AGENT_TOOL_RESULT_SUMMARY_CAP]
     return full, full[:AGENT_TOOL_RESULT_SUMMARY_CAP]
 
 
@@ -259,10 +284,10 @@ async def _execute_tool(stage: str, call: ToolCall, offered: dict[str, ToolSpec]
         return json.dumps({"error": f"unknown tool {call.name!r}"})
     try:
         result = await spec.func(**call.input)
-        full, summary = _summarize(result)
+        full, summary = _summarize(result, spec)
     except Exception as exc:  # a tool failure is a result, not a loop crash
         log.warning("tool_failed", stage=stage, tool=call.name, error=repr(exc))
-        full, summary = _summarize({"error": str(exc)})
+        full, summary = _summarize({"error": str(exc)}, spec)
     await _emit_tool_event(stage, call.name, call.input, summary)
     return full
 
@@ -336,8 +361,33 @@ async def run_agent_loop(
 # ── fetch_page: the shared fetching tool (§10.2, §16 SSRF posture) ────────────
 
 
-@tool
-async def fetch_page(url: str) -> str:
+def _fetch_page_event_summary(result: Any) -> str:
+    """What one `fetch_page` call gets to leave in `job_events.detail`: how much
+    text came back and which text it was, never the text itself.
+
+    A success is a ``str`` (the cleaned page) and a refusal is a ``dict``, and
+    the discrimination is on that type rather than on parsing the value. Parsing
+    would mean a cleaned page that happened to look like the refusal JSON gets
+    echoed into the event — the exact "surely not" that this whole finding is
+    made of.
+
+    The hash is the same identity `property_sources.cleaned_text_hash` records,
+    so a support question ("did the two fetches see the same page?") is still
+    answerable from the event log without the page being in it.
+    """
+    if isinstance(result, str):
+        return json.dumps(
+            {
+                "outcome": "fetched",
+                "chars": len(result),
+                "sha256": hashlib.sha256(result.encode("utf-8")).hexdigest(),
+            }
+        )
+    return json.dumps(result, default=str)
+
+
+@tool(summarize=_fetch_page_event_summary)
+async def fetch_page(url: str) -> str | dict[str, str]:
     """Fetch a public web page and return its cleaned text.
 
     Routes through the tier ladder (§10.7), so it inherits the adapter registry,
@@ -348,6 +398,11 @@ async def fetch_page(url: str) -> str:
     non-global address. So a tool loop can never be steered into fetching internal
     infrastructure, even via a public hostname that resolves private. The returned
     text is length-capped.
+
+    A refusal comes back as a ``dict`` rather than a JSON *string*: the loop
+    serialises it to exactly the same bytes for the model, and the type is what
+    lets `_fetch_page_event_summary` tell "this is a reason" from "this is a
+    page" without parsing a page body.
     """
     # Local import breaks the import cycle (validate_url → stages.base → client →
     # tools). By call time every module is loaded.
@@ -369,7 +424,7 @@ async def fetch_page(url: str) -> str:
         # The check is on URL shape only (deterministic, pre-network), so this
         # leaks no timing/reachability oracle about internal hosts.
         log.warning("fetch_page_refused", url=url, reason=str(exc))
-        return json.dumps({"error": f"refused: {exc}"})
+        return {"error": f"refused: {exc}"}
 
     try:
         ladder = await fetch_with_ladder(safe_url, ctx.registry, ctx.fetchers)
@@ -378,6 +433,6 @@ async def fetch_page(url: str) -> str:
         # redirect hop pointed at an internal address). Loop-visible tool error,
         # not a crash — same shape as the literal refusal above.
         log.warning("fetch_page_refused", url=url, reason=str(exc))
-        return json.dumps({"error": f"refused: {exc}"})
+        return {"error": f"refused: {exc}"}
 
     return ladder.cleaned.text[:FETCH_PAGE_MAX_CHARS]

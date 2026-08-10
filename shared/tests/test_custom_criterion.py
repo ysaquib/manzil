@@ -5,7 +5,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
-from manzil_shared.models import CustomCriterionDef
+from manzil_shared.models import CustomCriterionDef, RefreshClass
 from pydantic import ValidationError
 
 
@@ -39,9 +39,7 @@ def test_controlled_enum_rejects_duplicates_after_trimming() -> None:
 
 
 def test_maps_route_is_property_only_and_derives_location_refresh() -> None:
-    CustomCriterionDef.model_validate(
-        _definition(requires_tool="maps", refresh_class="location")
-    )
+    CustomCriterionDef.model_validate(_definition(requires_tool="maps", refresh_class="location"))
     with pytest.raises(ValidationError, match="Property-scoped"):
         CustomCriterionDef.model_validate(
             _definition(
@@ -54,9 +52,7 @@ def test_maps_route_is_property_only_and_derives_location_refresh() -> None:
 
 def test_deferred_routes_cannot_be_confirmed() -> None:
     with pytest.raises(ValidationError, match="deferred"):
-        CustomCriterionDef.model_validate(
-            _definition(requires_tool="vision")
-        )
+        CustomCriterionDef.model_validate(_definition(requires_tool="vision"))
 
 
 def test_maps_route_modifiers_round_trip() -> None:
@@ -70,3 +66,52 @@ def test_maps_route_modifiers_round_trip() -> None:
     assert custom.route_modifiers is not None
     assert custom.route_modifiers.avoid_highways is True
     assert custom.route_modifiers.avoid_ferries is True
+
+
+def _manual(**overrides):  # type: ignore[no-untyped-def]
+    return _definition(acquisition="manual", refresh_class="manual", **overrides)
+
+
+def test_definitions_default_to_the_extracted_acquisition() -> None:
+    custom = CustomCriterionDef.model_validate(_definition())
+    assert custom.acquisition == "extracted"
+    assert custom.is_manual is False
+
+
+def test_manual_criterion_needs_no_producer_and_no_refetch() -> None:
+    custom = CustomCriterionDef.model_validate(_manual())
+    assert custom.is_manual is True
+    assert custom.requires_tool is None
+    assert custom.refresh_class is RefreshClass.MANUAL
+
+
+def test_manual_criterion_may_be_floor_plan_scoped() -> None:
+    custom = CustomCriterionDef.model_validate(_manual(fact_scope="floor_plan"))
+    assert custom.fact_scope == "floor_plan"
+
+
+def test_manual_criterion_rejects_a_tool_route() -> None:
+    with pytest.raises(ValidationError, match="cannot require a tool"):
+        CustomCriterionDef.model_validate(_manual(requires_tool="maps"))
+
+
+def test_manual_criterion_rejects_a_producer_refresh_class() -> None:
+    with pytest.raises(ValidationError, match="must be 'manual'"):
+        CustomCriterionDef.model_validate(
+            _definition(acquisition="manual", refresh_class="listing_details")
+        )
+
+
+def test_manual_criterion_rejects_route_modifiers() -> None:
+    with pytest.raises(ValidationError, match="route modifiers"):
+        CustomCriterionDef.model_validate(_manual(route_modifiers={"avoid_tolls": True}))
+
+
+def test_manual_refresh_class_requires_the_manual_acquisition() -> None:
+    with pytest.raises(ValidationError, match="requires acquisition 'manual'"):
+        CustomCriterionDef.model_validate(_definition(refresh_class="manual"))
+
+
+def test_manual_criterion_still_requires_a_confirmed_route() -> None:
+    with pytest.raises(ValidationError, match="human-confirmed"):
+        CustomCriterionDef.model_validate(_manual(routing_confirmed=False))

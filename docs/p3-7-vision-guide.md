@@ -20,44 +20,33 @@ stores up to 30 exact-normalized-hash-distinct photos, source-balanced, with
 Source/page order and DOM context. A partial download is additive and cannot
 retire prior images. A complete refresh marks missing assets non-current.
 
-IMAGE_CLASSIFY makes one structured call with up to 30 separately labeled,
-unstored ≤384 px WebP thumbnails. Its result is cached per normalized image hash
-plus classifier model/prompt version. It asks for every requested original hash
-exactly once and no unknown hash, and it tolerates a small shortfall rather
-than throwing the batch away (DESIGN §20, 2026-07-28 v3.22): at most
-`IMAGE_CLASSIFY_ANOMALY_TOLERANCE = 2` unanswered hashes and at most two
-surplus records (unknown hashes + repeats). Anything past either bound still
-fails closed.
+IMAGE_CLASSIFY classifies up to 30 unstored ≤384 px WebP thumbnails locally
+with the pinned unsigned-int8 CLIP ONNX artifact. The canonical result is
+cached per normalized image hash plus artifact/cache-key version under
+`vision_assessment.classification`; it contains scene probabilities,
+`kitchen_score`/`kitchen_predicted`, and diagram score/verdict. It makes no LLM
+call. Missing configuration, artifact/inference failure, or a response whose
+hashes do not exactly equal the request fails the Stage through the ordinary
+Job retry policy; there is no LLM fallback.
 
-Tolerated anomalies are recorded, never smoothed over:
+The former Gemini classifier implementation, lossy-batch reconciliation, and
+bench remain in code for audit and rollback reference, but are disabled on the
+workflow path. A prior `classification_shadow` record is promoted on refresh,
+and a replaced LLM record is retained as `classification_llm_legacy`.
 
-- **Unanswered** → `vision_assessment.classification.status = "missing"`.
-- **Irreconcilable repeats** → `status = "disputed"`.
-- **Surplus unknown hashes** → dropped.
+Quality selection is deterministic and deliberately narrow: exclude
+deterministic `other` and Floor Plan kinds plus ONNX-predicted diagrams; rank
+the remaining canonical ONNX-classified photos by descending `kitchen_score`,
+with stable Source/page/hash tie-breakers; take at most three. Selection does
+not require the kitchen threshold to pass. The anchored quality VISION call is
+responsible for returning `not_visible` when none of the best available images
+shows a rateable kitchen. ONNX does not synthesize the former assessability,
+framing, irrelevant, or general-confidence fields, and the selector no longer
+clusters near-duplicates or prioritizes Floor Plan coverage. Those omissions
+are explicit Owner-accepted debt in DESIGN v3.52.
 
-Neither marker carries a `cache_key`, so the next run asks about the image
-again, and neither has an `assessment`, so no quality target can select it.
-Repeated records for one hash resolve by higher confidence; on a tie the
-sharper reading of the same picture wins (`other` loses to any real scene,
-`living` loses to a specific interior room) and everything else — kitchen vs
-exterior, or a disagreement about `diagram`/`irrelevant` — is disputed.
-Every anomaly becomes a `jobs.warnings` entry on the task card; a warning
-never halts, parks, retries, or fails the run.
-
-The Owner-selected shadow pin is `google/gemini-3-flash-preview` (DESIGN §20,
-2026-07-28). Its live 30-image smoke returned 29/30 requested hashes, and every
-other candidate also failed the strict completeness contract — which is what
-the tolerance above exists to survive. The pin does not approve live kitchen
-quality. `manzil bench-classifier` deliberately keeps the **strict** check: it
-measures model behavior for selection, not the pipeline's operating contract.
-
-Quality selection is deterministic: high-confidence assessable kitchens only;
-no irrelevant images or diagrams; one representative per dHash cluster
-(Hamming distance ≤5); exact Source-local Floor Plan evidence and distinct-plan
-coverage first; then full-room framing and stable Source/page order; maximum
-three kitchen targets. Quality caching keys the selected target/association
-digest, quality model/prompt, and reference version independently from
-classification.
+Quality caching keys the selected target/association digest, quality
+model/prompt, and reference version independently from classification.
 
 ## Source-local image associations
 
@@ -162,7 +151,7 @@ and roughly 200–300 real gallery photos. Human labels cover kitchen
 presence/assessability, flooring visibility, bathroom presence,
 irrelevant/diagram images, and near-duplicate groups.
 
-Classifier gate:
+The historical generative-classifier gate was:
 
 - ≥95% precision among selected kitchen targets;
 - ≥90% Property-level kitchen recall at three targets;
@@ -177,15 +166,17 @@ latency, and every irrelevant/non-kitchen confident rating.
 
 The 2026-07-28 sweep benchmarked Gemini 2.5 Flash Lite, Gemini 3.1 Flash Lite,
 Gemini 3 Flash, and the prescribed Sonnet fallback. None passed exact 30-image
-response completeness. Yusuf selected Gemini 3 Flash Preview anyway; preserve
-that decision and the strict fail-closed contract unless a later Decision Log
-entry changes either.
+response completeness. That evidence and the old selector labels remain useful
+historical inputs, but DESIGN v3.52 supersedes the Gemini runtime decision:
+ONNX is now the exclusive classifier. The still-owed release evidence is a
+representative-gallery review of the ONNX top-three target sets and the
+external anchored-quality benchmark.
 
 ## Verification and rollout
 
 Automated coverage must include normalization/thumbnail parity, sheet
-determinism and hashes, classifier hash validation, provider-limit chunking,
-dHash clusters, quotas, exact/generalized precedence, all three policies,
+determinism and hashes, ONNX artifact/cache/hash validation, quotas,
+exact/generalized precedence, all three policies,
 weighted-median edges, authoritative/partial refresh safety, RLS/same-Property
 guards, record/replay, and zero calls on unchanged inputs.
 
@@ -200,7 +191,7 @@ pnpm -C frontend build
 uv run ruff check .
 ```
 
-Both model selection and kitchen-quality release are recorded Owner overrides.
+The ONNX authority and kitchen-quality release are recorded Owner decisions.
 Run the external quality report when time permits and append its actual results
 to DESIGN §20; do not change the recorded benchmark status to passed unless the
 acceptance criteria are met. Run one live ingest plus an unchanged retry. The

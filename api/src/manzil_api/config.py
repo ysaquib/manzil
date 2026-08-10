@@ -23,10 +23,31 @@ class Settings(BaseSettings):
     # in-process worker loop (Phase 1 budget option, §1.5), never exposed.
     supabase_url: str = Field(alias="SUPABASE_URL")
     supabase_anon_key: str = Field(alias="SUPABASE_ANON_KEY")
-    supabase_service_role_key: str = Field(alias="SUPABASE_SERVICE_ROLE_KEY")
+    supabase_secret_key: str = Field(alias="SUPABASE_SECRET_KEY")
 
     # Direct Postgres — the in-process worker loop's asyncpg pool.
     database_url: str = Field(alias="DATABASE_URL")
+
+    # Demo Mode (DM-5, DESIGN §16). The project's JWT signing secret, used to
+    # mint a short-lived demo viewer token. Deliberately NOT a GoTrue session:
+    # a token with no session behind it cannot be used to change the shared
+    # account's password or email, enrol MFA, or sign every other visitor out.
+    # Empty disables demo-session issuance entirely, which is the safe default
+    # for any deployment that has not set it.
+    supabase_jwt_secret: str = Field(default="", alias="SUPABASE_JWT_SECRET")
+    # Bounded at both ends, and validated here rather than clamped at mint time
+    # (R2 H3): the old `max(60, ...)` had a floor and no ceiling, so a
+    # seconds-for-milliseconds typo would have minted tokens valid for weeks
+    # against a principal that cannot be signed out. 1800s is the Owner-ruled
+    # hard maximum (2026-08-06); out of range fails startup, not a request.
+    demo_session_ttl_seconds: int = Field(default=1800, ge=60, le=1800, alias="MANZIL_DEMO_TTL")
+    # Salt for the truncated client-key HMAC. Without it no per-caller ceiling
+    # is applied; the global ceiling still is.
+    demo_client_key_salt: str = Field(default="", alias="MANZIL_DEMO_KEY_SALT")
+    # Trusted reverse-proxy hops. `request.client.host` is the proxy on Render,
+    # and X-Forwarded-For is caller-controlled, so the count must be explicit
+    # rather than guessed from the header's length.
+    demo_trusted_proxy_hops: int = Field(default=0, alias="MANZIL_DEMO_PROXY_HOPS")
 
     # `local` | `staging` | `production` — gates OpenAPI docs exposure.
     environment: Environment = Field(default="local", alias="API_ENVIRONMENT")

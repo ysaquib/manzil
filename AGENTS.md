@@ -20,10 +20,69 @@ Rules:
 2. Follow the §1 reading path for the area you are touching.
 3. `DESIGN.md` is authoritative for design intent. If code or reality contradicts it, STOP and flag the conflict — never silently pick a side. (`IMPLEMENTATION.md`, once it exists, owns current mechanics and may churn freely; DESIGN.md still wins on intent.)
 
+## The working tree is shared — never revert what you did not write
+
+**More than one agent works in this checkout.** Codex sessions run here in parallel
+(`~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`, cwd is this repo), and the Owner
+edits by hand. Modified files you did not create are therefore the normal case, not
+a defect, and **the git status captured at the start of your session is a snapshot
+that goes stale immediately** — "the tree was clean when I started" is never evidence
+that a change is not someone's live work.
+
+1. **Changes you did not make, you do not touch.** No `git checkout --`, `git stash`,
+   `git restore`, `git clean`, or overwrite — however unrelated the change looks, and
+   however much tidier it would make your own diff. Diff hygiene is not a reason; it is
+   never worth someone else's work.
+2. **Report and work around.** If unexpected modifications appear, say so plainly in
+   your response, name the files, and continue your task around them. If they collide
+   with your scope, ask.
+3. **If reverting is genuinely necessary, ask first and show the diff.** State exactly
+   which files, paste the diff, and wait. Do not infer a cause and act on it — a
+   formatter, a hook, a stray command are all *hypotheses*. Verify: check
+   `.claude/settings.json` / `settings.local.json` for hooks, and the Codex rollouts
+   above for a concurrent agent. Sampling one file and generalising to sixty is how
+   this rule got written.
+4. **Recovery, when something is already lost.** Unstaged changes discarded by
+   `git checkout --` are gone from git (`git fsck` only helps if they were ever
+   staged). The real sources are the Codex rollouts, which carry full
+   `*** Update File` patch bodies and can be replayed verbatim, then editor local
+   history (`~/Library/Application Support/Cursor|Code/User/History`), then Time
+   Machine.
+
+*(2026-08-08: a repo-wide `ruff format .` from a live Codex session was mistaken for
+hook noise and reverted wholesale; 59 files were pure formatting, three were not, and
+`fetching/corpus.py` lost a real B006 mutable-default fix. Restored from the rollout.)*
+
+### Standing exemption: appending to the logs
+
+**Appending a new row to DESIGN.md's §20 Decision Log or IMPLEMENTATION.md's
+changelog table is pre-authorized. Do it; do not ask.** This holds even when the
+file already carries another agent's uncommitted work, because an append adds a
+line rather than rewriting one — rule 1 is about *someone else's* changes, and a
+new row is yours. Recording the decision is part of doing the work, not a
+separate permission-worthy act, and the logs are worth more than the small risk
+of a merge conflict on a table row.
+
+What the exemption does **not** cover, because these are edits rather than
+appends:
+
+- Editing, renumbering, reordering, or deleting rows you did not write — still
+  rule 1. If your version number collides with one already in the table (it
+  happens; two agents append the same hour), take the next free number and say
+  so in your response rather than renumbering theirs.
+- Reformatting or reflowing the file. Append in the surrounding style and leave
+  the rest alone.
+
+In-place updates to the affected DESIGN.md **body** sections — which the §20
+update protocol requires alongside the log entry for a material change — are
+likewise yours to make without asking. Pause only when the specific lines you
+would rewrite are already modified in the working tree by someone else; then
+report the collision and ask, per rule 2.
+
 ## Hard rules
 - Never implement anything listed in DESIGN.md §18 (Deferred / Backlog) unless explicitly asked.
 - Ambiguous or missing design detail → ask, don't guess. The answer gets recorded in DESIGN.md.
-- Material design changes require a §20 Decision Log entry (append to decision log table) plus in-place updates to affected sections.
+- Material design changes require a §20 Decision Log entry (append to decision log table) plus in-place updates to affected sections. Both are pre-authorized — see [Standing exemption: appending to the logs](#standing-exemption-appending-to-the-logs). Write them as part of the change; do not ask first, and do not leave the log entry as a follow-up offer.
 - No provider SDK imports outside `worker/pipeline/llm/`. Every model call goes through the client seam: `call_structured` / `call_agent` / `call_vision`.
 - `shared/` stays domain-blind (no rental-specific assumptions) and LLM-free. The scoring engine is pure and deterministic — facts in, points out, nothing else.
 - Pipeline stages persist state BEFORE advancing the cursor. Stages are idempotent and resumable.
@@ -49,6 +108,43 @@ Catalog entry (§8.2) · hunt settings (§8.2) · rubric option (§8.2) · score
 - Python (uv workspace, root lockfile): `uv sync --all-packages` (plain `uv sync` uninstalls workspace-member deps) · `uv run --package manzil-shared pytest shared/tests` (likewise `manzil-api`, `manzil-worker`) · `uv run ruff check --fix .`
 - Frontend: `pnpm -C frontend dev | test | build`
 - DB: `supabase db reset` locally; migrations live in `supabase/migrations/`.
+
+### Local Site Admin bootstrap
+
+Before testing the website through a browser, ensure the local Auth account
+`admin@manzil.local` is a Site Admin. **Immediately after every `supabase db
+reset`, do this before any other local UI work** — reset deletes the local Auth
+user and the `site_admins` grant.
+
+1. Start/check the local stack with `supabase start`, then check both the user
+   and grant (do not assume either exists):
+   ```bash
+   supabase db query --local "select u.id, u.email, exists (select 1 from public.site_admins sa where sa.user_id = u.id) as is_site_admin from auth.users u where u.email = 'admin@manzil.local';"
+   ```
+2. If the user exists, use it. If `is_site_admin` is false, add the grant in
+   step 4. Do **not** recreate the user or change its password.
+3. If the user is absent, create the confirmed local-only account with password
+   `local-dev-password`. Keep the service-role key in the shell; never print it,
+   commit it, or expose it to the frontend:
+   ```bash
+   MANZIL_LOCAL_STATUS="$(supabase status -o json)"
+   MANZIL_LOCAL_API_URL="$(printf '%s' "$MANZIL_LOCAL_STATUS" | jq -er '.API_URL')"
+   MANZIL_LOCAL_SERVICE_ROLE_KEY="$(printf '%s' "$MANZIL_LOCAL_STATUS" | jq -er '.SERVICE_ROLE_KEY')"
+   curl --fail --silent --show-error -X POST "$MANZIL_LOCAL_API_URL/auth/v1/admin/users" \
+     -H "apikey: $MANZIL_LOCAL_SERVICE_ROLE_KEY" \
+     -H "Authorization: Bearer $MANZIL_LOCAL_SERVICE_ROLE_KEY" \
+     -H 'Content-Type: application/json' \
+     --data '{"email":"admin@manzil.local","password":"local-dev-password","email_confirm":true}' >/dev/null
+   ```
+4. Ensure the account has a Site Admin grant. On a fresh reset it becomes the
+   immutable primordial admin; otherwise it is an ordinary additional admin:
+   ```bash
+   supabase db query --local "insert into public.site_admins (user_id, is_primordial, note) select u.id, not exists (select 1 from public.site_admins), 'Local development bootstrap admin' from auth.users u where u.email = 'admin@manzil.local' on conflict (user_id) do nothing;"
+   ```
+
+Sign into the local app as `admin@manzil.local` / `local-dev-password`. This is
+local-development bootstrap only; production account provisioning must use the
+audited Site Admin path (PR-1).
 
 ## Current phase
 **Phase 3 (formally entered 2026-07-18) and the Phase 0 tail are running in parallel; Phases 1 and 2 are closed.** Full task tables: IMPLEMENTATION.md §7.

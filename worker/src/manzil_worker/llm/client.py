@@ -37,7 +37,7 @@ from manzil_shared.config import (
     DISCOVER_WEB_SEARCH_REQUEST_USD,
 )
 from manzil_shared.errors import AgentBudgetExceeded
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 # The tally lives outside the seam (AD-C) so tier-3 fetching can bill to it
 # without importing LLM code. Re-exported here: `from manzil_worker.llm.client
@@ -74,6 +74,7 @@ if TYPE_CHECKING:
 
 STRUCTURED_TOOL_NAME = "emit_result"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+OPENROUTER_APP_TITLE_DEFAULT = "Manzil"
 
 
 class SeamConfigError(RuntimeError):
@@ -122,6 +123,32 @@ def run_context(ctx: RunContext) -> Iterator[None]:
 # ── provider + tracer plumbing (private) ─────────────────────────────────────
 
 
+def _openrouter_http_referer() -> str | None:
+    return os.environ.get("OPENROUTER_HTTP_REFERER") or os.environ.get("MANZIL_FRONTEND_URL")
+
+
+def _openrouter_attribution_headers() -> dict[str, str]:
+    """OpenRouter app attribution (https://openrouter.ai/docs/app-attribution)."""
+    headers: dict[str, str] = {}
+    referer = _openrouter_http_referer()
+    if referer:
+        headers["HTTP-Referer"] = referer
+    title = os.environ.get("OPENROUTER_APP_TITLE", OPENROUTER_APP_TITLE_DEFAULT)
+    if title:
+        headers["X-OpenRouter-Title"] = title
+    return headers
+
+
+def _openrouter_client() -> Any:
+    from openai import AsyncOpenAI
+
+    return AsyncOpenAI(
+        api_key=os.environ["OPENROUTER_API_KEY"],
+        base_url=OPENROUTER_BASE_URL,
+        default_headers=_openrouter_attribution_headers(),
+    )
+
+
 @dataclass(frozen=True)
 class ProviderResponse:
     """What the live call yields, normalized: the forced tool's input + usage."""
@@ -132,6 +159,18 @@ class ProviderResponse:
     cache_read_tokens: int = 0
     cache_write_tokens: int = 0
     reported_cost_usd: float | None = None  # OpenRouter usage.cost cross-check
+
+
+class StructuredValidationError(ValueError):
+    """Schema rejection that retains the forced tool's invalid structured output."""
+
+    def __init__(self, error: ValidationError, output: dict[str, Any]) -> None:
+        self.error = error
+        self.output = output
+        super().__init__(str(error))
+
+    def error_count(self) -> int:
+        return self.error.error_count()
 
 
 @dataclass(frozen=True)
@@ -216,8 +255,67 @@ def _inline_local_schema_refs(schema: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+_GEMINI_FUNCTION_SCHEMA_FIELDS = frozenset(
+    {
+        "type",
+        "format",
+        "title",
+        "description",
+        "nullable",
+        "enum",
+        "maxItems",
+        "minItems",
+        "properties",
+        "required",
+        "minProperties",
+        "maxProperties",
+        "minLength",
+        "maxLength",
+        "pattern",
+        "example",
+        "anyOf",
+        "propertyOrdering",
+        "default",
+        "items",
+        "minimum",
+        "maximum",
+    }
+)
+
+
+def _gemini_function_schema(schema: Any) -> Any:
+    """Keep provider tool schemas inside Gemini's documented OpenAPI subset.
+
+    Pydantic emits full JSON Schema, including ``uniqueItems`` and
+    ``additionalProperties``. Google AI Studio rejects unsupported function
+    declaration keywords with a generic ``INVALID_ARGUMENT`` 400. The client
+    still validates the returned arguments with the original Pydantic model, so
+    removing provider-side-only constraints does not weaken Manzil's contract.
+    """
+    if isinstance(schema, list):
+        return [_gemini_function_schema(item) for item in schema]
+    if not isinstance(schema, dict):
+        return schema
+    sanitized: dict[str, Any] = {}
+    for key, value in schema.items():
+        if key not in _GEMINI_FUNCTION_SCHEMA_FIELDS:
+            continue
+        # ``properties`` is a map of application field names to schemas, not a
+        # schema itself. Filtering its keys as keywords would erase every
+        # property before the request reaches the provider.
+        if key == "properties" and isinstance(value, dict):
+            sanitized[key] = {
+                property_name: _gemini_function_schema(property_schema)
+                for property_name, property_schema in value.items()
+            }
+        else:
+            sanitized[key] = _gemini_function_schema(value)
+    return sanitized
+
+
 def _tool_schema(schema: type[BaseModel]) -> dict[str, Any]:
-    return _inline_local_schema_refs(schema.model_json_schema())
+    """Provider-safe tool schema, with local refs expanded for Gemini."""
+    return _gemini_function_schema(_inline_local_schema_refs(schema.model_json_schema()))
 
 
 async def _live_call(plan: _CallPlan, schema: type[BaseModel]) -> ProviderResponse:
@@ -226,8 +324,6 @@ async def _live_call(plan: _CallPlan, schema: type[BaseModel]) -> ProviderRespon
 
 
 async def _live_call_openrouter(plan: _CallPlan, schema: type[BaseModel]) -> ProviderResponse:
-    from openai import AsyncOpenAI
-
     if not os.environ.get("OPENROUTER_API_KEY"):
         raise SeamConfigError("OPENROUTER_API_KEY unset — cannot make a live call")
 
@@ -247,10 +343,7 @@ async def _live_call_openrouter(plan: _CallPlan, schema: type[BaseModel]) -> Pro
         messages.append({"role": "system", "content": system_parts})
     messages.append({"role": "user", "content": plan.content})
 
-    client = AsyncOpenAI(
-        api_key=os.environ["OPENROUTER_API_KEY"],
-        base_url=OPENROUTER_BASE_URL,
-    )
+    client = _openrouter_client()
     response = await client.chat.completions.create(
         model=plan.model,
         max_tokens=max_tokens_for_stage(plan.stage),
@@ -310,8 +403,6 @@ async def _live_call_openrouter_vision(
     plan: _CallPlan, schema: type[BaseModel], images: list[VisionImage]
 ) -> ProviderResponse:
     """One real P4 call. Image bytes exist only in the provider request."""
-    from openai import AsyncOpenAI
-
     if not os.environ.get("OPENROUTER_API_KEY"):
         raise SeamConfigError("OPENROUTER_API_KEY unset — cannot make a live call")
     system_parts: list[dict[str, Any]] = []
@@ -348,7 +439,7 @@ async def _live_call_openrouter_vision(
     if system_parts:
         messages.append({"role": "system", "content": system_parts})
     messages.append({"role": "user", "content": content})
-    client = AsyncOpenAI(api_key=os.environ["OPENROUTER_API_KEY"], base_url=OPENROUTER_BASE_URL)
+    client = _openrouter_client()
     response = await client.chat.completions.create(
         model=plan.model,
         max_tokens=max_tokens_for_stage(plan.stage),
@@ -547,7 +638,10 @@ async def call_structured[T: BaseModel](stage: str, schema: type[T], content: st
             )
 
     _tally(_usage_from(model, response))
-    return schema.model_validate(response.output)
+    try:
+        return schema.model_validate(response.output)
+    except ValidationError as error:
+        raise StructuredValidationError(error, response.output) from error
 
 
 @dataclass(frozen=True)
@@ -635,8 +729,6 @@ async def _live_agent_turn_openrouter(
     specs: list[ToolSpec],
     server_search_budget: int | None = None,
 ) -> _AgentTurnRaw:
-    from openai import AsyncOpenAI
-
     if not os.environ.get("OPENROUTER_API_KEY"):
         raise SeamConfigError("OPENROUTER_API_KEY unset — cannot make a live call")
 
@@ -657,7 +749,7 @@ async def _live_agent_turn_openrouter(
             convo.append({"role": "system", "content": system_parts})
     convo.extend(messages)
 
-    client = AsyncOpenAI(api_key=os.environ["OPENROUTER_API_KEY"], base_url=OPENROUTER_BASE_URL)
+    client = _openrouter_client()
     local_tools = [
         {
             "type": "function",

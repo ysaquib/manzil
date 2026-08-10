@@ -6,9 +6,11 @@
    confidence-thresholded) — a missing key or `None` means unknown. Floor-plan
    fields overlay the property-level values for plan-scoped criteria.
 2. Gate pass: evaluate all dealbreakers and non-negotiables first. Any firing
-   -> total = min(set_scores fired), breakdown records the gates, stop.
+   -> total = min(set_scores fired), breakdown records the gates with gate-pass
+   value/matched, then the delta pass still runs for informational criteria.
 3. Delta pass: start at BASE_SCORE; apply the first-matching option's delta
-   per enabled criterion; unknown -> `unknown_delta`.
+   per enabled criterion; unknown -> `unknown_delta`. When gates fired, criteria
+   deltas are informational only — they do not affect `total`.
 4. Clamp to [SCORE_MIN, SCORE_MAX] (bonuses may exceed 10).
 
 Semantics recorded in DESIGN §3 (Gate), §9.3, and the v2.1 §20 entry:
@@ -152,6 +154,35 @@ def plan_values(floor_plan: FloorPlan) -> dict[str, Any]:
     return values
 
 
+def _build_criteria(
+    enabled: Sequence[RubricCriterion],
+    values: Mapping[str, Any],
+) -> list[BreakdownCriterion]:
+    """Delta pass (§9.3 step 3) on point values — informational when gates fired."""
+    criteria: list[BreakdownCriterion] = []
+    for criterion in enabled:
+        key = criterion_key(criterion)
+        value = values.get(key)
+        if value is None:
+            criteria.append(
+                BreakdownCriterion(
+                    key=key, value=None, matched=None, delta=criterion.unknown_delta, unknown=True
+                )
+            )
+            continue
+        matched = first_match(criterion.options, value)
+        delta = matched.delta if matched is not None else 0.0
+        criteria.append(
+            BreakdownCriterion(
+                key=key,
+                value=value,
+                matched=matched.match if matched is not None else None,
+                delta=delta,
+            )
+        )
+    return criteria
+
+
 def score(
     rubric: Sequence[RubricCriterion],
     effective_values: Mapping[str, Any],
@@ -178,7 +209,13 @@ def score(
         matched = first_match(criterion.options, value)
         if matched is not None and matched.dealbreaker_set_score is not None:
             gates.append(
-                GateFiring(key=key, kind="dealbreaker", set_score=matched.dealbreaker_set_score)
+                GateFiring(
+                    key=key,
+                    kind="dealbreaker",
+                    set_score=matched.dealbreaker_set_score,
+                    value=value,
+                    matched=matched.match,
+                )
             )
         if criterion.non_negotiable is not None:
             acceptable = (
@@ -193,6 +230,8 @@ def score(
                         key=key,
                         kind="non_negotiable",
                         set_score=criterion.non_negotiable.set_score,
+                        value=value,
+                        matched=matched.match if matched is not None else None,
                     )
                 )
     if gates:
@@ -202,34 +241,14 @@ def score(
             rubric_version=rubric_version,
             clamped=False,
             gates=gates,
-            criteria=[],
+            criteria=_build_criteria(enabled, values),
         )
 
     # Delta pass (§9.3 step 3).
     total = BASE_SCORE
-    criteria: list[BreakdownCriterion] = []
-    for criterion in enabled:
-        key = criterion_key(criterion)
-        value = values.get(key)
-        if value is None:
-            criteria.append(
-                BreakdownCriterion(
-                    key=key, value=None, matched=None, delta=criterion.unknown_delta, unknown=True
-                )
-            )
-            total += criterion.unknown_delta
-            continue
-        matched = first_match(criterion.options, value)
-        delta = matched.delta if matched is not None else 0.0
-        criteria.append(
-            BreakdownCriterion(
-                key=key,
-                value=value,
-                matched=matched.match if matched is not None else None,
-                delta=delta,
-            )
-        )
-        total += delta
+    criteria = _build_criteria(enabled, values)
+    for breakdown_criterion in criteria:
+        total += breakdown_criterion.delta
 
     total = round(total, 6)  # keep quarter-point sums free of float noise
     clamped = total < SCORE_MIN or total > SCORE_MAX

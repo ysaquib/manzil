@@ -17,6 +17,7 @@ from manzil_worker.llm import client as client_mod
 from manzil_worker.llm.client import (
     ProviderResponse,
     SeamConfigError,
+    StructuredValidationError,
     VisionImage,
     call_structured,
     call_vision,
@@ -52,6 +53,12 @@ def test_reconcile_equivalence_prompt_uses_batched_item_contract() -> None:
     assert prompt.version == 2
     assert "item_id exactly once" in prompt.per_call
     assert "within the same target_key" in " ".join(prompt.per_call.split())
+
+
+def test_vision_prompt_has_a_target_below_its_hard_rationale_cap() -> None:
+    prompt = load_prompt("vision")
+    assert prompt.version == 2
+    assert "under 320 characters" in prompt.cacheable_prefix
 
 
 def test_prompt_without_marker_is_all_per_call(tmp_path: Path) -> None:
@@ -168,6 +175,27 @@ def test_record_then_replay_round_trip(monkeypatch: pytest.MonkeyPatch, tmp_path
     )
 
 
+def test_structured_validation_error_retains_the_invalid_tool_output(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("MANZIL_RECORDED_DIR", str(tmp_path))
+    monkeypatch.setenv("MANZIL_LLM_MODE", "record")
+
+    async def fake_traced_live_call(plan: object, schema: object) -> ProviderResponse:
+        return ProviderResponse(
+            output={"echo": 42, "model_family": "stub"},
+            input_tokens=1,
+            output_tokens=1,
+        )
+
+    monkeypatch.setattr(client_mod, "_traced_live_call", fake_traced_live_call)
+    with pytest.raises(StructuredValidationError) as raised:
+        asyncio.run(call_structured("smoke", SmokeResult, "Token: bad-output"))
+
+    assert raised.value.output == {"echo": 42, "model_family": "stub"}
+    assert raised.value.error_count() == 1
+
+
 def test_vision_recording_hashes_images_without_storing_bytes(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -222,11 +250,11 @@ def test_unknown_stage_has_no_silent_fallback() -> None:
         model_for_stage("brand-new-stage")
 
 
-def test_image_classify_uses_owner_selected_pin(
+def test_image_classify_uses_owner_selected_taste_pin(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("MANZIL_MODEL_IMAGE_CLASSIFY", raising=False)
-    assert model_for_stage("image_classify") == "google/gemini-3-flash-preview"
+    assert model_for_stage("image_classify") == "anthropic/claude-sonnet-4.6"
 
 
 # ── OpenRouter routing + cache economics ─────────────────────────────────────
@@ -244,6 +272,28 @@ def test_provider_derives_cache_family_from_openrouter_slug() -> None:
 def test_openrouter_provider_order_pins_upstream_vendors() -> None:
     assert openrouter_provider_order("anthropic/claude-haiku-4.5") == ["Anthropic"]
     assert openrouter_provider_order("google/gemini-2.5-flash-lite") == ["Google AI Studio"]
+
+
+def test_openrouter_attribution_headers_default_title_and_explicit_referer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENROUTER_HTTP_REFERER", "https://manzil.yusufsaquib.com")
+    monkeypatch.delenv("OPENROUTER_APP_TITLE", raising=False)
+    assert client_mod._openrouter_attribution_headers() == {
+        "HTTP-Referer": "https://manzil.yusufsaquib.com",
+        "X-OpenRouter-Title": "Manzil",
+    }
+
+
+def test_openrouter_attribution_headers_fall_back_to_frontend_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("OPENROUTER_HTTP_REFERER", raising=False)
+    monkeypatch.setenv("MANZIL_FRONTEND_URL", "http://localhost:5173")
+    assert client_mod._openrouter_attribution_headers() == {
+        "HTTP-Referer": "http://localhost:5173",
+        "X-OpenRouter-Title": "Manzil",
+    }
 
 
 def test_model_override_env_swaps_the_pin(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -311,6 +361,17 @@ def test_tool_schema_inlines_nested_pydantic_refs() -> None:
     assert "$defs" not in serialized
     assert schema["properties"]["nested"]["properties"]["value"]["anyOf"]
     assert schema["properties"]["many"]["items"]["properties"]["value"]["anyOf"]
+
+
+def test_tool_schema_removes_keywords_google_rejects() -> None:
+    """The dynamic EXTRACT schema uses both constraints at multiple depths."""
+    from manzil_worker.stages.schema_gen import build_extraction_schema
+
+    schema = client_mod._tool_schema(build_extraction_schema())
+    serialized = json.dumps(schema)
+
+    assert '"uniqueItems"' not in serialized
+    assert '"additionalProperties"' not in serialized
 
 
 def test_bad_llm_mode_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:

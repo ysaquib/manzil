@@ -8,13 +8,22 @@ from typing import Any
 from urllib.parse import urlsplit
 from uuid import UUID
 
+import asyncpg
 from manzil_worker.fetching.slug_hint import search_hint
+from postgrest.exceptions import APIError
 
 from manzil_api.hunts.exceptions import InsufficientRole
 from manzil_api.jobs.schemas import JobResponse
-from manzil_api.jobs.service import row_to_response
+from manzil_api.jobs.service import JOB_COLUMNS, job_payload, row_to_response
+from manzil_api.listings.exceptions import (
+    ListingConfirmationMismatch,
+    ListingHasActiveJobs,
+    ListingNotArchived,
+    ListingNotFound,
+)
 from manzil_api.listings.schemas import (
     ListingCreate,
+    ListingDeletionImpact,
     ListingResponse,
     ListingStatusPatch,
     PinsPatch,
@@ -95,18 +104,117 @@ def _role(client: Client, hunt_id: str, user_id: str) -> str:
     return response.data["role"]
 
 
-async def delete_listing(client: Client, listing_id: UUID, user_id: str) -> None:
-    listing = await get_listing_row(client, listing_id)
-    if listing is None or _role(client, listing["hunt_id"], user_id) != "owner":
-        raise InsufficientRole("Only the Hunt Owner may delete Listings")
-    client.table("hunt_listings").update({"status": "archived"}).eq("id", str(listing_id)).execute()
+def _deletion_error(exc: Exception) -> Exception:
+    message = getattr(exc, "message", None) or str(exc)
+    if "listing_not_found" in message:
+        return ListingNotFound("Listing not found")
+    if "listing_not_archived" in message:
+        return ListingNotArchived("Archive this Listing before permanently deleting it")
+    if "listing_confirmation_mismatch" in message:
+        return ListingConfirmationMismatch("The confirmation does not match the Property name")
+    if "listing_has_active_jobs" in message:
+        return ListingHasActiveJobs("Cancel or finish active Jobs before deleting this Listing")
+    return exc
+
+
+async def get_deletion_impact(
+    client: Client, listing: dict[str, Any], user_id: str
+) -> ListingDeletionImpact:
+    if _role(client, listing["hunt_id"], user_id) != "owner":
+        raise InsufficientRole("Only the Hunt Owner may permanently delete Listings")
+    try:
+        data = (
+            client.rpc("get_listing_deletion_impact", {"p_listing_id": listing["id"]})
+            .execute()
+            .data
+        )
+    except APIError as exc:
+        mapped = _deletion_error(exc)
+        if mapped is exc:
+            raise
+        raise mapped from exc
+    if data is None:
+        raise ListingNotFound("Listing not found")
+    return ListingDeletionImpact.model_validate(data)
+
+
+async def delete_listing_permanently(
+    client: Client,
+    listing: dict[str, Any],
+    user_id: str,
+    confirmation_name: str,
+) -> ListingDeletionImpact:
+    impact = await get_deletion_impact(client, listing, user_id)
+    if impact.status != "archived":
+        raise ListingNotArchived("Archive this Listing before permanently deleting it")
+    if confirmation_name != impact.property_name:
+        raise ListingConfirmationMismatch("The confirmation does not match the Property name")
+    if impact.active_jobs:
+        raise ListingHasActiveJobs("Cancel or finish active Jobs before deleting this Listing")
+    try:
+        data = (
+            client.rpc(
+                "delete_listing_permanently",
+                {
+                    "p_listing_id": listing["id"],
+                    "p_confirmation_name": confirmation_name,
+                },
+            )
+            .execute()
+            .data
+        )
+    except APIError as exc:
+        mapped = _deletion_error(exc)
+        if mapped is exc:
+            raise
+        raise mapped from exc
+    return ListingDeletionImpact.model_validate(data)
+
+
+async def get_deletion_impact_admin(
+    connection: asyncpg.Connection, listing_id: UUID
+) -> ListingDeletionImpact:
+    data = await connection.fetchval("select private.listing_deletion_impact($1)", listing_id)
+    if data is None:
+        raise ListingNotFound("Listing not found")
+    if isinstance(data, str):
+        data = json.loads(data)
+    return ListingDeletionImpact.model_validate(data)
+
+
+async def delete_listing_permanently_admin(
+    connection: asyncpg.Connection,
+    listing_id: UUID,
+    actor_id: UUID,
+    confirmation_name: str,
+) -> ListingDeletionImpact:
+    try:
+        data = await connection.fetchval(
+            "select private.delete_hunt_listing_permanently($1, $2, $3, true)",
+            listing_id,
+            actor_id,
+            confirmation_name,
+        )
+    except asyncpg.PostgresError as exc:
+        mapped = _deletion_error(exc)
+        if mapped is not exc:
+            raise mapped from exc
+        raise
+    if isinstance(data, str):
+        data = json.loads(data)
+    return ListingDeletionImpact.model_validate(data)
 
 
 async def patch_status(
-    client: Client, listing: dict[str, Any], user_id: str, body: ListingStatusPatch
+    client: Client,
+    listing: dict[str, Any],
+    user_id: str,
+    body: ListingStatusPatch,
+    *,
+    authorized_admin: bool = False,
 ) -> ListingResponse:
-    """Archive or restore — the same owner gate as delete_listing (archive's alias)."""
-    if _role(client, listing["hunt_id"], user_id) != "owner":
+    """Archive or restore; permanent deletion is a separate guarded operation."""
+    if not authorized_admin and _role(client, listing["hunt_id"], user_id) != "owner":
         raise InsufficientRole("Only the Hunt Owner may archive or restore Listings")
     listing_id = UUID(listing["id"])
     client.table("hunt_listings").update({"status": body.status}).eq(
@@ -119,9 +227,18 @@ async def patch_status(
 
 
 async def patch_pins(
-    client: Client, listing: dict[str, Any], user_id: str, body: PinsPatch
+    client: Client,
+    listing: dict[str, Any],
+    user_id: str,
+    body: PinsPatch,
+    *,
+    authorized_admin: bool = False,
 ) -> ListingResponse:
-    if _role(client, listing["hunt_id"], user_id) == "member" and listing["added_by"] != user_id:
+    if (
+        not authorized_admin
+        and _role(client, listing["hunt_id"], user_id) == "member"
+        and listing["added_by"] != user_id
+    ):
         raise InsufficientRole("Members may edit pins only on their own Listings")
     listing_id = UUID(listing["id"])
     client.table("hunt_listings").update({"pins": body.pins}).eq("id", str(listing_id)).execute()
@@ -154,14 +271,11 @@ async def patch_source_policy(
     return _to_response(row)
 
 
-def _json(raw: Any) -> dict[str, Any]:
-    if isinstance(raw, str):
-        return json.loads(raw)
-    return raw or {}
-
-
 def _refresh_matches(row: dict[str, Any], fields: list[RefreshClass]) -> bool:
-    payload = _json(row.get("payload"))
+    # `scope` and `fields` are not page bodies, so they survive the projection
+    # `job_payload` reads (`jobs/service.py`). This is the third payload
+    # consumer under a user JWT, and the one an enumeration is likeliest to miss.
+    payload = job_payload(row)
     return payload.get("scope") == "classes" and payload.get("fields") == fields
 
 
@@ -202,7 +316,7 @@ async def enqueue_listing_refresh(
     fields = RefreshRequest.normalized_fields(body.fields)
     active = (
         client.table("jobs")
-        .select("*")
+        .select(JOB_COLUMNS)
         .eq("hunt_listing_id", listing["id"])
         .eq("type", "refresh")
         .in_("state", ["queued", "running", "waiting_user"])
@@ -233,6 +347,9 @@ async def enqueue_listing_refresh(
                 "payload": payload,
             }
         )
+        # The returned representation is a SELECT like any other, so it needs the
+        # same column list; the default `*` would be a permission denied.
+        .select(JOB_COLUMNS)
         .execute()
         .data
         or []
@@ -279,8 +396,10 @@ async def patch_unit_group_state(
     unit_group_key: str,
     user_id: str,
     body: UnitGroupStatePatch,
+    *,
+    authorized_admin: bool = False,
 ) -> UnitGroupStateResponse:
-    if _role(client, listing["hunt_id"], user_id) == "member":
+    if not authorized_admin and _role(client, listing["hunt_id"], user_id) == "member":
         raise InsufficientRole("Only Hunt Curators and the Owner may curate Unit Groups")
     response = (
         client.table("listing_unit_group_states")

@@ -52,7 +52,9 @@ export function AllInCell({
   composition: AllInComponents | null;
 }) {
   const est = composition?.estimated_total ?? 0;
-  const badges = composition?.badges ?? [];
+  // Unknown heat already uses the conservative worse-case estimate. It is
+  // useful ledger provenance, but too frequent to be an Overview warning.
+  const badges = (composition?.badges ?? []).filter((badge) => badge !== "heat_unknown");
   const overridden = composition?.overridden === true;
   return (
     <Group gap={6} wrap="nowrap">

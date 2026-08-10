@@ -23,6 +23,7 @@ async def upsert_utility_override(
     user_id: str,
     utility: UtilityName,
     body: UtilityOverrideUpsert,
+    authorized_admin: bool = False,
 ) -> UtilityOverrideResponse:
     listing = (
         client.table("hunt_listings")
@@ -32,16 +33,18 @@ async def upsert_utility_override(
         .execute()
         .data
     )
-    role = (
-        client.table("hunt_members")
-        .select("role")
-        .eq("hunt_id", str(hunt_id))
-        .eq("user_id", user_id)
-        .single()
-        .execute()
-        .data["role"]
-    )
-    if role == "member" and listing["added_by"] != user_id:
+    role = None
+    if not authorized_admin:
+        role = (
+            client.table("hunt_members")
+            .select("role")
+            .eq("hunt_id", str(hunt_id))
+            .eq("user_id", user_id)
+            .single()
+            .execute()
+            .data["role"]
+        )
+    if not authorized_admin and role == "member" and listing["added_by"] != user_id:
         raise InsufficientRole("Members may edit utilities only on their own Listings")
     response = (
         client.table("utility_overrides")

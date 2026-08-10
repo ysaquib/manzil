@@ -1,4 +1,4 @@
-"""P3-7a2 classifier-bench metrics use the production target selector."""
+"""Historical P3-7a2 LLM classifier-bench metrics retain the legacy selector."""
 
 from __future__ import annotations
 

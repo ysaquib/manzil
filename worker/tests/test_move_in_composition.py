@@ -48,9 +48,7 @@ def test_complete_ledger_totals_and_splits() -> None:
 
 def test_base_rent_is_used_for_the_first_month_line() -> None:
     """First month is base rent only — one line, not rent plus fees again."""
-    result = compose_move_in(
-        first_month_rent=1800.0, security_deposit=0.0, charges=[]
-    )
+    result = compose_move_in(first_month_rent=1800.0, security_deposit=0.0, charges=[])
     first = result.charges[0]
     assert first.name == "first_month"
     assert first.amount == 1800.0
@@ -83,12 +81,8 @@ def test_unknown_optional_component_does_not_make_it_incomplete() -> None:
 
 def test_missing_rent_or_deposit_is_incomplete() -> None:
     """Unknown base rent or deposit withholds the total."""
-    assert compose_move_in(
-        first_month_rent=None, security_deposit=500.0, charges=[]
-    ).total is None
-    assert compose_move_in(
-        first_month_rent=2000.0, security_deposit=None, charges=[]
-    ).total is None
+    assert compose_move_in(first_month_rent=None, security_deposit=500.0, charges=[]).total is None
+    assert compose_move_in(first_month_rent=2000.0, security_deposit=None, charges=[]).total is None
 
 
 def test_credited_deposit_counts_only_its_non_credited_portion() -> None:

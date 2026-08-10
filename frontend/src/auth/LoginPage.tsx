@@ -1,5 +1,4 @@
 import {
-  Alert,
   Button,
   Card,
   Center,
@@ -14,10 +13,11 @@ import { useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 
 import { PublicPageShell } from "../components/PublicPageShell";
+import { TryDemoButton } from "../features/demo/TryDemoButton";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "./useAuth";
 
-type Mode = "password" | "register" | "magic";
+type Mode = "password" | "magic";
 
 // Post-auth landing: the homepage, except flows that must resume where they
 // started (invite/join links). Restoring an arbitrary stale `from` (e.g. a
@@ -46,13 +46,10 @@ export function LoginPage() {
   async function submit() {
     setBusy(true);
     setError(null);
-    const result = mode === "register"
-      ? await supabase.auth.signUp({ email, password, options: { emailRedirectTo: callback } })
-      : await supabase.auth.signInWithPassword({ email, password });
+    const result = await supabase.auth.signInWithPassword({ email, password });
     setBusy(false);
     if (result.error) return setError(result.error.message);
-    if (mode === "register") setSent(true);
-    else navigate(returnTo, { replace: true });
+    navigate(returnTo, { replace: true });
   }
 
   async function sendLink() {
@@ -60,7 +57,12 @@ export function LoginPage() {
     setError(null);
     const { error: authError } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: callback },
+      options: {
+        emailRedirectTo: callback,
+        // Authentication only. Account provisioning belongs exclusively to
+        // the audited Site Admin People API (DESIGN FR13 / PR-1).
+        shouldCreateUser: false,
+      },
     });
     setBusy(false);
     if (authError) setError(authError.message);
@@ -88,10 +90,10 @@ export function LoginPage() {
   }
 
   return <PublicPageShell><Center py="xl"><Card withBorder w="100%" maw={420}><Stack>
-    <div><Text fw={600} size="lg">Welcome to Manzil</Text><Text c="dimmed" size="sm">Sign in or create an account.</Text></div>
+    <div><Text fw={600} size="lg">Welcome to Manzil</Text><Text c="dimmed" size="sm">Sign in with an account created by an administrator.</Text></div>
     <SegmentedControl fullWidth value={mode} onChange={(value) => { setMode(value as Mode); setSent(false); setError(null); }}
-      data={[{ value: "password", label: "Sign in" }, { value: "register", label: "Register" }, { value: "magic", label: "Magic link" }]} />
-    {sent && mode === "register" ? <Alert title="Confirm your email">Account created. Check your email to confirm your address, then you’ll return here.</Alert> : <>
+      data={[{ value: "password", label: "Sign in" }, { value: "magic", label: "Magic link" }]} />
+    <>
       {sent && mode === "magic" ? <>
         <Text>Link sent. Check your email and you’ll land right back here, or enter the code below.</Text>
         <TextInput label="Email code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code}
@@ -100,14 +102,15 @@ export function LoginPage() {
         <Button variant="subtle" loading={busy} onClick={sendLink}>Resend link and code</Button>
       </> : <>
         <TextInput label="Email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.currentTarget.value)} />
-        {mode !== "magic" && <PasswordInput label="Password" autoComplete={mode === "register" ? "new-password" : "current-password"}
+        {mode !== "magic" && <PasswordInput label="Password" autoComplete="current-password"
           value={password} onChange={(e) => setPassword(e.currentTarget.value)} />}
         <Button loading={busy} disabled={!email || (mode !== "magic" && !password)} onClick={mode === "magic" ? sendLink : submit}>
-          {mode === "magic" ? "Send magic link" : mode === "register" ? "Create account" : "Sign in"}
+          {mode === "magic" ? "Send magic link" : "Sign in"}
         </Button>
         {mode === "password" && <><Divider /><Button variant="subtle" disabled={!email} loading={busy} onClick={resetPassword}>Forgot password?</Button></>}
       </>}
-    </>}
+    </>
     {error && <Text c="red" size="sm">{error}</Text>}
+    <TryDemoButton />
   </Stack></Card></Center></PublicPageShell>;
 }

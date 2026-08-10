@@ -1,21 +1,16 @@
 """AD-F: the hunt activity feed, and the Site Admin identity it rests on.
 
-The feed has no backing table — it is a view over domain tables that were
-already append-only — so these tests are about its *definition* and its
-*gate*, not about any route.
-
-The gate is the interesting part. `hunt_activity` is deliberately not a
-`security_invoker` view: a non-member Site Admin would be filtered out by the
-base tables' member-scoped policies and see an empty feed. Access therefore
-lives in the view's own WHERE clause, which makes it the single thing standing
-between one Hunt's history and another's.
+The feed has no backing table. Its raw union is a grantless private view;
+Owners cross the boundary through a bounded RPC, while Site Admins cross it
+through the separately authenticated admin API. These tests pin both the data
+shape and that separation so a convenience grant cannot recreate the original
+cross-tenant footgun.
 """
 
 from __future__ import annotations
 
-from uuid import uuid4
-
 import pytest
+from postgrest.exceptions import APIError
 
 pytestmark = pytest.mark.asyncio
 
@@ -31,33 +26,36 @@ async def _seed_activity(db_pool, collab_hunt) -> None:
     await db_pool.execute("update hunt_listings set status = 'archived' where id = $1", listing)
 
 
-async def test_owner_sees_the_feed_and_other_roles_see_nothing(
+def _activity(user, hunt_id, *, limit=100, before=None):
+    params = {"p_hunt_id": str(hunt_id), "p_limit": limit}
+    if before is not None:
+        params["p_before"] = before
+    return user.supabase.rpc("get_hunt_activity", params).execute()
+
+
+async def test_owner_sees_the_feed_and_other_roles_are_refused(
     db_pool, collab_hunt, seeded_users
 ) -> None:
     await _seed_activity(db_pool, collab_hunt)
     hunt_id = str(collab_hunt["hunt_id"])
 
-    owner_feed = (
-        seeded_users["owner"].supabase.table("hunt_activity")
-        .select("*")
-        .eq("hunt_id", hunt_id)
-        .execute()
-    )
+    owner_feed = _activity(seeded_users["owner"], hunt_id)
     kinds = {row["kind"] for row in owner_feed.data}
     assert "fee_set" in kinds
     assert "listing_curated" in kinds
     assert "member_joined" in kinds
 
-    # A curator and a member are inside the Hunt and can see plenty elsewhere —
-    # the feed is still not theirs.
+    first_page = _activity(seeded_users["owner"], hunt_id, limit=1)
+    assert len(first_page.data) == 1
+    older_page = _activity(seeded_users["owner"], hunt_id, before=first_page.data[0]["occurred_at"])
+    assert all(row["occurred_at"] < first_page.data[0]["occurred_at"] for row in older_page.data)
+
+    # Refusal is preferable to an empty result: callers cannot mistake missing
+    # authorization for a Hunt with no history.
     for role in ("curator", "member", "outsider"):
-        feed = (
-            seeded_users[role].supabase.table("hunt_activity")
-            .select("*")
-            .eq("hunt_id", hunt_id)
-            .execute()
-        )
-        assert feed.data == [], f"{role} must not read the activity feed"
+        with pytest.raises(APIError) as excinfo:
+            _activity(seeded_users[role], hunt_id)
+        assert excinfo.value.code == "42501", f"{role} must be rejected by the Owner gate"
 
 
 async def test_the_feed_never_crosses_hunts(db_pool, collab_hunt, seeded_users) -> None:
@@ -66,42 +64,43 @@ async def test_the_feed_never_crosses_hunts(db_pool, collab_hunt, seeded_users) 
     await _seed_activity(db_pool, collab_hunt)
     other_hunt = await db_pool.fetchval(
         "insert into hunts (name, owner_id) values ('Someone Else', $1) returning id",
-        uuid4(),
+        seeded_users["outsider"].user_id,
     )
     try:
-        rows = (
-            seeded_users["owner"].supabase.table("hunt_activity")
-            .select("hunt_id")
-            .execute()
-        )
-        assert all(row["hunt_id"] != str(other_hunt) for row in rows.data)
+        rows = _activity(seeded_users["owner"], collab_hunt["hunt_id"])
         assert rows.data, "the owner should still see their own Hunt"
+        assert all(row["hunt_id"] == str(collab_hunt["hunt_id"]) for row in rows.data)
+
+        with pytest.raises(APIError) as excinfo:
+            _activity(seeded_users["owner"], other_hunt)
+        assert excinfo.value.code == "42501"
     finally:
         await db_pool.execute("delete from hunts where id = $1", other_hunt)
         await db_pool.execute("delete from deletion_tombstones where hunt_id = $1", other_hunt)
 
 
-async def test_a_site_admin_reads_a_hunt_they_do_not_belong_to(
+async def test_site_admin_access_is_not_smuggled_through_the_owner_rpc(
     db_pool, collab_hunt, seeded_users
 ) -> None:
-    """The requirement the security_invoker option could not satisfy: an admin
-    with no membership anywhere still reads the feed."""
+    """Admin access belongs to the AdminUser-gated service route, not a public
+    JWT-callable function that could drift from that route's audit boundary."""
     await _seed_activity(db_pool, collab_hunt)
     outsider = seeded_users["outsider"]
     hunt_id = str(collab_hunt["hunt_id"])
 
-    before = (
-        outsider.supabase.table("hunt_activity").select("*").eq("hunt_id", hunt_id).execute()
-    )
-    assert before.data == []
-
     await db_pool.execute("insert into site_admins (user_id) values ($1)", outsider.user_id)
     try:
-        after = (
-            outsider.supabase.table("hunt_activity").select("*").eq("hunt_id", hunt_id).execute()
+        with pytest.raises(APIError) as excinfo:
+            _activity(outsider, hunt_id)
+        assert excinfo.value.code == "42501"
+
+        # This is the exact query used by the already AdminUser-gated API route.
+        rows = await db_pool.fetch(
+            "select * from private.hunt_activity_all where hunt_id = $1",
+            collab_hunt["hunt_id"],
         )
-        assert after.data, "a site admin sees the feed of a Hunt they are not in"
-        # ...without having become a member of it.
+        assert rows, "the privileged admin path can read the internal union"
+
         membership = await db_pool.fetchval(
             "select count(*) from hunt_members where hunt_id = $1 and user_id = $2",
             collab_hunt["hunt_id"],
@@ -117,13 +116,31 @@ async def test_visit_entries_are_absent_by_design(db_pool, collab_hunt, seeded_u
     tour happened and what came out of it, never how each person filled it in —
     §9.7 averages per member precisely so no one's volume dominates."""
     hunt_id = str(collab_hunt["hunt_id"])
-    feed = (
-        seeded_users["owner"].supabase.table("hunt_activity")
-        .select("kind")
-        .eq("hunt_id", hunt_id)
-        .execute()
-    )
+    feed = _activity(seeded_users["owner"], hunt_id)
     assert all(row["kind"] != "visit_entry" for row in feed.data)
+
+
+async def test_raw_union_is_private_and_the_owner_rpc_has_narrow_grants(db_pool) -> None:
+    assert await db_pool.fetchval("select to_regclass('public.hunt_activity')") is None
+    assert not await db_pool.fetchval(
+        "select has_table_privilege('anon', 'private.hunt_activity_all', 'select')"
+    )
+    assert not await db_pool.fetchval(
+        "select has_table_privilege('authenticated', 'private.hunt_activity_all', 'select')"
+    )
+    assert await db_pool.fetchval(
+        "select 'security_barrier=true' = any(coalesce(c.reloptions, array[]::text[])) "
+        "from pg_class c join pg_namespace n on n.oid = c.relnamespace "
+        "where n.nspname = 'private' and c.relname = 'hunt_activity_all'"
+    )
+    assert not await db_pool.fetchval(
+        "select has_function_privilege('anon', "
+        "'public.get_hunt_activity(uuid,integer,timestamp with time zone)', 'execute')"
+    )
+    assert await db_pool.fetchval(
+        "select has_function_privilege('authenticated', "
+        "'public.get_hunt_activity(uuid,integer,timestamp with time zone)', 'execute')"
+    )
 
 
 # ── the primordial admin ─────────────────────────────────────────────────────

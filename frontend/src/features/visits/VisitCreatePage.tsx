@@ -32,6 +32,7 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { ApiError } from "../../lib/apiClient";
+import { isDemo } from "../../lib/demo";
 import { useListings } from "../listings/api";
 import type { FloorPlan, Listing } from "../listings/types";
 import { unitGroupKey, unitGroupLabel } from "../listings/unitGroups";
@@ -75,6 +76,13 @@ export function VisitCreatePage() {
   const isCompact = useMediaQuery("(max-width: 48em)") ?? false;
   const listingsQuery = useListings(huntId);
   const createVisit = useCreateVisit(huntId);
+
+  // demo-guarded: useCreateVisit — `submit()` awaits the response and navigates
+  // to `visit.id`. A demo write resolves with nothing, so that read throws from
+  // inside a `void submit()` click handler, unhandled. A synthetic id is not the
+  // answer either: it would route the visitor to a Visit that does not exist.
+  // The demo shows the Hunt's existing Visits instead, and says so here.
+  const demo = isDemo();
 
   const [step, setStep] = useState(0);
   const [propertyId, setPropertyId] = useState<string | null>(null);
@@ -181,7 +189,7 @@ export function VisitCreatePage() {
   }
 
   async function submit() {
-    if (!propertyId) return;
+    if (!propertyId || demo) return;
     const visit = await createVisit.mutateAsync({
       property_id: propertyId,
       units: units.map((unit, index) => ({
@@ -481,6 +489,14 @@ export function VisitCreatePage() {
               </Stack>
             </Card>
 
+            {demo && (
+              <Alert color="yellow" title="Not available in the demo">
+                Visits are collaborative records of a real tour, so the demo
+                shows the ones already in this Hunt rather than letting you
+                start another. Everything else on a Visit is browsable.
+              </Alert>
+            )}
+
             {createVisit.isError && (
               <Alert color="red" title="Couldn't create the visit">
                 {createVisit.error instanceof ApiError
@@ -496,7 +512,7 @@ export function VisitCreatePage() {
               <Button
                 onClick={() => void submit()}
                 loading={createVisit.isPending}
-                disabled={!propertyId}
+                disabled={!propertyId || demo}
               >
                 Create visit
               </Button>

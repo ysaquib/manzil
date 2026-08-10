@@ -1,0 +1,4945 @@
+{
+  "events": [
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 0,
+      "stage": "PLAN"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 8,
+      "stage": "VALIDATE_URL"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 1611,
+      "stage": "FETCH"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 3392,
+      "stage": "VALIDATE"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 16458,
+      "stage": "EXTRACT"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 16858,
+      "stage": "DEDUPE"
+    },
+    {
+      "detail": {},
+      "event": "tool_called",
+      "offset_ms": 24795,
+      "stage": "discover"
+    },
+    {
+      "detail": {},
+      "event": "tool_called",
+      "offset_ms": 25324,
+      "stage": "discover"
+    },
+    {
+      "detail": {},
+      "event": "tool_called",
+      "offset_ms": 115470,
+      "stage": "discover"
+    },
+    {
+      "detail": {},
+      "event": "tool_called",
+      "offset_ms": 119324,
+      "stage": "discover"
+    },
+    {
+      "detail": {},
+      "event": "tool_called",
+      "offset_ms": 122697,
+      "stage": "discover"
+    },
+    {
+      "detail": {},
+      "event": "tool_called",
+      "offset_ms": 184212,
+      "stage": "discover"
+    },
+    {
+      "detail": {},
+      "event": "tool_called",
+      "offset_ms": 186576,
+      "stage": "discover"
+    },
+    {
+      "detail": {},
+      "event": "tool_called",
+      "offset_ms": 191732,
+      "stage": "discover"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 191873,
+      "stage": "DISCOVER"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 195386,
+      "stage": "FETCH"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 207199,
+      "stage": "EXTRACT"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 210797,
+      "stage": "VERIFY"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 213309,
+      "stage": "RECONCILE"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 214178,
+      "stage": "FETCH"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 218577,
+      "stage": "EXTRACT"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 220008,
+      "stage": "VERIFY"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 221974,
+      "stage": "RECONCILE"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 242261,
+      "stage": "IMAGE_FETCH"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 244766,
+      "stage": "IMAGE_CLASSIFY"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 255441,
+      "stage": "VISION"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 256916,
+      "stage": "ENRICH"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 257479,
+      "stage": "CUSTOM_MATCH"
+    },
+    {
+      "detail": {},
+      "event": "completed",
+      "offset_ms": 257581,
+      "stage": "SCORE"
+    }
+  ],
+  "exported_at": "2026-08-09T01:15:00.419737-04:00",
+  "has_checkpoint": false,
+  "job": {
+    "attempts": 1,
+    "cost_actual_usd": 0.1096,
+    "plan": {
+      "escalation": {
+        "rounds": [
+          {
+            "kind": "official_arbiter",
+            "rung_reached": "official_arbiter",
+            "sources": [
+              {
+                "action": "fetch",
+                "tier": 1,
+                "url": "https://www.howelluptown.com/index"
+              }
+            ],
+            "status": "completed",
+            "trigger_targets": [
+              "beds|property",
+              "one_time_fees|property",
+              "pet_costs|property"
+            ]
+          }
+        ]
+      },
+      "est_cost_usd": 0.14,
+      "job_type": "ingest",
+      "skipped": {},
+      "source_policy": "tiers_1_2_3",
+      "sources": [
+        {
+          "action": "fetch",
+          "tier": 1,
+          "url": "https://www.rent.com/apartment/howell-uptown-dallas-tx-lc6325179"
+        },
+        {
+          "action": "skip",
+          "tier": 1,
+          "url": "https://www.howelluptown.com/index",
+          "why": "official_arbiter_only"
+        },
+        {
+          "action": "fetch",
+          "tier": 3,
+          "url": "https://www.trulia.com/building/howell-uptown-3400-howell-st-dallas-tx-75204-2742425599"
+        },
+        {
+          "action": "skip",
+          "tier": 3,
+          "url": "https://www.zillow.com/apartments/dallas-tx/howell-uptown/ChjFQN/",
+          "why": "syndication_family_duplicate"
+        }
+      ],
+      "stages": [
+        "PLAN",
+        "VALIDATE_URL",
+        "FETCH",
+        "VALIDATE",
+        "EXTRACT",
+        "DEDUPE",
+        "DISCOVER",
+        "FETCH",
+        "EXTRACT",
+        "VERIFY",
+        "RECONCILE",
+        "FETCH",
+        "EXTRACT",
+        "VERIFY",
+        "RECONCILE",
+        "IMAGE_FETCH",
+        "IMAGE_CLASSIFY",
+        "VISION",
+        "ENRICH",
+        "CUSTOM_MATCH",
+        "SCORE"
+      ],
+      "trigger": "user:submit"
+    },
+    "real_duration_ms": 257900,
+    "type": "ingest",
+    "warnings": [
+      {
+        "code": "image_fetch_partial",
+        "detail": {
+          "cap_saturated": true,
+          "failed_candidates": 4,
+          "prepared_images": 32
+        },
+        "message": "4 image candidates could not be downloaded; the gallery is at capacity (30 photos) so this pass is treated as complete.",
+        "stage": "IMAGE_FETCH"
+      }
+    ]
+  },
+  "listing": {
+    "all_in_components": {
+      "badges": [
+        "fees_unverified",
+        "heat_unknown"
+      ],
+      "components": [
+        {
+          "amount": 3487.0,
+          "name": "rent",
+          "tag": "actual"
+        },
+        {
+          "amount": 25.0,
+          "name": "Monthly Package Fee",
+          "tag": "actual"
+        },
+        {
+          "amount": 5.0,
+          "name": "Pest Control",
+          "tag": "actual"
+        },
+        {
+          "amount": 30.0,
+          "name": "Valet Trash",
+          "tag": "actual"
+        },
+        {
+          "amount": 6.0,
+          "name": "Rent & Ancillary Service Fee",
+          "tag": "actual"
+        },
+        {
+          "amount": 190.0,
+          "name": "electric",
+          "note": "heating type unknown \u2014 priced as gas heat (the costlier setup)",
+          "tag": "estimated"
+        },
+        {
+          "amount": 115.0,
+          "name": "gas",
+          "note": "winter-weighted; heating type unknown \u2014 priced as gas heat (the costlier setup)",
+          "tag": "estimated"
+        },
+        {
+          "amount": 60.0,
+          "name": "water",
+          "tag": "estimated"
+        },
+        {
+          "amount": 70.0,
+          "name": "sewer",
+          "tag": "estimated"
+        }
+      ],
+      "estimated_total": 435.0,
+      "mode": "conservative",
+      "total": 3988.0
+    },
+    "created_at": "2026-08-09T05:01:09.649866+00:00",
+    "hunt_id": "28119bc4-c91e-4c16-8021-079feef45957",
+    "id": "10e2c1cb-5bf1-489f-a056-d6ff0e53b5cb",
+    "move_in_components": {
+      "badges": [
+        "move_in_incomplete"
+      ],
+      "charges": [
+        {
+          "amount": 3487.0,
+          "counted": true,
+          "name": "first_month",
+          "note": "base rent \u2014 one full month, no prorated schedule stated",
+          "refundable": false,
+          "required": true,
+          "tag": "actual"
+        },
+        {
+          "amount": null,
+          "counted": true,
+          "name": "security_deposit",
+          "refundable": true,
+          "required": true,
+          "tag": "unknown"
+        },
+        {
+          "amount": 50.0,
+          "counted": true,
+          "name": "Application fee",
+          "refundable": null,
+          "required": true,
+          "tag": "actual"
+        },
+        {
+          "amount": 150.0,
+          "counted": true,
+          "name": "Administrative fee",
+          "refundable": null,
+          "required": true,
+          "tag": "actual"
+        },
+        {
+          "amount": 0.0,
+          "counted": false,
+          "name": "Pet Fee",
+          "note": "$250.0 per pet x 0",
+          "refundable": null,
+          "required": false,
+          "tag": "actual"
+        },
+        {
+          "amount": 0.0,
+          "counted": false,
+          "name": "Pet Deposit",
+          "note": "$250.0 per pet x 0",
+          "refundable": true,
+          "required": false,
+          "tag": "actual"
+        }
+      ],
+      "incomplete": true,
+      "non_refundable_total": 3487.0,
+      "refundable_total": 0.0,
+      "subtotal": 3687.0,
+      "total": null,
+      "unclassified_total": 200.0
+    },
+    "pins": {},
+    "property": {
+      "canonical_address": "3400 Howell St, Dallas, TX 75204",
+      "city": "Dallas",
+      "county": "Dallas County",
+      "floor_plans": [
+        {
+          "availability_date": "2026-10-06",
+          "available_units": null,
+          "baths": 1.0,
+          "beds": 1.0,
+          "deposit": null,
+          "detail_url": null,
+          "id": "6ea68a66-de63-4c28-8337-bf77c401644c",
+          "is_current": true,
+          "plan_name": "A10",
+          "property_id": "c30734b6-1b7b-4fad-814e-ab42618c9987",
+          "rent_max": 2281.0,
+          "rent_min": 2246.0,
+          "source_id": "a233dc3f-7c57-4f38-b465-7aec57fcffd2",
+          "source_native_id": "lc6325179_6088510_1_1_0",
+          "sqft_max": 776,
+          "sqft_min": 776,
+          "unit_types": [
+            "apartment"
+          ]
+        },
+        {
+          "availability_date": "2026-10-06",
+          "available_units": null,
+          "baths": 1.0,
+          "beds": 1.0,
+          "deposit": null,
+          "detail_url": null,
+          "id": "95081145-9680-4758-8875-c53136ca0b4a",
+          "is_current": true,
+          "plan_name": "A10",
+          "property_id": "c30734b6-1b7b-4fad-814e-ab42618c9987",
+          "rent_max": 2281.0,
+          "rent_min": 2246.0,
+          "source_id": "cd17ed09-3299-4466-9270-cb0add8d0d98",
+          "source_native_id": null,
+          "sqft_max": 776,
+          "sqft_min": 776,
+          "unit_types": [
+            "apartment"
+          ]
+        },
+        {
+          "availability_date": "2026-11-26",
+          "available_units": null,
+          "baths": 1.0,
+          "beds": 1.0,
+          "deposit": null,
+          "detail_url": null,
+          "id": "0c7d9b50-ceb2-4550-bdc3-69e540327787",
+          "is_current": true,
+          "plan_name": "A13",
+          "property_id": "c30734b6-1b7b-4fad-814e-ab42618c9987",
+          "rent_max": 2525.0,
+          "rent_min": 2525.0,
+          "source_id": "cd17ed09-3299-4466-9270-cb0add8d0d98",
+          "source_native_id": null,
+          "sqft_max": 845,
+          "sqft_min": 845,
+          "unit_types": [
+            "apartment"
+          ]
+        },
+        {
+          "availability_date": "2026-08-11",
+          "available_units": null,
+          "baths": 1.0,
+          "beds": 1.0,
+          "deposit": null,
+          "detail_url": null,
+          "id": "c2a47c4e-51d0-42c1-bb9e-82a0c828a415",
+          "is_current": true,
+          "plan_name": "A18D",
+          "property_id": "c30734b6-1b7b-4fad-814e-ab42618c9987",
+          "rent_max": 2799.0,
+          "rent_min": 2799.0,
+          "source_id": "a233dc3f-7c57-4f38-b465-7aec57fcffd2",
+          "source_native_id": "lc6325179_6088519_1_1_1",
+          "sqft_max": 1184,
+          "sqft_min": 1184,
+          "unit_types": [
+            "apartment"
+          ]
+        },
+        {
+          "availability_date": "2026-08-11",
+          "available_units": null,
+          "baths": 1.5,
+          "beds": 1.0,
+          "deposit": null,
+          "detail_url": null,
+          "id": "450669d0-f920-4565-89c8-94ebe017e373",
+          "is_current": true,
+          "plan_name": "A18D",
+          "property_id": "c30734b6-1b7b-4fad-814e-ab42618c9987",
+          "rent_max": 2799.0,
+          "rent_min": 2799.0,
+          "source_id": "cd17ed09-3299-4466-9270-cb0add8d0d98",
+          "source_native_id": null,
+          "sqft_max": 1184,
+          "sqft_min": 1184,
+          "unit_types": [
+            "apartment"
+          ]
+        },
+        {
+          "availability_date": "2026-09-11",
+          "available_units": null,
+          "baths": 1.0,
+          "beds": 1.0,
+          "deposit": null,
+          "detail_url": null,
+          "id": "678ea8de-c6c4-4a21-8318-9a6894046808",
+          "is_current": true,
+          "plan_name": "A2",
+          "property_id": "c30734b6-1b7b-4fad-814e-ab42618c9987",
+          "rent_max": 2085.0,
+          "rent_min": 2085.0,
+          "source_id": "a233dc3f-7c57-4f38-b465-7aec57fcffd2",
+          "source_native_id": "lc6325179_6088502_1_1_0",
+          "sqft_max": 577,
+          "sqft_min": 577,
+          "unit_types": [
+            "apartment"
+          ]
+        },
+        {
+          "availability_date": "2026-09-11",
+          "available_units": null,
+          "baths": 1.0,
+          "beds": 1.0,
+          "deposit": null,
+          "detail_url": null,
+          "id": "4f35fa6c-3433-4209-9257-0edea99f9483",
+          "is_current": true,
+          "plan_name": "A2",
+          "property_id": "c30734b6-1b7b-4fad-814e-ab42618c9987",
+          "rent_max": 2085.0,
+          "rent_min": 2085.0,
+          "source_id": "cd17ed09-3299-4466-9270-cb0add8d0d98",
+          "source_native_id": null,
+          "sqft_max": 577,
+          "sqft_min": 577,
+          "unit_types": [
+            "apartment"
+          ]
+        },
+        {
+          "availability_date": "2026-09-30",
+          "available_units": null,
+          "baths": 1.0,
+          "beds": 1.0,
+          "deposit": null,
+          "detail_url": null,
+          "id": "1d1b2efe-c0a3-4499-b4c9-9ee62eb3a536",
+          "is_current": true,
+          "plan_name": "A4",
+          "property_id": "c30734b6-1b7b-4fad-814e-ab42618c9987",
+          "rent_max": 2083.0,
+          "rent_min": 2083.0,
+          "source_id": "cd17ed09-3299-4466-9270-cb0add8d0d98",
+          "source_native_id": null,
+          "sqft_max": 617,
+          "sqft_min": 617,
+          "unit_types": [
+            "apartment"
+          ]
+        },
+        {
+          "availability_date": "2026-09-30",
+          "available_units": null,
+          "baths": 1.0,
+          "beds": 1.0,
+          "deposit": null,
+          "detail_url": null,
+          "id": "58ba7ab6-581b-4439-a13a-a68e5a225471",
+          "is_current": true,
+          "plan_name": "A4",
+          "property_id": "c30734b6-1b7b-4fad-814e-ab42618c9987",
+          "rent_max": 2083.0,
+          "rent_min": 2083.0,
+          "source_id": "a233dc3f-7c57-4f38-b465-7aec57fcffd2",
+          "source_native_id": "lc6325179_6088504_1_1_0",
+          "sqft_max": 617,
+          "sqft_min": 617,
+          "unit_types": [
+            "apartment"
+          ]
+        },
+        {
+          "availability_date": "2026-10-08",
+          "available_units": null,
+          "baths": 1.0,
+          "beds": 1.0,
+          "deposit": null,
+          "detail_url": null,
+          "id": "2a4e5a22-9ddf-4c93-88eb-9048fe4a200a",
+          "is_current": true,
+          "plan_name": "A5A",
+          "property_id": "c30734b6-1b7b-4fad-814e-ab42618c9987",
+          "rent_max": 2270.0,
+          "rent_min": 2235.0,
+          "source_id": "cd17ed09-3299-4466-9270-cb0add8d0d98",
+          "source_native_id": null,
+          "sqft_max": 658,
+          "sqft_min": 658,
+          "unit_types": [
+            "apartment"
+          ]
+        },
+        {
+          "availability_date": "2026-10-08",
+          "available_units": null,
+          "baths": 1.0,
+          "beds": 1.0,
+          "deposit": null,
+          "detail_url": null,
+          "id": "fce2bc3d-8d88-4534-b809-46c646faf6cc",
+          "is_current": true,
+          "plan_name": "A5A",
+          "property_id": "c30734b6-1b7b-4fad-814e-ab42618c9987",
+          "rent_max": 2270.0,
+          "rent_min": 2235.0,
+          "source_id": "a233dc3f-7c57-4f38-b465-7aec57fcffd2",
+          "source_native_id": "lc6325179_6088505_1_1_0",
+          "sqft_max": 658,
+          "sqft_min": 658,
+          "unit_types": [
+            "apartment"
+          ]
+        },
+        {
+          "availability_date": "2026-11-01",
+          "available_units": null,
+          "baths": 1.0,
+          "beds": 1.0,
+          "deposit": null,
+          "detail_url": null,
+          "id": "f80910f2-58cc-49b6-8625-ee4d190094cb",
+          "is_current": true,
+          "plan_name": "A5B",
+          "property_id": "c30734b6-1b7b-4fad-814e-ab42618c9987",
+          "rent_max": 2029.0,
+          "rent_min": 2029.0,
+          "source_id": "cd17ed09-3299-4466-9270-cb0add8d0d98",
+          "source_native_id": null,
+          "sqft_max": 695,
+          "sqft_min": 695,
+          "unit_types": [
+            "apartment"
+          ]
+        },
+        {
+          "availability_date": "2026-08-09",
+          "available_units": null,
+          "baths": 2.0,
+          "beds": 2.0,
+          "deposit": null,
+          "detail_url": null,
+          "id": "295ca438-c024-4648-8b37-44a362fcf408",
+          "is_current": true,
+          "plan_name": "B8D",
+          "property_id": "c30734b6-1b7b-4fad-814e-ab42618c9987",
+          "rent_max": 3487.0,
+          "rent_min": 3487.0,
+          "source_id": "a233dc3f-7c57-4f38-b465-7aec57fcffd2",
+          "source_native_id": "lc6325179_6088529_2_2_1",
+          "sqft_max": 1550,
+          "sqft_min": 1550,
+          "unit_types": [
+            "apartment"
+          ]
+        },
+        {
+          "availability_date": "2026-08-09",
+          "available_units": null,
+          "baths": 2.5,
+          "beds": 2.0,
+          "deposit": null,
+          "detail_url": null,
+          "id": "5b8bbfaf-927f-435e-9f7e-b8f594c1c143",
+          "is_current": true,
+          "plan_name": "B8D",
+          "property_id": "c30734b6-1b7b-4fad-814e-ab42618c9987",
+          "rent_max": 3399.0,
+          "rent_min": 3399.0,
+          "source_id": "cd17ed09-3299-4466-9270-cb0add8d0d98",
+          "source_native_id": null,
+          "sqft_max": 1550,
+          "sqft_min": 1550,
+          "unit_types": [
+            "apartment"
+          ]
+        },
+        {
+          "availability_date": "2026-09-07",
+          "available_units": null,
+          "baths": 3.0,
+          "beds": 3.0,
+          "deposit": null,
+          "detail_url": null,
+          "id": "bbef43e8-1aab-4859-adc1-db66bb2f72a9",
+          "is_current": true,
+          "plan_name": "C1",
+          "property_id": "c30734b6-1b7b-4fad-814e-ab42618c9987",
+          "rent_max": 4241.0,
+          "rent_min": 4241.0,
+          "source_id": "a233dc3f-7c57-4f38-b465-7aec57fcffd2",
+          "source_native_id": "lc6325179_6088538_3_3_0",
+          "sqft_max": 1217,
+          "sqft_min": 1217,
+          "unit_types": [
+            "apartment"
+          ]
+        },
+        {
+          "availability_date": "2026-09-07",
+          "available_units": null,
+          "baths": 3.0,
+          "beds": 3.0,
+          "deposit": null,
+          "detail_url": null,
+          "id": "c79160af-2546-4fa6-94d5-11716201ac43",
+          "is_current": true,
+          "plan_name": "C1",
+          "property_id": "c30734b6-1b7b-4fad-814e-ab42618c9987",
+          "rent_max": 4241.0,
+          "rent_min": 4241.0,
+          "source_id": "cd17ed09-3299-4466-9270-cb0add8d0d98",
+          "source_native_id": null,
+          "sqft_max": 1217,
+          "sqft_min": 1217,
+          "unit_types": [
+            "apartment"
+          ]
+        },
+        {
+          "availability_date": "2026-09-19",
+          "available_units": null,
+          "baths": 3.0,
+          "beds": 3.0,
+          "deposit": null,
+          "detail_url": null,
+          "id": "a704b4b3-b1ca-406f-9a93-65120f8ed2cf",
+          "is_current": true,
+          "plan_name": "C2",
+          "property_id": "c30734b6-1b7b-4fad-814e-ab42618c9987",
+          "rent_max": 4246.0,
+          "rent_min": 4246.0,
+          "source_id": "a233dc3f-7c57-4f38-b465-7aec57fcffd2",
+          "source_native_id": "lc6325179_6088539_3_3_0",
+          "sqft_max": 1365,
+          "sqft_min": 1365,
+          "unit_types": [
+            "apartment"
+          ]
+        },
+        {
+          "availability_date": "2026-09-19",
+          "available_units": null,
+          "baths": 3.0,
+          "beds": 3.0,
+          "deposit": null,
+          "detail_url": null,
+          "id": "7a8c9e89-acaa-4a50-9c5b-04b3b7e823e8",
+          "is_current": true,
+          "plan_name": "C2",
+          "property_id": "c30734b6-1b7b-4fad-814e-ab42618c9987",
+          "rent_max": 4246.0,
+          "rent_min": 4246.0,
+          "source_id": "cd17ed09-3299-4466-9270-cb0add8d0d98",
+          "source_native_id": null,
+          "sqft_max": 1365,
+          "sqft_min": 1365,
+          "unit_types": [
+            "apartment"
+          ]
+        }
+      ],
+      "id": "c30734b6-1b7b-4fad-814e-ab42618c9987",
+      "lat": 32.8026144,
+      "lng": -96.7967404,
+      "name": "Howell Uptown",
+      "official_url": "https://www.rent.com/apartment/howell-uptown-dallas-tx-lc6325179",
+      "sources": [
+        {
+          "id": "8e0d82e3-7d52-40ee-ac72-70304044f6c8",
+          "is_official": true,
+          "last_fetched_at": "2026-08-09T05:05:27.803872+00:00",
+          "last_success_at": "2026-08-09T05:05:27.803872+00:00",
+          "property_id": "c30734b6-1b7b-4fad-814e-ab42618c9987",
+          "site_domain": "howelluptown.com",
+          "url": "https://www.howelluptown.com/index"
+        },
+        {
+          "id": "a233dc3f-7c57-4f38-b465-7aec57fcffd2",
+          "is_official": false,
+          "last_fetched_at": "2026-08-09T05:05:27.803872+00:00",
+          "last_success_at": "2026-08-09T05:05:27.803872+00:00",
+          "property_id": "c30734b6-1b7b-4fad-814e-ab42618c9987",
+          "site_domain": "rent.com",
+          "url": "https://www.rent.com/apartment/howell-uptown-dallas-tx-lc6325179"
+        },
+        {
+          "id": "cd17ed09-3299-4466-9270-cb0add8d0d98",
+          "is_official": false,
+          "last_fetched_at": "2026-08-09T05:05:27.803872+00:00",
+          "last_success_at": "2026-08-09T05:05:27.803872+00:00",
+          "property_id": "c30734b6-1b7b-4fad-814e-ab42618c9987",
+          "site_domain": "trulia.com",
+          "url": "https://www.trulia.com/building/howell-uptown-3400-howell-st-dallas-tx-75204-2742425599"
+        },
+        {
+          "id": "14960e92-fe17-4b6a-8a9a-ff9ad8e69a2b",
+          "is_official": false,
+          "last_fetched_at": null,
+          "last_success_at": null,
+          "property_id": "c30734b6-1b7b-4fad-814e-ab42618c9987",
+          "site_domain": "zillow.com",
+          "url": "https://www.zillow.com/apartments/dallas-tx/howell-uptown/ChjFQN/"
+        }
+      ],
+      "state": "TX"
+    },
+    "property_id": "c30734b6-1b7b-4fad-814e-ab42618c9987",
+    "scores": [
+      {
+        "all_in_components": {
+          "badges": [
+            "fees_unverified",
+            "heat_unknown"
+          ],
+          "components": [
+            {
+              "amount": 2525.0,
+              "name": "rent",
+              "tag": "actual"
+            },
+            {
+              "amount": 25.0,
+              "name": "Monthly Package Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 5.0,
+              "name": "Pest Control",
+              "tag": "actual"
+            },
+            {
+              "amount": 30.0,
+              "name": "Valet Trash",
+              "tag": "actual"
+            },
+            {
+              "amount": 6.0,
+              "name": "Rent & Ancillary Service Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 140.0,
+              "name": "electric",
+              "note": "heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 85.0,
+              "name": "gas",
+              "note": "winter-weighted; heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 45.0,
+              "name": "water",
+              "tag": "estimated"
+            },
+            {
+              "amount": 55.0,
+              "name": "sewer",
+              "tag": "estimated"
+            }
+          ],
+          "estimated_total": 325.0,
+          "mode": "conservative",
+          "total": 2916.0
+        },
+        "breakdown": {
+          "base": 10.0,
+          "clamped": false,
+          "criteria": [
+            {
+              "delta": 0.0,
+              "key": "beds",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1
+            },
+            {
+              "delta": 0.0,
+              "key": "baths",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1.0
+            },
+            {
+              "delta": 0.0,
+              "key": "sqft",
+              "matched": {
+                "op": "range",
+                "value": [
+                  700,
+                  1000
+                ]
+              },
+              "value": 845
+            },
+            {
+              "delta": 0.0,
+              "key": "dishwasher",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "patio_balcony",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": 0.0,
+              "key": "private_entry",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": -2.0,
+              "key": "in_unit_laundry",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "none"
+                ]
+              },
+              "value": [
+                "none"
+              ]
+            },
+            {
+              "delta": 0.0,
+              "key": "parking",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "advertised_unconfirmed"
+                ]
+              },
+              "value": [
+                "advertised_unconfirmed"
+              ]
+            },
+            {
+              "delta": 0.25,
+              "key": "pool",
+              "matched": {
+                "op": "in",
+                "value": [
+                  "indoor",
+                  "outdoor"
+                ]
+              },
+              "value": "outdoor"
+            }
+          ],
+          "gates": [],
+          "rubric_version": 1,
+          "total": 8.25
+        },
+        "computed_at": "2026-08-09T05:05:27.803872+00:00",
+        "floor_plan_id": "0c7d9b50-ceb2-4550-bdc3-69e540327787",
+        "hunt_listing_id": "10e2c1cb-5bf1-489f-a056-d6ff0e53b5cb",
+        "move_in_components": {
+          "badges": [
+            "move_in_incomplete"
+          ],
+          "charges": [
+            {
+              "amount": 2525.0,
+              "counted": true,
+              "name": "first_month",
+              "note": "base rent \u2014 one full month, no prorated schedule stated",
+              "refundable": false,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": null,
+              "counted": true,
+              "name": "security_deposit",
+              "refundable": true,
+              "required": true,
+              "tag": "unknown"
+            },
+            {
+              "amount": 50.0,
+              "counted": true,
+              "name": "Application fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 150.0,
+              "counted": true,
+              "name": "Administrative fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Fee",
+              "note": "$250.0 per pet x 0",
+              "refundable": null,
+              "required": false,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Deposit",
+              "note": "$250.0 per pet x 0",
+              "refundable": true,
+              "required": false,
+              "tag": "actual"
+            }
+          ],
+          "incomplete": true,
+          "non_refundable_total": 2525.0,
+          "refundable_total": 0.0,
+          "subtotal": 2725.0,
+          "total": null,
+          "unclassified_total": 200.0
+        },
+        "rubric_version": 1,
+        "total": 8.25
+      },
+      {
+        "all_in_components": {
+          "badges": [
+            "fees_unverified",
+            "heat_unknown"
+          ],
+          "components": [
+            {
+              "amount": 2083.0,
+              "name": "rent",
+              "tag": "actual"
+            },
+            {
+              "amount": 25.0,
+              "name": "Monthly Package Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 5.0,
+              "name": "Pest Control",
+              "tag": "actual"
+            },
+            {
+              "amount": 30.0,
+              "name": "Valet Trash",
+              "tag": "actual"
+            },
+            {
+              "amount": 6.0,
+              "name": "Rent & Ancillary Service Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 140.0,
+              "name": "electric",
+              "note": "heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 85.0,
+              "name": "gas",
+              "note": "winter-weighted; heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 45.0,
+              "name": "water",
+              "tag": "estimated"
+            },
+            {
+              "amount": 55.0,
+              "name": "sewer",
+              "tag": "estimated"
+            }
+          ],
+          "estimated_total": 325.0,
+          "mode": "conservative",
+          "total": 2474.0
+        },
+        "breakdown": {
+          "base": 10.0,
+          "clamped": false,
+          "criteria": [
+            {
+              "delta": 0.0,
+              "key": "beds",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1
+            },
+            {
+              "delta": 0.0,
+              "key": "baths",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1.0
+            },
+            {
+              "delta": -0.5,
+              "key": "sqft",
+              "matched": {
+                "op": "lt",
+                "value": 700
+              },
+              "value": 617
+            },
+            {
+              "delta": 0.0,
+              "key": "dishwasher",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "patio_balcony",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": 0.0,
+              "key": "private_entry",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": -2.0,
+              "key": "in_unit_laundry",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "none"
+                ]
+              },
+              "value": [
+                "none"
+              ]
+            },
+            {
+              "delta": 0.0,
+              "key": "parking",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "advertised_unconfirmed"
+                ]
+              },
+              "value": [
+                "advertised_unconfirmed"
+              ]
+            },
+            {
+              "delta": 0.25,
+              "key": "pool",
+              "matched": {
+                "op": "in",
+                "value": [
+                  "indoor",
+                  "outdoor"
+                ]
+              },
+              "value": "outdoor"
+            }
+          ],
+          "gates": [],
+          "rubric_version": 1,
+          "total": 7.75
+        },
+        "computed_at": "2026-08-09T05:05:27.803872+00:00",
+        "floor_plan_id": "1d1b2efe-c0a3-4499-b4c9-9ee62eb3a536",
+        "hunt_listing_id": "10e2c1cb-5bf1-489f-a056-d6ff0e53b5cb",
+        "move_in_components": {
+          "badges": [
+            "move_in_incomplete"
+          ],
+          "charges": [
+            {
+              "amount": 2083.0,
+              "counted": true,
+              "name": "first_month",
+              "note": "base rent \u2014 one full month, no prorated schedule stated",
+              "refundable": false,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": null,
+              "counted": true,
+              "name": "security_deposit",
+              "refundable": true,
+              "required": true,
+              "tag": "unknown"
+            },
+            {
+              "amount": 50.0,
+              "counted": true,
+              "name": "Application fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 150.0,
+              "counted": true,
+              "name": "Administrative fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Fee",
+              "note": "$250.0 per pet x 0",
+              "refundable": null,
+              "required": false,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Deposit",
+              "note": "$250.0 per pet x 0",
+              "refundable": true,
+              "required": false,
+              "tag": "actual"
+            }
+          ],
+          "incomplete": true,
+          "non_refundable_total": 2083.0,
+          "refundable_total": 0.0,
+          "subtotal": 2283.0,
+          "total": null,
+          "unclassified_total": 200.0
+        },
+        "rubric_version": 1,
+        "total": 7.75
+      },
+      {
+        "all_in_components": {
+          "badges": [
+            "fees_unverified",
+            "heat_unknown"
+          ],
+          "components": [
+            {
+              "amount": 3487.0,
+              "name": "rent",
+              "tag": "actual"
+            },
+            {
+              "amount": 25.0,
+              "name": "Monthly Package Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 5.0,
+              "name": "Pest Control",
+              "tag": "actual"
+            },
+            {
+              "amount": 30.0,
+              "name": "Valet Trash",
+              "tag": "actual"
+            },
+            {
+              "amount": 6.0,
+              "name": "Rent & Ancillary Service Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 190.0,
+              "name": "electric",
+              "note": "heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 115.0,
+              "name": "gas",
+              "note": "winter-weighted; heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 60.0,
+              "name": "water",
+              "tag": "estimated"
+            },
+            {
+              "amount": 70.0,
+              "name": "sewer",
+              "tag": "estimated"
+            }
+          ],
+          "estimated_total": 435.0,
+          "mode": "conservative",
+          "total": 3988.0
+        },
+        "breakdown": {
+          "base": 10.0,
+          "clamped": false,
+          "criteria": [
+            {
+              "delta": 0.5,
+              "key": "beds",
+              "matched": {
+                "op": "eq",
+                "value": 2
+              },
+              "value": 2
+            },
+            {
+              "delta": 0.5,
+              "key": "baths",
+              "matched": {
+                "op": "gt",
+                "value": 1.5
+              },
+              "value": 2.0
+            },
+            {
+              "delta": 0.5,
+              "key": "sqft",
+              "matched": {
+                "op": "gt",
+                "value": 1000
+              },
+              "value": 1550
+            },
+            {
+              "delta": 0.0,
+              "key": "dishwasher",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "patio_balcony",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": 0.0,
+              "key": "private_entry",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": -2.0,
+              "key": "in_unit_laundry",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "none"
+                ]
+              },
+              "value": [
+                "none"
+              ]
+            },
+            {
+              "delta": 0.0,
+              "key": "parking",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "advertised_unconfirmed"
+                ]
+              },
+              "value": [
+                "advertised_unconfirmed"
+              ]
+            },
+            {
+              "delta": 0.25,
+              "key": "pool",
+              "matched": {
+                "op": "in",
+                "value": [
+                  "indoor",
+                  "outdoor"
+                ]
+              },
+              "value": "outdoor"
+            }
+          ],
+          "gates": [],
+          "rubric_version": 1,
+          "total": 9.75
+        },
+        "computed_at": "2026-08-09T05:05:27.803872+00:00",
+        "floor_plan_id": "295ca438-c024-4648-8b37-44a362fcf408",
+        "hunt_listing_id": "10e2c1cb-5bf1-489f-a056-d6ff0e53b5cb",
+        "move_in_components": {
+          "badges": [
+            "move_in_incomplete"
+          ],
+          "charges": [
+            {
+              "amount": 3487.0,
+              "counted": true,
+              "name": "first_month",
+              "note": "base rent \u2014 one full month, no prorated schedule stated",
+              "refundable": false,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": null,
+              "counted": true,
+              "name": "security_deposit",
+              "refundable": true,
+              "required": true,
+              "tag": "unknown"
+            },
+            {
+              "amount": 50.0,
+              "counted": true,
+              "name": "Application fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 150.0,
+              "counted": true,
+              "name": "Administrative fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Fee",
+              "note": "$250.0 per pet x 0",
+              "refundable": null,
+              "required": false,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Deposit",
+              "note": "$250.0 per pet x 0",
+              "refundable": true,
+              "required": false,
+              "tag": "actual"
+            }
+          ],
+          "incomplete": true,
+          "non_refundable_total": 3487.0,
+          "refundable_total": 0.0,
+          "subtotal": 3687.0,
+          "total": null,
+          "unclassified_total": 200.0
+        },
+        "rubric_version": 1,
+        "total": 9.75
+      },
+      {
+        "all_in_components": {
+          "badges": [
+            "fees_unverified",
+            "heat_unknown"
+          ],
+          "components": [
+            {
+              "amount": 2270.0,
+              "name": "rent",
+              "tag": "actual"
+            },
+            {
+              "amount": 25.0,
+              "name": "Monthly Package Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 5.0,
+              "name": "Pest Control",
+              "tag": "actual"
+            },
+            {
+              "amount": 30.0,
+              "name": "Valet Trash",
+              "tag": "actual"
+            },
+            {
+              "amount": 6.0,
+              "name": "Rent & Ancillary Service Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 140.0,
+              "name": "electric",
+              "note": "heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 85.0,
+              "name": "gas",
+              "note": "winter-weighted; heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 45.0,
+              "name": "water",
+              "tag": "estimated"
+            },
+            {
+              "amount": 55.0,
+              "name": "sewer",
+              "tag": "estimated"
+            }
+          ],
+          "estimated_total": 325.0,
+          "mode": "conservative",
+          "total": 2661.0
+        },
+        "breakdown": {
+          "base": 10.0,
+          "clamped": false,
+          "criteria": [
+            {
+              "delta": 0.0,
+              "key": "beds",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1
+            },
+            {
+              "delta": 0.0,
+              "key": "baths",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1.0
+            },
+            {
+              "delta": -0.5,
+              "key": "sqft",
+              "matched": {
+                "op": "lt",
+                "value": 700
+              },
+              "value": 658
+            },
+            {
+              "delta": 0.0,
+              "key": "dishwasher",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "patio_balcony",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": 0.0,
+              "key": "private_entry",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": -2.0,
+              "key": "in_unit_laundry",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "none"
+                ]
+              },
+              "value": [
+                "none"
+              ]
+            },
+            {
+              "delta": 0.0,
+              "key": "parking",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "advertised_unconfirmed"
+                ]
+              },
+              "value": [
+                "advertised_unconfirmed"
+              ]
+            },
+            {
+              "delta": 0.25,
+              "key": "pool",
+              "matched": {
+                "op": "in",
+                "value": [
+                  "indoor",
+                  "outdoor"
+                ]
+              },
+              "value": "outdoor"
+            }
+          ],
+          "gates": [],
+          "rubric_version": 1,
+          "total": 7.75
+        },
+        "computed_at": "2026-08-09T05:05:27.803872+00:00",
+        "floor_plan_id": "2a4e5a22-9ddf-4c93-88eb-9048fe4a200a",
+        "hunt_listing_id": "10e2c1cb-5bf1-489f-a056-d6ff0e53b5cb",
+        "move_in_components": {
+          "badges": [
+            "move_in_incomplete"
+          ],
+          "charges": [
+            {
+              "amount": 2270.0,
+              "counted": true,
+              "name": "first_month",
+              "note": "base rent \u2014 one full month, no prorated schedule stated",
+              "refundable": false,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": null,
+              "counted": true,
+              "name": "security_deposit",
+              "refundable": true,
+              "required": true,
+              "tag": "unknown"
+            },
+            {
+              "amount": 50.0,
+              "counted": true,
+              "name": "Application fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 150.0,
+              "counted": true,
+              "name": "Administrative fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Fee",
+              "note": "$250.0 per pet x 0",
+              "refundable": null,
+              "required": false,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Deposit",
+              "note": "$250.0 per pet x 0",
+              "refundable": true,
+              "required": false,
+              "tag": "actual"
+            }
+          ],
+          "incomplete": true,
+          "non_refundable_total": 2270.0,
+          "refundable_total": 0.0,
+          "subtotal": 2470.0,
+          "total": null,
+          "unclassified_total": 200.0
+        },
+        "rubric_version": 1,
+        "total": 7.75
+      },
+      {
+        "all_in_components": {
+          "badges": [
+            "fees_unverified",
+            "heat_unknown"
+          ],
+          "components": [
+            {
+              "amount": 2799.0,
+              "name": "rent",
+              "tag": "actual"
+            },
+            {
+              "amount": 25.0,
+              "name": "Monthly Package Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 5.0,
+              "name": "Pest Control",
+              "tag": "actual"
+            },
+            {
+              "amount": 30.0,
+              "name": "Valet Trash",
+              "tag": "actual"
+            },
+            {
+              "amount": 6.0,
+              "name": "Rent & Ancillary Service Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 140.0,
+              "name": "electric",
+              "note": "heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 85.0,
+              "name": "gas",
+              "note": "winter-weighted; heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 45.0,
+              "name": "water",
+              "tag": "estimated"
+            },
+            {
+              "amount": 55.0,
+              "name": "sewer",
+              "tag": "estimated"
+            }
+          ],
+          "estimated_total": 325.0,
+          "mode": "conservative",
+          "total": 3190.0
+        },
+        "breakdown": {
+          "base": 10.0,
+          "clamped": false,
+          "criteria": [
+            {
+              "delta": 0.0,
+              "key": "beds",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1
+            },
+            {
+              "delta": 0.25,
+              "key": "baths",
+              "matched": {
+                "op": "eq",
+                "value": 1.5
+              },
+              "value": 1.5
+            },
+            {
+              "delta": 0.5,
+              "key": "sqft",
+              "matched": {
+                "op": "gt",
+                "value": 1000
+              },
+              "value": 1184
+            },
+            {
+              "delta": 0.0,
+              "key": "dishwasher",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "patio_balcony",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": 0.0,
+              "key": "private_entry",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": -2.0,
+              "key": "in_unit_laundry",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "none"
+                ]
+              },
+              "value": [
+                "none"
+              ]
+            },
+            {
+              "delta": 0.0,
+              "key": "parking",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "advertised_unconfirmed"
+                ]
+              },
+              "value": [
+                "advertised_unconfirmed"
+              ]
+            },
+            {
+              "delta": 0.25,
+              "key": "pool",
+              "matched": {
+                "op": "in",
+                "value": [
+                  "indoor",
+                  "outdoor"
+                ]
+              },
+              "value": "outdoor"
+            }
+          ],
+          "gates": [],
+          "rubric_version": 1,
+          "total": 9.0
+        },
+        "computed_at": "2026-08-09T05:05:27.803872+00:00",
+        "floor_plan_id": "450669d0-f920-4565-89c8-94ebe017e373",
+        "hunt_listing_id": "10e2c1cb-5bf1-489f-a056-d6ff0e53b5cb",
+        "move_in_components": {
+          "badges": [
+            "move_in_incomplete"
+          ],
+          "charges": [
+            {
+              "amount": 2799.0,
+              "counted": true,
+              "name": "first_month",
+              "note": "base rent \u2014 one full month, no prorated schedule stated",
+              "refundable": false,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": null,
+              "counted": true,
+              "name": "security_deposit",
+              "refundable": true,
+              "required": true,
+              "tag": "unknown"
+            },
+            {
+              "amount": 50.0,
+              "counted": true,
+              "name": "Application fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 150.0,
+              "counted": true,
+              "name": "Administrative fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Fee",
+              "note": "$250.0 per pet x 0",
+              "refundable": null,
+              "required": false,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Deposit",
+              "note": "$250.0 per pet x 0",
+              "refundable": true,
+              "required": false,
+              "tag": "actual"
+            }
+          ],
+          "incomplete": true,
+          "non_refundable_total": 2799.0,
+          "refundable_total": 0.0,
+          "subtotal": 2999.0,
+          "total": null,
+          "unclassified_total": 200.0
+        },
+        "rubric_version": 1,
+        "total": 9.0
+      },
+      {
+        "all_in_components": {
+          "badges": [
+            "fees_unverified",
+            "heat_unknown"
+          ],
+          "components": [
+            {
+              "amount": 2085.0,
+              "name": "rent",
+              "tag": "actual"
+            },
+            {
+              "amount": 25.0,
+              "name": "Monthly Package Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 5.0,
+              "name": "Pest Control",
+              "tag": "actual"
+            },
+            {
+              "amount": 30.0,
+              "name": "Valet Trash",
+              "tag": "actual"
+            },
+            {
+              "amount": 6.0,
+              "name": "Rent & Ancillary Service Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 140.0,
+              "name": "electric",
+              "note": "heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 85.0,
+              "name": "gas",
+              "note": "winter-weighted; heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 45.0,
+              "name": "water",
+              "tag": "estimated"
+            },
+            {
+              "amount": 55.0,
+              "name": "sewer",
+              "tag": "estimated"
+            }
+          ],
+          "estimated_total": 325.0,
+          "mode": "conservative",
+          "total": 2476.0
+        },
+        "breakdown": {
+          "base": 10.0,
+          "clamped": false,
+          "criteria": [
+            {
+              "delta": 0.0,
+              "key": "beds",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1
+            },
+            {
+              "delta": 0.0,
+              "key": "baths",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1.0
+            },
+            {
+              "delta": -0.5,
+              "key": "sqft",
+              "matched": {
+                "op": "lt",
+                "value": 700
+              },
+              "value": 577
+            },
+            {
+              "delta": 0.0,
+              "key": "dishwasher",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "patio_balcony",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": 0.0,
+              "key": "private_entry",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": -2.0,
+              "key": "in_unit_laundry",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "none"
+                ]
+              },
+              "value": [
+                "none"
+              ]
+            },
+            {
+              "delta": 0.0,
+              "key": "parking",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "advertised_unconfirmed"
+                ]
+              },
+              "value": [
+                "advertised_unconfirmed"
+              ]
+            },
+            {
+              "delta": 0.25,
+              "key": "pool",
+              "matched": {
+                "op": "in",
+                "value": [
+                  "indoor",
+                  "outdoor"
+                ]
+              },
+              "value": "outdoor"
+            }
+          ],
+          "gates": [],
+          "rubric_version": 1,
+          "total": 7.75
+        },
+        "computed_at": "2026-08-09T05:05:27.803872+00:00",
+        "floor_plan_id": "4f35fa6c-3433-4209-9257-0edea99f9483",
+        "hunt_listing_id": "10e2c1cb-5bf1-489f-a056-d6ff0e53b5cb",
+        "move_in_components": {
+          "badges": [
+            "move_in_incomplete"
+          ],
+          "charges": [
+            {
+              "amount": 2085.0,
+              "counted": true,
+              "name": "first_month",
+              "note": "base rent \u2014 one full month, no prorated schedule stated",
+              "refundable": false,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": null,
+              "counted": true,
+              "name": "security_deposit",
+              "refundable": true,
+              "required": true,
+              "tag": "unknown"
+            },
+            {
+              "amount": 50.0,
+              "counted": true,
+              "name": "Application fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 150.0,
+              "counted": true,
+              "name": "Administrative fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Fee",
+              "note": "$250.0 per pet x 0",
+              "refundable": null,
+              "required": false,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Deposit",
+              "note": "$250.0 per pet x 0",
+              "refundable": true,
+              "required": false,
+              "tag": "actual"
+            }
+          ],
+          "incomplete": true,
+          "non_refundable_total": 2085.0,
+          "refundable_total": 0.0,
+          "subtotal": 2285.0,
+          "total": null,
+          "unclassified_total": 200.0
+        },
+        "rubric_version": 1,
+        "total": 7.75
+      },
+      {
+        "all_in_components": {
+          "badges": [
+            "fees_unverified",
+            "heat_unknown"
+          ],
+          "components": [
+            {
+              "amount": 2083.0,
+              "name": "rent",
+              "tag": "actual"
+            },
+            {
+              "amount": 25.0,
+              "name": "Monthly Package Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 5.0,
+              "name": "Pest Control",
+              "tag": "actual"
+            },
+            {
+              "amount": 30.0,
+              "name": "Valet Trash",
+              "tag": "actual"
+            },
+            {
+              "amount": 6.0,
+              "name": "Rent & Ancillary Service Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 140.0,
+              "name": "electric",
+              "note": "heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 85.0,
+              "name": "gas",
+              "note": "winter-weighted; heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 45.0,
+              "name": "water",
+              "tag": "estimated"
+            },
+            {
+              "amount": 55.0,
+              "name": "sewer",
+              "tag": "estimated"
+            }
+          ],
+          "estimated_total": 325.0,
+          "mode": "conservative",
+          "total": 2474.0
+        },
+        "breakdown": {
+          "base": 10.0,
+          "clamped": false,
+          "criteria": [
+            {
+              "delta": 0.0,
+              "key": "beds",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1
+            },
+            {
+              "delta": 0.0,
+              "key": "baths",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1.0
+            },
+            {
+              "delta": -0.5,
+              "key": "sqft",
+              "matched": {
+                "op": "lt",
+                "value": 700
+              },
+              "value": 617
+            },
+            {
+              "delta": 0.0,
+              "key": "dishwasher",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "patio_balcony",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": 0.0,
+              "key": "private_entry",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": -2.0,
+              "key": "in_unit_laundry",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "none"
+                ]
+              },
+              "value": [
+                "none"
+              ]
+            },
+            {
+              "delta": 0.0,
+              "key": "parking",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "advertised_unconfirmed"
+                ]
+              },
+              "value": [
+                "advertised_unconfirmed"
+              ]
+            },
+            {
+              "delta": 0.25,
+              "key": "pool",
+              "matched": {
+                "op": "in",
+                "value": [
+                  "indoor",
+                  "outdoor"
+                ]
+              },
+              "value": "outdoor"
+            }
+          ],
+          "gates": [],
+          "rubric_version": 1,
+          "total": 7.75
+        },
+        "computed_at": "2026-08-09T05:05:27.803872+00:00",
+        "floor_plan_id": "58ba7ab6-581b-4439-a13a-a68e5a225471",
+        "hunt_listing_id": "10e2c1cb-5bf1-489f-a056-d6ff0e53b5cb",
+        "move_in_components": {
+          "badges": [
+            "move_in_incomplete"
+          ],
+          "charges": [
+            {
+              "amount": 2083.0,
+              "counted": true,
+              "name": "first_month",
+              "note": "base rent \u2014 one full month, no prorated schedule stated",
+              "refundable": false,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": null,
+              "counted": true,
+              "name": "security_deposit",
+              "refundable": true,
+              "required": true,
+              "tag": "unknown"
+            },
+            {
+              "amount": 50.0,
+              "counted": true,
+              "name": "Application fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 150.0,
+              "counted": true,
+              "name": "Administrative fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Fee",
+              "note": "$250.0 per pet x 0",
+              "refundable": null,
+              "required": false,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Deposit",
+              "note": "$250.0 per pet x 0",
+              "refundable": true,
+              "required": false,
+              "tag": "actual"
+            }
+          ],
+          "incomplete": true,
+          "non_refundable_total": 2083.0,
+          "refundable_total": 0.0,
+          "subtotal": 2283.0,
+          "total": null,
+          "unclassified_total": 200.0
+        },
+        "rubric_version": 1,
+        "total": 7.75
+      },
+      {
+        "all_in_components": {
+          "badges": [
+            "fees_unverified",
+            "heat_unknown"
+          ],
+          "components": [
+            {
+              "amount": 3399.0,
+              "name": "rent",
+              "tag": "actual"
+            },
+            {
+              "amount": 25.0,
+              "name": "Monthly Package Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 5.0,
+              "name": "Pest Control",
+              "tag": "actual"
+            },
+            {
+              "amount": 30.0,
+              "name": "Valet Trash",
+              "tag": "actual"
+            },
+            {
+              "amount": 6.0,
+              "name": "Rent & Ancillary Service Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 190.0,
+              "name": "electric",
+              "note": "heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 115.0,
+              "name": "gas",
+              "note": "winter-weighted; heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 60.0,
+              "name": "water",
+              "tag": "estimated"
+            },
+            {
+              "amount": 70.0,
+              "name": "sewer",
+              "tag": "estimated"
+            }
+          ],
+          "estimated_total": 435.0,
+          "mode": "conservative",
+          "total": 3900.0
+        },
+        "breakdown": {
+          "base": 10.0,
+          "clamped": false,
+          "criteria": [
+            {
+              "delta": 0.5,
+              "key": "beds",
+              "matched": {
+                "op": "eq",
+                "value": 2
+              },
+              "value": 2
+            },
+            {
+              "delta": 0.5,
+              "key": "baths",
+              "matched": {
+                "op": "gt",
+                "value": 1.5
+              },
+              "value": 2.5
+            },
+            {
+              "delta": 0.5,
+              "key": "sqft",
+              "matched": {
+                "op": "gt",
+                "value": 1000
+              },
+              "value": 1550
+            },
+            {
+              "delta": 0.0,
+              "key": "dishwasher",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "patio_balcony",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": 0.0,
+              "key": "private_entry",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": -2.0,
+              "key": "in_unit_laundry",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "none"
+                ]
+              },
+              "value": [
+                "none"
+              ]
+            },
+            {
+              "delta": 0.0,
+              "key": "parking",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "advertised_unconfirmed"
+                ]
+              },
+              "value": [
+                "advertised_unconfirmed"
+              ]
+            },
+            {
+              "delta": 0.25,
+              "key": "pool",
+              "matched": {
+                "op": "in",
+                "value": [
+                  "indoor",
+                  "outdoor"
+                ]
+              },
+              "value": "outdoor"
+            }
+          ],
+          "gates": [],
+          "rubric_version": 1,
+          "total": 9.75
+        },
+        "computed_at": "2026-08-09T05:05:27.803872+00:00",
+        "floor_plan_id": "5b8bbfaf-927f-435e-9f7e-b8f594c1c143",
+        "hunt_listing_id": "10e2c1cb-5bf1-489f-a056-d6ff0e53b5cb",
+        "move_in_components": {
+          "badges": [
+            "move_in_incomplete"
+          ],
+          "charges": [
+            {
+              "amount": 3399.0,
+              "counted": true,
+              "name": "first_month",
+              "note": "base rent \u2014 one full month, no prorated schedule stated",
+              "refundable": false,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": null,
+              "counted": true,
+              "name": "security_deposit",
+              "refundable": true,
+              "required": true,
+              "tag": "unknown"
+            },
+            {
+              "amount": 50.0,
+              "counted": true,
+              "name": "Application fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 150.0,
+              "counted": true,
+              "name": "Administrative fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Fee",
+              "note": "$250.0 per pet x 0",
+              "refundable": null,
+              "required": false,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Deposit",
+              "note": "$250.0 per pet x 0",
+              "refundable": true,
+              "required": false,
+              "tag": "actual"
+            }
+          ],
+          "incomplete": true,
+          "non_refundable_total": 3399.0,
+          "refundable_total": 0.0,
+          "subtotal": 3599.0,
+          "total": null,
+          "unclassified_total": 200.0
+        },
+        "rubric_version": 1,
+        "total": 9.75
+      },
+      {
+        "all_in_components": {
+          "badges": [
+            "fees_unverified",
+            "heat_unknown"
+          ],
+          "components": [
+            {
+              "amount": 2085.0,
+              "name": "rent",
+              "tag": "actual"
+            },
+            {
+              "amount": 25.0,
+              "name": "Monthly Package Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 5.0,
+              "name": "Pest Control",
+              "tag": "actual"
+            },
+            {
+              "amount": 30.0,
+              "name": "Valet Trash",
+              "tag": "actual"
+            },
+            {
+              "amount": 6.0,
+              "name": "Rent & Ancillary Service Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 140.0,
+              "name": "electric",
+              "note": "heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 85.0,
+              "name": "gas",
+              "note": "winter-weighted; heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 45.0,
+              "name": "water",
+              "tag": "estimated"
+            },
+            {
+              "amount": 55.0,
+              "name": "sewer",
+              "tag": "estimated"
+            }
+          ],
+          "estimated_total": 325.0,
+          "mode": "conservative",
+          "total": 2476.0
+        },
+        "breakdown": {
+          "base": 10.0,
+          "clamped": false,
+          "criteria": [
+            {
+              "delta": 0.0,
+              "key": "beds",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1
+            },
+            {
+              "delta": 0.0,
+              "key": "baths",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1.0
+            },
+            {
+              "delta": -0.5,
+              "key": "sqft",
+              "matched": {
+                "op": "lt",
+                "value": 700
+              },
+              "value": 577
+            },
+            {
+              "delta": 0.0,
+              "key": "dishwasher",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "patio_balcony",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": 0.0,
+              "key": "private_entry",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": -2.0,
+              "key": "in_unit_laundry",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "none"
+                ]
+              },
+              "value": [
+                "none"
+              ]
+            },
+            {
+              "delta": 0.0,
+              "key": "parking",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "advertised_unconfirmed"
+                ]
+              },
+              "value": [
+                "advertised_unconfirmed"
+              ]
+            },
+            {
+              "delta": 0.25,
+              "key": "pool",
+              "matched": {
+                "op": "in",
+                "value": [
+                  "indoor",
+                  "outdoor"
+                ]
+              },
+              "value": "outdoor"
+            }
+          ],
+          "gates": [],
+          "rubric_version": 1,
+          "total": 7.75
+        },
+        "computed_at": "2026-08-09T05:05:27.803872+00:00",
+        "floor_plan_id": "678ea8de-c6c4-4a21-8318-9a6894046808",
+        "hunt_listing_id": "10e2c1cb-5bf1-489f-a056-d6ff0e53b5cb",
+        "move_in_components": {
+          "badges": [
+            "move_in_incomplete"
+          ],
+          "charges": [
+            {
+              "amount": 2085.0,
+              "counted": true,
+              "name": "first_month",
+              "note": "base rent \u2014 one full month, no prorated schedule stated",
+              "refundable": false,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": null,
+              "counted": true,
+              "name": "security_deposit",
+              "refundable": true,
+              "required": true,
+              "tag": "unknown"
+            },
+            {
+              "amount": 50.0,
+              "counted": true,
+              "name": "Application fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 150.0,
+              "counted": true,
+              "name": "Administrative fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Fee",
+              "note": "$250.0 per pet x 0",
+              "refundable": null,
+              "required": false,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Deposit",
+              "note": "$250.0 per pet x 0",
+              "refundable": true,
+              "required": false,
+              "tag": "actual"
+            }
+          ],
+          "incomplete": true,
+          "non_refundable_total": 2085.0,
+          "refundable_total": 0.0,
+          "subtotal": 2285.0,
+          "total": null,
+          "unclassified_total": 200.0
+        },
+        "rubric_version": 1,
+        "total": 7.75
+      },
+      {
+        "all_in_components": {
+          "badges": [
+            "fees_unverified",
+            "heat_unknown"
+          ],
+          "components": [
+            {
+              "amount": 2281.0,
+              "name": "rent",
+              "tag": "actual"
+            },
+            {
+              "amount": 25.0,
+              "name": "Monthly Package Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 5.0,
+              "name": "Pest Control",
+              "tag": "actual"
+            },
+            {
+              "amount": 30.0,
+              "name": "Valet Trash",
+              "tag": "actual"
+            },
+            {
+              "amount": 6.0,
+              "name": "Rent & Ancillary Service Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 140.0,
+              "name": "electric",
+              "note": "heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 85.0,
+              "name": "gas",
+              "note": "winter-weighted; heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 45.0,
+              "name": "water",
+              "tag": "estimated"
+            },
+            {
+              "amount": 55.0,
+              "name": "sewer",
+              "tag": "estimated"
+            }
+          ],
+          "estimated_total": 325.0,
+          "mode": "conservative",
+          "total": 2672.0
+        },
+        "breakdown": {
+          "base": 10.0,
+          "clamped": false,
+          "criteria": [
+            {
+              "delta": 0.0,
+              "key": "beds",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1
+            },
+            {
+              "delta": 0.0,
+              "key": "baths",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1.0
+            },
+            {
+              "delta": 0.0,
+              "key": "sqft",
+              "matched": {
+                "op": "range",
+                "value": [
+                  700,
+                  1000
+                ]
+              },
+              "value": 776
+            },
+            {
+              "delta": 0.0,
+              "key": "dishwasher",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "patio_balcony",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": 0.0,
+              "key": "private_entry",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": -2.0,
+              "key": "in_unit_laundry",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "none"
+                ]
+              },
+              "value": [
+                "none"
+              ]
+            },
+            {
+              "delta": 0.0,
+              "key": "parking",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "advertised_unconfirmed"
+                ]
+              },
+              "value": [
+                "advertised_unconfirmed"
+              ]
+            },
+            {
+              "delta": 0.25,
+              "key": "pool",
+              "matched": {
+                "op": "in",
+                "value": [
+                  "indoor",
+                  "outdoor"
+                ]
+              },
+              "value": "outdoor"
+            }
+          ],
+          "gates": [],
+          "rubric_version": 1,
+          "total": 8.25
+        },
+        "computed_at": "2026-08-09T05:05:27.803872+00:00",
+        "floor_plan_id": "6ea68a66-de63-4c28-8337-bf77c401644c",
+        "hunt_listing_id": "10e2c1cb-5bf1-489f-a056-d6ff0e53b5cb",
+        "move_in_components": {
+          "badges": [
+            "move_in_incomplete"
+          ],
+          "charges": [
+            {
+              "amount": 2281.0,
+              "counted": true,
+              "name": "first_month",
+              "note": "base rent \u2014 one full month, no prorated schedule stated",
+              "refundable": false,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": null,
+              "counted": true,
+              "name": "security_deposit",
+              "refundable": true,
+              "required": true,
+              "tag": "unknown"
+            },
+            {
+              "amount": 50.0,
+              "counted": true,
+              "name": "Application fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 150.0,
+              "counted": true,
+              "name": "Administrative fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Fee",
+              "note": "$250.0 per pet x 0",
+              "refundable": null,
+              "required": false,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Deposit",
+              "note": "$250.0 per pet x 0",
+              "refundable": true,
+              "required": false,
+              "tag": "actual"
+            }
+          ],
+          "incomplete": true,
+          "non_refundable_total": 2281.0,
+          "refundable_total": 0.0,
+          "subtotal": 2481.0,
+          "total": null,
+          "unclassified_total": 200.0
+        },
+        "rubric_version": 1,
+        "total": 8.25
+      },
+      {
+        "all_in_components": {
+          "badges": [
+            "fees_unverified",
+            "heat_unknown"
+          ],
+          "components": [
+            {
+              "amount": 4246.0,
+              "name": "rent",
+              "tag": "actual"
+            },
+            {
+              "amount": 25.0,
+              "name": "Monthly Package Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 5.0,
+              "name": "Pest Control",
+              "tag": "actual"
+            },
+            {
+              "amount": 30.0,
+              "name": "Valet Trash",
+              "tag": "actual"
+            },
+            {
+              "amount": 6.0,
+              "name": "Rent & Ancillary Service Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 250.0,
+              "name": "electric",
+              "note": "heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 150.0,
+              "name": "gas",
+              "note": "winter-weighted; heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 85.0,
+              "name": "water",
+              "tag": "estimated"
+            },
+            {
+              "amount": 95.0,
+              "name": "sewer",
+              "tag": "estimated"
+            }
+          ],
+          "estimated_total": 580.0,
+          "mode": "conservative",
+          "total": 4892.0
+        },
+        "breakdown": {
+          "base": 10.0,
+          "clamped": false,
+          "criteria": [
+            {
+              "delta": 0.0,
+              "key": "beds",
+              "matched": null,
+              "value": 3
+            },
+            {
+              "delta": 0.5,
+              "key": "baths",
+              "matched": {
+                "op": "gt",
+                "value": 1.5
+              },
+              "value": 3.0
+            },
+            {
+              "delta": 0.5,
+              "key": "sqft",
+              "matched": {
+                "op": "gt",
+                "value": 1000
+              },
+              "value": 1365
+            },
+            {
+              "delta": 0.0,
+              "key": "dishwasher",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "patio_balcony",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": 0.0,
+              "key": "private_entry",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": -2.0,
+              "key": "in_unit_laundry",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "none"
+                ]
+              },
+              "value": [
+                "none"
+              ]
+            },
+            {
+              "delta": 0.0,
+              "key": "parking",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "advertised_unconfirmed"
+                ]
+              },
+              "value": [
+                "advertised_unconfirmed"
+              ]
+            },
+            {
+              "delta": 0.25,
+              "key": "pool",
+              "matched": {
+                "op": "in",
+                "value": [
+                  "indoor",
+                  "outdoor"
+                ]
+              },
+              "value": "outdoor"
+            }
+          ],
+          "gates": [],
+          "rubric_version": 1,
+          "total": 9.25
+        },
+        "computed_at": "2026-08-09T05:05:27.803872+00:00",
+        "floor_plan_id": "7a8c9e89-acaa-4a50-9c5b-04b3b7e823e8",
+        "hunt_listing_id": "10e2c1cb-5bf1-489f-a056-d6ff0e53b5cb",
+        "move_in_components": {
+          "badges": [
+            "move_in_incomplete"
+          ],
+          "charges": [
+            {
+              "amount": 4246.0,
+              "counted": true,
+              "name": "first_month",
+              "note": "base rent \u2014 one full month, no prorated schedule stated",
+              "refundable": false,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": null,
+              "counted": true,
+              "name": "security_deposit",
+              "refundable": true,
+              "required": true,
+              "tag": "unknown"
+            },
+            {
+              "amount": 50.0,
+              "counted": true,
+              "name": "Application fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 150.0,
+              "counted": true,
+              "name": "Administrative fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Fee",
+              "note": "$250.0 per pet x 0",
+              "refundable": null,
+              "required": false,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Deposit",
+              "note": "$250.0 per pet x 0",
+              "refundable": true,
+              "required": false,
+              "tag": "actual"
+            }
+          ],
+          "incomplete": true,
+          "non_refundable_total": 4246.0,
+          "refundable_total": 0.0,
+          "subtotal": 4446.0,
+          "total": null,
+          "unclassified_total": 200.0
+        },
+        "rubric_version": 1,
+        "total": 9.25
+      },
+      {
+        "all_in_components": {
+          "badges": [
+            "fees_unverified",
+            "heat_unknown"
+          ],
+          "components": [
+            {
+              "amount": 2281.0,
+              "name": "rent",
+              "tag": "actual"
+            },
+            {
+              "amount": 25.0,
+              "name": "Monthly Package Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 5.0,
+              "name": "Pest Control",
+              "tag": "actual"
+            },
+            {
+              "amount": 30.0,
+              "name": "Valet Trash",
+              "tag": "actual"
+            },
+            {
+              "amount": 6.0,
+              "name": "Rent & Ancillary Service Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 140.0,
+              "name": "electric",
+              "note": "heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 85.0,
+              "name": "gas",
+              "note": "winter-weighted; heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 45.0,
+              "name": "water",
+              "tag": "estimated"
+            },
+            {
+              "amount": 55.0,
+              "name": "sewer",
+              "tag": "estimated"
+            }
+          ],
+          "estimated_total": 325.0,
+          "mode": "conservative",
+          "total": 2672.0
+        },
+        "breakdown": {
+          "base": 10.0,
+          "clamped": false,
+          "criteria": [
+            {
+              "delta": 0.0,
+              "key": "beds",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1
+            },
+            {
+              "delta": 0.0,
+              "key": "baths",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1.0
+            },
+            {
+              "delta": 0.0,
+              "key": "sqft",
+              "matched": {
+                "op": "range",
+                "value": [
+                  700,
+                  1000
+                ]
+              },
+              "value": 776
+            },
+            {
+              "delta": 0.0,
+              "key": "dishwasher",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "patio_balcony",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": 0.0,
+              "key": "private_entry",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": -2.0,
+              "key": "in_unit_laundry",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "none"
+                ]
+              },
+              "value": [
+                "none"
+              ]
+            },
+            {
+              "delta": 0.0,
+              "key": "parking",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "advertised_unconfirmed"
+                ]
+              },
+              "value": [
+                "advertised_unconfirmed"
+              ]
+            },
+            {
+              "delta": 0.25,
+              "key": "pool",
+              "matched": {
+                "op": "in",
+                "value": [
+                  "indoor",
+                  "outdoor"
+                ]
+              },
+              "value": "outdoor"
+            }
+          ],
+          "gates": [],
+          "rubric_version": 1,
+          "total": 8.25
+        },
+        "computed_at": "2026-08-09T05:05:27.803872+00:00",
+        "floor_plan_id": "95081145-9680-4758-8875-c53136ca0b4a",
+        "hunt_listing_id": "10e2c1cb-5bf1-489f-a056-d6ff0e53b5cb",
+        "move_in_components": {
+          "badges": [
+            "move_in_incomplete"
+          ],
+          "charges": [
+            {
+              "amount": 2281.0,
+              "counted": true,
+              "name": "first_month",
+              "note": "base rent \u2014 one full month, no prorated schedule stated",
+              "refundable": false,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": null,
+              "counted": true,
+              "name": "security_deposit",
+              "refundable": true,
+              "required": true,
+              "tag": "unknown"
+            },
+            {
+              "amount": 50.0,
+              "counted": true,
+              "name": "Application fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 150.0,
+              "counted": true,
+              "name": "Administrative fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Fee",
+              "note": "$250.0 per pet x 0",
+              "refundable": null,
+              "required": false,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Deposit",
+              "note": "$250.0 per pet x 0",
+              "refundable": true,
+              "required": false,
+              "tag": "actual"
+            }
+          ],
+          "incomplete": true,
+          "non_refundable_total": 2281.0,
+          "refundable_total": 0.0,
+          "subtotal": 2481.0,
+          "total": null,
+          "unclassified_total": 200.0
+        },
+        "rubric_version": 1,
+        "total": 8.25
+      },
+      {
+        "all_in_components": {
+          "badges": [
+            "fees_unverified",
+            "heat_unknown"
+          ],
+          "components": [
+            {
+              "amount": 4246.0,
+              "name": "rent",
+              "tag": "actual"
+            },
+            {
+              "amount": 25.0,
+              "name": "Monthly Package Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 5.0,
+              "name": "Pest Control",
+              "tag": "actual"
+            },
+            {
+              "amount": 30.0,
+              "name": "Valet Trash",
+              "tag": "actual"
+            },
+            {
+              "amount": 6.0,
+              "name": "Rent & Ancillary Service Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 250.0,
+              "name": "electric",
+              "note": "heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 150.0,
+              "name": "gas",
+              "note": "winter-weighted; heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 85.0,
+              "name": "water",
+              "tag": "estimated"
+            },
+            {
+              "amount": 95.0,
+              "name": "sewer",
+              "tag": "estimated"
+            }
+          ],
+          "estimated_total": 580.0,
+          "mode": "conservative",
+          "total": 4892.0
+        },
+        "breakdown": {
+          "base": 10.0,
+          "clamped": false,
+          "criteria": [
+            {
+              "delta": 0.0,
+              "key": "beds",
+              "matched": null,
+              "value": 3
+            },
+            {
+              "delta": 0.5,
+              "key": "baths",
+              "matched": {
+                "op": "gt",
+                "value": 1.5
+              },
+              "value": 3.0
+            },
+            {
+              "delta": 0.5,
+              "key": "sqft",
+              "matched": {
+                "op": "gt",
+                "value": 1000
+              },
+              "value": 1365
+            },
+            {
+              "delta": 0.0,
+              "key": "dishwasher",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "patio_balcony",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": 0.0,
+              "key": "private_entry",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": -2.0,
+              "key": "in_unit_laundry",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "none"
+                ]
+              },
+              "value": [
+                "none"
+              ]
+            },
+            {
+              "delta": 0.0,
+              "key": "parking",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "advertised_unconfirmed"
+                ]
+              },
+              "value": [
+                "advertised_unconfirmed"
+              ]
+            },
+            {
+              "delta": 0.25,
+              "key": "pool",
+              "matched": {
+                "op": "in",
+                "value": [
+                  "indoor",
+                  "outdoor"
+                ]
+              },
+              "value": "outdoor"
+            }
+          ],
+          "gates": [],
+          "rubric_version": 1,
+          "total": 9.25
+        },
+        "computed_at": "2026-08-09T05:05:27.803872+00:00",
+        "floor_plan_id": "a704b4b3-b1ca-406f-9a93-65120f8ed2cf",
+        "hunt_listing_id": "10e2c1cb-5bf1-489f-a056-d6ff0e53b5cb",
+        "move_in_components": {
+          "badges": [
+            "move_in_incomplete"
+          ],
+          "charges": [
+            {
+              "amount": 4246.0,
+              "counted": true,
+              "name": "first_month",
+              "note": "base rent \u2014 one full month, no prorated schedule stated",
+              "refundable": false,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": null,
+              "counted": true,
+              "name": "security_deposit",
+              "refundable": true,
+              "required": true,
+              "tag": "unknown"
+            },
+            {
+              "amount": 50.0,
+              "counted": true,
+              "name": "Application fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 150.0,
+              "counted": true,
+              "name": "Administrative fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Fee",
+              "note": "$250.0 per pet x 0",
+              "refundable": null,
+              "required": false,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Deposit",
+              "note": "$250.0 per pet x 0",
+              "refundable": true,
+              "required": false,
+              "tag": "actual"
+            }
+          ],
+          "incomplete": true,
+          "non_refundable_total": 4246.0,
+          "refundable_total": 0.0,
+          "subtotal": 4446.0,
+          "total": null,
+          "unclassified_total": 200.0
+        },
+        "rubric_version": 1,
+        "total": 9.25
+      },
+      {
+        "all_in_components": {
+          "badges": [
+            "fees_unverified",
+            "heat_unknown"
+          ],
+          "components": [
+            {
+              "amount": 4241.0,
+              "name": "rent",
+              "tag": "actual"
+            },
+            {
+              "amount": 25.0,
+              "name": "Monthly Package Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 5.0,
+              "name": "Pest Control",
+              "tag": "actual"
+            },
+            {
+              "amount": 30.0,
+              "name": "Valet Trash",
+              "tag": "actual"
+            },
+            {
+              "amount": 6.0,
+              "name": "Rent & Ancillary Service Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 250.0,
+              "name": "electric",
+              "note": "heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 150.0,
+              "name": "gas",
+              "note": "winter-weighted; heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 85.0,
+              "name": "water",
+              "tag": "estimated"
+            },
+            {
+              "amount": 95.0,
+              "name": "sewer",
+              "tag": "estimated"
+            }
+          ],
+          "estimated_total": 580.0,
+          "mode": "conservative",
+          "total": 4887.0
+        },
+        "breakdown": {
+          "base": 10.0,
+          "clamped": false,
+          "criteria": [
+            {
+              "delta": 0.0,
+              "key": "beds",
+              "matched": null,
+              "value": 3
+            },
+            {
+              "delta": 0.5,
+              "key": "baths",
+              "matched": {
+                "op": "gt",
+                "value": 1.5
+              },
+              "value": 3.0
+            },
+            {
+              "delta": 0.5,
+              "key": "sqft",
+              "matched": {
+                "op": "gt",
+                "value": 1000
+              },
+              "value": 1217
+            },
+            {
+              "delta": 0.0,
+              "key": "dishwasher",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "patio_balcony",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": 0.0,
+              "key": "private_entry",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": -2.0,
+              "key": "in_unit_laundry",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "none"
+                ]
+              },
+              "value": [
+                "none"
+              ]
+            },
+            {
+              "delta": 0.0,
+              "key": "parking",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "advertised_unconfirmed"
+                ]
+              },
+              "value": [
+                "advertised_unconfirmed"
+              ]
+            },
+            {
+              "delta": 0.25,
+              "key": "pool",
+              "matched": {
+                "op": "in",
+                "value": [
+                  "indoor",
+                  "outdoor"
+                ]
+              },
+              "value": "outdoor"
+            }
+          ],
+          "gates": [],
+          "rubric_version": 1,
+          "total": 9.25
+        },
+        "computed_at": "2026-08-09T05:05:27.803872+00:00",
+        "floor_plan_id": "bbef43e8-1aab-4859-adc1-db66bb2f72a9",
+        "hunt_listing_id": "10e2c1cb-5bf1-489f-a056-d6ff0e53b5cb",
+        "move_in_components": {
+          "badges": [
+            "move_in_incomplete"
+          ],
+          "charges": [
+            {
+              "amount": 4241.0,
+              "counted": true,
+              "name": "first_month",
+              "note": "base rent \u2014 one full month, no prorated schedule stated",
+              "refundable": false,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": null,
+              "counted": true,
+              "name": "security_deposit",
+              "refundable": true,
+              "required": true,
+              "tag": "unknown"
+            },
+            {
+              "amount": 50.0,
+              "counted": true,
+              "name": "Application fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 150.0,
+              "counted": true,
+              "name": "Administrative fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Fee",
+              "note": "$250.0 per pet x 0",
+              "refundable": null,
+              "required": false,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Deposit",
+              "note": "$250.0 per pet x 0",
+              "refundable": true,
+              "required": false,
+              "tag": "actual"
+            }
+          ],
+          "incomplete": true,
+          "non_refundable_total": 4241.0,
+          "refundable_total": 0.0,
+          "subtotal": 4441.0,
+          "total": null,
+          "unclassified_total": 200.0
+        },
+        "rubric_version": 1,
+        "total": 9.25
+      },
+      {
+        "all_in_components": {
+          "badges": [
+            "fees_unverified",
+            "heat_unknown"
+          ],
+          "components": [
+            {
+              "amount": 2799.0,
+              "name": "rent",
+              "tag": "actual"
+            },
+            {
+              "amount": 25.0,
+              "name": "Monthly Package Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 5.0,
+              "name": "Pest Control",
+              "tag": "actual"
+            },
+            {
+              "amount": 30.0,
+              "name": "Valet Trash",
+              "tag": "actual"
+            },
+            {
+              "amount": 6.0,
+              "name": "Rent & Ancillary Service Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 140.0,
+              "name": "electric",
+              "note": "heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 85.0,
+              "name": "gas",
+              "note": "winter-weighted; heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 45.0,
+              "name": "water",
+              "tag": "estimated"
+            },
+            {
+              "amount": 55.0,
+              "name": "sewer",
+              "tag": "estimated"
+            }
+          ],
+          "estimated_total": 325.0,
+          "mode": "conservative",
+          "total": 3190.0
+        },
+        "breakdown": {
+          "base": 10.0,
+          "clamped": false,
+          "criteria": [
+            {
+              "delta": 0.0,
+              "key": "beds",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1
+            },
+            {
+              "delta": 0.0,
+              "key": "baths",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1.0
+            },
+            {
+              "delta": 0.5,
+              "key": "sqft",
+              "matched": {
+                "op": "gt",
+                "value": 1000
+              },
+              "value": 1184
+            },
+            {
+              "delta": 0.0,
+              "key": "dishwasher",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "patio_balcony",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": 0.0,
+              "key": "private_entry",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": -2.0,
+              "key": "in_unit_laundry",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "none"
+                ]
+              },
+              "value": [
+                "none"
+              ]
+            },
+            {
+              "delta": 0.0,
+              "key": "parking",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "advertised_unconfirmed"
+                ]
+              },
+              "value": [
+                "advertised_unconfirmed"
+              ]
+            },
+            {
+              "delta": 0.25,
+              "key": "pool",
+              "matched": {
+                "op": "in",
+                "value": [
+                  "indoor",
+                  "outdoor"
+                ]
+              },
+              "value": "outdoor"
+            }
+          ],
+          "gates": [],
+          "rubric_version": 1,
+          "total": 8.75
+        },
+        "computed_at": "2026-08-09T05:05:27.803872+00:00",
+        "floor_plan_id": "c2a47c4e-51d0-42c1-bb9e-82a0c828a415",
+        "hunt_listing_id": "10e2c1cb-5bf1-489f-a056-d6ff0e53b5cb",
+        "move_in_components": {
+          "badges": [
+            "move_in_incomplete"
+          ],
+          "charges": [
+            {
+              "amount": 2799.0,
+              "counted": true,
+              "name": "first_month",
+              "note": "base rent \u2014 one full month, no prorated schedule stated",
+              "refundable": false,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": null,
+              "counted": true,
+              "name": "security_deposit",
+              "refundable": true,
+              "required": true,
+              "tag": "unknown"
+            },
+            {
+              "amount": 50.0,
+              "counted": true,
+              "name": "Application fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 150.0,
+              "counted": true,
+              "name": "Administrative fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Fee",
+              "note": "$250.0 per pet x 0",
+              "refundable": null,
+              "required": false,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Deposit",
+              "note": "$250.0 per pet x 0",
+              "refundable": true,
+              "required": false,
+              "tag": "actual"
+            }
+          ],
+          "incomplete": true,
+          "non_refundable_total": 2799.0,
+          "refundable_total": 0.0,
+          "subtotal": 2999.0,
+          "total": null,
+          "unclassified_total": 200.0
+        },
+        "rubric_version": 1,
+        "total": 8.75
+      },
+      {
+        "all_in_components": {
+          "badges": [
+            "fees_unverified",
+            "heat_unknown"
+          ],
+          "components": [
+            {
+              "amount": 4241.0,
+              "name": "rent",
+              "tag": "actual"
+            },
+            {
+              "amount": 25.0,
+              "name": "Monthly Package Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 5.0,
+              "name": "Pest Control",
+              "tag": "actual"
+            },
+            {
+              "amount": 30.0,
+              "name": "Valet Trash",
+              "tag": "actual"
+            },
+            {
+              "amount": 6.0,
+              "name": "Rent & Ancillary Service Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 250.0,
+              "name": "electric",
+              "note": "heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 150.0,
+              "name": "gas",
+              "note": "winter-weighted; heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 85.0,
+              "name": "water",
+              "tag": "estimated"
+            },
+            {
+              "amount": 95.0,
+              "name": "sewer",
+              "tag": "estimated"
+            }
+          ],
+          "estimated_total": 580.0,
+          "mode": "conservative",
+          "total": 4887.0
+        },
+        "breakdown": {
+          "base": 10.0,
+          "clamped": false,
+          "criteria": [
+            {
+              "delta": 0.0,
+              "key": "beds",
+              "matched": null,
+              "value": 3
+            },
+            {
+              "delta": 0.5,
+              "key": "baths",
+              "matched": {
+                "op": "gt",
+                "value": 1.5
+              },
+              "value": 3.0
+            },
+            {
+              "delta": 0.5,
+              "key": "sqft",
+              "matched": {
+                "op": "gt",
+                "value": 1000
+              },
+              "value": 1217
+            },
+            {
+              "delta": 0.0,
+              "key": "dishwasher",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "patio_balcony",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": 0.0,
+              "key": "private_entry",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": -2.0,
+              "key": "in_unit_laundry",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "none"
+                ]
+              },
+              "value": [
+                "none"
+              ]
+            },
+            {
+              "delta": 0.0,
+              "key": "parking",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "advertised_unconfirmed"
+                ]
+              },
+              "value": [
+                "advertised_unconfirmed"
+              ]
+            },
+            {
+              "delta": 0.25,
+              "key": "pool",
+              "matched": {
+                "op": "in",
+                "value": [
+                  "indoor",
+                  "outdoor"
+                ]
+              },
+              "value": "outdoor"
+            }
+          ],
+          "gates": [],
+          "rubric_version": 1,
+          "total": 9.25
+        },
+        "computed_at": "2026-08-09T05:05:27.803872+00:00",
+        "floor_plan_id": "c79160af-2546-4fa6-94d5-11716201ac43",
+        "hunt_listing_id": "10e2c1cb-5bf1-489f-a056-d6ff0e53b5cb",
+        "move_in_components": {
+          "badges": [
+            "move_in_incomplete"
+          ],
+          "charges": [
+            {
+              "amount": 4241.0,
+              "counted": true,
+              "name": "first_month",
+              "note": "base rent \u2014 one full month, no prorated schedule stated",
+              "refundable": false,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": null,
+              "counted": true,
+              "name": "security_deposit",
+              "refundable": true,
+              "required": true,
+              "tag": "unknown"
+            },
+            {
+              "amount": 50.0,
+              "counted": true,
+              "name": "Application fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 150.0,
+              "counted": true,
+              "name": "Administrative fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Fee",
+              "note": "$250.0 per pet x 0",
+              "refundable": null,
+              "required": false,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Deposit",
+              "note": "$250.0 per pet x 0",
+              "refundable": true,
+              "required": false,
+              "tag": "actual"
+            }
+          ],
+          "incomplete": true,
+          "non_refundable_total": 4241.0,
+          "refundable_total": 0.0,
+          "subtotal": 4441.0,
+          "total": null,
+          "unclassified_total": 200.0
+        },
+        "rubric_version": 1,
+        "total": 9.25
+      },
+      {
+        "all_in_components": {
+          "badges": [
+            "fees_unverified",
+            "heat_unknown"
+          ],
+          "components": [
+            {
+              "amount": 2029.0,
+              "name": "rent",
+              "tag": "actual"
+            },
+            {
+              "amount": 25.0,
+              "name": "Monthly Package Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 5.0,
+              "name": "Pest Control",
+              "tag": "actual"
+            },
+            {
+              "amount": 30.0,
+              "name": "Valet Trash",
+              "tag": "actual"
+            },
+            {
+              "amount": 6.0,
+              "name": "Rent & Ancillary Service Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 140.0,
+              "name": "electric",
+              "note": "heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 85.0,
+              "name": "gas",
+              "note": "winter-weighted; heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 45.0,
+              "name": "water",
+              "tag": "estimated"
+            },
+            {
+              "amount": 55.0,
+              "name": "sewer",
+              "tag": "estimated"
+            }
+          ],
+          "estimated_total": 325.0,
+          "mode": "conservative",
+          "total": 2420.0
+        },
+        "breakdown": {
+          "base": 10.0,
+          "clamped": false,
+          "criteria": [
+            {
+              "delta": 0.0,
+              "key": "beds",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1
+            },
+            {
+              "delta": 0.0,
+              "key": "baths",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1.0
+            },
+            {
+              "delta": -0.5,
+              "key": "sqft",
+              "matched": {
+                "op": "lt",
+                "value": 700
+              },
+              "value": 695
+            },
+            {
+              "delta": 0.0,
+              "key": "dishwasher",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "patio_balcony",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": 0.0,
+              "key": "private_entry",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": -2.0,
+              "key": "in_unit_laundry",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "none"
+                ]
+              },
+              "value": [
+                "none"
+              ]
+            },
+            {
+              "delta": 0.0,
+              "key": "parking",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "advertised_unconfirmed"
+                ]
+              },
+              "value": [
+                "advertised_unconfirmed"
+              ]
+            },
+            {
+              "delta": 0.25,
+              "key": "pool",
+              "matched": {
+                "op": "in",
+                "value": [
+                  "indoor",
+                  "outdoor"
+                ]
+              },
+              "value": "outdoor"
+            }
+          ],
+          "gates": [],
+          "rubric_version": 1,
+          "total": 7.75
+        },
+        "computed_at": "2026-08-09T05:05:27.803872+00:00",
+        "floor_plan_id": "f80910f2-58cc-49b6-8625-ee4d190094cb",
+        "hunt_listing_id": "10e2c1cb-5bf1-489f-a056-d6ff0e53b5cb",
+        "move_in_components": {
+          "badges": [
+            "move_in_incomplete"
+          ],
+          "charges": [
+            {
+              "amount": 2029.0,
+              "counted": true,
+              "name": "first_month",
+              "note": "base rent \u2014 one full month, no prorated schedule stated",
+              "refundable": false,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": null,
+              "counted": true,
+              "name": "security_deposit",
+              "refundable": true,
+              "required": true,
+              "tag": "unknown"
+            },
+            {
+              "amount": 50.0,
+              "counted": true,
+              "name": "Application fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 150.0,
+              "counted": true,
+              "name": "Administrative fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Fee",
+              "note": "$250.0 per pet x 0",
+              "refundable": null,
+              "required": false,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Deposit",
+              "note": "$250.0 per pet x 0",
+              "refundable": true,
+              "required": false,
+              "tag": "actual"
+            }
+          ],
+          "incomplete": true,
+          "non_refundable_total": 2029.0,
+          "refundable_total": 0.0,
+          "subtotal": 2229.0,
+          "total": null,
+          "unclassified_total": 200.0
+        },
+        "rubric_version": 1,
+        "total": 7.75
+      },
+      {
+        "all_in_components": {
+          "badges": [
+            "fees_unverified",
+            "heat_unknown"
+          ],
+          "components": [
+            {
+              "amount": 2270.0,
+              "name": "rent",
+              "tag": "actual"
+            },
+            {
+              "amount": 25.0,
+              "name": "Monthly Package Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 5.0,
+              "name": "Pest Control",
+              "tag": "actual"
+            },
+            {
+              "amount": 30.0,
+              "name": "Valet Trash",
+              "tag": "actual"
+            },
+            {
+              "amount": 6.0,
+              "name": "Rent & Ancillary Service Fee",
+              "tag": "actual"
+            },
+            {
+              "amount": 140.0,
+              "name": "electric",
+              "note": "heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 85.0,
+              "name": "gas",
+              "note": "winter-weighted; heating type unknown \u2014 priced as gas heat (the costlier setup)",
+              "tag": "estimated"
+            },
+            {
+              "amount": 45.0,
+              "name": "water",
+              "tag": "estimated"
+            },
+            {
+              "amount": 55.0,
+              "name": "sewer",
+              "tag": "estimated"
+            }
+          ],
+          "estimated_total": 325.0,
+          "mode": "conservative",
+          "total": 2661.0
+        },
+        "breakdown": {
+          "base": 10.0,
+          "clamped": false,
+          "criteria": [
+            {
+              "delta": 0.0,
+              "key": "beds",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1
+            },
+            {
+              "delta": 0.0,
+              "key": "baths",
+              "matched": {
+                "op": "eq",
+                "value": 1
+              },
+              "value": 1.0
+            },
+            {
+              "delta": -0.5,
+              "key": "sqft",
+              "matched": {
+                "op": "lt",
+                "value": 700
+              },
+              "value": 658
+            },
+            {
+              "delta": 0.0,
+              "key": "dishwasher",
+              "matched": null,
+              "unknown": true,
+              "value": null
+            },
+            {
+              "delta": 0.0,
+              "key": "patio_balcony",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": 0.0,
+              "key": "private_entry",
+              "matched": {
+                "op": "eq",
+                "value": "advertised_unconfirmed"
+              },
+              "value": "advertised_unconfirmed"
+            },
+            {
+              "delta": -2.0,
+              "key": "in_unit_laundry",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "none"
+                ]
+              },
+              "value": [
+                "none"
+              ]
+            },
+            {
+              "delta": 0.0,
+              "key": "parking",
+              "matched": {
+                "op": "contains_any",
+                "value": [
+                  "advertised_unconfirmed"
+                ]
+              },
+              "value": [
+                "advertised_unconfirmed"
+              ]
+            },
+            {
+              "delta": 0.25,
+              "key": "pool",
+              "matched": {
+                "op": "in",
+                "value": [
+                  "indoor",
+                  "outdoor"
+                ]
+              },
+              "value": "outdoor"
+            }
+          ],
+          "gates": [],
+          "rubric_version": 1,
+          "total": 7.75
+        },
+        "computed_at": "2026-08-09T05:05:27.803872+00:00",
+        "floor_plan_id": "fce2bc3d-8d88-4534-b809-46c646faf6cc",
+        "hunt_listing_id": "10e2c1cb-5bf1-489f-a056-d6ff0e53b5cb",
+        "move_in_components": {
+          "badges": [
+            "move_in_incomplete"
+          ],
+          "charges": [
+            {
+              "amount": 2270.0,
+              "counted": true,
+              "name": "first_month",
+              "note": "base rent \u2014 one full month, no prorated schedule stated",
+              "refundable": false,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": null,
+              "counted": true,
+              "name": "security_deposit",
+              "refundable": true,
+              "required": true,
+              "tag": "unknown"
+            },
+            {
+              "amount": 50.0,
+              "counted": true,
+              "name": "Application fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 150.0,
+              "counted": true,
+              "name": "Administrative fee",
+              "refundable": null,
+              "required": true,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Fee",
+              "note": "$250.0 per pet x 0",
+              "refundable": null,
+              "required": false,
+              "tag": "actual"
+            },
+            {
+              "amount": 0.0,
+              "counted": false,
+              "name": "Pet Deposit",
+              "note": "$250.0 per pet x 0",
+              "refundable": true,
+              "required": false,
+              "tag": "actual"
+            }
+          ],
+          "incomplete": true,
+          "non_refundable_total": 2270.0,
+          "refundable_total": 0.0,
+          "subtotal": 2470.0,
+          "total": null,
+          "unclassified_total": 200.0
+        },
+        "rubric_version": 1,
+        "total": 7.75
+      }
+    ],
+    "single_source_reason": null,
+    "source_policy": "tiers_1_2_3",
+    "status": "active",
+    "unavailable_at": null
+  },
+  "source": {
+    "job_id": "74b2b9ce-2a11-4c15-a568-e66538a78b2c",
+    "property_name": "Howell Uptown",
+    "source_policy": "tiers_1_2_3",
+    "url": "https://www.rent.com/apartment/howell-uptown-dallas-tx-lc6325179"
+  },
+  "version": 1
+}

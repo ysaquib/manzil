@@ -100,7 +100,7 @@ def test_create_app_exports_dotenv_for_the_inprocess_worker(monkeypatch, tmp_pat
     env = {
         "SUPABASE_URL": "http://127.0.0.1:54321",
         "SUPABASE_ANON_KEY": "anon",
-        "SUPABASE_SERVICE_ROLE_KEY": "service",
+        "SUPABASE_SECRET_KEY": "service",
         "DATABASE_URL": DATABASE_URL,
         "BRIGHTDATA_API_KEY": "test-tier3-key",
     }
@@ -159,6 +159,13 @@ async def test_inprocess_loop_processes_a_job_while_serving_and_drains(monkeypat
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 health = await client.get("/v1/health")
                 assert health.status_code == 200  # API serves while the loop runs
+                ready = await client.get("/v1/ready")
+                assert ready.status_code == 200
+                assert ready.json()["checks"] == {
+                    "database": "ok",
+                    "worker": "ok",
+                    "model": "ok",
+                }
 
                 async def job_state() -> str:
                     return await pool.fetchval(

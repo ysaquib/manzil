@@ -102,7 +102,7 @@ export function FloorPlanList({
             </>
           ) : (
             <>
-              No pin — showing best score:{" "}
+              No pin — showing preferred plan:{" "}
               <Text span fw={600} c="var(--mantine-color-text)">
                 {displayed}
               </Text>

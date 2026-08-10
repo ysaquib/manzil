@@ -25,6 +25,13 @@ from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.image_classify import eligible_quality_images, select_kitchen_targets
 from manzil_worker.stages.image_fetch import image_fetch_stage
 from manzil_worker.state import FloorPlanIn, PlanManifest, PropertyImageIn, RunState, SourceState
+from manzil_worker.vision_onnx import (
+    ONNX_SHADOW_ARTIFACT_SHA256,
+    ONNX_SHADOW_BACKEND,
+    ONNX_SHADOW_CACHE_KEY,
+    ONNX_SHADOW_DIAGRAM_THRESHOLD,
+    ONNX_SHADOW_KITCHEN_THRESHOLD,
+)
 from PIL import Image
 
 
@@ -77,9 +84,7 @@ def _run(candidates: list[dict[str, object]], plans: list[FloorPlanIn]):
 
 
 def _plan(key: str, name: str, *, native: str | None = None) -> FloorPlanIn:
-    return FloorPlanIn(
-        response_key=key, plan_name=name, beds=2, baths=2, source_native_id=native
-    )
+    return FloorPlanIn(response_key=key, plan_name=name, beds=2, baths=2, source_native_id=native)
 
 
 def test_a_card_with_one_unambiguous_diagram_links_to_its_plan() -> None:
@@ -175,17 +180,19 @@ def _stored(kind: str, *, diagram_flag: bool) -> PropertyImageIn:
         kind=kind,  # type: ignore[arg-type]
         vision_assessment={
             "classification": {
+                "cache_key": ONNX_SHADOW_CACHE_KEY,
+                "backend": ONNX_SHADOW_BACKEND,
+                "artifact_sha256": ONNX_SHADOW_ARTIFACT_SHA256,
+                "kitchen_threshold": ONNX_SHADOW_KITCHEN_THRESHOLD,
+                "diagram_threshold": ONNX_SHADOW_DIAGRAM_THRESHOLD,
                 "assessment": {
                     "content_hash": "x" * 64,
-                    "primary_scene": "diagram" if diagram_flag else "kitchen",
-                    "kitchen_visibility": "assessable",
-                    "flooring_assessability": "assessable",
-                    "bathroom_visibility": "not_visible",
-                    "framing": "full_room",
-                    "confidence": "high",
-                    "irrelevant": False,
-                    "diagram": diagram_flag,
-                }
+                    "predicted_scene": "corridor" if diagram_flag else "kitchen",
+                    "kitchen_score": 0.1 if diagram_flag else 0.9,
+                    "kitchen_predicted": not diagram_flag,
+                    "diagram_score": 0.99 if diagram_flag else 0.01,
+                    "diagram_predicted": diagram_flag,
+                },
             }
         },
     )

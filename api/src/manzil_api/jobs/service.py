@@ -28,11 +28,41 @@ from manzil_api.jobs.schemas import (
 )
 from supabase import Client
 
+# Every `jobs` column an API read may name, with `payload_public` standing in
+# for `payload`. There is no `select("*")` on this table any more:
+# `authenticated` holds SELECT on every column *except* `payload`
+# (`20260901000010_jobs_payload_projection.sql`), which carries cleaned Source
+# text, and PostgREST asks for all of them — so `*` is a hard `permission
+# denied` rather than a silently missing key. Service-role reads name the same
+# list so the two paths cannot drift.
+JOB_COLUMNS = (
+    "id,hunt_id,hunt_listing_id,type,state,current_stage,plan,payload_public,"
+    "attempts,error,cost_actual_usd,created_at,started_at,finished_at,warnings"
+)
+
 
 def _parse_payload(raw: Any) -> dict[str, Any]:
     if isinstance(raw, str):
         return json.loads(raw)
     return raw or {}
+
+
+def job_payload(row: dict[str, Any]) -> dict[str, Any]:
+    """The Job payload as a caller may see it, from either key.
+
+    A table read names `payload_public`; the two checkpoint RPCs return the same
+    projection under the key `payload`, because renaming it *there* would drop
+    `checkpoint` and `auto_resolved_checkpoint` from the answered-checkpoint
+    response silently — the Tasks UI would lose the prompt with no error
+    anywhere. Normalising here means one accessor for both.
+
+    Nothing this returns may ever be written back to `jobs.payload`: it is the
+    redacted projection, and storing it would empty every Source body.
+    """
+    raw = row.get("payload_public")
+    if raw is None:
+        raw = row.get("payload")
+    return _parse_payload(raw)
 
 
 def _parse_warnings(raw: Any) -> list[JobWarning]:
@@ -116,7 +146,7 @@ def _auto_resolved_checkpoint(
 
 
 def row_to_response(row: dict[str, Any]) -> JobResponse:
-    payload = _parse_payload(row.get("payload"))
+    payload = job_payload(row)
     run_state = payload.get("run_state") or {}
     stage_index = run_state.get("cursor")
     if not isinstance(stage_index, int):
@@ -182,7 +212,7 @@ async def _assert_manage_job(client: Client, job: dict[str, Any], user_id: str) 
 
 
 async def get_job_row(client: Client, job_id: UUID) -> dict[str, Any] | None:
-    response = client.table("jobs").select("*").eq("id", str(job_id)).limit(1).execute()
+    response = client.table("jobs").select(JOB_COLUMNS).eq("id", str(job_id)).limit(1).execute()
     rows = response.data or []
     return rows[0] if rows else None
 
@@ -190,7 +220,7 @@ async def get_job_row(client: Client, job_id: UUID) -> dict[str, Any] | None:
 async def list_jobs(
     client: Client, hunt_id: UUID, states: list[JobState] | None
 ) -> list[JobResponse]:
-    query = client.table("jobs").select("*").eq("hunt_id", str(hunt_id))
+    query = client.table("jobs").select(JOB_COLUMNS).eq("hunt_id", str(hunt_id))
     if states:
         query = query.in_("state", [s.value for s in states])
     query = (
@@ -201,30 +231,40 @@ async def list_jobs(
     return [row_to_response(row) for row in query.execute().data or []]
 
 
-async def cancel_job(client: Client, job_id: UUID, user_id: str) -> JobResponse:
+async def cancel_job(
+    client: Client, job_id: UUID, user_id: str, *, authorized_admin: bool = False
+) -> JobResponse:
     row = await get_job_row(client, job_id)
     if row is None:
         raise JobNotFound(f"Job {job_id} not found")
-    await _assert_manage_job(client, row, user_id)
+    if not authorized_admin:
+        await _assert_manage_job(client, row, user_id)
     if row["state"] not in {
         JobState.QUEUED.value,
         JobState.RUNNING.value,
         JobState.WAITING_USER.value,
     }:
         raise JobNotCancellable(f"Job in state {row['state']} cannot be cancelled")
+    # `returning="minimal"`: a representation would be `select *` on the
+    # returned row, which now needs SELECT on `payload`. The fresh row comes
+    # from `get_job_row` below in any case.
     client.table("jobs").update(
-        {"state": JobState.CANCELLED.value, "finished_at": datetime.now(UTC).isoformat()}
+        {"state": JobState.CANCELLED.value, "finished_at": datetime.now(UTC).isoformat()},
+        returning="minimal",
     ).eq("id", str(job_id)).execute()
     updated = await get_job_row(client, job_id)
     assert updated is not None
     return row_to_response(updated)
 
 
-async def retry_job(client: Client, job_id: UUID, user_id: str) -> JobResponse:
+async def retry_job(
+    client: Client, job_id: UUID, user_id: str, *, authorized_admin: bool = False
+) -> JobResponse:
     row = await get_job_row(client, job_id)
     if row is None:
         raise JobNotFound(f"Job {job_id} not found")
-    await _assert_manage_job(client, row, user_id)
+    if not authorized_admin:
+        await _assert_manage_job(client, row, user_id)
     if row["state"] not in {JobState.FAILED.value, JobState.CANCELLED.value}:
         raise JobNotRetryable(f"Job in state {row['state']} cannot be retried")
     client.table("jobs").update(
@@ -235,7 +275,8 @@ async def retry_job(client: Client, job_id: UUID, user_id: str) -> JobResponse:
             "locked_by": None,
             "locked_at": None,
             "finished_at": None,
-        }
+        },
+        returning="minimal",
     ).eq("id", str(job_id)).execute()
     updated = await get_job_row(client, job_id)
     assert updated is not None
@@ -252,7 +293,7 @@ async def answer_checkpoint(
     if role == "member" and not own:
         raise InsufficientRole("Members may resolve checkpoints only on their own Listings")
 
-    payload = _parse_payload(row.get("payload"))
+    payload = job_payload(row)
     auto_raw = payload.get("auto_resolved_checkpoint")
     if row["state"] != JobState.WAITING_USER.value:
         if not isinstance(auto_raw, dict):
@@ -283,19 +324,20 @@ async def answer_checkpoint(
     if not isinstance(choice, str) or choice not in prompt.options:
         raise InvalidCheckpointAnswer(f"Answer must be one of {prompt.options}, got {choice!r}")
 
-    payload["checkpoint_answer"] = {
-        **body.answer,
-        "context_ref": prompt.context_ref,
-    }
-    run_state["status"] = JobState.RUNNING.value
-    run_state["checkpoint"] = None
-    payload["run_state"] = run_state
-
+    # The RPC merges the answer into the Job's own stored payload; the API sends
+    # the answer and nothing else. Sending back what it read here would be the
+    # bug: `payload` above is the redacted projection, and storing it would
+    # empty every Source body — silently, because a resumed EXTRACT *skips* an
+    # emptied Source rather than failing. The rule the column list creates: no
+    # user-JWT or projection-sourced read is ever written back to `payload`.
+    #
+    # The `choice` check above is a better error message, not a control: the RPC
+    # is callable straight through PostgREST, so it validates the answer itself.
     response = client.rpc(
         "answer_job_checkpoint",
         {
             "p_job_id": str(job_id),
-            "p_payload": payload,
+            "p_answer": body.answer,
             "p_detail": {
                 "answer": body.answer,
                 "kind": prompt.kind.value,

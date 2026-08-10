@@ -53,6 +53,7 @@ import { InvitationLinksSection } from "../invites/InvitationLinksSection";
 import { ApiError } from "../../lib/apiClient";
 import { resolveSettings, SOURCE_POLICIES, type HuntSettings } from "../../lib/contracts";
 import { useHunt, usePatchHunt, usePatchHuntSettings, type Hunt } from "./api";
+import { useGhostMode } from "../admin/useGhostMode";
 
 const TABS: SettingsTab[] = [
   {
@@ -91,11 +92,11 @@ function notifyError(title: string) {
     });
 }
 
-function HuntPanel({ hunt, isOwner }: { hunt: Hunt; isOwner: boolean }) {
+function HuntPanel({ hunt, isOwner, isGhost }: { hunt: Hunt; isOwner: boolean; isGhost: boolean }) {
   const { session } = useAuth();
   const currentUserId = session?.user.id ?? "";
   const { data: members = [] } = useMembers(hunt.id);
-  const transferOwnership = useTransferOwnership(hunt.id);
+  const transferOwnership = useTransferOwnership(hunt.id, isGhost);
   const patchHunt = usePatchHunt(hunt.id);
   const patchSettings = usePatchHuntSettings(hunt.id);
   const navigate = useNavigate();
@@ -108,7 +109,7 @@ function HuntPanel({ hunt, isOwner }: { hunt: Hunt; isOwner: boolean }) {
   const [confirmTransfer, setConfirmTransfer] = useState(false);
 
   const transferOptions = members
-    .filter((member) => member.user_id !== currentUserId)
+    .filter((member) => member.user_id !== currentUserId && member.role !== "owner")
     .map((member) => ({ value: member.user_id, label: member.display_name ?? "Member" }));
   const transferTargetName =
     members.find((member) => member.user_id === transferTarget)?.display_name ?? "this Member";
@@ -321,6 +322,7 @@ function HuntPanel({ hunt, isOwner }: { hunt: Hunt; isOwner: boolean }) {
             members={members}
             currentUserId={currentUserId}
             isOwner={isOwner}
+            isGhost={isGhost}
           />
           {isOwner && <InvitesSection huntId={hunt.id} />}
           {isOwner && <InvitationLinksSection huntId={hunt.id} />}
@@ -517,9 +519,11 @@ export function HuntSettingsPage() {
   const { session } = useAuth();
   const { data: hunt, isLoading, error } = useHunt(huntId);
   const { data: members = [] } = useMembers(huntId);
+  const { isGhost } = useGhostMode(huntId);
 
-  const active = TABS.some((candidate) => candidate.value === tab) ? tab! : "hunt";
-  const isOwner = hunt?.owner_id === (session?.user.id ?? "");
+  const visibleTabs = isGhost === true ? TABS.filter((candidate) => candidate.value !== "profile") : TABS;
+  const active = visibleTabs.some((candidate) => candidate.value === tab) ? tab! : "hunt";
+  const isOwner = isGhost === true || hunt?.owner_id === (session?.user.id ?? "");
 
   return (
     <Stack gap="lg">
@@ -543,12 +547,12 @@ export function HuntSettingsPage() {
       )}
       {hunt && (
         <SettingsShell
-          tabs={TABS}
+          tabs={visibleTabs}
           active={active}
           onSelect={(value) => navigate(`/h/${huntId}/settings/${value}`)}
         >
           {active === "hunt" ? (
-            <HuntPanel hunt={hunt} isOwner={isOwner} />
+            <HuntPanel hunt={hunt} isOwner={isOwner} isGhost={isGhost === true} />
           ) : (
             <YourProfilePanel hunt={hunt} />
           )}

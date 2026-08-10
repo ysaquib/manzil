@@ -4,12 +4,16 @@
 // through it so their empty and error states stay identical.
 import { Alert, Box, Center, Loader, Stack, Text, useComputedColorScheme } from "@mantine/core";
 import { IconMapOff } from "@tabler/icons-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
+import type { DemoBasemap } from "./demoBasemap";
+import type { Size } from "./demoProjection";
+
+import { isDemo } from "../../lib/demo";
 import { loadGoogleMaps, mapsConfigured } from "../../lib/googleMaps";
 import { BASE_MAP_OPTIONS, basemapStyle } from "./mapTheme";
 
-type Status = "unconfigured" | "loading" | "ready" | "error";
+type Status = "unconfigured" | "loading" | "ready" | "error" | "demo";
 
 export function MapFrame({
   height,
@@ -17,6 +21,8 @@ export function MapFrame({
   onReady,
   radius = "md",
   emptyLabel,
+  demoBasemap = null,
+  demoOverlay,
 }: {
   /** CSS height — a number is px, a string passes through (e.g. "100%"). */
   height: number | string;
@@ -27,17 +33,56 @@ export function MapFrame({
   radius?: string;
   /** Shown over the map when there is nothing to plot. */
   emptyLabel?: string | null;
+  /**
+   * A pre-captured basemap for demo sessions (DM-9).
+   *
+   * The demo must never call the Maps JS API: every load is billable, and the
+   * browser key would be handed to the public along with the session. When one
+   * of these exists it renders instead; when it does not, the surface says so
+   * rather than silently loading the real map.
+   *
+   * It is a *basemap* — pins are not baked in. `demoOverlay` draws them from
+   * live data, so a Rubric change cannot leave the map asserting a score band
+   * the Hunt no longer computes, and a pin stays clickable.
+   */
+  demoBasemap?: DemoBasemap | null;
+  /**
+   * Pins to draw over the still, given the measured container. Called only in
+   * a demo session and only once the container has a size, because placing a
+   * coordinate on the still requires knowing the `cover` crop.
+   */
+  demoOverlay?: (container: Size) => ReactNode;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
   const [status, setStatus] = useState<Status>(
-    mapsConfigured() ? "loading" : "unconfigured",
+    isDemo() ? "demo" : mapsConfigured() ? "loading" : "unconfigured",
   );
   const scheme = useComputedColorScheme("light");
+  const [box, setBox] = useState<Size | null>(null);
+
+  // Only demo sessions need the measurement, and only to place pins on a still
+  // rendered `cover` — a real map projects its own coordinates.
+  useLayoutEffect(() => {
+    if (!isDemo() || !demoOverlay) return;
+    const element = containerRef.current;
+    if (!element) return;
+    const measure = () =>
+      setBox({ width: element.clientWidth, height: element.clientHeight });
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [demoOverlay]);
 
   useEffect(() => {
+    // DESIGN §16/DM-9: `loadGoogleMaps()` is never called in a demo session.
+    // The guard is here, at the single seam both map surfaces go through,
+    // rather than at each caller — a new surface inherits it for free.
+    if (isDemo()) return;
     if (!mapsConfigured()) return;
     let cancelled = false;
     void loadGoogleMaps().then(
@@ -95,6 +140,33 @@ export function MapFrame({
           <Loader size="sm" />
         </Center>
       )}
+
+      {status === "demo" &&
+        (demoBasemap ? (
+          <>
+            <Box
+              pos="absolute"
+              inset={0}
+              role="img"
+              aria-label="Pre-captured map. Live maps are switched off in the demo."
+              style={{
+                backgroundImage: `url(${demoBasemap.url})`,
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+              }}
+            />
+            {box && demoOverlay ? demoOverlay(box) : null}
+          </>
+        ) : (
+          <Center pos="absolute" inset={0} p="md">
+            <Alert color="gray" icon={<IconMapOff size={18} stroke={1.5} />} title="Map not shown">
+              <Text size="sm">
+                Live maps are switched off in the demo, so nothing here calls Google. The
+                address and the &ldquo;Open in Maps&rdquo; link still work.
+              </Text>
+            </Alert>
+          </Center>
+        ))}
 
       {status === "unconfigured" && (
         <Center pos="absolute" inset={0} p="md">

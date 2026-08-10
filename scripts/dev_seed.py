@@ -58,7 +58,9 @@ DEFAULT_SETTINGS = {
 }
 
 # Three listing-bearing committed synthetic pages, with fake-but-public URLs that
-# pass VALIDATE_URL (no loopback/private host). Served by FixtureFetcher.
+# pass VALIDATE_URL (no loopback/private host). Served by FixtureFetcher. The TTL
+# scheduler excludes this reserved `*.seed.example` namespace because these
+# Sources have no public-network representation to refresh.
 # NOTE: the P1-1 brief named success_jsonld.html, but that is a 230-char
 # classifier smoke fixture (used only by test_classifier) that fails VALIDATE's
 # 800-char listing floor — it is not ingestable. injection_listing.html is a

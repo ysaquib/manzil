@@ -49,7 +49,6 @@ import { Link } from "react-router-dom";
 import { AllInCell } from "./AllInCost";
 import {
   AutoResolvedBadge,
-  ProblematicBadge,
   SingleSourceBadge,
   StaleBadge,
 } from "../../components/badges/ListingBadges";
@@ -82,6 +81,7 @@ import {
   type SortState,
 } from "./overviewRows";
 import { sentenceCase } from "../../lib/text";
+import { useGhostMode } from "../admin/useGhostMode";
 
 import classes from "./OverviewTable.module.css";
 
@@ -238,12 +238,11 @@ export interface OverviewTableProps {
   sort: SortState;
   onSort: (key: SortKey) => void;
   onOpen: (row: OverviewRow) => void;
-  onArchive: (row: OverviewRow) => void;
+  onArchive?: (row: OverviewRow) => void;
   density?: TableDensity;
   columns?: OverviewColumnKey[];
   /** Pipeline state per row key, from rowState.ts; absent when the row is idle. */
   pipeline?: Map<string, RowPipeline>;
-  problematicPropertyIds?: Set<string>;
   staleClassesByListing?: Map<string, RefreshClass[]>;
   autoResolvedListingIds?: Set<string>;
   /** Bulk selection (m6): selected row keys; omit to hide the checkbox column. */
@@ -277,8 +276,9 @@ function PeopleCell({
 
 function CurationCells({ row, huntId }: { row: OverviewRow; huntId: string }) {
   const { data: currentMember } = useCurrentMember(huntId);
+  const { isGhost } = useGhostMode(huntId);
   const patchState = usePatchUnitGroupState(huntId);
-  const canCurate = currentMember?.role === "owner" || currentMember?.role === "curator";
+  const canCurate = isGhost === true || currentMember?.role === "owner" || currentMember?.role === "curator";
   const group = row.group;
   const visited = row.state?.visited ?? false;
   const save = (interest_status: InterestStatus | null, nextVisited: boolean) => {
@@ -314,7 +314,7 @@ function RowActionsMenu({
   row: OverviewRow;
   huntId: string;
   onOpen: (row: OverviewRow) => void;
-  onArchive: (row: OverviewRow) => void;
+  onArchive?: (row: OverviewRow) => void;
 }) {
   const property = row.listing.property;
   const listingUrl = property.official_url ?? property.sources[0]?.url ?? null;
@@ -323,8 +323,10 @@ function RowActionsMenu({
   const inCompare = compare.has(entry);
   const compareBlocked = entry === null || (compare.isFull && !inCompare);
   const { data: currentMember } = useCurrentMember(huntId);
+  const { isGhost } = useGhostMode(huntId);
   const refresh = useRefreshListing(huntId);
   const canRefresh =
+    isGhost === true ||
     currentMember?.role === "owner" ||
     currentMember?.user_id === row.listing.added_by;
 
@@ -407,14 +409,18 @@ function RowActionsMenu({
             Copy listing link
           </Menu.Item>
         )}
-        <Menu.Divider />
-        <Menu.Item
-          color="red"
-          leftSection={<IconArchive size={14} stroke={1.5} />}
-          onClick={() => onArchive(row)}
-        >
-          Archive listing
-        </Menu.Item>
+        {onArchive && (
+          <>
+            <Menu.Divider />
+            <Menu.Item
+              color="red"
+              leftSection={<IconArchive size={14} stroke={1.5} />}
+              onClick={() => onArchive(row)}
+            >
+              Archive listing
+            </Menu.Item>
+          </>
+        )}
       </Menu.Dropdown>
     </Menu>
   );
@@ -471,7 +477,6 @@ export function OverviewTable({
   density = "normal",
   columns = DEFAULT_OVERVIEW_COLUMNS,
   pipeline,
-  problematicPropertyIds,
   staleClassesByListing,
   autoResolvedListingIds,
   selectedKeys,
@@ -652,9 +657,6 @@ export function OverviewTable({
                         </Text>
                         {row.listing.single_source_reason && !state && (
                           <SingleSourceBadge reason={row.listing.single_source_reason} />
-                        )}
-                        {problematicPropertyIds?.has(row.listing.property_id) && !state && (
-                          <ProblematicBadge />
                         )}
                         {autoResolvedListingIds?.has(row.listing.id) && !state && (
                           <AutoResolvedBadge />

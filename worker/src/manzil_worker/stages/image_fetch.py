@@ -75,9 +75,7 @@ def _skip_vision(state: RunState, why: str) -> None:
         state.plan.skipped["VISION"] = why
 
 
-def _apply_fetch_completion(
-    state: RunState, *, incomplete: bool, photo_count: int
-) -> bool:
+def _apply_fetch_completion(state: RunState, *, incomplete: bool, photo_count: int) -> bool:
     """Return whether the pass is strict-complete (no failed downloads)."""
     strict_complete = not incomplete
     cap_saturated = photo_count >= MAX_STORED_IMAGES
@@ -296,9 +294,7 @@ async def image_fetch_stage(state: RunState, ctx: StageCtx) -> RunState:
         )
 
     state.property_images = images
-    strict_complete = _apply_fetch_completion(
-        state, incomplete=incomplete, photo_count=photo_count
-    )
+    strict_complete = _apply_fetch_completion(state, incomplete=incomplete, photo_count=photo_count)
     current_hashes = {image.content_hash for image in images}
     log.info(
         "images_prepared",

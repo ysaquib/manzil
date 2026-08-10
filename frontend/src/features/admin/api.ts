@@ -261,7 +261,7 @@ export function useDeletePerson() {
   });
 }
 
-export function useInvitePerson() {
+export function useProvisionPerson() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (body: { email: string; hunt_id?: string; role?: string }) =>

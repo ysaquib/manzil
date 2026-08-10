@@ -13,6 +13,8 @@ from manzil_api.listings import service
 from manzil_api.listings.dependencies import ValidListing
 from manzil_api.listings.schemas import (
     ListingCreate,
+    ListingDeletionImpact,
+    ListingPermanentDelete,
     ListingResponse,
     ListingStatusPatch,
     PinsPatch,
@@ -53,11 +55,24 @@ async def list_listings(
     return await service.list_listings(client, hunt_id)
 
 
-@router.delete("/listings/{listing_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_listing(
+@router.get("/listings/{listing_id}/deletion-impact", response_model=ListingDeletionImpact)
+async def listing_deletion_impact(
     listing_id: UUID, listing: ValidListing, user: CurrentUser, client: UserClient
-) -> None:
-    await service.delete_listing(client, listing_id, user.id)
+) -> ListingDeletionImpact:
+    return await service.get_deletion_impact(client, listing, user.id)
+
+
+@router.delete("/listings/{listing_id}", response_model=ListingDeletionImpact)
+async def delete_listing(
+    listing_id: UUID,
+    body: ListingPermanentDelete,
+    listing: ValidListing,
+    user: CurrentUser,
+    client: UserClient,
+) -> ListingDeletionImpact:
+    return await service.delete_listing_permanently(
+        client, listing, user.id, body.confirmation_name
+    )
 
 
 @router.patch("/listings/{listing_id}/status", response_model=ListingResponse)

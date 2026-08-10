@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/apiClient";
 import type { components } from "../../lib/generated/api";
 import { supabase } from "../../lib/supabase";
+import { useGhostMutationPath } from "../admin/useGhostMode";
 import type {
   Extraction,
   FeeEntry,
@@ -26,9 +27,16 @@ type OverrideCreate = components["schemas"]["OverrideCreate"];
 type OverrideResponse = components["schemas"]["OverrideResponse"];
 type FeeEntryUpsert = components["schemas"]["FeeEntryUpsert"];
 type FeeEntryResponse = components["schemas"]["FeeEntryResponse"];
+export type ListingDeletionImpact = components["schemas"]["ListingDeletionImpact"];
 
-const LISTING_SELECT =
-  "*, property:properties(*, floor_plans(*), sources:property_sources(*)), scores(*)";
+// `property_sources.cleaned_text` is deliberately service-role-only (DESIGN
+// §16). A wildcard nested select requests that protected column and PostgREST
+// rejects the whole Listing query, including for a Site Admin in Ghost View.
+const PROPERTY_SOURCE_SELECT =
+  "id,property_id,url,site_domain,is_official,last_fetched_at,last_success_at";
+
+export const LISTING_SELECT =
+  `*, property:properties(*, floor_plans(*), sources:property_sources(${PROPERTY_SOURCE_SELECT})), scores(*)`;
 
 export function useListings(huntId: string) {
   return useQuery({
@@ -66,9 +74,10 @@ export function useRefreshStatuses(huntId: string) {
 
 export function useRefreshListing(huntId: string) {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: ({ listingId, fields }: { listingId: string; fields?: RefreshClass[] }) =>
-      apiFetch<components["schemas"]["JobResponse"]>(`/v1/listings/${listingId}/refresh`, {
+      apiFetch<components["schemas"]["JobResponse"]>(mutationPath(`/v1/listings/${listingId}/refresh`), {
         method: "POST",
         body: fields ? { fields } : {},
       }),
@@ -99,13 +108,27 @@ export function useUnitGroupStates(huntId: string) {
 
 export function usePatchUnitGroupState(huntId: string) {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: ({ listingId, unitGroupKey, interest_status, visited }: {
       listingId: string; unitGroupKey: string;
       interest_status: UnitGroupState["interest_status"]; visited: boolean;
     }) => apiFetch<UnitGroupState>(
-      `/v1/listings/${listingId}/unit-groups/${unitGroupKey}/state`,
-      { method: "PATCH", body: { interest_status, visited } },
+      mutationPath(`/v1/listings/${listingId}/unit-groups/${unitGroupKey}/state`),
+      {
+        method: "PATCH",
+        body: { interest_status, visited },
+        // In demo mode nothing is sent, so `onSuccess` below would dereference
+        // an undefined row and throw. The synthetic row is exactly what the
+        // server would have returned, so the pill updates and then vanishes on
+        // reload like every other demo write (R2 M5).
+        demoResult: () => ({
+          hunt_listing_id: listingId,
+          unit_group_key: unitGroupKey,
+          interest_status,
+          visited,
+        }) as UnitGroupState,
+      },
     ),
     onSuccess: (saved) => {
       qc.setQueryData<UnitGroupState[]>(["listing_unit_group_states", huntId], (current = []) => [
@@ -242,9 +265,10 @@ export function useResolutionCandidates(extractionId: string, enabled: boolean) 
 
 export function useCreateListing(huntId: string) {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: (body: ListingCreate) =>
-      apiFetch<ListingResponse>(`/v1/hunts/${huntId}/listings`, { method: "POST", body }),
+      apiFetch<ListingResponse>(mutationPath(`/v1/hunts/${huntId}/listings`), { method: "POST", body }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["hunt_listings", huntId] });
       void qc.invalidateQueries({ queryKey: ["jobs", huntId] });
@@ -275,9 +299,10 @@ export function useArchivedListings(huntId: string, enabled: boolean) {
 // refreshes both the active and archived queries.
 export function usePatchListingStatus(huntId: string) {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: ({ listingId, status }: { listingId: string; status: "active" | "archived" }) =>
-      apiFetch<ListingResponse>(`/v1/listings/${listingId}/status`, {
+      apiFetch<ListingResponse>(mutationPath(`/v1/listings/${listingId}/status`), {
         method: "PATCH",
         body: { status } satisfies components["schemas"]["ListingStatusPatch"],
       }),
@@ -285,11 +310,57 @@ export function usePatchListingStatus(huntId: string) {
   });
 }
 
+export function useListingDeletionImpact(
+  huntId: string,
+  listingId: string | null,
+  enabled: boolean,
+) {
+  const mutationPath = useGhostMutationPath(huntId);
+  return useQuery({
+    queryKey: ["listing_deletion_impact", listingId],
+    queryFn: () => apiFetch<ListingDeletionImpact>(
+      mutationPath(`/v1/listings/${listingId}/deletion-impact`),
+    ),
+    enabled: enabled && Boolean(listingId),
+  });
+}
+
+export function usePermanentDeleteListing(huntId: string) {
+  const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
+  return useMutation({
+    mutationFn: ({ listingId, confirmationName }: {
+      listingId: string;
+      confirmationName: string;
+    }) => apiFetch<ListingDeletionImpact>(mutationPath(`/v1/listings/${listingId}`), {
+      method: "DELETE",
+      body: { confirmation_name: confirmationName } satisfies components["schemas"]["ListingPermanentDelete"],
+    }),
+    onSuccess: (_result, { listingId }) => {
+      qc.removeQueries({
+        predicate: (query) => query.queryKey.some((part) => part === listingId),
+      });
+      for (const key of [
+        "hunt_listings",
+        "jobs",
+        "visits",
+        "visit_unit_group_scores",
+        "listing_unit_group_states",
+        "hunt_listing_refresh_status",
+        "hunt_activity",
+      ]) {
+        void qc.invalidateQueries({ queryKey: [key, huntId] });
+      }
+    },
+  });
+}
+
 export function usePatchPins(huntId: string) {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: ({ listingId, pins }: { listingId: string; pins: Record<string, string> }) =>
-      apiFetch<ListingResponse>(`/v1/listings/${listingId}/pins`, {
+      apiFetch<ListingResponse>(mutationPath(`/v1/listings/${listingId}/pins`), {
         method: "PATCH",
         body: { pins } satisfies components["schemas"]["PinsPatch"],
       }),
@@ -315,11 +386,12 @@ export function usePatchPins(huntId: string) {
 
 export function usePatchSourcePolicy(huntId: string) {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: ({ listingId, sourcePolicy }: {
       listingId: string;
       sourcePolicy: Listing["source_policy"];
-    }) => apiFetch<ListingResponse>(`/v1/listings/${listingId}/source-policy`, {
+    }) => apiFetch<ListingResponse>(mutationPath(`/v1/listings/${listingId}/source-policy`), {
       method: "PATCH",
       body: { source_policy: sourcePolicy },
     }),
@@ -332,9 +404,10 @@ export function usePatchSourcePolicy(huntId: string) {
 
 export function useCreateOverride(huntId: string, listingId: string) {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: (body: OverrideCreate) =>
-      apiFetch<OverrideResponse>(`/v1/listings/${listingId}/overrides`, { method: "POST", body }),
+      apiFetch<OverrideResponse>(mutationPath(`/v1/listings/${listingId}/overrides`), { method: "POST", body }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["overrides", listingId] });
       // Rescore is async; the listings re-fetch picks up new scores when it lands.
@@ -345,9 +418,10 @@ export function useCreateOverride(huntId: string, listingId: string) {
 
 export function useUpsertFee(huntId: string, listingId: string) {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: ({ slot, ...body }: FeeEntryUpsert & { slot: string }) =>
-      apiFetch<FeeEntryResponse>(`/v1/listings/${listingId}/fees/${slot}`, {
+      apiFetch<FeeEntryResponse>(mutationPath(`/v1/listings/${listingId}/fees/${slot}`), {
         method: "PUT",
         body,
       }),
@@ -360,13 +434,14 @@ export function useUpsertFee(huntId: string, listingId: string) {
 
 export function useUpsertUtilityOverride(huntId: string, listingId: string) {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: ({ utility, included, monthly_amount, note }: {
       utility: UtilityName;
       included: boolean | null;
       monthly_amount: number | null;
       note?: string | null;
-    }) => apiFetch<UtilityOverride>(`/v1/listings/${listingId}/utilities/${utility}`, {
+    }) => apiFetch<UtilityOverride>(mutationPath(`/v1/listings/${listingId}/utilities/${utility}`), {
       method: "PUT",
       body: { included, monthly_amount, note: note ?? null },
     }),
@@ -410,8 +485,77 @@ export interface PropertyImage {
   width: number | null;
   height: number | null;
   kind?: "listing_photo" | "floor_plan_diagram" | "other";
-  visionAssessment?: Record<string, unknown> | null;
+  classification?: {
+    primaryScene: string;
+    kitchenProbability: number;
+  };
+  kitchenAssessment?: {
+    visibility: "visible" | "not_visible";
+    rating: number | null;
+    confidence: "high" | "medium" | "low";
+    rationale: string;
+  };
   floorPlanAssociations?: string[];
+}
+
+function assessmentRecord(value: unknown, classifier: "classification" | "classification_shadow") {
+  if (!value || typeof value !== "object") return null;
+  const record = (value as Record<string, unknown>)[classifier];
+  if (!record || typeof record !== "object") return null;
+  const assessment = (record as Record<string, unknown>).assessment;
+  return assessment && typeof assessment === "object"
+    ? assessment as Record<string, unknown>
+    : null;
+}
+
+export function projectImageClassifications(
+  visionAssessment: unknown,
+): Pick<PropertyImage, "classification" | "kitchenAssessment"> {
+  const canonical = assessmentRecord(visionAssessment, "classification");
+  // Migration compatibility: rows classified during shadow rollout become
+  // visible as ONNX immediately and are promoted on their next image refresh.
+  const legacyShadow = assessmentRecord(visionAssessment, "classification_shadow");
+  const onnx = typeof canonical?.predicted_scene === "string" ? canonical : legacyShadow;
+  const predictedScene = onnx?.predicted_scene;
+  const kitchenScore = onnx?.kitchen_score;
+  const kitchenQuality = (visionAssessment as Record<string, unknown> | null)?.kitchen_quality;
+  const kitchenAssessment = kitchenQuality && typeof kitchenQuality === "object"
+    ? (kitchenQuality as Record<string, unknown>).assessment
+    : null;
+  const visibility = kitchenAssessment && typeof kitchenAssessment === "object"
+    ? (kitchenAssessment as Record<string, unknown>).visibility
+    : null;
+  const rating = kitchenAssessment && typeof kitchenAssessment === "object"
+    ? (kitchenAssessment as Record<string, unknown>).rating
+    : null;
+  const confidence = kitchenAssessment && typeof kitchenAssessment === "object"
+    ? (kitchenAssessment as Record<string, unknown>).confidence
+    : null;
+  const rationale = kitchenAssessment && typeof kitchenAssessment === "object"
+    ? (kitchenAssessment as Record<string, unknown>).rationale
+    : null;
+  const validVisibility = visibility === "visible" || visibility === "not_visible";
+  const validConfidence = confidence === "high" || confidence === "medium" || confidence === "low";
+
+  return {
+    classification: typeof predictedScene === "string" && typeof kitchenScore === "number"
+      ? {
+          primaryScene: predictedScene,
+          kitchenProbability: kitchenScore,
+        }
+      : undefined,
+    kitchenAssessment: validVisibility
+      && validConfidence
+      && typeof rationale === "string"
+      && (rating === null || (typeof rating === "number" && rating >= 1 && rating <= 5))
+      ? {
+          visibility: visibility as NonNullable<PropertyImage["kitchenAssessment"]>["visibility"],
+          rating: rating as number | null,
+          confidence: confidence as NonNullable<PropertyImage["kitchenAssessment"]>["confidence"],
+          rationale,
+        }
+      : undefined,
+  };
 }
 
 export function usePropertyImages(propertyId: string) {
@@ -452,7 +596,7 @@ export function usePropertyImages(propertyId: string) {
               width: row.width,
               height: row.height,
               kind: row.kind,
-              visionAssessment: row.vision_assessment,
+              ...projectImageClassifications(row.vision_assessment),
               floorPlanAssociations: plansByImage.get(row.id) ?? [],
             }]
           : [];

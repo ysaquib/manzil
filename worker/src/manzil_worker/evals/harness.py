@@ -39,7 +39,7 @@ from manzil_shared.models import (
 )
 from pydantic import BaseModel, Field
 
-from manzil_worker.evals.labels import BenchLabel, SkippedLabel
+from manzil_worker.evals.labels import BenchLabel, SkippedLabel, validate_labels
 from manzil_worker.llm.client import RunContext, cost_tally, llm_mode, run_context
 from manzil_worker.llm.config import model_for_stage
 from manzil_worker.llm.prompt_loader import load_prompt
@@ -162,6 +162,22 @@ def _values_equal(expected: Any, got: Any, *, today: date | None = None) -> bool
     return expected == got
 
 
+def _scoped_row_key(
+    value: Any, applicability: str, floor_plan_ref: str | None
+) -> tuple[Any, str, str | None]:
+    """Hashable scoped-claim row for set comparison (list values → tuple)."""
+    if isinstance(value, list):
+        value = tuple(value)
+    return (value, applicability, floor_plan_ref)
+
+
+def _scoped_row_value(value: Any) -> Any:
+    """Restore list-shaped claim values for report output."""
+    if isinstance(value, tuple):
+        return list(value)
+    return value
+
+
 def _norm_name(name: str | None) -> str:
     return (name or "").strip().casefold()
 
@@ -234,17 +250,14 @@ def _grade(
             ok=got is None,  # truth: the page doesn't say — any value is invented
         )
 
-    def expand_expected(key: str) -> list[tuple[Any, str, str | None]]:
-        expanded: list[tuple[Any, str, str | None]] = []
-        for claim in label.scoped_claims[key]:
-            refs = claim.floor_plan_refs or [None]
-            expanded.extend((claim.value, claim.applicability.value, ref) for ref in refs)
-        return expanded
-
     for key in label.scoped_claims:
-        expected_rows = expand_expected(key)
+        expected_rows = [
+            _scoped_row_key(claim.value, claim.applicability.value, ref)
+            for claim in label.scoped_claims[key]
+            for ref in (claim.floor_plan_refs or [None])
+        ]
         got_rows = [
-            (
+            _scoped_row_key(
                 claim.value,
                 claim.applicability.value if claim.applicability else "",
                 claim.floor_plan_ref,
@@ -254,17 +267,23 @@ def _grade(
         ]
         expected_set = set(expected_rows)
         got_set = set(got_rows)
-        expected_exact = {
-            row for row in expected_set if row[1] == "specific_floor_plans"
-        }
+        expected_exact = {row for row in expected_set if row[1] == "specific_floor_plans"}
         got_exact = {row for row in got_set if row[1] == "specific_floor_plans"}
         result.scoped_claims[key] = ScopedClaimGrade(
             expected=[
-                {"value": value, "applicability": applicability, "floor_plan_ref": ref}
+                {
+                    "value": _scoped_row_value(value),
+                    "applicability": applicability,
+                    "floor_plan_ref": ref,
+                }
                 for value, applicability, ref in sorted(expected_set, key=repr)
             ],
             got=[
-                {"value": value, "applicability": applicability, "floor_plan_ref": ref}
+                {
+                    "value": _scoped_row_value(value),
+                    "applicability": applicability,
+                    "floor_plan_ref": ref,
+                }
                 for value, applicability, ref in sorted(got_set, key=repr)
             ],
             ok=got_set == expected_set,
@@ -386,6 +405,7 @@ async def run_bench(
     graded over the same listings. `skipped` carries unfinished-skeleton
     labels the loader partitioned out: reported and counted, never graded."""
     skipped = skipped or []
+    validate_labels(labels)
     for s in skipped:
         log.warning("bench_label_skipped", slug=s.slug, reason=s.reason)
     listings: list[ListingResult] = []

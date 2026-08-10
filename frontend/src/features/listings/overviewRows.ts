@@ -633,13 +633,35 @@ export function sortRows(rows: OverviewRow[], sort: SortState): OverviewRow[] {
 // (never recomputed client-side), so the figure tracks the plan this row
 // displays even when the all_in_monthly rubric criterion is disabled. Rows
 // scored before scores.all_in_components landed fall back to the breakdown
-// criterion (pre-P3-9 interim: advertised rent).
+// criterion (pre-P3-9 interim: advertised rent), then to the Listing projection
+// only when the entire Unit Group has no plan-specific cost signal.
 export function allInValue(row: OverviewRow): number | null {
   const composed = row.group?.displayScore?.all_in_components?.total;
   if (typeof composed === "number") return composed;
   const criteria = row.group?.displayScore?.breakdown.criteria ?? [];
   const value = criteria.find((c) => c.key === "all_in_monthly")?.value;
-  return typeof value === "number" ? value : null;
+  if (typeof value === "number") return value;
+
+  // Legacy/pre-column Listings may have only the Listing-level composition.
+  // Use it only when this entire Unit Group has no plan-specific cost signal;
+  // otherwise the fallback could borrow another Display Floor Plan's total and
+  // present it as truth for this group.
+  if (row.group === null) return null;
+  const groupPlanIds = new Set(row.group.plans.map((plan) => plan.id));
+  const hasExplicitBaseRent = row.group.plans.some(
+    (plan) => typeof plan.rent_min === "number" || typeof plan.rent_max === "number",
+  );
+  const hasPlanAllIn = row.listing.scores.some((score) => {
+    if (!groupPlanIds.has(score.floor_plan_id)) return false;
+    if (typeof score.all_in_components?.total === "number") return true;
+    return score.breakdown.criteria.some(
+      (criterion) => criterion.key === "all_in_monthly" && typeof criterion.value === "number",
+    );
+  });
+  if (hasExplicitBaseRent || hasPlanAllIn) return null;
+
+  const fallback = row.listing.all_in_components?.total;
+  return typeof fallback === "number" ? fallback : null;
 }
 
 // The composition detail for a row: the displayed plan's own (per-score,

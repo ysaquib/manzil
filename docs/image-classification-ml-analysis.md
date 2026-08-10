@@ -1,6 +1,11 @@
 # Image classification without an LLM
 
-**Status:** Public-data benchmark implemented; shadow evaluation still required
+> Historical analysis and benchmark record. DESIGN v3.52 promoted the selected
+> unsigned-int8 ONNX artifact to exclusive `IMAGE_CLASSIFY` authority on
+> 2026-08-03. For the current runtime contract and operations, see
+> `docs/onnx-image-classification.md`.
+
+**Status:** Historical promotion analysis; runtime decision superseded by DESIGN v3.52
 
 **Date:** 2026-08-01
 

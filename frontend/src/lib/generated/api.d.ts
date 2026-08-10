@@ -4,6 +4,40 @@
  */
 
 export interface paths {
+    "/v1/demo/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether the public demo is currently offered */
+        get: operations["demo_config_v1_demo_config_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/demo/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mint a short-lived, read-only demo token */
+        post: operations["create_demo_session_v1_demo_session_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/hunts": {
         parameters: {
             query?: never;
@@ -331,6 +365,23 @@ export interface paths {
         put?: never;
         /** Create Listing */
         post: operations["create_listing_v1_hunts__hunt_id__listings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/listings/{listing_id}/deletion-impact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Listing Deletion Impact */
+        get: operations["listing_deletion_impact_v1_listings__listing_id__deletion_impact_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -849,6 +900,949 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Is the caller a site admin? */
+        get: operations["whoami_v1_admin_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Overview counters */
+        get: operations["summary_v1_admin_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/hunts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every Hunt with roll-ups */
+        get: operations["list_hunts_v1_admin_hunts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/hunts/{hunt_id}/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A Hunt's activity feed
+         * @description Read the internal AD-F union after the live ``AdminUser`` check above.
+         *
+         *     The raw union deliberately has no PostgREST grant. Hunt Owners use the
+         *     bounded ``get_hunt_activity`` RPC; this service-role route is the separate
+         *     Site Admin boundary.
+         */
+        get: operations["hunt_activity_v1_admin_hunts__hunt_id__activity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin audit log */
+        get: operations["audit_log_v1_admin_audit_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/admins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Grant site admin */
+        post: operations["grant_admin_v1_admin_admins_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/admins/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke site admin */
+        delete: operations["revoke_admin_v1_admin_admins__user_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Feedback inbox */
+        get: operations["list_feedback_v1_admin_feedback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/feedback/counts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Inbox counts by state */
+        get: operations["feedback_counts_v1_admin_feedback_counts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/feedback/{feedback_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Set a report's triage state */
+        patch: operations["set_feedback_triage_v1_admin_feedback__feedback_id__patch"];
+        trace?: never;
+    };
+    "/v1/admin/demo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Demo mode status and preflight
+         * @description Whether the demo is on, and what currently stands in the way of turning
+         *     it on. Surfacing the blockers is the point: an operator should be able to
+         *     see why the switch will refuse before they flip it.
+         */
+        get: operations["demo_status_v1_admin_demo_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Enable or disable public demo mode
+         * @description The kill switch.
+         *
+         *     Enabling runs `private.demo_preflight()` inside the same transaction as the
+         *     update, so the demo cannot be switched on while an unguarded table or a
+         *     writable view exists. Disabling never preflights -- an emergency shutoff
+         *     must not be blocked by the conditions that made it an emergency.
+         *
+         *     The two directions also differ in how they treat the Admin Audit Log, and
+         *     the asymmetry is deliberate (R2 H4, DESIGN §20). **Enabling** commits the
+         *     setting and its audit entry in one transaction: making the app publicly
+         *     reachable with no record of who did it is not an acceptable outcome, and if
+         *     the ledger is unavailable the safe answer is to stay private. **Disabling**
+         *     commits the setting first and audits afterwards, because the one thing worse
+         *     than an unaudited shutoff is a shutoff that a failing audit table can
+         *     refuse. A failure there is logged loudly rather than raised.
+         *
+         *     Either way `set_demo_enabled` rotates `demo_generation`, so every token
+         *     issued before this call stops working -- a disable is a revocation, not a
+         *     pause.
+         */
+        patch: operations["set_demo_v1_admin_demo_patch"];
+        trace?: never;
+    };
+    "/v1/admin/people": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Everyone with an account */
+        get: operations["list_people_v1_admin_people_get"];
+        put?: never;
+        /**
+         * Provision an account
+         * @description Create an Auth account and send its password-enrollment email.
+         *
+         *     This is the sole account-creation path. The Site Admin dependency and audit
+         *     record are therefore part of the security boundary, not UI conveniences.
+         *     If a Hunt and role are given, membership is a separate fact written only
+         *     after Supabase has created the account.
+         */
+        post: operations["provision_person_v1_admin_people_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/people/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One person */
+        get: operations["get_person_v1_admin_people__user_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete an account */
+        delete: operations["delete_person_v1_admin_people__user_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update an account */
+        patch: operations["update_person_v1_admin_people__user_id__patch"];
+        trace?: never;
+    };
+    "/v1/admin/people/{user_id}/suspend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Suspend an account */
+        post: operations["suspend_person_v1_admin_people__user_id__suspend_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/people/{user_id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Lift a suspension */
+        post: operations["restore_person_v1_admin_people__user_id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/people/{user_id}/password-reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send a password-reset link */
+        post: operations["send_password_reset_v1_admin_people__user_id__password_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/people/{user_id}/memberships": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Add someone to a Hunt or change their role
+         * @description Owner changes route through `transfer_hunt_ownership` rather than writing
+         *     the role directly: a Hunt has exactly one owner, and setting a second one
+         *     here would leave the old one in place.
+         */
+        put: operations["set_membership_v1_admin_people__user_id__memberships_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/people/{user_id}/memberships/{hunt_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove someone from a Hunt */
+        delete: operations["remove_membership_v1_admin_people__user_id__memberships__hunt_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The queue, across every Hunt */
+        get: operations["list_jobs_v1_admin_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One Job, with its timeline */
+        get: operations["get_job_v1_admin_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/jobs/{job_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Re-queue a Job */
+        post: operations["retry_job_v1_admin_jobs__job_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/jobs/{job_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel a Job */
+        post: operations["cancel_job_v1_admin_jobs__job_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/jobs/release-locks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Release every stale lock
+         * @description A Job whose worker died stays `running` forever, holding a lock nobody
+         *     will ever release. This is the orphan scan as a button — it re-queues rather
+         *     than failing them, because nothing is known to be wrong with the work.
+         */
+        post: operations["release_stale_locks_v1_admin_jobs_release_locks_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/costs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Spend, three ways */
+        get: operations["costs_v1_admin_costs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/system": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Queue health and configuration */
+        get: operations["system_v1_admin_system_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/ghost/hunts/{hunt_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Hunt */
+        patch: operations["patch_hunt_v1_admin_ghost_hunts__hunt_id__patch"];
+        trace?: never;
+    };
+    "/v1/admin/ghost/hunts/{hunt_id}/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Hunt Settings */
+        patch: operations["patch_hunt_settings_v1_admin_ghost_hunts__hunt_id__settings_patch"];
+        trace?: never;
+    };
+    "/v1/admin/ghost/hunts/{hunt_id}/shared-filters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Shared Filters */
+        put: operations["put_shared_filters_v1_admin_ghost_hunts__hunt_id__shared_filters_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/ghost/hunts/{hunt_id}/rubric": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put Rubric */
+        put: operations["put_rubric_v1_admin_ghost_hunts__hunt_id__rubric_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/ghost/hunts/{hunt_id}/rubric/custom-routing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Classify Custom Routing */
+        post: operations["classify_custom_routing_v1_admin_ghost_hunts__hunt_id__rubric_custom_routing_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/ghost/hunts/{hunt_id}/listings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Listing */
+        post: operations["create_listing_v1_admin_ghost_hunts__hunt_id__listings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/ghost/listings/{listing_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Listing Status */
+        patch: operations["patch_listing_status_v1_admin_ghost_listings__listing_id__status_patch"];
+        trace?: never;
+    };
+    "/v1/admin/ghost/listings/{listing_id}/deletion-impact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Listing Deletion Impact */
+        get: operations["listing_deletion_impact_v1_admin_ghost_listings__listing_id__deletion_impact_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/ghost/listings/{listing_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Listing Permanently */
+        delete: operations["delete_listing_permanently_v1_admin_ghost_listings__listing_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/ghost/listings/{listing_id}/pins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Listing Pins */
+        patch: operations["patch_listing_pins_v1_admin_ghost_listings__listing_id__pins_patch"];
+        trace?: never;
+    };
+    "/v1/admin/ghost/listings/{listing_id}/source-policy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Listing Source Policy */
+        patch: operations["patch_listing_source_policy_v1_admin_ghost_listings__listing_id__source_policy_patch"];
+        trace?: never;
+    };
+    "/v1/admin/ghost/listings/{listing_id}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh Listing */
+        post: operations["refresh_listing_v1_admin_ghost_listings__listing_id__refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/ghost/hunts/{hunt_id}/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh Hunt */
+        post: operations["refresh_hunt_v1_admin_ghost_hunts__hunt_id__refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/ghost/listings/{listing_id}/unit-groups/{unit_group_key}/state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Unit Group State */
+        patch: operations["patch_unit_group_state_v1_admin_ghost_listings__listing_id__unit_groups__unit_group_key__state_patch"];
+        trace?: never;
+    };
+    "/v1/admin/ghost/listings/{listing_id}/overrides": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Override */
+        post: operations["create_override_v1_admin_ghost_listings__listing_id__overrides_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/ghost/listings/{listing_id}/fees/{fee_slot}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Upsert Fee */
+        put: operations["upsert_fee_v1_admin_ghost_listings__listing_id__fees__fee_slot__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/ghost/listings/{listing_id}/utilities/{utility}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Upsert Utility */
+        put: operations["upsert_utility_v1_admin_ghost_listings__listing_id__utilities__utility__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/ghost/hunts/{hunt_id}/members/{target_user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Member */
+        delete: operations["remove_member_v1_admin_ghost_hunts__hunt_id__members__target_user_id__delete"];
+        options?: never;
+        head?: never;
+        /** Patch Member */
+        patch: operations["patch_member_v1_admin_ghost_hunts__hunt_id__members__target_user_id__patch"];
+        trace?: never;
+    };
+    "/v1/admin/ghost/hunts/{hunt_id}/transfer-ownership": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Transfer Ownership */
+        post: operations["transfer_ownership_v1_admin_ghost_hunts__hunt_id__transfer_ownership_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/ghost/hunts/{hunt_id}/invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Invites */
+        get: operations["list_invites_v1_admin_ghost_hunts__hunt_id__invites_get"];
+        put?: never;
+        /** Create Invite */
+        post: operations["create_invite_v1_admin_ghost_hunts__hunt_id__invites_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/ghost/invites/{invite_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke Invite */
+        delete: operations["revoke_invite_v1_admin_ghost_invites__invite_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/ghost/hunts/{hunt_id}/invitation-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Invitation Links */
+        get: operations["list_invitation_links_v1_admin_ghost_hunts__hunt_id__invitation_links_get"];
+        put?: never;
+        /** Create Invitation Link */
+        post: operations["create_invitation_link_v1_admin_ghost_hunts__hunt_id__invitation_links_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/ghost/invitation-links/{invitation_link_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Invitation Link */
+        delete: operations["delete_invitation_link_v1_admin_ghost_invitation_links__invitation_link_id__delete"];
+        options?: never;
+        head?: never;
+        /** Patch Invitation Link */
+        patch: operations["patch_invitation_link_v1_admin_ghost_invitation_links__invitation_link_id__patch"];
+        trace?: never;
+    };
+    "/v1/admin/ghost/hunts/{hunt_id}/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Jobs */
+        get: operations["list_jobs_v1_admin_ghost_hunts__hunt_id__jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/ghost/jobs/{job_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Job */
+        post: operations["cancel_job_v1_admin_ghost_jobs__job_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/ghost/jobs/{job_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry Job */
+        post: operations["retry_job_v1_admin_ghost_jobs__job_id__retry_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/ghost/jobs/{job_id}/checkpoint": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Answer Checkpoint */
+        post: operations["answer_checkpoint_v1_admin_ghost_jobs__job_id__checkpoint_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/health": {
         parameters: {
             query?: never;
@@ -866,10 +1860,142 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Readiness probe */
+        get: operations["ready_v1_ready_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** ActionResult */
+        ActionResult: {
+            /**
+             * Status
+             * @default ok
+             */
+            status: string;
+            /** Detail */
+            detail?: string | null;
+        };
+        /**
+         * ActivityEntry
+         * @description One row of the derived Hunt activity feed (AD-F).
+         */
+        ActivityEntry: {
+            /**
+             * Hunt Id
+             * Format: uuid
+             */
+            hunt_id: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Actor Id */
+            actor_id?: string | null;
+            /** Kind */
+            kind: string;
+            /** Subject Type */
+            subject_type: string;
+            /** Subject Id */
+            subject_id?: string | null;
+            /** Subject Label */
+            subject_label?: string | null;
+            /** Detail */
+            detail?: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * AdminIdentity
+         * @description What the frontend needs to decide whether to render the Admin nav item.
+         *
+         *     `is_primordial` is exposed because the panel must not offer a *Revoke*
+         *     control the database will refuse — a button that always errors is worse
+         *     than no button.
+         */
+        AdminIdentity: {
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** Is Site Admin */
+            is_site_admin: boolean;
+            /** Is Primordial */
+            is_primordial: boolean;
+            /** Granted At */
+            granted_at?: string | null;
+        };
+        /**
+         * AdminSummary
+         * @description The Overview tab's counters.
+         */
+        AdminSummary: {
+            /** Users */
+            users: number;
+            /** Hunts */
+            hunts: number;
+            /** Listings */
+            listings: number;
+            /** Jobs Failed */
+            jobs_failed: number;
+            /** Jobs Total */
+            jobs_total: number;
+            /** Spend Usd 30D */
+            spend_usd_30d: number;
+            /** Tier3 Credits Used */
+            tier3_credits_used: number;
+            /** Tier3 Credits Allowance */
+            tier3_credits_allowance?: number | null;
+            /** Feedback New */
+            feedback_new: number;
+        };
+        /** AuditEntry */
+        AuditEntry: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Admin User Id
+             * Format: uuid
+             */
+            admin_user_id: string;
+            /** Action */
+            action: string;
+            /** Target Type */
+            target_type?: string | null;
+            /** Target Id */
+            target_id?: string | null;
+            /** Target Label */
+            target_label?: string | null;
+            /** Hunt Id */
+            hunt_id?: string | null;
+            /** Via Ghost View */
+            via_ghost_view: boolean;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+        };
         /**
          * AutoResolvedCheckpoint
          * @description Visible provenance for a default applied by the scheduler.
@@ -986,6 +2112,31 @@ export interface components {
             /** Body */
             body: string;
         };
+        /** CostsReport */
+        CostsReport: {
+            /** Days */
+            days: number;
+            /** By Stage */
+            by_stage?: components["schemas"]["SpendBucket"][];
+            /** By Hunt */
+            by_hunt?: components["schemas"]["SpendBucket"][];
+            /** By Model */
+            by_model?: components["schemas"]["SpendBucket"][];
+            /**
+             * Grouped By Current Pin
+             * @default true
+             */
+            grouped_by_current_pin: boolean;
+            /** Daily */
+            daily?: components["schemas"]["SpendPoint"][];
+            /**
+             * Tier3 Credits Used
+             * @default 0
+             */
+            tier3_credits_used: number;
+            /** Tier3 Credits Allowance */
+            tier3_credits_allowance?: number | null;
+        };
         /**
          * CustomCriterionDef
          * @description Versioned Hunt-scoped Criterion definition (DESIGN v3.35).
@@ -1012,10 +2163,38 @@ export interface components {
             value_schema: {
                 [key: string]: unknown;
             };
+            /**
+             * Acquisition
+             * @default extracted
+             * @enum {string}
+             */
+            acquisition: "extracted" | "manual";
             requires_tool?: components["schemas"]["RequiresTool"] | null;
             refresh_class: components["schemas"]["RefreshClass"];
             /** Routing Confirmed */
             routing_confirmed: boolean;
+            route_modifiers?: components["schemas"]["CustomRouteModifiers"] | null;
+        };
+        /**
+         * CustomRouteModifiers
+         * @description Google-supported routing preferences for Maps custom Criteria (§10.9).
+         */
+        CustomRouteModifiers: {
+            /**
+             * Avoid Highways
+             * @default false
+             */
+            avoid_highways: boolean;
+            /**
+             * Avoid Tolls
+             * @default false
+             */
+            avoid_tolls: boolean;
+            /**
+             * Avoid Ferries
+             * @default false
+             */
+            avoid_ferries: boolean;
         };
         /** CustomRoutingRequest */
         CustomRoutingRequest: {
@@ -1033,6 +2212,25 @@ export interface components {
             reason: string;
             /** Supported */
             supported: boolean;
+        };
+        /** DemoConfigResponse */
+        DemoConfigResponse: {
+            /** Enabled */
+            enabled: boolean;
+        };
+        /** DemoSessionResponse */
+        DemoSessionResponse: {
+            /** Access Token */
+            access_token: string;
+            /** Expires In */
+            expires_in: number;
+            /** Hunt Id */
+            hunt_id?: string | null;
+        };
+        /** DemoToggle */
+        DemoToggle: {
+            /** Enabled */
+            enabled: boolean;
         };
         /** FeeEntryResponse */
         FeeEntryResponse: {
@@ -1086,6 +2284,33 @@ export interface components {
             /** Credited Amount */
             credited_amount?: number | null;
         };
+        /**
+         * FeedbackCounts
+         * @description Drives the filter chips, so an empty state is distinguishable from a
+         *     filtered-out one.
+         */
+        FeedbackCounts: {
+            /**
+             * New
+             * @default 0
+             */
+            new: number;
+            /**
+             * Seen
+             * @default 0
+             */
+            seen: number;
+            /**
+             * Actioned
+             * @default 0
+             */
+            actioned: number;
+            /**
+             * Wont Fix
+             * @default 0
+             */
+            wont_fix: number;
+        };
         /** FeedbackCreate */
         FeedbackCreate: {
             /**
@@ -1103,6 +2328,51 @@ export interface components {
             app_version?: string | null;
         };
         /**
+         * FeedbackReport
+         * @description One row of the inbox. `route` and `user_agent` are what turn a two-line
+         *     report into something reproducible, so they are first-class here rather than
+         *     buried in a detail view.
+         */
+        FeedbackReport: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Category */
+            category: string;
+            /** Body */
+            body: string;
+            /** Route */
+            route?: string | null;
+            /** Hunt Id */
+            hunt_id?: string | null;
+            /** Hunt Name */
+            hunt_name?: string | null;
+            /** App Version */
+            app_version?: string | null;
+            /** User Agent */
+            user_agent?: string | null;
+            /**
+             * Reporter Id
+             * Format: uuid
+             */
+            reporter_id: string;
+            /** Reporter Name */
+            reporter_name?: string | null;
+            /** Reporter Email */
+            reporter_email?: string | null;
+            /** Triage */
+            triage: string;
+            /** Triaged At */
+            triaged_at?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
          * FeedbackResponse
          * @description Deliberately thin: the submitter cannot read feedback rows back, so the
          *     response confirms receipt rather than echoing stored content.
@@ -1118,6 +2388,24 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /** FeedbackTriageUpdate */
+        FeedbackTriageUpdate: {
+            /**
+             * Triage
+             * @enum {string}
+             */
+            triage: "new" | "seen" | "actioned" | "wont_fix";
+        };
+        /** GrantAdmin */
+        GrantAdmin: {
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** Note */
+            note?: string | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1172,6 +2460,39 @@ export interface components {
             settings: {
                 [key: string]: unknown;
             };
+        };
+        /** HuntSummary */
+        HuntSummary: {
+            /**
+             * Hunt Id
+             * Format: uuid
+             */
+            hunt_id: string;
+            /** Name */
+            name: string;
+            /** Owner Id */
+            owner_id?: string | null;
+            /** Owner Name */
+            owner_name?: string | null;
+            /** Members */
+            members: number;
+            /** Listings */
+            listings: number;
+            /** Jobs */
+            jobs: number;
+            /** Llm Cost Usd */
+            llm_cost_usd: number;
+            /** Fetch Cost Usd */
+            fetch_cost_usd: number;
+            /** Total Cost Usd */
+            total_cost_usd: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Last Activity At */
+            last_activity_at?: string | null;
         };
         /** HuntUpdate */
         HuntUpdate: {
@@ -1302,6 +2623,56 @@ export interface components {
             /** Link */
             link: string;
         };
+        /** JobDetail */
+        JobDetail: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Hunt Id */
+            hunt_id?: string | null;
+            /** Hunt Name */
+            hunt_name?: string | null;
+            /** Listing Name */
+            listing_name?: string | null;
+            /** Type */
+            type: string;
+            /** State */
+            state: string;
+            /** Current Stage */
+            current_stage?: string | null;
+            /** Attempts */
+            attempts: number;
+            /** Error */
+            error?: string | null;
+            /** Cost Actual Usd */
+            cost_actual_usd: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Finished At */
+            finished_at?: string | null;
+            /** Locked By */
+            locked_by?: string | null;
+            /** Locked At */
+            locked_at?: string | null;
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+            /** Events */
+            events?: {
+                [key: string]: unknown;
+            }[];
+            /** Stage Costs */
+            stage_costs?: {
+                [key: string]: unknown;
+            }[];
+        };
         /** JobResponse */
         JobResponse: {
             /**
@@ -1339,6 +2710,48 @@ export interface components {
             /** Warnings */
             warnings?: components["schemas"]["JobWarning"][];
         };
+        /** JobRow */
+        JobRow: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Hunt Id */
+            hunt_id?: string | null;
+            /** Hunt Name */
+            hunt_name?: string | null;
+            /** Listing Name */
+            listing_name?: string | null;
+            /** Type */
+            type: string;
+            /** State */
+            state: string;
+            /** Current Stage */
+            current_stage?: string | null;
+            /** Attempts */
+            attempts: number;
+            /** Error */
+            error?: string | null;
+            /** Cost Actual Usd */
+            cost_actual_usd: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Finished At */
+            finished_at?: string | null;
+            /** Locked By */
+            locked_by?: string | null;
+            /** Locked At */
+            locked_at?: string | null;
+            /**
+             * Stale
+             * @default false
+             */
+            stale: boolean;
+        };
         /**
          * JobState
          * @enum {string}
@@ -1374,6 +2787,56 @@ export interface components {
             url: string;
             /** Source Policy */
             source_policy?: ("trust_link" | "tier_1" | "tiers_1_2" | "tiers_1_2_3" | "tier_1_plus_official") | null;
+        };
+        /** ListingDeletionCounts */
+        ListingDeletionCounts: {
+            /** Unit Groups */
+            unit_groups: number;
+            /** Scores */
+            scores: number;
+            /** Manual Values */
+            manual_values: number;
+            /** Collaboration Records */
+            collaboration_records: number;
+            /** Task Records */
+            task_records: number;
+            /** Visits */
+            visits: number;
+            /** Visit Records */
+            visit_records: number;
+            /** Hunt Scoped Extractions */
+            hunt_scoped_extractions: number;
+        };
+        /** ListingDeletionImpact */
+        ListingDeletionImpact: {
+            /**
+             * Listing Id
+             * Format: uuid
+             */
+            listing_id: string;
+            /**
+             * Property Id
+             * Format: uuid
+             */
+            property_id: string;
+            /** Property Name */
+            property_name: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "archived";
+            /** Active Jobs */
+            active_jobs: number;
+            counts: components["schemas"]["ListingDeletionCounts"];
+        };
+        /**
+         * ListingPermanentDelete
+         * @description Irreversible-delete confirmation; compared exactly on the server.
+         */
+        ListingPermanentDelete: {
+            /** Confirmation Name */
+            confirmation_name: string;
         };
         /** ListingResponse */
         ListingResponse: {
@@ -1514,6 +2977,106 @@ export interface components {
             /** Created At */
             created_at?: string | null;
         };
+        /** PersonDetail */
+        PersonDetail: {
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** Email */
+            email?: string | null;
+            /** Display Name */
+            display_name?: string | null;
+            /** Confirmed */
+            confirmed: boolean;
+            /** Suspended */
+            suspended: boolean;
+            /** Hunts */
+            hunts: number;
+            /** Owns */
+            owns: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Last Sign In At */
+            last_sign_in_at?: string | null;
+            /**
+             * Spend Usd
+             * @default 0
+             */
+            spend_usd: number;
+            /**
+             * Is Site Admin
+             * @default false
+             */
+            is_site_admin: boolean;
+            /** Memberships */
+            memberships?: components["schemas"]["PersonMembership"][];
+            /**
+             * Feedback Count
+             * @default 0
+             */
+            feedback_count: number;
+            /** Blocking Owned Hunts */
+            blocking_owned_hunts?: components["schemas"]["PersonMembership"][];
+        };
+        /** PersonMembership */
+        PersonMembership: {
+            /**
+             * Hunt Id
+             * Format: uuid
+             */
+            hunt_id: string;
+            /** Hunt Name */
+            hunt_name: string;
+            /** Role */
+            role: string;
+            /** Joined At */
+            joined_at?: string | null;
+        };
+        /**
+         * PersonRow
+         * @description Roster row. `suspended` is derived from the auth ban, not stored twice.
+         */
+        PersonRow: {
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** Email */
+            email?: string | null;
+            /** Display Name */
+            display_name?: string | null;
+            /** Confirmed */
+            confirmed: boolean;
+            /** Suspended */
+            suspended: boolean;
+            /** Hunts */
+            hunts: number;
+            /** Owns */
+            owns: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Last Sign In At */
+            last_sign_in_at?: string | null;
+            /**
+             * Spend Usd
+             * @default 0
+             */
+            spend_usd: number;
+            /**
+             * Is Site Admin
+             * @default false
+             */
+            is_site_admin: boolean;
+        };
         /**
          * PinsPatch
          * @description Per-Unit-Group pinned floor plan (DESIGN §8.2 `hunt_listings.pins`).
@@ -1553,6 +3116,15 @@ export interface components {
             /** Default Color */
             default_color?: string | null;
         };
+        /** ProvisionPerson */
+        ProvisionPerson: {
+            /** Email */
+            email: string;
+            /** Hunt Id */
+            hunt_id?: string | null;
+            /** Role */
+            role?: ("owner" | "curator" | "member") | null;
+        };
         /** RatingResponse */
         RatingResponse: {
             /**
@@ -1579,7 +3151,7 @@ export interface components {
          * RefreshClass
          * @enum {string}
          */
-        RefreshClass: "pricing" | "listing_details" | "images" | "reviews" | "location";
+        RefreshClass: "pricing" | "listing_details" | "images" | "reviews" | "location" | "manual";
         /**
          * RefreshRequest
          * @description P3-12 refresh-class selection. Omission means every mutable class.
@@ -1677,6 +3249,19 @@ export interface components {
             /** Criteria */
             criteria: components["schemas"]["RubricCriterionIn"][];
         };
+        /** SetMembership */
+        SetMembership: {
+            /**
+             * Hunt Id
+             * Format: uuid
+             */
+            hunt_id: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "owner" | "curator" | "member";
+        };
         /**
          * SharedFiltersPut
          * @description Hunt-wide Overview filters (§13.2, §20 2026-07-19). View state, not
@@ -1721,6 +3306,70 @@ export interface components {
              * @enum {string}
              */
             source_policy: "trust_link" | "tier_1" | "tiers_1_2" | "tiers_1_2_3" | "tier_1_plus_official";
+        };
+        /** SpendBucket */
+        SpendBucket: {
+            /** Label */
+            label: string;
+            /** Llm Cost Usd */
+            llm_cost_usd: number;
+            /** Fetch Cost Usd */
+            fetch_cost_usd: number;
+            /** Total Cost Usd */
+            total_cost_usd: number;
+            /**
+             * Llm Calls
+             * @default 0
+             */
+            llm_calls: number;
+            /**
+             * Fetch Calls
+             * @default 0
+             */
+            fetch_calls: number;
+        };
+        /** SpendPoint */
+        SpendPoint: {
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /** Llm Cost Usd */
+            llm_cost_usd: number;
+            /** Fetch Cost Usd */
+            fetch_cost_usd: number;
+        };
+        /** SystemReport */
+        SystemReport: {
+            /** Queued */
+            queued: number;
+            /** Running */
+            running: number;
+            /** Stale Locks */
+            stale_locks: number;
+            /** Oldest Queued Seconds */
+            oldest_queued_seconds: number;
+            /** Last Heartbeat */
+            last_heartbeat?: string | null;
+            /** Finished 24H */
+            finished_24h: number;
+            /** Failed 24H */
+            failed_24h: number;
+            /** Last Migration */
+            last_migration?: string | null;
+            /** Model Pins */
+            model_pins?: {
+                [key: string]: unknown;
+            }[];
+            /** Services */
+            services?: {
+                [key: string]: unknown;
+            }[];
+            /** Priced Models */
+            priced_models: number;
+            /** Mode */
+            mode: string;
         };
         /** TransferOwnershipRequest */
         TransferOwnershipRequest: {
@@ -1768,6 +3417,15 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** UpdatePerson */
+        UpdatePerson: {
+            /** Display Name */
+            display_name?: string | null;
+            /** Email */
+            email?: string | null;
+            /** Confirm Email */
+            confirm_email?: boolean | null;
         };
         /** UtilityOverrideResponse */
         UtilityOverrideResponse: {
@@ -2276,6 +3934,46 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    demo_config_v1_demo_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DemoConfigResponse"];
+                };
+            };
+        };
+    };
+    create_demo_session_v1_demo_session_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DemoSessionResponse"];
+                };
+            };
+        };
+    };
     list_hunts_v1_hunts_get: {
         parameters: {
             query?: never;
@@ -3216,7 +4914,7 @@ export interface operations {
             };
         };
     };
-    delete_listing_v1_listings__listing_id__delete: {
+    listing_deletion_impact_v1_listings__listing_id__deletion_impact_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -3228,11 +4926,48 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Successful Response */
-            204: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ListingDeletionImpact"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_listing_v1_listings__listing_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListingPermanentDelete"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingDeletionImpact"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -4251,6 +5986,1905 @@ export interface operations {
             };
         };
     };
+    whoami_v1_admin_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminIdentity"];
+                };
+            };
+        };
+    };
+    summary_v1_admin_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminSummary"];
+                };
+            };
+        };
+    };
+    list_hunts_v1_admin_hunts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HuntSummary"][];
+                };
+            };
+        };
+    };
+    hunt_activity_v1_admin_hunts__hunt_id__activity_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActivityEntry"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    audit_log_v1_admin_audit_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditEntry"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    grant_admin_v1_admin_admins_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GrantAdmin"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminIdentity"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_admin_v1_admin_admins__user_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_feedback_v1_admin_feedback_get: {
+        parameters: {
+            query?: {
+                triage?: string | null;
+                category?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackReport"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    feedback_counts_v1_admin_feedback_counts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackCounts"];
+                };
+            };
+        };
+    };
+    set_feedback_triage_v1_admin_feedback__feedback_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                feedback_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeedbackTriageUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    demo_status_v1_admin_demo_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    set_demo_v1_admin_demo_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DemoToggle"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_people_v1_admin_people_get: {
+        parameters: {
+            query?: {
+                search?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonRow"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    provision_person_v1_admin_people_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProvisionPerson"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_person_v1_admin_people__user_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_person_v1_admin_people__user_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_person_v1_admin_people__user_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdatePerson"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    suspend_person_v1_admin_people__user_id__suspend_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_person_v1_admin_people__user_id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_password_reset_v1_admin_people__user_id__password_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_membership_v1_admin_people__user_id__memberships_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetMembership"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_membership_v1_admin_people__user_id__memberships__hunt_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_jobs_v1_admin_jobs_get: {
+        parameters: {
+            query?: {
+                state?: string | null;
+                hunt_id?: string | null;
+                stale_only?: boolean;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobRow"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_job_v1_admin_jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_job_v1_admin_jobs__job_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_job_v1_admin_jobs__job_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    release_stale_locks_v1_admin_jobs_release_locks_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionResult"];
+                };
+            };
+        };
+    };
+    costs_v1_admin_costs_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostsReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_v1_admin_system_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SystemReport"];
+                };
+            };
+        };
+    };
+    patch_hunt_v1_admin_ghost_hunts__hunt_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HuntUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HuntResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_hunt_settings_v1_admin_ghost_hunts__hunt_id__settings_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HuntSettingsPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HuntResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_shared_filters_v1_admin_ghost_hunts__hunt_id__shared_filters_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SharedFiltersPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharedFiltersResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_rubric_v1_admin_ghost_hunts__hunt_id__rubric_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RubricPut"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RubricCriterionOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    classify_custom_routing_v1_admin_ghost_hunts__hunt_id__rubric_custom_routing_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomRoutingRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomRoutingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_listing_v1_admin_ghost_hunts__hunt_id__listings_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListingCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_listing_status_v1_admin_ghost_listings__listing_id__status_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListingStatusPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listing_deletion_impact_v1_admin_ghost_listings__listing_id__deletion_impact_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingDeletionImpact"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_listing_permanently_v1_admin_ghost_listings__listing_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListingPermanentDelete"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingDeletionImpact"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_listing_pins_v1_admin_ghost_listings__listing_id__pins_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PinsPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_listing_source_policy_v1_admin_ghost_listings__listing_id__source_policy_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourcePolicyPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_listing_v1_admin_ghost_listings__listing_id__refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    refresh_hunt_v1_admin_ghost_hunts__hunt_id__refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_unit_group_state_v1_admin_ghost_listings__listing_id__unit_groups__unit_group_key__state_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: string;
+                unit_group_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UnitGroupStatePatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UnitGroupStateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_override_v1_admin_ghost_listings__listing_id__overrides_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OverrideCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OverrideResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upsert_fee_v1_admin_ghost_listings__listing_id__fees__fee_slot__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: string;
+                fee_slot: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeeEntryUpsert"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeeEntryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upsert_utility_v1_admin_ghost_listings__listing_id__utilities__utility__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: string;
+                utility: "electric" | "gas" | "water" | "sewer" | "cooling" | "heat" | "trash";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UtilityOverrideUpsert"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UtilityOverrideResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_member_v1_admin_ghost_hunts__hunt_id__members__target_user_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+                target_user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_member_v1_admin_ghost_hunts__hunt_id__members__target_user_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+                target_user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemberPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemberResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    transfer_ownership_v1_admin_ghost_hunts__hunt_id__transfer_ownership_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransferOwnershipRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransferOwnershipResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_invites_v1_admin_ghost_hunts__hunt_id__invites_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_invite_v1_admin_ghost_hunts__hunt_id__invites_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_invite_v1_admin_ghost_invites__invite_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invite_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_invitation_links_v1_admin_ghost_hunts__hunt_id__invitation_links_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationLinkResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_invitation_link_v1_admin_ghost_hunts__hunt_id__invitation_links_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationLinkCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationLinkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_invitation_link_v1_admin_ghost_invitation_links__invitation_link_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invitation_link_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_invitation_link_v1_admin_ghost_invitation_links__invitation_link_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invitation_link_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationLinkPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationLinkResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_jobs_v1_admin_ghost_hunts__hunt_id__jobs_get: {
+        parameters: {
+            query?: {
+                state?: string[] | null;
+            };
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cancel_job_v1_admin_ghost_jobs__job_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    retry_job_v1_admin_ghost_jobs__job_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    answer_checkpoint_v1_admin_ghost_jobs__job_id__checkpoint_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CheckpointAnswer"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     health_v1_health_get: {
         parameters: {
             query?: never;
@@ -4269,6 +7903,26 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+        };
+    };
+    ready_v1_ready_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

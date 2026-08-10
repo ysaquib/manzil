@@ -12,21 +12,25 @@ import json
 from datetime import date
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import pytest
+from manzil_shared.models import Confidence, JobType, UnitApplicability
 from manzil_worker.evals.compare import compare_table
 from manzil_worker.evals.harness import (
     BenchReport,
     _corpus_as_of_date,
+    _grade,
     gate_keys_from,
     report_text,
     run_bench,
 )
-from manzil_worker.evals.labels import BenchLabel, SkippedLabel
+from manzil_worker.evals.labels import BenchLabel, LabelError, SkippedLabel
 from manzil_worker.fetching.cleaner import clean_html
 from manzil_worker.phase0_rubric import phase0_rubric
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.extract import AVAILABLE_NOW_SENTINEL
+from manzil_worker.state import RunState, SourceClaim
 from worker_helpers import PAGES, FakeLLM, field_payload, maple_extraction
 
 SLUG = "example.test--maple"
@@ -95,8 +99,7 @@ def truth_label(**overrides: Any) -> BenchLabel:
             for claim in claims
         ]
         for key, claims in payload.items()
-        if isinstance(claims, list)
-        and key != "floor_plans"
+        if isinstance(claims, list) and key != "floor_plans"
     }
     data: dict[str, Any] = {
         "slug": SLUG,
@@ -120,6 +123,55 @@ def perfect_ctx() -> StageCtx:
 
 def run(labels: list[BenchLabel], corpus: Path, ctx: StageCtx) -> BenchReport:
     return asyncio.run(run_bench(labels, corpus_dir=corpus, ctx=ctx, gate_keys=GATE_KEYS))
+
+
+def test_scoped_claim_grading_handles_list_values() -> None:
+    """flooring_materials claim values are lists and must be set-comparable."""
+    label = BenchLabel.model_validate(
+        {
+            "slug": "flooring",
+            "url": URL,
+            "labeled_at": "2026-08-04",
+            "scoped_claims": {
+                "flooring_materials": [
+                    {
+                        "value": ["carpet", "vinyl"],
+                        "applicability": "unit_scope_unspecified",
+                        "floor_plan_refs": [],
+                    }
+                ]
+            },
+        }
+    )
+    state = RunState(job_id=uuid4(), job_type=JobType.INGEST, url=URL)
+    state.source_claims = [
+        SourceClaim(
+            criterion_key="flooring_materials",
+            value=["carpet", "vinyl"],
+            confidence=Confidence.HIGH,
+            model="test",
+            prompt_version=1,
+            applicability=UnitApplicability.UNIT_SCOPE_UNSPECIFIED,
+        )
+    ]
+    result = _grade(state, label, GATE_KEYS, today=date(2026, 8, 4))
+    grade = result.scoped_claims["flooring_materials"]
+    assert grade.ok is True
+    assert grade.expected[0]["value"] == ["carpet", "vinyl"]
+
+
+def test_run_bench_validates_labels_before_listings(tmp_path: Path) -> None:
+    label = truth_label()
+    label.criteria["kitchen_vibes"] = 5
+    with pytest.raises(LabelError, match="not an extractable catalog key"):
+        asyncio.run(
+            run_bench(
+                [label],
+                corpus_dir=make_corpus(tmp_path),
+                ctx=perfect_ctx(),
+                gate_keys=GATE_KEYS,
+            )
+        )
 
 
 def test_perfect_extraction_grades_perfectly(tmp_path: Path) -> None:

@@ -27,7 +27,7 @@ export function TeamRatings({
 
   return (
     <Stack
-      gap={0}
+      gap={"xs"}
       pt="sm"
       style={{ borderTop: "1px solid var(--mantine-color-default-border)" }}
     >

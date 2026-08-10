@@ -68,14 +68,39 @@ const scopedBreakdown: ScoreBreakdown = {
   ],
 };
 
-// §9.3: when a gate fires, criteria is empty and total is the min set-score.
-const gatedBreakdown: ScoreBreakdown = {
+// Legacy gated shape: empty criteria, no gate value/matched fields.
+const legacyGatedBreakdown: ScoreBreakdown = {
   base: 10,
   total: 0,
   rubric_version: 1,
   clamped: false,
   gates: [{ key: "in_unit_laundry", kind: "non_negotiable", set_score: 0 }],
   criteria: [],
+};
+
+const gatedBreakdown: ScoreBreakdown = {
+  base: 10,
+  total: 0,
+  rubric_version: 1,
+  clamped: false,
+  gates: [
+    {
+      key: "in_unit_laundry",
+      kind: "non_negotiable",
+      set_score: 0,
+      value: "on_site",
+      matched: { op: "eq", value: "on_site" },
+    },
+  ],
+  criteria: [
+    { key: "beds", value: 2, matched: { op: "eq", value: 2 }, delta: 0.5 },
+    {
+      key: "in_unit_laundry",
+      value: "on_site",
+      matched: { op: "eq", value: "on_site" },
+      delta: -0.5,
+    },
+  ],
 };
 
 const extraction: Extraction = {
@@ -178,12 +203,127 @@ describe("CriterionBreakdown", () => {
     expect(screen.getAllByText("Pool")).toHaveLength(1);
   });
 
-  it("says a gate fired instead of showing a hollow list (§9.3)", () => {
+  it("shows gate alert with matched option and informational breakdown", () => {
     renderBreakdown(gatedBreakdown);
     expect(screen.getByText(/gate fired/i)).toBeInTheDocument();
+    expect(screen.getByText(/matched "on site" \(not acceptable\)/i)).toBeInTheDocument();
+    expect(screen.getByText("Number of bedrooms")).toBeInTheDocument();
+    expect(screen.getByText(/informational/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/gate cap/i).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("shows legacy gated alert only when criteria are empty", () => {
+    renderBreakdown(legacyGatedBreakdown);
+    expect(screen.getByText(/gate fired/i)).toBeInTheDocument();
     expect(screen.getByText(/failed a non-negotiable/)).toBeInTheDocument();
-    expect(screen.getByText(/score set to 0/)).toBeInTheDocument();
     expect(screen.queryByText("Number of bedrooms")).not.toBeInTheDocument();
+  });
+
+  it("names a dealbreaker option in the gate alert", () => {
+    const dealbreaker: ScoreBreakdown = {
+      base: 10,
+      total: 0,
+      rubric_version: 1,
+      clamped: false,
+      gates: [
+        {
+          key: "in_unit_laundry",
+          kind: "dealbreaker",
+          set_score: 0,
+          value: "none",
+          matched: { op: "eq", value: "none" },
+        },
+      ],
+      criteria: [
+        {
+          key: "in_unit_laundry",
+          value: "none",
+          matched: { op: "eq", value: "none" },
+          delta: 0,
+        },
+      ],
+    };
+    renderBreakdown(dealbreaker);
+    expect(screen.getByText(/dealbreaker/i)).toBeInTheDocument();
+    expect(screen.getByText(/"none"/)).toBeInTheDocument();
+  });
+
+  it("shows unknown in the gate alert when gate-pass value is null", () => {
+    const visionGate: ScoreBreakdown = {
+      base: 10,
+      total: 2,
+      rubric_version: 1,
+      clamped: false,
+      gates: [
+        {
+          key: "beds",
+          kind: "non_negotiable",
+          set_score: 2,
+          value: null,
+          matched: null,
+        },
+      ],
+      criteria: [{ key: "beds", value: 2, matched: { op: "eq", value: 2 }, delta: 0.5 }],
+    };
+    renderBreakdown(visionGate);
+    expect(screen.getByText(/Number of bedrooms: unknown/i)).toBeInTheDocument();
+    expect(screen.getByText("+0.50")).toBeInTheDocument();
+  });
+
+  it("recognizes list-valued advertised_unconfirmed in the gate alert", () => {
+    const listSentinel: ScoreBreakdown = {
+      base: 10,
+      total: 2,
+      rubric_version: 1,
+      clamped: false,
+      gates: [
+        {
+          key: "in_unit_laundry",
+          kind: "non_negotiable",
+          set_score: 2,
+          value: ["advertised_unconfirmed"],
+          matched: { op: "contains_any", value: ["advertised_unconfirmed"] },
+        },
+      ],
+      criteria: [
+        {
+          key: "in_unit_laundry",
+          value: ["advertised_unconfirmed"],
+          matched: { op: "contains_any", value: ["advertised_unconfirmed"] },
+          delta: 0,
+        },
+      ],
+    };
+    renderBreakdown(listSentinel);
+    expect(screen.getByText(/advertised, unconfirmed/i)).toBeInTheDocument();
+  });
+
+  it("renders separate alert lines when one criterion fires both gates", () => {
+    const bothKinds: ScoreBreakdown = {
+      base: 10,
+      total: 1,
+      rubric_version: 1,
+      clamped: false,
+      gates: [
+        {
+          key: "beds",
+          kind: "dealbreaker",
+          set_score: 2,
+          value: 0,
+          matched: { op: "eq", value: 0 },
+        },
+        {
+          key: "beds",
+          kind: "non_negotiable",
+          set_score: 1,
+          value: 0,
+          matched: { op: "eq", value: 0 },
+        },
+      ],
+      criteria: [{ key: "beds", value: 0, matched: { op: "eq", value: 0 }, delta: -0.5 }],
+    };
+    renderBreakdown(bothKinds);
+    expect(screen.getAllByText(/Number of bedrooms/i)).toHaveLength(3);
   });
 
   it("marks overridden criteria with the override affordance (§9.6 precedence)", () => {

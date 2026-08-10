@@ -35,7 +35,11 @@ async def test_backfill_locality_persists_with_coalesce(pg_pool: asyncpg.Pool) -
                 "county": "Wayne County",
             }
 
-        result = await backfill_locality(pg_pool, geocode_call=fake_geocode)
+        result = await backfill_locality(
+            pg_pool,
+            property_ids=[row["id"]],
+            geocode_call=fake_geocode,
+        )
         assert result == type(result)(attempted=1, updated=1, failed=0)
         updated = await pg_pool.fetchrow("select * from properties where id = $1", row["id"])
         assert updated["city"] == "Detroit"
@@ -71,9 +75,18 @@ async def test_backfill_locality_is_idempotent_and_skips_failures(pg_pool: async
                 "county": "Wayne County",
             }
 
-        first = await backfill_locality(pg_pool, geocode_call=fake_geocode)
+        property_ids = [good_id, bad_id]
+        first = await backfill_locality(
+            pg_pool,
+            property_ids=property_ids,
+            geocode_call=fake_geocode,
+        )
         assert first.attempted == 2 and first.updated == 1 and first.failed == 1
-        second = await backfill_locality(pg_pool, geocode_call=fake_geocode)
+        second = await backfill_locality(
+            pg_pool,
+            property_ids=property_ids,
+            geocode_call=fake_geocode,
+        )
         assert second.attempted == 1 and second.updated == 0 and second.failed == 1
         row = await pg_pool.fetchrow("select city, state from properties where id = $1", good_id)
         assert row["city"] == "OldCity"

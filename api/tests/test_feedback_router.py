@@ -60,9 +60,7 @@ async def test_submit_feedback_without_a_hunt(as_owner: AsyncClient, db_pool) ->
 
 
 async def test_submit_feedback_rejects_unknown_category(as_owner: AsyncClient) -> None:
-    response = await as_owner.post(
-        "/v1/feedback", json={"category": "praise", "body": "Nice app"}
-    )
+    response = await as_owner.post("/v1/feedback", json={"category": "praise", "body": "Nice app"})
     assert response.status_code == 422
 
 

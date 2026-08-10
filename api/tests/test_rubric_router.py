@@ -271,3 +271,212 @@ async def test_new_custom_criterion_enqueues_active_listing_backfill(
     finally:
         await db_pool.execute("delete from hunts where id = $1", hunt_id)
         await db_pool.execute("delete from properties where id = $1", property_id)
+
+
+def _manual_custom_def(custom_key: str) -> dict:
+    return {
+        "schema_version": 1,
+        "key": custom_key,
+        "label": "HOA rules read",
+        "description": "Whether we've personally read the HOA rules.",
+        "fact_scope": "property",
+        "value_schema": {"type": "boolean"},
+        "acquisition": "manual",
+        "requires_tool": None,
+        "refresh_class": "manual",
+        "routing_confirmed": True,
+    }
+
+
+@pytest.mark.asyncio
+async def test_new_manual_custom_criterion_enqueues_rescore_not_backfill(
+    client: AsyncClient, db_pool
+) -> None:
+    hunt_id, property_id, listing_id = uuid4(), uuid4(), uuid4()
+    custom_key = f"custom:{uuid4()}"
+    await db_pool.execute(
+        "insert into hunts (id, name, owner_id) values ($1, 'Manual only', $2)",
+        hunt_id,
+        FAKE_USER.id,
+    )
+    await db_pool.execute(
+        "insert into properties (id, name, canonical_address) values ($1, 'P', '1 Main St')",
+        property_id,
+    )
+    source_id = await db_pool.fetchval(
+        """
+        insert into property_sources (property_id, url, site_domain)
+        values ($1, 'https://manual.example/p', 'manual.example')
+        returning id
+        """,
+        property_id,
+    )
+    await db_pool.execute(
+        """
+        insert into hunt_listings
+            (id, hunt_id, property_id, added_by, submitted_source_id)
+        values ($1, $2, $3, $4, $5)
+        """,
+        listing_id,
+        hunt_id,
+        property_id,
+        FAKE_USER.id,
+        source_id,
+    )
+    try:
+        response = await client.put(
+            f"/v1/hunts/{hunt_id}/rubric",
+            json={
+                "criteria": [
+                    {
+                        "custom_def": _manual_custom_def(custom_key),
+                        "options": [{"match": {"op": "bool", "value": True}, "delta": 1}],
+                    }
+                ]
+            },
+        )
+        assert response.status_code == 200, response.text
+        refresh_count = await db_pool.fetchval(
+            "select count(*) from jobs where hunt_listing_id = $1 and type = 'refresh'",
+            listing_id,
+        )
+        assert refresh_count == 0
+        rescore_count = await db_pool.fetchval(
+            "select count(*) from jobs where type = 'rescore' and payload->>'hunt_id' = $1",
+            str(hunt_id),
+        )
+        assert rescore_count == 1
+    finally:
+        await db_pool.execute("delete from hunts where id = $1", hunt_id)
+        await db_pool.execute("delete from properties where id = $1", property_id)
+
+
+@pytest.mark.asyncio
+async def test_mixed_manual_and_extracted_custom_criteria_backfill_only_extracted(
+    client: AsyncClient, db_pool
+) -> None:
+    hunt_id, property_id, listing_id = uuid4(), uuid4(), uuid4()
+    manual_key = f"custom:{uuid4()}"
+    text_key = f"custom:{uuid4()}"
+    await db_pool.execute(
+        "insert into hunts (id, name, owner_id) values ($1, 'Mixed custom', $2)",
+        hunt_id,
+        FAKE_USER.id,
+    )
+    await db_pool.execute(
+        "insert into properties (id, name, canonical_address) values ($1, 'P', '1 Main St')",
+        property_id,
+    )
+    source_id = await db_pool.fetchval(
+        """
+        insert into property_sources (property_id, url, site_domain)
+        values ($1, 'https://mixed.example/p', 'mixed.example')
+        returning id
+        """,
+        property_id,
+    )
+    await db_pool.execute(
+        """
+        insert into hunt_listings
+            (id, hunt_id, property_id, added_by, submitted_source_id)
+        values ($1, $2, $3, $4, $5)
+        """,
+        listing_id,
+        hunt_id,
+        property_id,
+        FAKE_USER.id,
+        source_id,
+    )
+    try:
+        response = await client.put(
+            f"/v1/hunts/{hunt_id}/rubric",
+            json={
+                "criteria": [
+                    {
+                        "custom_def": _manual_custom_def(manual_key),
+                        "options": [{"match": {"op": "bool", "value": True}, "delta": 1}],
+                    },
+                    {
+                        "custom_def": {
+                            "schema_version": 1,
+                            "key": text_key,
+                            "label": "Quiet hours",
+                            "description": "Whether quiet hours are stated.",
+                            "fact_scope": "property",
+                            "value_schema": {"type": "boolean"},
+                            "requires_tool": None,
+                            "refresh_class": "listing_details",
+                            "routing_confirmed": True,
+                        },
+                        "options": [{"match": {"op": "bool", "value": True}, "delta": 1}],
+                    },
+                ]
+            },
+        )
+        assert response.status_code == 200, response.text
+        payload = await db_pool.fetchval(
+            """
+            select payload from jobs
+            where hunt_listing_id = $1 and type = 'refresh'
+            order by created_at desc limit 1
+            """,
+            listing_id,
+        )
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+        assert payload["scope"] == "custom_match"
+        assert payload["custom_criterion_keys"] == [text_key]
+    finally:
+        await db_pool.execute("delete from hunts where id = $1", hunt_id)
+        await db_pool.execute("delete from properties where id = $1", property_id)
+
+
+@pytest.mark.asyncio
+async def test_changing_acquisition_requires_a_new_key(client: AsyncClient, db_pool) -> None:
+    hunt_id = uuid4()
+    custom_key = f"custom:{uuid4()}"
+    await db_pool.execute(
+        "insert into hunts (id, name, owner_id) values ($1, 'Acquisition flip', $2)",
+        hunt_id,
+        FAKE_USER.id,
+    )
+    extracted_def = {
+        "schema_version": 1,
+        "key": custom_key,
+        "label": "Quiet hours",
+        "description": "Whether quiet hours are stated.",
+        "fact_scope": "property",
+        "value_schema": {"type": "boolean"},
+        "requires_tool": None,
+        "refresh_class": "listing_details",
+        "routing_confirmed": True,
+    }
+    try:
+        setup = await client.put(
+            f"/v1/hunts/{hunt_id}/rubric",
+            json={
+                "criteria": [
+                    {
+                        "custom_def": extracted_def,
+                        "options": [{"match": {"op": "bool", "value": True}, "delta": 1}],
+                    }
+                ]
+            },
+        )
+        assert setup.status_code == 200, setup.text
+
+        response = await client.put(
+            f"/v1/hunts/{hunt_id}/rubric",
+            json={
+                "criteria": [
+                    {
+                        "custom_def": _manual_custom_def(custom_key),
+                        "options": [{"match": {"op": "bool", "value": True}, "delta": 1}],
+                    }
+                ]
+            },
+        )
+        assert response.status_code == 422
+        assert response.json()["code"] == "invalid_rubric_option"
+    finally:
+        await db_pool.execute("delete from hunts where id = $1", hunt_id)

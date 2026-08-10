@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiFetch } from "../../lib/apiClient";
 import type { components } from "../../lib/generated/api";
+import { useGhostMutationPath } from "../admin/useGhostMode";
 
 export interface InviteAccepted {
   hunt_id: string;
@@ -35,9 +36,10 @@ export function useAcceptInvite(token: string) {
 
 // Owner-only: pending single-recipient email invites for a hunt.
 export function useInvites(huntId: string) {
+  const mutationPath = useGhostMutationPath(huntId);
   return useQuery({
     queryKey: ["invites", huntId],
-    queryFn: () => apiFetch<Invite[]>(`/v1/hunts/${huntId}/invites`),
+    queryFn: () => apiFetch<Invite[]>(mutationPath(`/v1/hunts/${huntId}/invites`)),
     enabled: Boolean(huntId),
   });
 }
@@ -45,9 +47,10 @@ export function useInvites(huntId: string) {
 // Owner-only: mint an invite; response includes the shareable `link`.
 export function useCreateInvite(huntId: string) {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: (body: InviteCreate) =>
-      apiFetch<Invite>(`/v1/hunts/${huntId}/invites`, { method: "POST", body }),
+      apiFetch<Invite>(mutationPath(`/v1/hunts/${huntId}/invites`), { method: "POST", body }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["invites", huntId] }),
   });
 }
@@ -55,27 +58,30 @@ export function useCreateInvite(huntId: string) {
 // Owner-only: revoke a pending invite.
 export function useRevokeInvite(huntId: string) {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: (inviteId: string) =>
-      apiFetch<void>(`/v1/invites/${inviteId}`, { method: "DELETE" }),
+      apiFetch<void>(mutationPath(`/v1/invites/${inviteId}`), { method: "DELETE" }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["invites", huntId] }),
   });
 }
 
 export function useInvitationLinks(huntId: string) {
+  const mutationPath = useGhostMutationPath(huntId);
   return useQuery({
     queryKey: ["invitation-links", huntId],
     queryFn: () =>
-      apiFetch<InvitationLink[]>(`/v1/hunts/${huntId}/invitation-links`),
+      apiFetch<InvitationLink[]>(mutationPath(`/v1/hunts/${huntId}/invitation-links`)),
     enabled: Boolean(huntId),
   });
 }
 
 export function useCreateInvitationLink(huntId: string) {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: (body: InvitationLinkCreate) =>
-      apiFetch<InvitationLink>(`/v1/hunts/${huntId}/invitation-links`, {
+      apiFetch<InvitationLink>(mutationPath(`/v1/hunts/${huntId}/invitation-links`), {
         method: "POST",
         body,
       }),
@@ -85,17 +91,19 @@ export function useCreateInvitationLink(huntId: string) {
 
 export function usePatchInvitationLink(huntId: string) {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: ({ id, body }: { id: string; body: InvitationLinkPatch }) =>
-      apiFetch<InvitationLink>(`/v1/invitation-links/${id}`, { method: "PATCH", body }),
+      apiFetch<InvitationLink>(mutationPath(`/v1/invitation-links/${id}`), { method: "PATCH", body }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["invitation-links", huntId] }),
   });
 }
 
 export function useDeleteInvitationLink(huntId: string) {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
-    mutationFn: (id: string) => apiFetch<void>(`/v1/invitation-links/${id}`, { method: "DELETE" }),
+    mutationFn: (id: string) => apiFetch<void>(mutationPath(`/v1/invitation-links/${id}`), { method: "DELETE" }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["invitation-links", huntId] }),
   });
 }

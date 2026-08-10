@@ -204,7 +204,22 @@ async def test_executed_tool_writes_a_tool_called_job_event(pg_pool: asyncpg.Poo
         detail = json.loads(rows[0]["detail"])
         assert detail["tool"] == "fetch_page"
         assert detail["input"] == {"url": FETCH_URL}
-        assert detail["result"]  # a non-empty cleaned-text summary
+        assert detail["result"]  # a non-empty summary of the fetch
+
+        # ...but not the page itself. `job_events.detail` is member- and
+        # demo-readable, and `_summarize` used to store the first 2 KB of the
+        # cleaned body here -- the same class of data DESIGN §16 withholds
+        # everywhere else. A length and a hash say as much about a fetch and
+        # disclose none of it.
+        body_words = [w for w in SUCCESS_BODY.split() if w.isalpha() and len(w) > 5]
+        assert body_words, "the fixture page has no distinctive words to look for"
+        for word in body_words:
+            assert word not in rows[0]["detail"], f"page text {word!r} reached job_events.detail"
+
+        summary = json.loads(detail["result"])
+        assert summary["outcome"] == "fetched"
+        assert summary["chars"] > 0
+        assert len(summary["sha256"]) == 64
     finally:
         await pg_pool.execute("delete from jobs where id = $1", job_id)
         await pg_pool.execute("delete from hunt_listings where id = $1", listing_id)
