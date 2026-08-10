@@ -5,12 +5,14 @@
 // router runs as. There is nothing to offer here but reading.
 import { Badge, Card, Group, Loader, Stack, Table, Text, Title } from "@mantine/core";
 
+import { TablePagination, usePagedRows } from "../../components/TablePagination";
 import { useAuditLog } from "./api";
 
 const DESTRUCTIVE = ["user.delete", "user.suspend", "admin.revoke", "job.cancel"];
 
 export function AdminAuditPage() {
   const audit = useAuditLog();
+  const paged = usePagedRows(audit.data ?? [], "admin-audit");
 
   return (
     <Stack gap="md">
@@ -28,6 +30,7 @@ export function AdminAuditPage() {
           </Text>
         )}
         {audit.data && audit.data.length > 0 && (
+          <>
           <Table.ScrollContainer minWidth={640}>
             <Table highlightOnHover verticalSpacing="xs">
               <Table.Thead>
@@ -39,7 +42,7 @@ export function AdminAuditPage() {
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
-                {audit.data.map((entry) => (
+                {paged.items.map((entry) => (
                   <Table.Tr key={entry.id}>
                     <Table.Td>
                       <Text size="xs" ff="monospace" c="dimmed">
@@ -80,6 +83,8 @@ export function AdminAuditPage() {
               </Table.Tbody>
             </Table>
           </Table.ScrollContainer>
+          <TablePagination state={paged} noun="entries" />
+          </>
         )}
       </Card>
 

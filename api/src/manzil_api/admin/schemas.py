@@ -52,6 +52,30 @@ class HuntSummary(BaseModel):
     last_activity_at: datetime | None = None
 
 
+class HuntPage(BaseModel):
+    """One page of Hunts plus the size of the whole match.
+
+    `total` counts what the search matched, not what was returned — a page
+    control cannot render "of N" or a last-page button without it, and a client
+    that has to fetch everything to learn N defeats the paging.
+    """
+
+    items: list[HuntSummary]
+    total: int
+
+
+class HuntOption(BaseModel):
+    """One typeahead suggestion — no roll-ups, because nobody reads them here.
+
+    ``HuntSummary`` costs five correlated subqueries and a cost lateral per row;
+    a picker that fires on every keystroke must not pay that.
+    """
+
+    hunt_id: UUID
+    name: str
+    owner_name: str | None = None
+
+
 class AuditEntry(BaseModel):
     id: UUID
     admin_user_id: UUID

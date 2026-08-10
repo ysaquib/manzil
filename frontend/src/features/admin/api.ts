@@ -99,11 +99,65 @@ export function useAdminSummary(enabled = true) {
   });
 }
 
-export function useAdminHunts(enabled = true) {
+export interface HuntPage {
+  items: HuntSummary[];
+  total: number;
+}
+
+/**
+ * One page of the Hunt table (AD-4).
+ *
+ * Search, ordering and slicing are all the server's: this route carries
+ * per-Hunt roll-ups, so "fetch everything and filter in the browser" costs the
+ * whole installation's cost aggregation on every keystroke. `total` comes back
+ * with the page because a pager cannot render "of N" without it.
+ */
+export function useAdminHunts(
+  { search, limit, offset }: { search: string; limit: number; offset: number },
+  enabled = true,
+) {
+  const term = search.trim();
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (term) params.set("search", term);
   return useQuery({
-    queryKey: ["admin", "hunts"],
-    queryFn: () => apiFetch<HuntSummary[]>("/v1/admin/hunts"),
+    queryKey: ["admin", "hunts", "list", term, limit, offset],
+    queryFn: () => apiFetch<HuntPage>(`/v1/admin/hunts?${params.toString()}`),
     enabled,
+    // Without this the table blanks to a spinner on every keystroke and every
+    // page step; keeping the previous page visible while the next loads is what
+    // makes paging feel like paging.
+    placeholderData: (previous) => previous,
+  });
+}
+
+export interface HuntOption {
+  hunt_id: string;
+  name: string;
+  owner_name: string | null;
+}
+
+/** Minimum characters before the Hunt typeahead asks the server anything. */
+export const HUNT_SEARCH_MIN_CHARS = 3;
+
+/**
+ * Hunt suggestions for a picker (AD-3).
+ *
+ * Deliberately *not* `useAdminHunts`: that route returns every Hunt in the
+ * installation with per-Hunt roll-ups, which is fine for a table someone
+ * navigated to and ruinous for a dropdown that opens on focus. Below the
+ * threshold the query is disabled, so an unfocused picker costs one request:
+ * none.
+ */
+export function useHuntOptions(query: string) {
+  const term = query.trim();
+  return useQuery({
+    queryKey: ["admin", "hunts", "options", term],
+    queryFn: () =>
+      apiFetch<HuntOption[]>(`/v1/admin/hunts/options?q=${encodeURIComponent(term)}`),
+    enabled: term.length >= HUNT_SEARCH_MIN_CHARS,
+    // Typing "bro" → "broo" → "bro" should not re-hit the server.
+    staleTime: 30_000,
+    placeholderData: (previous) => previous,
   });
 }
 

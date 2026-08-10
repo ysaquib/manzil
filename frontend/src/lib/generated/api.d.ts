@@ -941,8 +941,49 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Every Hunt with roll-ups */
+        /**
+         * A page of Hunts with roll-ups
+         * @description One page of the Hunt table, ordered by spend.
+         *
+         *     The shape of this query is the whole point. The obvious version — five
+         *     correlated subqueries in the target list, ``order by`` the cost lateral,
+         *     ``limit`` on the end — makes Postgres compute every roll-up for every Hunt
+         *     in the installation and then throw all but fifty away, because a Sort node
+         *     carries an already-evaluated target list. So the page is chosen first, on
+         *     the ordering key alone, and the four per-row counts are joined on afterwards
+         *     against the fifty rows that survived.
+         *
+         *     The cost aggregate still spans every matching Hunt, and that is inherent:
+         *     "most expensive first" cannot be answered without pricing the candidates.
+         *     It is one grouped join rather than a lateral per row, which is the version
+         *     of that cost worth paying.
+         */
         get: operations["list_hunts_v1_admin_hunts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/hunts/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Hunt typeahead suggestions
+         * @description Name/owner prefix search for Hunt pickers.
+         *
+         *     ``q`` is required and floored at three characters by the signature rather
+         *     than by the caller: an admin picking a Hunt out of a six-figure table must
+         *     not be able to ask for "all of them", however the frontend is written. The
+         *     ceiling on ``limit`` is the same argument from the other end.
+         */
+        get: operations["hunt_options_v1_admin_hunts_options_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2422,6 +2463,38 @@ export interface components {
              * @enum {string}
              */
             domain: "rent" | "buy";
+        };
+        /**
+         * HuntOption
+         * @description One typeahead suggestion — no roll-ups, because nobody reads them here.
+         *
+         *     ``HuntSummary`` costs five correlated subqueries and a cost lateral per row;
+         *     a picker that fires on every keystroke must not pay that.
+         */
+        HuntOption: {
+            /**
+             * Hunt Id
+             * Format: uuid
+             */
+            hunt_id: string;
+            /** Name */
+            name: string;
+            /** Owner Name */
+            owner_name?: string | null;
+        };
+        /**
+         * HuntPage
+         * @description One page of Hunts plus the size of the whole match.
+         *
+         *     `total` counts what the search matched, not what was returned — a page
+         *     control cannot render "of N" or a last-page button without it, and a client
+         *     that has to fetch everything to learn N defeats the paging.
+         */
+        HuntPage: {
+            /** Items */
+            items: components["schemas"]["HuntSummary"][];
+            /** Total */
+            total: number;
         };
         /** HuntResponse */
         HuntResponse: {
@@ -6028,7 +6101,11 @@ export interface operations {
     };
     list_hunts_v1_admin_hunts_get: {
         parameters: {
-            query?: never;
+            query?: {
+                search?: string | null;
+                limit?: number;
+                offset?: number;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -6041,7 +6118,48 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["HuntSummary"][];
+                    "application/json": components["schemas"]["HuntPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hunt_options_v1_admin_hunts_options_get: {
+        parameters: {
+            query: {
+                q: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HuntOption"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

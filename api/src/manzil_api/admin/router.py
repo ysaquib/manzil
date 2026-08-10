@@ -34,6 +34,8 @@ from manzil_api.admin.schemas import (
     FeedbackReport,
     FeedbackTriageUpdate,
     GrantAdmin,
+    HuntOption,
+    HuntPage,
     HuntSummary,
 )
 from manzil_api.demo.router import reset_config_cache
@@ -103,47 +105,142 @@ async def summary(admin: AdminUser, pool: DbPool) -> AdminSummary:
     )
 
 
-@router.get("/hunts", response_model=list[HuntSummary], summary="Every Hunt with roll-ups")
-async def list_hunts(admin: AdminUser, pool: DbPool) -> list[HuntSummary]:
+@router.get("/hunts", response_model=HuntPage, summary="A page of Hunts with roll-ups")
+async def list_hunts(
+    admin: AdminUser,
+    pool: DbPool,
+    search: str | None = Query(None, max_length=200),
+    limit: int = Query(50, ge=1, le=250),
+    offset: int = Query(0, ge=0),
+) -> HuntPage:
+    """One page of the Hunt table, ordered by spend.
+
+    The shape of this query is the whole point. The obvious version — five
+    correlated subqueries in the target list, ``order by`` the cost lateral,
+    ``limit`` on the end — makes Postgres compute every roll-up for every Hunt
+    in the installation and then throw all but fifty away, because a Sort node
+    carries an already-evaluated target list. So the page is chosen first, on
+    the ordering key alone, and the four per-row counts are joined on afterwards
+    against the fifty rows that survived.
+
+    The cost aggregate still spans every matching Hunt, and that is inherent:
+    "most expensive first" cannot be answered without pricing the candidates.
+    It is one grouped join rather than a lateral per row, which is the version
+    of that cost worth paying.
+    """
     rows = await pool.fetch(
         """
+        with filtered as (
+            select h.id, h.name, h.owner_id, h.created_at,
+                   up.default_display_name as owner_name
+            from hunts h
+            left join user_profiles up on up.user_id = h.owner_id
+            where $1::text is null
+               or h.name ilike '%' || $1 || '%'
+               or up.default_display_name ilike '%' || $1 || '%'
+        ),
+        costs as (
+            select f.id,
+                   coalesce(sum(sc.llm_cost_usd), 0)   as llm,
+                   coalesce(sum(sc.fetch_cost_usd), 0) as fetch
+            from filtered f
+            left join jobs j on j.hunt_id = f.id
+            left join job_stage_costs sc on sc.job_id = j.id
+            group by f.id
+        ),
+        page as (
+            select f.*, c.llm, c.fetch
+            from filtered f
+            join costs c on c.id = f.id
+            order by (c.llm + c.fetch) desc, f.created_at desc
+            limit $2 offset $3
+        )
         select
-            h.id as hunt_id, h.name, h.owner_id, h.created_at,
-            up.default_display_name as owner_name,
-            (select count(*) from hunt_members m where m.hunt_id = h.id)   as members,
-            (select count(*) from hunt_listings l where l.hunt_id = h.id)  as listings,
-            (select count(*) from jobs j where j.hunt_id = h.id)           as jobs,
-            coalesce(c.llm, 0)   as llm_cost,
-            coalesce(c.fetch, 0) as fetch_cost,
-            (select max(j.finished_at) from jobs j where j.hunt_id = h.id) as last_activity_at
+            p.id as hunt_id, p.name, p.owner_id, p.owner_name, p.created_at,
+            p.llm as llm_cost, p.fetch as fetch_cost,
+            (select count(*) from hunt_members m where m.hunt_id = p.id)   as members,
+            (select count(*) from hunt_listings l where l.hunt_id = p.id)  as listings,
+            (select count(*) from jobs j where j.hunt_id = p.id)           as jobs,
+            (select max(j.finished_at) from jobs j where j.hunt_id = p.id) as last_activity_at,
+            (select count(*) from filtered)                                as total
+        from page p
+        order by (p.llm + p.fetch) desc, p.created_at desc
+        """,
+        search,
+        limit,
+        offset,
+    )
+    # `total` rides on every row, so an empty page carries no count — ask
+    # separately only in that case rather than paying for a second query on
+    # every request.
+    if rows:
+        total = rows[0]["total"]
+    else:
+        total = await pool.fetchval(
+            """
+            select count(*)
+            from hunts h
+            left join user_profiles up on up.user_id = h.owner_id
+            where $1::text is null
+               or h.name ilike '%' || $1 || '%'
+               or up.default_display_name ilike '%' || $1 || '%'
+            """,
+            search,
+        )
+    return HuntPage(
+        total=total,
+        items=[
+            HuntSummary(
+                hunt_id=row["hunt_id"],
+                name=row["name"],
+                owner_id=row["owner_id"],
+                owner_name=row["owner_name"],
+                members=row["members"],
+                listings=row["listings"],
+                jobs=row["jobs"],
+                llm_cost_usd=float(row["llm_cost"]),
+                fetch_cost_usd=float(row["fetch_cost"]),
+                total_cost_usd=float(row["llm_cost"]) + float(row["fetch_cost"]),
+                created_at=row["created_at"],
+                last_activity_at=row["last_activity_at"],
+            )
+            for row in rows
+        ],
+    )
+
+
+@router.get(
+    "/hunts/options",
+    response_model=list[HuntOption],
+    summary="Hunt typeahead suggestions",
+)
+async def hunt_options(
+    admin: AdminUser,
+    pool: DbPool,
+    q: str = Query(min_length=3, max_length=200),
+    limit: int = Query(20, ge=1, le=50),
+) -> list[HuntOption]:
+    """Name/owner prefix search for Hunt pickers.
+
+    ``q`` is required and floored at three characters by the signature rather
+    than by the caller: an admin picking a Hunt out of a six-figure table must
+    not be able to ask for "all of them", however the frontend is written. The
+    ceiling on ``limit`` is the same argument from the other end.
+    """
+    rows = await pool.fetch(
+        """
+        select h.id as hunt_id, h.name, up.default_display_name as owner_name
         from hunts h
         left join user_profiles up on up.user_id = h.owner_id
-        left join lateral (
-            select sum(sc.llm_cost_usd) as llm, sum(sc.fetch_cost_usd) as fetch
-            from job_stage_costs sc
-            join jobs j on j.id = sc.job_id
-            where j.hunt_id = h.id
-        ) c on true
-        order by (coalesce(c.llm, 0) + coalesce(c.fetch, 0)) desc, h.created_at desc
-        """
+        where h.name ilike '%' || $1 || '%'
+           or up.default_display_name ilike '%' || $1 || '%'
+        order by h.name
+        limit $2
+        """,
+        q,
+        limit,
     )
-    return [
-        HuntSummary(
-            hunt_id=row["hunt_id"],
-            name=row["name"],
-            owner_id=row["owner_id"],
-            owner_name=row["owner_name"],
-            members=row["members"],
-            listings=row["listings"],
-            jobs=row["jobs"],
-            llm_cost_usd=float(row["llm_cost"]),
-            fetch_cost_usd=float(row["fetch_cost"]),
-            total_cost_usd=float(row["llm_cost"]) + float(row["fetch_cost"]),
-            created_at=row["created_at"],
-            last_activity_at=row["last_activity_at"],
-        )
-        for row in rows
-    ]
+    return [HuntOption(**dict(row)) for row in rows]
 
 
 @router.get(
