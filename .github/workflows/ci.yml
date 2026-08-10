@@ -100,8 +100,16 @@ jobs:
       - run: pnpm build
 
   docker-api-image:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # GitHub withholds repository secrets from Dependabot-triggered workflows,
+    # even though Dependabot's PR head belongs to this repository. Build the
+    # secret-backed production image on ordinary same-repository PRs and pushes;
+    # the push build remains the required verification for Dependabot changes.
+    if: >-
+      github.actor != 'dependabot[bot]' &&
+      (github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
+    environment: production
     timeout-minutes: 20
     env:
       MANZIL_CLIP_ARCHIVE_URL: ${{ secrets.MANZIL_CLIP_ARCHIVE_URL }}
