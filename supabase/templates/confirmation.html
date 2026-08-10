@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="x-apple-disable-message-reformatting">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<title>Confirm your email for Manzil</title>
+<style>
+  body { margin: 0; padding: 0; background-color: #F6F3EE; }
+  .bg-body { background-color: #F6F3EE; }
+  .bg-card { background-color: #FFFEFB; border-color: #E1DDD8; }
+  .hairline { border-color: #E1DDD8; }
+  .text-strong { color: #2E2A27; }
+  .text-body { color: #45403B; }
+  .text-muted { color: #756D66; }
+  .text-dim { color: #90877F; }
+  .text-accent { color: #7c428a; }
+  .btn-cell { background-color: #8f509b; }
+  .btn-link { color: #FFFEFB; }
+  .code-box { background-color: #F0EEEC; border-color: #CBC5BF; }
+  .code-text { color: #7c428a; }
+
+  @media (prefers-color-scheme: dark) {
+    body { background-color: #1E191C !important; }
+    .bg-body { background-color: #1E191C !important; }
+    .bg-card { background-color: #261F23 !important; border-color: #40353E !important; }
+    .hairline { border-color: #40353E !important; }
+    .text-strong { color: #EFEAEC !important; }
+    .text-body { color: #D1C7D0 !important; }
+    .text-muted { color: #C0B4BB !important; }
+    .text-dim { color: #84757F !important; }
+    .text-accent { color: #cba6d4 !important; }
+    .btn-cell { background-color: #ac72b7 !important; }
+    .btn-link { color: #1E191C !important; }
+    .code-box { background-color: #352C33 !important; border-color: #40353E !important; }
+    .code-text { color: #cba6d4 !important; }
+  }
+
+  /* Outlook.com / Windows Mail: dark mode via injected attribute, not prefers-color-scheme */
+  body[data-ogsc] { background-color: #1E191C !important; }
+  [data-ogsc] .bg-body { background-color: #1E191C !important; }
+  [data-ogsc] .bg-card { background-color: #261F23 !important; border-color: #40353E !important; }
+  [data-ogsc] .hairline { border-color: #40353E !important; }
+  [data-ogsc] .text-strong { color: #EFEAEC !important; }
+  [data-ogsc] .text-body { color: #D1C7D0 !important; }
+  [data-ogsc] .text-muted { color: #C0B4BB !important; }
+  [data-ogsc] .text-dim { color: #84757F !important; }
+  [data-ogsc] .text-accent { color: #cba6d4 !important; }
+  [data-ogsc] .btn-cell { background-color: #ac72b7 !important; }
+  [data-ogsc] .btn-link { color: #1E191C !important; }
+  [data-ogsc] .code-box { background-color: #352C33 !important; border-color: #40353E !important; }
+  [data-ogsc] .code-text { color: #cba6d4 !important; }
+</style>
+</head>
+<body>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" class="bg-body">
+<tr><td align="center" style="padding: 32px 16px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width: 560px;">
+
+<tr><td align="center" style="padding: 0 0 22px;">
+<span class="text-accent" style="font-family: 'Literata Variable', Georgia, 'Times New Roman', serif; font-size: 20px; font-weight: 600; letter-spacing: 0.01em;">Manzil</span>
+</td></tr>
+
+<tr><td class="bg-card hairline" style="border-width: 1px; border-style: solid; border-radius: 12px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+
+<tr><td class="text-strong" style="padding: 28px 24px 4px; font-family: 'Literata Variable', Georgia, 'Times New Roman', serif; font-size: 21px; font-weight: 600;">Confirm your email</td></tr>
+
+<tr><td class="text-body" style="padding: 0 24px 8px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 15px; line-height: 1.6;">
+Welcome to Manzil. Confirm <strong>{{ .Email }}</strong> to finish setting up your account and start your first hunt.
+</td></tr>
+
+<tr><td align="center" style="padding: 28px 24px 8px;">
+<!--[if mso]>
+<v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{ .ConfirmationURL }}" style="height:44px;v-text-anchor:middle;width:220px;" arcsize="18%" strokecolor="#8f509b" fillcolor="#8f509b">
+<w:anchorlock/>
+<center style="color:#FFFEFB;font-family:sans-serif;font-size:15px;font-weight:600;">Confirm email</center>
+</v:roundrect>
+<![endif]-->
+<!--[if !mso]><!-->
+<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+<td class="btn-cell" style="border-radius: 8px;">
+<a href="{{ .ConfirmationURL }}" class="btn-link" style="display: inline-block; padding: 13px 28px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 15px; font-weight: 600; text-decoration: none; border-radius: 8px;">Confirm email</a>
+</td>
+</tr></table>
+<!--<![endif]-->
+</td></tr>
+
+<tr><td class="text-dim" style="padding: 18px 24px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 12.5px; line-height: 1.6;">
+Or paste this link into your browser:
+</td></tr>
+<tr><td class="text-muted" style="padding: 4px 24px 0; font-family: ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, monospace; font-size: 12.5px; line-height: 1.6; word-break: break-all;">
+{{ .ConfirmationURL }}
+</td></tr>
+
+<tr><td style="padding: 26px 24px 24px;"><div class="hairline" style="border-top-width: 1px; border-top-style: solid; line-height: 0; font-size: 0;">&nbsp;</div></td></tr>
+
+<tr><td class="text-dim" style="padding: 0 24px 26px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 11.5px; line-height: 1.6;">
+If you didn't sign up for this account, you can safely ignore this email — no account will be created without confirmation.
+</td></tr>
+
+</table>
+</td></tr>
+
+<tr><td align="center" class="text-dim" style="padding: 18px 8px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 11px;">Manzil &middot; a calmer way to hunt for an apartment</td></tr>
+
+</table>
+</td></tr>
+</table>
+</body>
+</html>
