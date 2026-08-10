@@ -24,12 +24,13 @@ import {
   Title,
   Tooltip,
 } from "@mantine/core";
-import { useDisclosure } from "@mantine/hooks";
+import { useDisclosure, useMediaQuery } from "@mantine/hooks";
 import { IconAlertTriangle, IconDots, IconSearch, IconUserPlus } from "@tabler/icons-react";
 import { useState } from "react";
 
+import { TablePagination, usePagedRows } from "../../components/TablePagination";
+import { HuntPicker } from "./HuntPicker";
 import {
-  useAdminHunts,
   useAdminPeople,
   useAdminPerson,
   useDeletePerson,
@@ -73,7 +74,6 @@ function StateBadges({ person }: { person: PersonRow }) {
 
 function PersonDetailPanel({ userId }: { userId: string }) {
   const person = useAdminPerson(userId);
-  const hunts = useAdminHunts();
   const action = usePersonAction();
   const setMembership = useSetMembership();
   const removeMembership = useRemoveMembership();
@@ -222,15 +222,13 @@ function PersonDetailPanel({ userId }: { userId: string }) {
           </Table>
         )}
 
-        <Group gap="xs" mt="sm" align="flex-end">
-          <Select
-            size="xs"
+        <Group gap="xs" mt="sm" align="flex-end" wrap="wrap">
+          <HuntPicker
             placeholder="Add to a Hunt…"
-            searchable
-            style={{ flex: 1 }}
-            data={(hunts.data ?? []).map((h) => ({ value: h.hunt_id, label: h.name }))}
+            style={{ flex: 1, minWidth: 180 }}
             value={addHunt}
-            onChange={setAddHunt}
+            onChange={(huntId) => setAddHunt(huntId)}
+            clearable
           />
           <Select
             size="xs"
@@ -264,68 +262,76 @@ function PersonDetailPanel({ userId }: { userId: string }) {
 
 function ProvisionModal({ opened, onClose }: { opened: boolean; onClose: () => void }) {
   const provision = useProvisionPerson();
-  const hunts = useAdminHunts();
   const [email, setEmail] = useState("");
   const [huntId, setHuntId] = useState<string | null>(null);
   const [role, setRole] = useState("member");
 
+  const submit = () => {
+    if (!email.trim() || provision.isPending) return;
+    provision.mutate(
+      {
+        email: email.trim(),
+        ...(huntId ? { hunt_id: huntId, role } : {}),
+      },
+      {
+        onSuccess: () => {
+          setEmail("");
+          setHuntId(null);
+          onClose();
+        },
+      },
+    );
+  };
+
   return (
     <Modal opened={opened} onClose={onClose} title="Create account" centered>
-      <Stack gap="sm">
-        <TextInput
-          label="Email"
-          value={email}
-          onChange={(e) => setEmail(e.currentTarget.value)}
-          placeholder="them@example.com"
-        />
-        {/* Optional: the invite creates the account, the Hunt is a separate
-            fact. Conflating them is how you get a half-joined user. */}
-        <Select
-          label="Add to a Hunt (optional)"
-          placeholder="No Hunt"
-          searchable
-          clearable
-          data={(hunts.data ?? []).map((h) => ({ value: h.hunt_id, label: h.name }))}
-          value={huntId}
-          onChange={setHuntId}
-        />
-        {huntId && (
-          <Select
-            label="Role"
-            data={ROLE_OPTIONS}
-            value={role}
-            allowDeselect={false}
-            onChange={(v) => v && setRole(v)}
+      {/* A one-field form: Enter submits it, because every other one-field form
+          on the web does. */}
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          submit();
+        }}
+      >
+        <Stack gap="sm">
+          <TextInput
+            label="Email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.currentTarget.value)}
+            placeholder="them@example.com"
           />
-        )}
-        <Text size="sm" c="dimmed">
-          They will receive a secure link to choose their password. Public registration is disabled.
-        </Text>
-        {provision.isError && (
-          <Alert color="red">{(provision.error as Error).message}</Alert>
-        )}
-        <Button
-          disabled={!email.trim()}
-          loading={provision.isPending}
-          onClick={() =>
-            provision.mutate(
-              {
-                email: email.trim(),
-                ...(huntId ? { hunt_id: huntId, role } : {}),
-              },
-              {
-                onSuccess: () => {
-                  setEmail("");
-                  setHuntId(null);
-                  onClose();
-                },
-              },
-            )
-          }
-        >
-          Create account
-        </Button>
-      </Stack>
+          {/* Optional: the invite creates the account, the Hunt is a separate
+              fact. Conflating them is how you get a half-joined user. */}
+          <HuntPicker
+            size="sm"
+            label="Add to a Hunt (optional)"
+            placeholder="Search Hunts…"
+            clearable
+            value={huntId}
+            onChange={(next) => setHuntId(next)}
+          />
+          {huntId && (
+            <Select
+              label="Role"
+              data={ROLE_OPTIONS}
+              value={role}
+              allowDeselect={false}
+              onChange={(v) => v && setRole(v)}
+            />
+          )}
+          <Text size="sm" c="dimmed">
+            They will receive a secure link to choose their password. Public registration is
+            disabled.
+          </Text>
+          {provision.isError && (
+            <Alert color="red">{(provision.error as Error).message}</Alert>
+          )}
+          <Button type="submit" disabled={!email.trim()} loading={provision.isPending}>
+            Create account
+          </Button>
+        </Stack>
+      </form>
     </Modal>
   );
 }
@@ -335,19 +341,33 @@ export function AdminPeoplePage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [provisionOpen, { open: openProvision, close: closeProvision }] = useDisclosure(false);
   const people = useAdminPeople(search);
+  // Phone width: the roster and the detail panel cannot sit side by side in
+  // 24rem, so the panel moves under the list and only appears once someone is
+  // picked. The placeholder card ("select someone") is desktop-only furniture.
+  const isCompact = useMediaQuery("(max-width: 48em)") ?? false;
+  const paged = usePagedRows(people.data ?? [], "admin-people");
 
   return (
     <Stack gap="md">
-      <Group justify="space-between" align="center">
+      <Group justify="space-between" align="center" wrap="wrap" gap="xs">
         <Title order={2}>People</Title>
-        <Group gap="xs">
+        {/* `1 1 100%` rather than `flex: 1`: the cluster has to take a whole
+            row of its own under the title, not squeeze in beside it and wrap
+            internally — which is what it did, leaving the title floating
+            against a two-line stack. */}
+        <Group
+          gap="xs"
+          wrap="nowrap"
+          style={isCompact ? { flex: "1 1 100%" } : undefined}
+        >
           <TextInput
             size="xs"
             placeholder="Search name or email…"
             leftSection={<IconSearch size={14} />}
             value={search}
             onChange={(e) => setSearch(e.currentTarget.value)}
-            w={220}
+            w={isCompact ? undefined : 220}
+            style={isCompact ? { flex: 1 } : undefined}
           />
           <Button size="xs" leftSection={<IconUserPlus size={14} />} onClick={openProvision}>
             Create account
@@ -360,9 +380,14 @@ export function AdminPeoplePage() {
         aria-label="People directory"
         align="flex-start"
         gap="md"
-        wrap="nowrap"
+        wrap={isCompact ? "wrap" : "nowrap"}
       >
-        <Card padding={0} radius="md" withBorder style={{ flex: 1, minWidth: 0 }}>
+        <Card
+          padding={0}
+          radius="md"
+          withBorder
+          style={{ flex: 1, minWidth: 0, width: isCompact ? "100%" : undefined }}
+        >
           {people.isPending && (
             <Group p="md">
               <Loader size="sm" />
@@ -374,6 +399,7 @@ export function AdminPeoplePage() {
             </Text>
           )}
           {people.data && people.data.length > 0 && (
+            <>
             <Table.ScrollContainer minWidth={520}>
               <Table highlightOnHover verticalSpacing="xs">
                 <Table.Thead>
@@ -386,7 +412,7 @@ export function AdminPeoplePage() {
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
-                  {people.data.map((person) => (
+                  {paged.items.map((person) => (
                     <Table.Tr
                       key={person.user_id}
                       onClick={() => setSelected(person.user_id)}
@@ -443,18 +469,28 @@ export function AdminPeoplePage() {
                 </Table.Tbody>
               </Table>
             </Table.ScrollContainer>
+            <TablePagination state={paged} noun="people" />
+            </>
           )}
         </Card>
 
-        <div style={{ width: "26rem", flex: "none" }}>
+        <div
+          style={
+            isCompact
+              ? { width: "100%", flex: "none" }
+              : { width: "26rem", flex: "none" }
+          }
+        >
           {selected ? (
             <PersonDetailPanel userId={selected} />
           ) : (
-            <Card padding="lg" radius="md" withBorder>
-              <Text size="sm" c="dimmed">
-                Select someone to see their Hunts and act on their account.
-              </Text>
-            </Card>
+            !isCompact && (
+              <Card padding="lg" radius="md" withBorder>
+                <Text size="sm" c="dimmed">
+                  Select someone to see their Hunts and act on their account.
+                </Text>
+              </Card>
+            )
           )}
         </div>
       </Group>

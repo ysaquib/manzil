@@ -9,7 +9,7 @@ whether a refusal can be outlived by a token.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
@@ -120,7 +120,7 @@ async def test_an_admin_reads_across_hunts_they_do_not_belong_to(
 
     hunts = await as_admin.get("/v1/admin/hunts")
     assert hunts.status_code == 200
-    names = {row["name"] for row in hunts.json()}
+    names = {row["name"] for row in hunts.json()["items"]}
     assert "Collab Hunt" in names
 
     summary = await as_admin.get("/v1/admin/summary")
@@ -130,6 +130,94 @@ async def test_an_admin_reads_across_hunts_they_do_not_belong_to(
 
     feed = await as_admin.get(f"/v1/admin/hunts/{collab_hunt['hunt_id']}/activity")
     assert feed.status_code == 200, feed.text
+
+
+async def test_hunt_list_pages_and_searches_on_the_server(
+    as_admin: AsyncClient, collab_hunt, db_pool
+) -> None:
+    """The table is paged by the database, not by the browser.
+
+    `total` counts the whole match rather than the page, because a pager with
+    no count cannot render a last-page button — and a client that has to fetch
+    everything to learn the count is the thing this replaced.
+    """
+    everything = await as_admin.get("/v1/admin/hunts")
+    assert everything.status_code == 200
+    total = everything.json()["total"]
+    assert total >= 1
+    assert len(everything.json()["items"]) == total
+
+    first = await as_admin.get("/v1/admin/hunts?limit=1&offset=0")
+    assert first.status_code == 200
+    assert len(first.json()["items"]) == 1
+    # The count describes the match, not the slice.
+    assert first.json()["total"] == total
+
+    # Paging is disjoint: page 2 is not page 1 again.
+    if total > 1:
+        second = await as_admin.get("/v1/admin/hunts?limit=1&offset=1")
+        assert second.json()["items"][0]["hunt_id"] != first.json()["items"][0]["hunt_id"]
+
+    # Past the end is an empty page that still knows the size of the match —
+    # the branch where `total` cannot ride along on a row.
+    past = await as_admin.get(f"/v1/admin/hunts?limit=10&offset={total + 50}")
+    assert past.status_code == 200
+    assert past.json()["items"] == []
+    assert past.json()["total"] == total
+
+    searched = await as_admin.get("/v1/admin/hunts?search=Collab")
+    assert searched.status_code == 200
+    assert {row["name"] for row in searched.json()["items"]} == {"Collab Hunt"}
+    assert searched.json()["total"] == 1
+
+    # Owner name is searchable too, which is why the frontend must not re-filter
+    # the results by label.
+    owner_name = await db_pool.fetchval(
+        "select up.default_display_name from hunts h "
+        "join user_profiles up on up.user_id = h.owner_id where h.id = $1",
+        UUID(collab_hunt["hunt_id"]),
+    )
+    if owner_name:
+        by_owner = await as_admin.get(f"/v1/admin/hunts?search={owner_name}")
+        assert collab_hunt["hunt_id"] in {r["hunt_id"] for r in by_owner.json()["items"]}
+
+    missing = await as_admin.get("/v1/admin/hunts?search=zzzznotahunt")
+    assert missing.json() == {"items": [], "total": 0}
+
+    # The page size has a ceiling for the same reason the typeahead does.
+    assert (await as_admin.get("/v1/admin/hunts?limit=5000")).status_code == 422
+    assert (await as_admin.get("/v1/admin/hunts?offset=-1")).status_code == 422
+
+
+async def test_hunt_options_refuses_to_enumerate_the_table(
+    as_admin: AsyncClient, collab_hunt
+) -> None:
+    """The floor is the endpoint's, not the picker's.
+
+    A Hunt picker that could ask for "everything" would ship an installation's
+    whole Hunt table to a browser to render a dropdown. Two characters is a
+    422 no matter how the frontend is written, and the page size is capped.
+    """
+    assert (await as_admin.get("/v1/admin/hunts/options?q=Co")).status_code == 422
+    assert (await as_admin.get("/v1/admin/hunts/options")).status_code == 422
+    assert (await as_admin.get("/v1/admin/hunts/options?q=Collab&limit=500")).status_code == 422
+
+    found = await as_admin.get("/v1/admin/hunts/options?q=Collab")
+    assert found.status_code == 200, found.text
+    assert collab_hunt["hunt_id"] in {row["hunt_id"] for row in found.json()}
+    # Suggestions only — the roll-ups behind the table cost five subqueries per
+    # row and nothing in a dropdown reads them.
+    assert set(found.json()[0]) == {"hunt_id", "name", "owner_name"}
+
+    missing = await as_admin.get("/v1/admin/hunts/options?q=zzzznotahunt")
+    assert missing.status_code == 200
+    assert missing.json() == []
+
+
+async def test_hunt_options_refuses_a_non_admin(as_nobody: AsyncClient) -> None:
+    response = await as_nobody.get("/v1/admin/hunts/options?q=Collab")
+    assert response.status_code == 403
+    assert response.json()["code"] == "not_site_admin"
 
 
 # ── the ledger ───────────────────────────────────────────────────────────────
