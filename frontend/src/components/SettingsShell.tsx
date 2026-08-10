@@ -19,7 +19,7 @@ export interface SettingsTab {
   /** The second rail line: what lives in here, before you click. */
   description?: string;
   icon: ReactNode;
-  /** Marks a designed-but-unshipped tab (P3-22's Alerts). */
+  /** Marks a designed-but-unshipped tab. */
   pending?: boolean;
 }
 
