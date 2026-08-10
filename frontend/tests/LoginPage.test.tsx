@@ -50,3 +50,60 @@ describe("LoginPage account creation boundary", () => {
     });
   });
 });
+
+// Enter is how people finish a login form. Reaching for the mouse after typing
+// a password is the kind of small wrongness that makes an app feel unfinished.
+describe("LoginPage keyboard submission", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("signs in on Enter from the password field", async () => {
+    const user = userEvent.setup();
+    renderLogin();
+
+    await user.type(screen.getByLabelText("Email"), "member@example.com");
+    await user.type(screen.getByLabelText("Password"), "hunter2{Enter}");
+
+    expect(auth.signInWithPassword).toHaveBeenCalledWith({
+      email: "member@example.com",
+      password: "hunter2",
+    });
+  });
+
+  it("sends the magic link on Enter from the email field", async () => {
+    const user = userEvent.setup();
+    renderLogin();
+
+    await user.click(screen.getByText("Magic link"));
+    await user.type(screen.getByLabelText("Email"), "member@example.com{Enter}");
+
+    expect(auth.signInWithOtp).toHaveBeenCalledOnce();
+  });
+
+  it("does not submit an incomplete form", async () => {
+    const user = userEvent.setup();
+    renderLogin();
+
+    // Email only, in password mode: Enter must not fire a credential-less
+    // sign-in the disabled button would have refused.
+    await user.type(screen.getByLabelText("Email"), "member@example.com{Enter}");
+
+    expect(auth.signInWithPassword).not.toHaveBeenCalled();
+  });
+
+  it("verifies the emailed code on Enter", async () => {
+    const user = userEvent.setup();
+    renderLogin();
+
+    await user.click(screen.getByText("Magic link"));
+    await user.type(screen.getByLabelText("Email"), "member@example.com{Enter}");
+
+    const codeField = await screen.findByLabelText("Email code");
+    await user.type(codeField, "123456{Enter}");
+
+    expect(auth.verifyOtp).toHaveBeenCalledWith({
+      email: "member@example.com",
+      token: "123456",
+      type: "email",
+    });
+  });
+});
