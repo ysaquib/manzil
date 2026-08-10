@@ -264,27 +264,27 @@ otp_expiry = 3600
 # six templates below derive from it.
 [auth.email.template.confirmation]
 subject = "Confirm your email for Manzil"
-content_path = "./supabase/templates/confirmation.html"
+content_path = "./templates/confirmation.html"
 
 [auth.email.template.invite]
 subject = "You've been invited to Manzil"
-content_path = "./supabase/templates/invite.html"
+content_path = "./templates/invite.html"
 
 [auth.email.template.magic_link]
 subject = "Your Manzil sign-in link"
-content_path = "./supabase/templates/magic_link.html"
+content_path = "./templates/magic_link.html"
 
 [auth.email.template.recovery]
 subject = "Reset your Manzil password"
-content_path = "./supabase/templates/recovery.html"
+content_path = "./templates/recovery.html"
 
 [auth.email.template.email_change]
 subject = "Confirm your new email for Manzil"
-content_path = "./supabase/templates/email_change.html"
+content_path = "./templates/email_change.html"
 
 [auth.email.template.reauthentication]
 subject = "Your Manzil verification code"
-content_path = "./supabase/templates/reauthentication.html"
+content_path = "./templates/reauthentication.html"
 
 # Security notification emails — sent after an account-affecting action already
 # happened (no link to confirm, just an alert). Disabled by default upstream.
@@ -294,37 +294,37 @@ content_path = "./supabase/templates/reauthentication.html"
 [auth.email.notification.password_changed]
 enabled = true
 subject = "Your password was changed"
-content_path = "./supabase/templates/password_changed.html"
+content_path = "./templates/password_changed.html"
 
 [auth.email.notification.email_changed]
 enabled = false
 subject = "Your email address was changed"
-content_path = "./supabase/templates/email_changed.html"
+content_path = "./templates/email_changed.html"
 
 [auth.email.notification.phone_changed]
 enabled = false
 subject = "Your phone number was changed"
-content_path = "./supabase/templates/phone_changed.html"
+content_path = "./templates/phone_changed.html"
 
 [auth.email.notification.mfa_factor_enrolled]
 enabled = false
 subject = "A new verification method was added to your account"
-content_path = "./supabase/templates/mfa_factor_enrolled.html"
+content_path = "./templates/mfa_factor_enrolled.html"
 
 [auth.email.notification.mfa_factor_unenrolled]
 enabled = false
 subject = "A verification method was removed from your account"
-content_path = "./supabase/templates/mfa_factor_unenrolled.html"
+content_path = "./templates/mfa_factor_unenrolled.html"
 
 [auth.email.notification.identity_linked]
 enabled = false
 subject = "A sign-in method was linked to your account"
-content_path = "./supabase/templates/identity_linked.html"
+content_path = "./templates/identity_linked.html"
 
 [auth.email.notification.identity_unlinked]
 enabled = false
 subject = "A sign-in method was removed from your account"
-content_path = "./supabase/templates/identity_unlinked.html"
+content_path = "./templates/identity_unlinked.html"
 
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]
