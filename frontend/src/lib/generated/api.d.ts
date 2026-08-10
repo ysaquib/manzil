@@ -4,6 +4,40 @@
  */
 
 export interface paths {
+    "/v1/demo/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether the public demo is currently offered */
+        get: operations["demo_config_v1_demo_config_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/demo/session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mint a short-lived, read-only demo token */
+        post: operations["create_demo_session_v1_demo_session_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/hunts": {
         parameters: {
             query?: never;
@@ -331,6 +365,23 @@ export interface paths {
         put?: never;
         /** Create Listing */
         post: operations["create_listing_v1_hunts__hunt_id__listings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/listings/{listing_id}/deletion-impact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Listing Deletion Impact */
+        get: operations["listing_deletion_impact_v1_listings__listing_id__deletion_impact_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -909,8 +960,11 @@ export interface paths {
         };
         /**
          * A Hunt's activity feed
-         * @description Reads `hunt_activity` (AD-F), whose own gate already admits Site Admins —
-         *     so this route adds pagination, not permission.
+         * @description Read the internal AD-F union after the live ``AdminUser`` check above.
+         *
+         *     The raw union deliberately has no PostgREST grant. Hunt Owners use the
+         *     bounded ``get_hunt_activity`` RPC; this service-role route is the separate
+         *     Site Admin boundary.
          */
         get: operations["hunt_activity_v1_admin_hunts__hunt_id__activity_get"];
         put?: never;
@@ -1021,6 +1075,50 @@ export interface paths {
         head?: never;
         /** Set a report's triage state */
         patch: operations["set_feedback_triage_v1_admin_feedback__feedback_id__patch"];
+        trace?: never;
+    };
+    "/v1/admin/demo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Demo mode status and preflight
+         * @description Whether the demo is on, and what currently stands in the way of turning
+         *     it on. Surfacing the blockers is the point: an operator should be able to
+         *     see why the switch will refuse before they flip it.
+         */
+        get: operations["demo_status_v1_admin_demo_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Enable or disable public demo mode
+         * @description The kill switch.
+         *
+         *     Enabling runs `private.demo_preflight()` inside the same transaction as the
+         *     update, so the demo cannot be switched on while an unguarded table or a
+         *     writable view exists. Disabling never preflights -- an emergency shutoff
+         *     must not be blocked by the conditions that made it an emergency.
+         *
+         *     The two directions also differ in how they treat the Admin Audit Log, and
+         *     the asymmetry is deliberate (R2 H4, DESIGN §20). **Enabling** commits the
+         *     setting and its audit entry in one transaction: making the app publicly
+         *     reachable with no record of who did it is not an acceptable outcome, and if
+         *     the ledger is unavailable the safe answer is to stay private. **Disabling**
+         *     commits the setting first and audits afterwards, because the one thing worse
+         *     than an unaudited shutoff is a shutoff that a failing audit table can
+         *     refuse. A failure there is logged loudly rather than raised.
+         *
+         *     Either way `set_demo_enabled` rotates `demo_generation`, so every token
+         *     issued before this call stops working -- a disable is a revocation, not a
+         *     pause.
+         */
+        patch: operations["set_demo_v1_admin_demo_patch"];
         trace?: never;
     };
     "/v1/admin/people": {
@@ -1401,6 +1499,40 @@ export interface paths {
         patch: operations["patch_listing_status_v1_admin_ghost_listings__listing_id__status_patch"];
         trace?: never;
     };
+    "/v1/admin/ghost/listings/{listing_id}/deletion-impact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Listing Deletion Impact */
+        get: operations["listing_deletion_impact_v1_admin_ghost_listings__listing_id__deletion_impact_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/ghost/listings/{listing_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Listing Permanently */
+        delete: operations["delete_listing_permanently_v1_admin_ghost_listings__listing_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/ghost/listings/{listing_id}/pins": {
         parameters: {
             query?: never;
@@ -1761,7 +1893,7 @@ export interface components {
         };
         /**
          * ActivityEntry
-         * @description One row of `hunt_activity` (AD-F).
+         * @description One row of the derived Hunt activity feed (AD-F).
          */
         ActivityEntry: {
             /**
@@ -2031,6 +2163,12 @@ export interface components {
             value_schema: {
                 [key: string]: unknown;
             };
+            /**
+             * Acquisition
+             * @default extracted
+             * @enum {string}
+             */
+            acquisition: "extracted" | "manual";
             requires_tool?: components["schemas"]["RequiresTool"] | null;
             refresh_class: components["schemas"]["RefreshClass"];
             /** Routing Confirmed */
@@ -2074,6 +2212,25 @@ export interface components {
             reason: string;
             /** Supported */
             supported: boolean;
+        };
+        /** DemoConfigResponse */
+        DemoConfigResponse: {
+            /** Enabled */
+            enabled: boolean;
+        };
+        /** DemoSessionResponse */
+        DemoSessionResponse: {
+            /** Access Token */
+            access_token: string;
+            /** Expires In */
+            expires_in: number;
+            /** Hunt Id */
+            hunt_id?: string | null;
+        };
+        /** DemoToggle */
+        DemoToggle: {
+            /** Enabled */
+            enabled: boolean;
         };
         /** FeeEntryResponse */
         FeeEntryResponse: {
@@ -2631,6 +2788,56 @@ export interface components {
             /** Source Policy */
             source_policy?: ("trust_link" | "tier_1" | "tiers_1_2" | "tiers_1_2_3" | "tier_1_plus_official") | null;
         };
+        /** ListingDeletionCounts */
+        ListingDeletionCounts: {
+            /** Unit Groups */
+            unit_groups: number;
+            /** Scores */
+            scores: number;
+            /** Manual Values */
+            manual_values: number;
+            /** Collaboration Records */
+            collaboration_records: number;
+            /** Task Records */
+            task_records: number;
+            /** Visits */
+            visits: number;
+            /** Visit Records */
+            visit_records: number;
+            /** Hunt Scoped Extractions */
+            hunt_scoped_extractions: number;
+        };
+        /** ListingDeletionImpact */
+        ListingDeletionImpact: {
+            /**
+             * Listing Id
+             * Format: uuid
+             */
+            listing_id: string;
+            /**
+             * Property Id
+             * Format: uuid
+             */
+            property_id: string;
+            /** Property Name */
+            property_name: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "active" | "archived";
+            /** Active Jobs */
+            active_jobs: number;
+            counts: components["schemas"]["ListingDeletionCounts"];
+        };
+        /**
+         * ListingPermanentDelete
+         * @description Irreversible-delete confirmation; compared exactly on the server.
+         */
+        ListingPermanentDelete: {
+            /** Confirmation Name */
+            confirmation_name: string;
+        };
         /** ListingResponse */
         ListingResponse: {
             /**
@@ -2944,7 +3151,7 @@ export interface components {
          * RefreshClass
          * @enum {string}
          */
-        RefreshClass: "pricing" | "listing_details" | "images" | "reviews" | "location";
+        RefreshClass: "pricing" | "listing_details" | "images" | "reviews" | "location" | "manual";
         /**
          * RefreshRequest
          * @description P3-12 refresh-class selection. Omission means every mutable class.
@@ -3727,6 +3934,46 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    demo_config_v1_demo_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DemoConfigResponse"];
+                };
+            };
+        };
+    };
+    create_demo_session_v1_demo_session_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DemoSessionResponse"];
+                };
+            };
+        };
+    };
     list_hunts_v1_hunts_get: {
         parameters: {
             query?: never;
@@ -4667,7 +4914,7 @@ export interface operations {
             };
         };
     };
-    delete_listing_v1_listings__listing_id__delete: {
+    listing_deletion_impact_v1_listings__listing_id__deletion_impact_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -4679,11 +4926,48 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Successful Response */
-            204: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["ListingDeletionImpact"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_listing_v1_listings__listing_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListingPermanentDelete"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingDeletionImpact"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -5976,6 +6260,63 @@ export interface operations {
             };
         };
     };
+    demo_status_v1_admin_demo_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    set_demo_v1_admin_demo_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DemoToggle"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_people_v1_admin_people_get: {
         parameters: {
             query?: {
@@ -6726,6 +7067,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ListingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listing_deletion_impact_v1_admin_ghost_listings__listing_id__deletion_impact_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingDeletionImpact"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_listing_permanently_v1_admin_ghost_listings__listing_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                listing_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ListingPermanentDelete"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListingDeletionImpact"];
                 };
             };
             /** @description Validation Error */
