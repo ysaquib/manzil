@@ -247,8 +247,8 @@ def score(
     # Delta pass (§9.3 step 3).
     total = BASE_SCORE
     criteria = _build_criteria(enabled, values)
-    for criterion in criteria:
-        total += criterion.delta
+    for breakdown_criterion in criteria:
+        total += breakdown_criterion.delta
 
     total = round(total, 6)  # keep quarter-point sums free of float noise
     clamped = total < SCORE_MIN or total > SCORE_MAX
