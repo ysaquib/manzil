@@ -1,7 +1,8 @@
-import { Alert, Button, Card, Center, Stack, Text, Title } from "@mantine/core";
+import { Alert, Anchor, Button, Card, Center, Stack, Text, Title } from "@mantine/core";
 import { useEffect } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 
+import { useAuth } from "../../auth/useAuth";
 import { PublicPageShell } from "../../components/PublicPageShell";
 import { isDemo } from "../../lib/demo";
 import { useAcceptInvite } from "./api";
@@ -9,6 +10,8 @@ import { useAcceptInvite } from "./api";
 export function InviteAcceptPage() {
   const { token = "" } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { session } = useAuth();
   const accept = useAcceptInvite(token);
 
   // demo-guarded: useAcceptInvite — the same treatment InvitationLinkJoinPage
@@ -51,6 +54,22 @@ export function InviteAcceptPage() {
             >
               Accept invite
             </Button>
+            {/* An invitation is emailed to one address but accepted by whoever
+                is signed in on this browser. Saying which account that is, and
+                offering the way out, is what stops a Hunt gaining the wrong
+                person quietly. */}
+            {!demo && session?.user.email && (
+              <Text size="xs" c="dimmed" ta="center">
+                Joining as {session.user.email}.{" "}
+                <Anchor
+                  component={Link}
+                  to={`/signout?next=${encodeURIComponent(location.pathname)}`}
+                  size="xs"
+                >
+                  Use a different account
+                </Anchor>
+              </Text>
+            )}
           </Stack>
         </Card>
       </Center>
