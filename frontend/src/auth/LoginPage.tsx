@@ -10,28 +10,28 @@ import {
   TextInput,
 } from "@mantine/core";
 import { useState, type FormEvent } from "react";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 import { PublicPageShell } from "../components/PublicPageShell";
 import { TryDemoButton } from "../features/demo/TryDemoButton";
 import { supabase } from "../lib/supabase";
+import { isResumableTarget, nextQuery, safeReturnTo } from "./returnTo";
 import { useAuth } from "./useAuth";
 
 type Mode = "password" | "magic";
-
-// Post-auth landing: the homepage, except flows that must resume where they
-// started (invite/join links). Restoring an arbitrary stale `from` (e.g. a
-// hunt the fresh account isn't a member of) strands new users on a blank page.
-function safeReturnTo(from: string | undefined): string {
-  if (from && (from.startsWith("/invite/") || from.startsWith("/join/"))) return from;
-  return "/";
-}
 
 export function LoginPage() {
   const { session } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const returnTo = safeReturnTo((location.state as { from?: string } | null)?.from);
+  const [params] = useSearchParams();
+  // `?next=` first, router state second. The query parameter is what survives a
+  // reload or a link opened in a second tab; the state is what older redirects
+  // (and anything that navigates programmatically) still hand over.
+  const returnTo = safeReturnTo(
+    params.get("next") ?? (location.state as { from?: string } | null)?.from,
+  );
+  const resuming = isResumableTarget(returnTo);
   const [mode, setMode] = useState<Mode>("password");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -82,7 +82,10 @@ export function LoginPage() {
     setBusy(true);
     setError(null);
     const { error: authError } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/reset-password`,
+      // Carry the invitation through the reset too: someone who cannot remember
+      // their password is exactly the person who will otherwise finish this
+      // detour on the homepage wondering where the Hunt went.
+      redirectTo: `${window.location.origin}/auth/reset-password${nextQuery(returnTo)}`,
     });
     setBusy(false);
     if (authError) setError(authError.message);
@@ -108,7 +111,13 @@ export function LoginPage() {
   }
 
   return <PublicPageShell><Center py="xl"><Card withBorder w="100%" maw={420}><Stack>
-    <div><Text fw={600} size="lg">Welcome to Manzil</Text><Text c="dimmed" size="sm">Sign in with an account created by an administrator.</Text></div>
+    {/* Someone who arrived by clicking an invitation needs to be told that
+        signing in is a step on the way, not a different errand. */}
+    <div><Text fw={600} size="lg">{resuming ? "Sign in to accept your invitation" : "Welcome to Manzil"}</Text><Text c="dimmed" size="sm">
+      {resuming
+        ? "You'll go straight to the Hunt once you're signed in. Accounts are created by an administrator."
+        : "Sign in with an account created by an administrator."}
+    </Text></div>
     <SegmentedControl fullWidth value={mode} onChange={(value) => { setMode(value as Mode); setSent(false); setError(null); }}
       data={[{ value: "password", label: "Sign in" }, { value: "magic", label: "Magic link" }]} />
     <>
