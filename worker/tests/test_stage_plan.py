@@ -483,3 +483,56 @@ def test_ingest_stages_walk_runs_plan_first_then_the_spine(tmp_path) -> None:  #
     assert [stage for stage, _ in llm.calls] == ["validate", "extract", "verify"]
     (plan_score,) = out.scores
     assert plan_score.breakdown["total"] == 13.0  # identical to the scoped PHASE0 e2e
+
+
+def _custom_rubric(*, acquisition: str):
+    """One custom Criterion in a Hunt's Rubric, extracted or manual."""
+    from manzil_shared.models import CustomCriterionDef, RubricCriterion
+
+    return [
+        RubricCriterion(
+            hunt_id=uuid4(),
+            custom_def=CustomCriterionDef(
+                key=f"custom:{uuid4()}",
+                label="Landlord was straight with us",
+                description="How the leasing agent came across on the phone.",
+                fact_scope="property",
+                value_schema={"type": "boolean"},
+                acquisition=acquisition,
+                refresh_class="manual" if acquisition == "manual" else "listing_details",
+                routing_confirmed=True,
+            ),
+        )
+    ]
+
+
+def _listing_details_refresh_plan(rubric):
+    state = RunState(
+        job_id=uuid4(),
+        job_type=JobType.REFRESH,
+        url=URL,
+        hunt_listing_id=uuid4(),
+        property_id=uuid4(),
+        refresh_fields=["listing_details"],
+    )
+    source = RefreshSource(source_id=uuid4(), url=URL, cleaned_text_hash="old-a", required_tier=1)
+    out = asyncio.run(
+        plan_stage(
+            state,
+            StageCtx(rubric=rubric, refresh_source_lookup=_refresh_lookup([source])),
+        )
+    )
+    assert out.plan is not None
+    return out.plan
+
+
+def test_a_manual_custom_criterion_does_not_schedule_custom_match() -> None:
+    """Manual Criteria have no producer, so scheduling CUSTOM_MATCH would put a
+    no-op stage and a per-Criterion cost into the pinned manifest (§10.4)."""
+    plan = _listing_details_refresh_plan(_custom_rubric(acquisition="manual"))
+    assert "CUSTOM_MATCH" not in plan.stages
+
+
+def test_an_extracted_custom_criterion_still_schedules_custom_match() -> None:
+    plan = _listing_details_refresh_plan(_custom_rubric(acquisition="extracted"))
+    assert "CUSTOM_MATCH" in plan.stages

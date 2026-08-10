@@ -39,6 +39,7 @@ import { ListingLocationMap } from "../map/ListingLocationMap";
 import { useResolvedCatalog } from "../rubric/api";
 import { activeOverrides, extractionForFloorPlan } from "./overrides";
 import { CriterionBreakdown } from "./CriterionBreakdown";
+import { ManualAnswerPanel, useManualCriteria } from "./ManualAnswerPanel";
 import { DrawerHero } from "./DrawerHero";
 import { CostAndFees } from "./CostAndFees";
 import { FloorPlanDetailModal } from "./FloorPlanDetailModal";
@@ -271,6 +272,7 @@ function DrawerShell({
     huntId,
   );
   const { data: overrides } = useOverrides(listing?.id ?? "");
+  const manualCriteria = useManualCriteria(huntId);
   const { data: fees } = useFees(listing?.id ?? "");
   const { data: utilityOverrides } = useUtilityOverrides(listing?.id ?? "");
   const { data: images, isLoading: imagesLoading } = usePropertyImages(
@@ -443,6 +445,16 @@ function DrawerShell({
                   onAnswer={(choice, text) =>
                     onAnswerCheckpoint?.(autoResolvedJob.id, choice, text)
                   }
+                />
+              </SectionCard>
+            )}
+
+            {manualCriteria.length > 0 && (
+              <SectionCard title="Your answers">
+                <ManualAnswerPanel
+                  huntId={huntId}
+                  overrides={overrides ?? []}
+                  floorPlanId={displayFloorPlanId}
                 />
               </SectionCard>
             )}

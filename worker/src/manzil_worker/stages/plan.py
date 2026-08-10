@@ -237,7 +237,11 @@ async def _plan_refresh(state: RunState, ctx: StageCtx) -> RunState:
     if enrich:
         stages.append("ENRICH")
     custom_defs = [
-        criterion.custom_def for criterion in ctx.rubric if criterion.custom_def is not None
+        criterion.custom_def
+        for criterion in ctx.rubric
+        # A manual Criterion has no producer, so it must not put CUSTOM_MATCH in
+        # the manifest or its per-Criterion cost in the estimate (§10.4, §10.9).
+        if criterion.custom_def is not None and not criterion.custom_def.is_manual
     ]
     custom_count = sum(
         1

@@ -24,6 +24,8 @@ export interface CatalogEntry {
   extraction_hint: string;
   requires_tool: string | null;
   refresh_class: string;
+  /** Only ever set on the synthetic entry for a custom Criterion (§9.2). */
+  acquisition?: CustomAcquisition;
 }
 
 export interface RubricCriterion {
@@ -47,6 +49,14 @@ export interface CustomRouteModifiers {
   avoid_ferries?: boolean;
 }
 
+/**
+ * How a custom Criterion's value is acquired. `extracted` is the pipeline —
+ * listing text or Maps. `manual` has no producer at all: a person answers it on
+ * each Listing and the answer is stored as an ordinary Override (DESIGN §9.2).
+ * Absent in older stored definitions, which are `extracted`.
+ */
+export type CustomAcquisition = "extracted" | "manual";
+
 export interface CustomCriterionDef {
   schema_version: 1;
   key: string;
@@ -54,10 +64,16 @@ export interface CustomCriterionDef {
   description: string;
   fact_scope: "property" | "floor_plan";
   value_schema: ValueSchema;
+  acquisition?: CustomAcquisition;
   requires_tool: CustomRoute;
-  refresh_class: "listing_details" | "location";
+  refresh_class: "listing_details" | "location" | "manual";
   routing_confirmed: boolean;
   route_modifiers?: CustomRouteModifiers | null;
+}
+
+/** Manual Criteria are answered by hand; nothing extracts or refetches them. */
+export function isManualCriterion(custom: CustomCriterionDef | null | undefined): boolean {
+  return custom?.acquisition === "manual";
 }
 
 export interface CustomRoutingResponse {
