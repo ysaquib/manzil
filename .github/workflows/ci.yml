@@ -134,7 +134,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker run --rm manzil-api:ci /app/.venv/bin/python -c 'import manzil_api.main'
+          docker run --rm \
+            --env SUPABASE_URL=https://ci.invalid \
+            --env SUPABASE_ANON_KEY=ci-anon-key \
+            --env SUPABASE_SECRET_KEY=ci-secret-key \
+            --env DATABASE_URL=postgresql://ci:ci@localhost:5432/ci \
+            --env MANZIL_WORKER_INPROCESS=false \
+            manzil-api:ci \
+            /app/.venv/bin/python -c 'import manzil_api.main'
           docker run --rm manzil-api:ci /app/.venv/bin/python -c \
             'from pathlib import Path; from manzil_worker.vision_onnx import artifact_digest, ONNX_SHADOW_ARTIFACT_SHA256; \
              p=Path("/app/.manzil/models/clip-vision-uint8"); \
