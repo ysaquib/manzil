@@ -12,6 +12,7 @@ import {
   Badge,
   Button,
   Card,
+  Checkbox,
   Group,
   Loader,
   Menu,
@@ -25,10 +26,16 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { useDisclosure, useMediaQuery } from "@mantine/hooks";
-import { IconAlertTriangle, IconDots, IconSearch, IconUserPlus } from "@tabler/icons-react";
+import { notifications } from "@mantine/notifications";
+import { IconAlertTriangle, IconDots, IconSearch, IconTrash, IconUserPlus } from "@tabler/icons-react";
 import { useState } from "react";
 
+import {
+  ConfirmDeleteModal,
+  type DeletionTarget,
+} from "../../components/ConfirmDeleteModal";
 import { TablePagination, usePagedRows } from "../../components/TablePagination";
+import { ApiError } from "../../lib/apiClient";
 import { HuntPicker } from "./HuntPicker";
 import {
   useAdminPeople,
@@ -38,8 +45,36 @@ import {
   usePersonAction,
   useRemoveMembership,
   useSetMembership,
+  type PersonDetail,
   type PersonRow,
 } from "./api";
+
+/** Accounts are the noun everywhere in this panel — never "user" in copy. */
+const ACCOUNT_NOUN = { singular: "account", plural: "accounts" };
+
+/** The typed confirmation is the email: display names repeat, addresses do not. */
+function personLabel(person: Pick<PersonRow, "email" | "display_name" | "user_id">): string {
+  return person.email ?? person.display_name ?? person.user_id;
+}
+
+/** Why the API would refuse this delete, phrased as the operator's next step. */
+function blockingReason(person: Pick<PersonRow, "owns">): string | undefined {
+  if (person.owns === 0) return undefined;
+  return `owns ${person.owns} Hunt${person.owns === 1 ? "" : "s"} — transfer ownership first`;
+}
+
+function personTarget(person: PersonRow): DeletionTarget {
+  return {
+    id: person.user_id,
+    label: personLabel(person),
+    description: person.display_name ?? undefined,
+    blockedReason: blockingReason(person),
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof ApiError ? error.message : "Unexpected error";
+}
 
 const ROLE_OPTIONS = [
   { value: "member", label: "Member" },
@@ -72,7 +107,13 @@ function StateBadges({ person }: { person: PersonRow }) {
   );
 }
 
-function PersonDetailPanel({ userId }: { userId: string }) {
+function PersonDetailPanel({
+  userId,
+  onDeleted,
+}: {
+  userId: string;
+  onDeleted: (userId: string) => void;
+}) {
   const person = useAdminPerson(userId);
   const action = usePersonAction();
   const setMembership = useSetMembership();
@@ -80,6 +121,10 @@ function PersonDetailPanel({ userId }: { userId: string }) {
   const deletePerson = useDeletePerson();
   const [addHunt, setAddHunt] = useState<string | null>(null);
   const [addRole, setAddRole] = useState<string>("member");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmRemoval, setConfirmRemoval] = useState<PersonDetail["memberships"][number] | null>(
+    null,
+  );
 
   if (person.isPending) return <Loader size="sm" />;
   if (!person.data) return <Alert color="red">Could not load that account.</Alert>;
@@ -148,7 +193,7 @@ function PersonDetailPanel({ userId }: { userId: string }) {
               variant="light"
               disabled={blocked}
               loading={deletePerson.isPending}
-              onClick={() => deletePerson.mutate(userId)}
+              onClick={() => setConfirmDelete(true)}
             >
               Delete
             </Button>
@@ -207,10 +252,9 @@ function PersonDetailPanel({ userId }: { userId: string }) {
                         size="sm"
                         variant="subtle"
                         color="red"
+                        aria-label={`Remove from ${m.hunt_name}`}
                         disabled={m.role === "owner"}
-                        onClick={() =>
-                          removeMembership.mutate({ userId, huntId: m.hunt_id })
-                        }
+                        onClick={() => setConfirmRemoval(m)}
                       >
                         ×
                       </ActionIcon>
@@ -256,6 +300,88 @@ function PersonDetailPanel({ userId }: { userId: string }) {
           </Button>
         </Group>
       </Card>
+
+      <ConfirmDeleteModal
+        opened={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        noun={ACCOUNT_NOUN}
+        loading={deletePerson.isPending}
+        targets={[
+          {
+            id: p.user_id,
+            label: personLabel(p),
+            description: p.display_name ?? undefined,
+          },
+        ]}
+        warning="The account is removed from Supabase Auth and cannot be signed into again. Suspension is the reversible alternative."
+        onConfirm={() =>
+          deletePerson.mutate(userId, {
+            onSuccess: () => {
+              setConfirmDelete(false);
+              onDeleted(userId);
+              notifications.show({
+                message: `${personLabel(p)} deleted.`,
+                color: "green",
+              });
+            },
+            onError: (error) =>
+              notifications.show({
+                title: "Couldn't delete the account",
+                message: errorMessage(error),
+                color: "red",
+              }),
+          })
+        }
+      >
+        <Text size="sm" c="dimmed">
+          {p.memberships.length === 0
+            ? "They are not a member of any Hunt."
+            : `They will be removed from ${p.memberships.length} Hunt${
+                p.memberships.length === 1 ? "" : "s"
+              }. ${p.feedback_count} filed report${
+                p.feedback_count === 1 ? "" : "s"
+              } stay recorded.`}
+        </Text>
+      </ConfirmDeleteModal>
+
+      {/* Reversible — the Hunt picker below re-adds them — so this one shows the
+          subject and asks for a click, not a typed name. */}
+      <ConfirmDeleteModal
+        opened={confirmRemoval !== null}
+        onClose={() => setConfirmRemoval(null)}
+        noun={{ singular: "membership", plural: "memberships" }}
+        title="Remove from this Hunt?"
+        confirmLabel="Remove"
+        requireTypedConfirmation={false}
+        loading={removeMembership.isPending}
+        warning="They lose access to this Hunt immediately. Their comments, ratings and Visits stay with the Hunt, and you can add them back below."
+        targets={
+          confirmRemoval
+            ? [
+                {
+                  id: confirmRemoval.hunt_id,
+                  label: confirmRemoval.hunt_name,
+                  description: `${personLabel(p)} · ${confirmRemoval.role}`,
+                },
+              ]
+            : []
+        }
+        onConfirm={() => {
+          if (!confirmRemoval) return;
+          removeMembership.mutate(
+            { userId, huntId: confirmRemoval.hunt_id },
+            {
+              onSuccess: () => setConfirmRemoval(null),
+              onError: (error) =>
+                notifications.show({
+                  title: "Couldn't remove them from the Hunt",
+                  message: errorMessage(error),
+                  color: "red",
+                }),
+            },
+          );
+        }}
+      />
     </Stack>
   );
 }
@@ -347,6 +473,69 @@ export function AdminPeoplePage() {
   const isCompact = useMediaQuery("(max-width: 48em)") ?? false;
   const paged = usePagedRows(people.data ?? [], "admin-people");
 
+  // Bulk deletion (checked rows) is deliberately separate from `selected`, the
+  // one row whose detail panel is open: an operator ticking five accounts to
+  // delete is not asking to read the fifth one's memberships.
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const deletePerson = useDeletePerson();
+
+  const rows = people.data ?? [];
+  const checkedRows = rows.filter((person) => checked.has(person.user_id));
+  const toggleRow = (userId: string) =>
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  // Select-all is the header checkbox above *this page* of rows, so it means
+  // this page — never a silent selection of a roster nobody has scrolled.
+  const pageIds = paged.items.map((person) => person.user_id);
+  const allOnPageChecked = pageIds.length > 0 && pageIds.every((id) => checked.has(id));
+  const toggleAllOnPage = () =>
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (allOnPageChecked) pageIds.forEach((id) => next.delete(id));
+      else pageIds.forEach((id) => next.add(id));
+      return next;
+    });
+
+  // Sequential, not parallel: every one of these is an audited account deletion
+  // and a partial failure has to name the accounts that survived.
+  const deleteChecked = async (targets: DeletionTarget[]) => {
+    setBulkBusy(true);
+    const failed: { target: DeletionTarget; reason: string }[] = [];
+    const deletedIds: string[] = [];
+    for (const target of targets) {
+      try {
+        await deletePerson.mutateAsync(target.id);
+        deletedIds.push(target.id);
+      } catch (error) {
+        failed.push({ target, reason: errorMessage(error) });
+      }
+    }
+    setBulkBusy(false);
+    setBulkOpen(false);
+    // What survived stays ticked: the operator's next move is on those rows,
+    // and a cleared selection would hide which ones were refused.
+    setChecked(new Set(failed.map((entry) => entry.target.id)));
+    if (selected && deletedIds.includes(selected)) setSelected(null);
+    notifications.show({
+      color: failed.length === 0 ? "green" : "red",
+      title: `${deletedIds.length} of ${targets.length} account${
+        targets.length === 1 ? "" : "s"
+      } deleted`,
+      message:
+        failed.length === 0
+          ? "The selection is cleared."
+          : `Refused: ${failed
+              .map((entry) => `${entry.target.label} (${entry.reason})`)
+              .join("; ")}`,
+    });
+  };
+
   return (
     <Stack gap="md">
       <Group justify="space-between" align="center" wrap="wrap" gap="xs">
@@ -398,12 +587,48 @@ export function AdminPeoplePage() {
               Nobody matches that search.
             </Text>
           )}
+          {checked.size > 0 && (
+            <Group
+              p="xs"
+              gap="xs"
+              justify="space-between"
+              wrap="wrap"
+              bg="var(--mantine-color-default-hover)"
+            >
+              <Text size="sm" fw={600}>
+                {checked.size} selected
+              </Text>
+              <Group gap="xs">
+                <Button size="xs" variant="default" onClick={() => setChecked(new Set())}>
+                  Clear
+                </Button>
+                <Button
+                  size="xs"
+                  color="red"
+                  variant="light"
+                  leftSection={<IconTrash size={14} />}
+                  onClick={() => setBulkOpen(true)}
+                >
+                  Delete {checked.size} account{checked.size === 1 ? "" : "s"}
+                </Button>
+              </Group>
+            </Group>
+          )}
           {people.data && people.data.length > 0 && (
             <>
-            <Table.ScrollContainer minWidth={520}>
+            <Table.ScrollContainer minWidth={560}>
               <Table highlightOnHover verticalSpacing="xs">
                 <Table.Thead>
                   <Table.Tr>
+                    <Table.Th w={40}>
+                      <Checkbox
+                        size="xs"
+                        aria-label="Select every account on this page"
+                        checked={allOnPageChecked}
+                        indeterminate={!allOnPageChecked && pageIds.some((id) => checked.has(id))}
+                        onChange={toggleAllOnPage}
+                      />
+                    </Table.Th>
                     <Table.Th>Person</Table.Th>
                     <Table.Th>State</Table.Th>
                     <Table.Th ta="end">Hunts</Table.Th>
@@ -423,6 +648,14 @@ export function AdminPeoplePage() {
                           : undefined
                       }
                     >
+                      <Table.Td onClick={(event) => event.stopPropagation()}>
+                        <Checkbox
+                          size="xs"
+                          aria-label={`Select ${personLabel(person)}`}
+                          checked={checked.has(person.user_id)}
+                          onChange={() => toggleRow(person.user_id)}
+                        />
+                      </Table.Td>
                       <Table.Td>
                         <Text size="sm" fw={600}>
                           {person.display_name ?? "—"}
@@ -482,7 +715,17 @@ export function AdminPeoplePage() {
           }
         >
           {selected ? (
-            <PersonDetailPanel userId={selected} />
+            <PersonDetailPanel
+              userId={selected}
+              onDeleted={(userId) => {
+                setSelected(null);
+                setChecked((prev) => {
+                  const next = new Set(prev);
+                  next.delete(userId);
+                  return next;
+                });
+              }}
+            />
           ) : (
             !isCompact && (
               <Card padding="lg" radius="md" withBorder>
@@ -496,6 +739,16 @@ export function AdminPeoplePage() {
       </Group>
 
       <ProvisionModal opened={provisionOpen} onClose={closeProvision} />
+
+      <ConfirmDeleteModal
+        opened={bulkOpen}
+        onClose={() => setBulkOpen(false)}
+        noun={ACCOUNT_NOUN}
+        targets={checkedRows.map(personTarget)}
+        loading={bulkBusy}
+        warning="Each account is removed from Supabase Auth and cannot be signed into again. Accounts that own a Hunt, or that created a Visit, are refused by the API and are skipped here."
+        onConfirm={(targets) => void deleteChecked(targets)}
+      />
     </Stack>
   );
 }

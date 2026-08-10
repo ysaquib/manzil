@@ -19,6 +19,7 @@ import {
 import { IconFlag, IconPlus, IconTrash, IconWand } from "@tabler/icons-react";
 import { useState } from "react";
 
+import { ConfirmDeleteModal } from "../../components/ConfirmDeleteModal";
 import { SEVERITY_META, SEVERITY_ORDER, toneFor } from "./statusColors";
 
 import {
@@ -127,6 +128,7 @@ function DefectRow({
 }) {
   const patch = usePatchVisitDefect(visitId);
   const remove = useDeleteVisitDefect(visitId);
+  const [confirming, setConfirming] = useState(false);
 
   return (
     <Group align="flex-start" wrap="nowrap" gap="sm" py="xs">
@@ -204,12 +206,37 @@ function DefectRow({
             variant="subtle"
             aria-label={`Remove defect: ${defect.title}`}
             loading={remove.isPending}
-            onClick={() => remove.mutate(defect.id)}
+            onClick={() => setConfirming(true)}
           >
             <IconTrash size={15} />
           </ActionIcon>
         </Tooltip>
       )}
+
+      {/* One tap on a phone, mid-tour, next to the severity dial — the ask is a
+          guard against the mis-tap, so it is a look and a click, not typing. */}
+      <ConfirmDeleteModal
+        opened={confirming}
+        onClose={() => setConfirming(false)}
+        noun={{ singular: "defect", plural: "defects" }}
+        title="Remove this defect?"
+        confirmLabel="Remove defect"
+        requireTypedConfirmation={false}
+        loading={remove.isPending}
+        warning="It leaves the defect log and the red-flag tally. The check it came from keeps its answer."
+        targets={[
+          {
+            id: defect.id,
+            label: defect.title,
+            description: `${unitLabel(units, defect.visit_unit_id)}${
+              defect.note ? ` · ${defect.note}` : ""
+            }`,
+          },
+        ]}
+        onConfirm={() =>
+          remove.mutate(defect.id, { onSuccess: () => setConfirming(false) })
+        }
+      />
     </Group>
   );
 }

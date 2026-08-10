@@ -12,8 +12,10 @@ import {
 } from "@mantine/core";
 import { DatePickerInput } from "@mantine/dates";
 import { notifications } from "@mantine/notifications";
+import { IconPlus } from "@tabler/icons-react";
 import { useState } from "react";
 
+import { ConfirmDeleteModal } from "../../components/ConfirmDeleteModal";
 import { Section } from "../../components/Section";
 import { ApiError } from "../../lib/apiClient";
 import { isDemo } from "../../lib/demo";
@@ -167,26 +169,31 @@ function LinkRow({ link, huntId }: { link: InvitationLink; huntId: string }) {
         </Accordion.Item>
       </Accordion>
 
-      <Modal opened={confirmDelete} onClose={() => setConfirmDelete(false)} title="Delete Invitation Link?">
-        <Stack>
-          <Text size="sm">The link will stop working immediately. Its join history stays recorded.</Text>
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setConfirmDelete(false)}>Cancel</Button>
-            <Button
-              color="red"
-              loading={deleteLink.isPending}
-              onClick={() =>
-                deleteLink.mutate(link.id, {
-                  onSuccess: () => setConfirmDelete(false),
-                  onError: (error) => errorNotification("Couldn't delete Invitation Link", error),
-                })
-              }
-            >
-              Delete link
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
+      <ConfirmDeleteModal
+        opened={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        noun={{ singular: "Invitation Link", plural: "Invitation Links" }}
+        title="Delete Invitation Link?"
+        confirmLabel="Delete link"
+        requireTypedConfirmation={false}
+        loading={deleteLink.isPending}
+        warning="The link stops working immediately. Its join history stays recorded, and you can mint a replacement."
+        targets={[
+          {
+            id: link.id,
+            label: link.name ?? "Invitation Link",
+            description: `${link.use_count} / ${link.max_uses ?? "unlimited"} uses · expires ${new Date(
+              link.expires_at,
+            ).toLocaleDateString()}`,
+          },
+        ]}
+        onConfirm={() =>
+          deleteLink.mutate(link.id, {
+            onSuccess: () => setConfirmDelete(false),
+            onError: (error) => errorNotification("Couldn't delete Invitation Link", error),
+          })
+        }
+      />
     </Stack>
   );
 }
@@ -250,7 +257,16 @@ export function InvitationLinksSection({ huntId }: { huntId: string }) {
         <Text size="sm" c="dimmed">
           Anyone with an active link can join this Hunt as a Member.
         </Text>
-        <Button variant="subtle" size="compact-sm" onClick={openCreate} style={{ alignSelf: "flex-start" }}>
+        {/* A quiet "+ add" affordance: minting a link is occasional, and the
+            links themselves are the content this section is about. */}
+        <Button
+          variant="subtle"
+          color="gray"
+          size="compact-sm"
+          leftSection={<IconPlus size={14} />}
+          onClick={openCreate}
+          style={{ alignSelf: "flex-start" }}
+        >
           Create invitation link
         </Button>
 

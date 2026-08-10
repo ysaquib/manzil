@@ -117,7 +117,7 @@ describe("AdminPeoplePage", () => {
     );
   });
 
-  it("enables Delete for someone who owns nothing", async () => {
+  it("enables Delete for someone who owns nothing, but only through the confirmation", async () => {
     const user = userEvent.setup();
     renderWithProviders(<AdminPeoplePage />);
 
@@ -128,10 +128,91 @@ describe("AdminPeoplePage", () => {
     expect(screen.queryByText(/would take/)).not.toBeInTheDocument();
 
     await user.click(deleteButton);
+
+    // The click opens a confirmation naming the account; nothing is deleted yet.
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("plain@example.com")).toBeInTheDocument();
+    expect(apiFetch).not.toHaveBeenCalledWith(
+      "/v1/admin/people/u-plain",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+
+    const confirm = within(dialog).getByRole("button", { name: /Permanently delete/ });
+    expect(confirm).toBeDisabled();
+
+    // The wrong name does not unlock it.
+    const field = within(dialog).getByLabelText(/Type/);
+    await user.type(field, "plain@example.co");
+    expect(confirm).toBeDisabled();
+
+    await user.type(field, "m");
+    expect(confirm).toBeEnabled();
+    await user.click(confirm);
+
     await waitFor(() =>
       expect(apiFetch).toHaveBeenCalledWith("/v1/admin/people/u-plain", {
         method: "DELETE",
       }),
+    );
+  });
+
+  it("removes a membership only after showing which Hunt goes", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AdminPeoplePage />);
+    await user.click(await screen.findByText("N. Rahman"));
+
+    await user.click(
+      await screen.findByRole("button", { name: "Remove from Brooklyn 2026" }),
+    );
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/Remove from this Hunt/)).toBeInTheDocument();
+    expect(apiFetch).not.toHaveBeenCalledWith(
+      "/v1/admin/people/u-owner/memberships/h2",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+
+    // Reversible, so no typed name — but still a deliberate second act.
+    await user.click(within(dialog).getByRole("button", { name: "Remove" }));
+    await waitFor(() =>
+      expect(apiFetch).toHaveBeenCalledWith("/v1/admin/people/u-owner/memberships/h2", {
+        method: "DELETE",
+      }),
+    );
+  });
+
+  it("lists every selected account for a bulk delete, skips the Hunt owner, and asks for the phrase", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AdminPeoplePage />);
+
+    await screen.findByText("N. Rahman");
+    await user.click(screen.getByLabelText("Select owner@example.com"));
+    await user.click(screen.getByLabelText("Select plain@example.com"));
+    await user.click(screen.getByRole("button", { name: "Delete 2 accounts" }));
+
+    const dialog = await screen.findByRole("dialog");
+    // Both are shown — including the one that cannot go, with the reason.
+    expect(within(dialog).getByText("owner@example.com")).toBeInTheDocument();
+    expect(within(dialog).getByText(/owns 1 Hunt — transfer ownership first/)).toBeInTheDocument();
+    expect(within(dialog).getByText("plain@example.com")).toBeInTheDocument();
+
+    const confirm = within(dialog).getByRole("button", { name: /Permanently delete/ });
+    expect(confirm).toBeDisabled();
+
+    // One deletable target left, so it asks for that account's own name.
+    await user.type(within(dialog).getByLabelText(/Type/), "plain@example.com");
+    expect(confirm).toBeEnabled();
+    await user.click(confirm);
+
+    await waitFor(() =>
+      expect(apiFetch).toHaveBeenCalledWith("/v1/admin/people/u-plain", {
+        method: "DELETE",
+      }),
+    );
+    // The blocked account is never sent.
+    expect(apiFetch).not.toHaveBeenCalledWith(
+      "/v1/admin/people/u-owner",
+      expect.objectContaining({ method: "DELETE" }),
     );
   });
 
