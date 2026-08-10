@@ -37,6 +37,7 @@ import { Link, NavLink as RouterNavLink, Outlet, useLocation, useParams } from "
 
 import { useHuntRealtime } from "../lib/realtime";
 import { useCompareSet } from "../features/listings/compareSet";
+import { useAttention } from "../features/notifications/api";
 import { OverviewFiltersProvider } from "../features/listings/filterState";
 import { GhostBanner } from "../features/admin/GhostBanner";
 import { useGhostMode } from "../features/admin/useGhostMode";
@@ -107,6 +108,7 @@ export function AppLayout() {
   const isMobile = useMediaQuery("(max-width: 48em)");
   useHuntRealtime(huntId);
   const compare = useCompareSet(huntId ?? "");
+  const { data: attention } = useAttention(huntId ?? "");
   // AD-4: a Site Admin reading a Hunt they do not belong to. Derived from
   // membership, so it is correct on every screen without any route state.
   const { isGhost } = useGhostMode(huntId);
@@ -157,6 +159,10 @@ export function AppLayout() {
                   item.to === "compare" && compare.entries.length > 0 ? (
                     <Badge size="sm" variant="light" circle>
                       {compare.entries.length}
+                    </Badge>
+                  ) : item.to === "tasks" && (attention?.waiting_checkpoint_count ?? 0) > 0 ? (
+                    <Badge size="sm" variant="light" color="orange" circle>
+                      {attention?.waiting_checkpoint_count}
                     </Badge>
                   ) : undefined
                 }

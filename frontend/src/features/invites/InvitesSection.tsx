@@ -12,7 +12,7 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconLink } from "@tabler/icons-react";
+import { IconLink, IconRefresh } from "@tabler/icons-react";
 import { useState } from "react";
 
 import { ConfirmDeleteModal } from "../../components/ConfirmDeleteModal";
@@ -22,6 +22,7 @@ import {
   invitationLinkForCurrentOrigin,
   useCreateInvite,
   useInvites,
+  useResendInvite,
   useRevokeInvite,
   type Invite,
 } from "./api";
@@ -37,6 +38,7 @@ function notifyError(title: string) {
 
 function PendingInvite({ invite, huntId }: { invite: Invite; huntId: string }) {
   const revoke = useRevokeInvite(huntId);
+  const resend = useResendInvite(huntId);
   const [confirming, setConfirming] = useState(false);
   const expires = new Date(invite.expires_at).toLocaleDateString();
   const recipient = invite.email ?? "Link-only invite";
@@ -47,14 +49,10 @@ function PendingInvite({ invite, huntId }: { invite: Invite; huntId: string }) {
           {recipient}
         </Text>
         <Text size="xs" c="dimmed">
-          {invite.role_granted === "curator" ? "Curator" : "Member"} · expires {expires}
+          {invite.role_granted === "curator" ? "Curator" : "Member"} · email {invite.delivery_status.replaceAll("_", " ")} · expires {expires}
         </Text>
       </Stack>
       <Group gap="xs" wrap="nowrap">
-        {/* The email is best-effort — it goes through Supabase Auth and is
-            refused for an address with no account — so the link itself has to
-            be reachable from here, or a lost invitation cannot be re-sent by
-            any means at all. */}
         <CopyButton value={invitationLinkForCurrentOrigin(invite.link)}>
           {({ copied, copy }) => (
             <Tooltip label={copied ? "Copied" : "Copy invite link"}>
@@ -69,6 +67,24 @@ function PendingInvite({ invite, huntId }: { invite: Invite; huntId: string }) {
             </Tooltip>
           )}
         </CopyButton>
+        {["failed", "bounced", "suppressed", "complained"].includes(invite.delivery_status) && (
+          <Tooltip label="Resend invitation email">
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              aria-label={`Resend invitation email to ${recipient}`}
+              loading={resend.isPending}
+              onClick={() =>
+                resend.mutate(invite.id, {
+                  onSuccess: () => notifications.show({ message: "Invitation queued again", color: "green" }),
+                  onError: notifyError("Couldn't resend invitation"),
+                })
+              }
+            >
+              <IconRefresh size={15} />
+            </ActionIcon>
+          </Tooltip>
+        )}
         <ActionIcon
           variant="subtle"
           color="red"
@@ -126,20 +142,6 @@ export function InvitesSection({ huntId }: { huntId: string }) {
           notifications.show({ message: "Invite created", color: "green" });
         },
         onError: (error) => {
-          // The invite exists; only the email failed. Saying "couldn't create
-          // invite" would be false, and would send the Owner to re-create one
-          // that is already sitting in the list below.
-          if (error instanceof ApiError && error.code === "invite_email_failed") {
-            setEmail("");
-            notifications.show({
-              title: "Invite created, but the email wasn't sent",
-              message:
-                "Supabase Auth only mails addresses that already have an account. Copy the invite link below and send it to them yourself.",
-              color: "yellow",
-              autoClose: false,
-            });
-            return;
-          }
           notifyError("Couldn't create invite")(error);
         },
       },

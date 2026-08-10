@@ -1,11 +1,8 @@
 // Account settings (P3-16, DESIGN §20 v3.27) at /account/:tab — the same shell
 // the hunt settings page uses, account-scoped.
 //
-// Two tabs because they answer two different questions: **Profile** is how other
-// people see you (the defaults every Hunt membership inherits), **Account** is
-// how you get in. The Alerts tab designed alongside these is deferred to P3-22
-// with the delivery system behind it; it is deliberately absent rather than
-// present-and-inert.
+// Profile is how other people see you, Account is how you get in, and Alerts
+// owns the account defaults inherited by every Hunt (P3-22).
 import {
   Alert,
   Anchor,
@@ -14,6 +11,7 @@ import {
   Group,
   Loader,
   Stack,
+  Switch,
   Text,
   TextInput,
 } from "@mantine/core";
@@ -22,6 +20,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   IconAlertTriangle,
   IconArrowLeft,
+  IconBell,
   IconMail,
   IconUserCircle,
 } from "@tabler/icons-react";
@@ -36,6 +35,13 @@ import { SettingsSaveBar, SettingsShell, type SettingsTab } from "../components/
 import { MemberColorControl } from "../features/collaboration/MemberColorControl";
 import { memberColor } from "../features/collaboration/memberColors";
 import { useHunts } from "../features/hunts/api";
+import {
+  NOTIFICATION_EVENTS,
+  NOTIFICATION_LABELS,
+  useAccountNotificationPreferences,
+  useSaveAccountNotificationPreferences,
+  type NotificationEvent,
+} from "../features/notifications/api";
 import { ApiError, apiFetch } from "../lib/apiClient";
 import { useAuth } from "./useAuth";
 import { useProfile } from "./profile";
@@ -52,6 +58,12 @@ const TABS: SettingsTab[] = [
     label: "Account",
     description: "Email, sign-in",
     icon: <IconMail size={16} stroke={1.6} />,
+  },
+  {
+    value: "alerts",
+    label: "Alerts",
+    description: "Email notifications",
+    icon: <IconBell size={16} stroke={1.6} />,
   },
 ];
 
@@ -243,6 +255,74 @@ function AccountPanel() {
   );
 }
 
+function AlertsPanel() {
+  const preferences = useAccountNotificationPreferences();
+  const savePreferences = useSaveAccountNotificationPreferences();
+  const [email, setEmail] = useState<Record<NotificationEvent, boolean> | null>(null);
+
+  useEffect(() => {
+    if (email === null && preferences.data) setEmail(preferences.data.email);
+  }, [email, preferences.data]);
+
+  if (preferences.error) {
+    return (
+      <Alert color="red" title="Couldn't load alerts">
+        {preferences.error.message}
+      </Alert>
+    );
+  }
+  if (!email || preferences.isLoading) return <Loader />;
+  const dirtyLabels = NOTIFICATION_EVENTS.filter(
+    (event) => email[event] !== preferences.data?.email[event],
+  ).map((event) => NOTIFICATION_LABELS[event].label.toLowerCase());
+
+  return (
+    <>
+      <SectionCard title="Email alerts" hint="Account defaults">
+        <Stack gap="md">
+          <Text size="sm" c="dimmed">
+            These defaults apply in every Hunt unless you choose a Hunt-specific override.
+            Invitations are always emailed because the message is how the invitation arrives.
+          </Text>
+          {NOTIFICATION_EVENTS.map((event) => (
+            <Switch
+              key={event}
+              label={NOTIFICATION_LABELS[event].label}
+              description={NOTIFICATION_LABELS[event].description}
+              checked={email[event]}
+              onChange={(change) =>
+                setEmail((current) => ({
+                  ...(current ?? email),
+                  [event]: change.currentTarget.checked,
+                }))
+              }
+            />
+          ))}
+        </Stack>
+      </SectionCard>
+      <SettingsSaveBar
+        dirtyLabels={dirtyLabels}
+        saving={savePreferences.isPending}
+        onDiscard={() => preferences.data && setEmail(preferences.data.email)}
+        onSave={() =>
+          savePreferences.mutate(
+            { email },
+            {
+              onSuccess: () => notifications.show({ message: "Alert defaults saved", color: "green" }),
+              onError: (error) =>
+                notifications.show({
+                  title: "Couldn't save alerts",
+                  message: error instanceof ApiError ? error.message : "Unexpected error",
+                  color: "red",
+                }),
+            },
+          )
+        }
+      />
+    </>
+  );
+}
+
 export function AccountPage() {
   const { session } = useAuth();
   const { tab } = useParams();
@@ -276,7 +356,13 @@ export function AccountPage() {
           active={active}
           onSelect={(value) => navigate(`/account/${value}`)}
         >
-          {active === "profile" ? <ProfilePanel /> : <AccountPanel />}
+          {active === "profile" ? (
+            <ProfilePanel />
+          ) : active === "alerts" ? (
+            <AlertsPanel />
+          ) : (
+            <AccountPanel />
+          )}
         </SettingsShell>
       </Stack>
     </PublicPageShell>
