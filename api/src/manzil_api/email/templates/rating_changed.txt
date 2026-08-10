@@ -1,0 +1,7 @@
+{{ context.actor_name }} rated {{ context.property_name }}
+
+{{ context.actor_name }} rated {{ context.property_name }} {{ context.rating }} out of 5 in {{ context.hunt_name }}.
+
+Review Listing: {{ context.cta_url }}
+
+Manage email alerts: {{ context.alerts_url }}

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { ApiError, apiFetch } from "../../lib/apiClient";
+import { apiFetch } from "../../lib/apiClient";
 import type { components } from "../../lib/generated/api";
 import { useGhostMutationPath } from "../admin/useGhostMode";
 
@@ -14,6 +14,14 @@ type InviteCreate = components["schemas"]["InviteCreate"];
 export type InvitationLink = components["schemas"]["InvitationLinkResponse"];
 export type InvitationLinkCreate = components["schemas"]["InvitationLinkCreate"];
 export type InvitationLinkPatch = components["schemas"]["InvitationLinkPatch"];
+
+export function invitationDeliveryPollInterval(invites: Invite[] | undefined): number | false {
+  return invites?.some((invite) =>
+    ["queued", "sending", "sent", "delayed"].includes(invite.delivery_status),
+  )
+    ? 5_000
+    : false;
+}
 
 /** Keep copied links on the exact frontend origin that owns the active Auth session.
  * The API's configured frontend URL may legitimately differ by hostname (for
@@ -41,6 +49,9 @@ export function useInvites(huntId: string) {
     queryKey: ["invites", huntId],
     queryFn: () => apiFetch<Invite[]>(mutationPath(`/v1/hunts/${huntId}/invites`)),
     enabled: Boolean(huntId),
+    // Delivery state is private server data, so it cannot ride Supabase
+    // Realtime. Poll only while a visible Invite can still change state.
+    refetchInterval: (query) => invitationDeliveryPollInterval(query.state.data),
   });
 }
 
@@ -52,16 +63,16 @@ export function useCreateInvite(huntId: string) {
     mutationFn: (body: InviteCreate) =>
       apiFetch<Invite>(mutationPath(`/v1/hunts/${huntId}/invites`), { method: "POST", body }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["invites", huntId] }),
-    // `invite_email_failed` is a 502 raised *after* the invite row is written —
-    // the API sends the mail through Supabase Auth, which refuses an address
-    // that has no account (FR13: only a Site Admin creates one). The invite is
-    // real and its link works, so refresh the list rather than leaving the
-    // Owner with an error and an invitation they cannot see or copy.
-    onError: (error) => {
-      if (error instanceof ApiError && error.code === "invite_email_failed") {
-        void qc.invalidateQueries({ queryKey: ["invites", huntId] });
-      }
-    },
+  });
+}
+
+export function useResendInvite(huntId: string) {
+  const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
+  return useMutation({
+    mutationFn: (inviteId: string) =>
+      apiFetch<Invite>(mutationPath(`/v1/invites/${inviteId}/resend`), { method: "POST" }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["invites", huntId] }),
   });
 }
 

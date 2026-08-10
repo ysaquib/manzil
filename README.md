@@ -422,7 +422,7 @@ docker exec -it supabase_db_manzil psql -U postgres              # poke the DB d
 
 ### Environment
 
-Copy `infra/.env.example` to `.env` at the repo root. Notable variables (full table in IMPLEMENTATION §1): `OPENROUTER_API_KEY`, `LANGFUSE_*` (tracing is wired before the first LLM call — an untraced call is a bug), `DATABASE_URL`, `SUPABASE_*` (service-role key is worker + API in-process loop only, never frontend), `GOOGLE_MAPS_API_KEY` (Phase 3 ENRICH), `MANZIL_WORKER_INPROCESS` (API, default `true`), `MANZIL_MODE` (`workflow` | `agents`), `MANZIL_LLM_MODE` (`live` | `record` | `replay`), `VITE_*` (frontend).
+Copy `infra/.env.example` to `.env` at the repo root. Notable variables (full table in IMPLEMENTATION §1): `OPENROUTER_API_KEY`, `LANGFUSE_*` (tracing is wired before the first LLM call — an untraced call is a bug), `DATABASE_URL`, `SUPABASE_*` (service-role key is worker + API in-process loop only, never frontend), `GOOGLE_MAPS_API_KEY` (Phase 3 ENRICH), `MANZIL_WORKER_INPROCESS` (API, default `true`), `MANZIL_EMAIL_MODE` + `RESEND_*` + `MANZIL_MAIL_FROM*` (API-owned product mail; Supabase Auth SMTP remains separate), `MANZIL_MODE` (`workflow` | `agents`), `MANZIL_LLM_MODE` (`live` | `record` | `replay`), `VITE_*` (frontend).
 
 #### Per-command variables (deliberately not in `.env`)
 

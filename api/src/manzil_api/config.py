@@ -14,6 +14,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Environment = Literal["local", "staging", "production"]
+EmailMode = Literal["disabled", "resend"]
 
 
 class Settings(BaseSettings):
@@ -56,6 +57,14 @@ class Settings(BaseSettings):
     cors_origins: str = Field(default="http://localhost:5173", alias="API_CORS_ORIGINS")
     frontend_url: str = Field(default="http://localhost:5173", alias="MANZIL_FRONTEND_URL")
 
+    # P3-22 product mail. Supabase Auth keeps its own SMTP configuration and
+    # continues to own enrollment, recovery, OTP/magic-link, and security mail.
+    email_mode: EmailMode = Field(default="disabled", alias="MANZIL_EMAIL_MODE")
+    resend_api_key: str = Field(default="", alias="RESEND_API_KEY")
+    resend_webhook_secret: str = Field(default="", alias="RESEND_WEBHOOK_SECRET")
+    mail_from: str = Field(default="", alias="MANZIL_MAIL_FROM")
+    mail_from_name: str = Field(default="Manzil", alias="MANZIL_MAIL_FROM_NAME")
+
     # In-process worker loop toggle (DESIGN §5 default). Set false only after a
     # separate worker process is deployed and validated per IMPLEMENTATION §8.
     worker_inprocess: bool = Field(default=True, alias="MANZIL_WORKER_INPROCESS")
@@ -67,6 +76,23 @@ class Settings(BaseSettings):
     @property
     def docs_enabled(self) -> bool:
         return self.environment in ("local", "staging")
+
+    def validate_email_delivery(self) -> None:
+        if self.email_mode != "resend":
+            if self.environment == "production":
+                raise RuntimeError("MANZIL_EMAIL_MODE=resend is required in production")
+            return
+        missing = [
+            name
+            for name, value in (
+                ("RESEND_API_KEY", self.resend_api_key),
+                ("RESEND_WEBHOOK_SECRET", self.resend_webhook_secret),
+                ("MANZIL_MAIL_FROM", self.mail_from),
+            )
+            if not value.strip()
+        ]
+        if missing:
+            raise RuntimeError("Missing product-email configuration: " + ", ".join(missing))
 
 
 @lru_cache

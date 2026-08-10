@@ -1,0 +1,7 @@
+A Manzil run failed for {{ context.property_name }}
+
+Manzil couldn't finish its run for {{ context.property_name }}. Open Tasks to review the failure and retry it.
+
+Review failed run: {{ context.cta_url }}
+
+Manage email alerts: {{ context.alerts_url }}

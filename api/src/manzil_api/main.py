@@ -32,6 +32,7 @@ from manzil_api.config import Settings, get_settings
 from manzil_api.database import create_db_pool
 from manzil_api.demo.router import router as demo_router
 from manzil_api.dependencies import require_not_demo
+from manzil_api.email.dispatcher import run_email_dispatcher
 from manzil_api.exceptions import CatchAllMiddleware, register_exception_handlers
 from manzil_api.feedback.router import router as feedback_router
 from manzil_api.fees.router import router as fees_router
@@ -40,6 +41,7 @@ from manzil_api.invitation_links.router import router as invitation_links_router
 from manzil_api.invites.router import router as invites_router
 from manzil_api.jobs.router import router as jobs_router
 from manzil_api.listings.router import router as listings_router
+from manzil_api.notifications.router import router as notifications_router
 from manzil_api.overrides.router import router as overrides_router
 from manzil_api.profiles.router import router as profiles_router
 from manzil_api.rubric.router import router as rubric_router
@@ -75,6 +77,7 @@ def _validate_supabase_keys(settings: Settings) -> None:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     _validate_supabase_keys(settings)
+    settings.validate_email_delivery()
     pool = await create_db_pool(settings)
     app.state.db_pool = pool
     app.state.model_artifact_ready = await _model_artifact_ready(settings)
@@ -92,6 +95,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         logger.info("In-process worker loop started (MANZIL_WORKER_INPROCESS=true).")
     app.state.worker_task = worker_task
+    email_task = asyncio.create_task(run_email_dispatcher(pool, settings, stop))
+    app.state.email_task = email_task
 
     try:
         yield
@@ -99,6 +104,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         stop.set()  # stop claiming new jobs; let the in-flight one drain
         if worker_task is not None:
             await worker_task
+        await email_task
         await pool.close()
 
 
@@ -137,6 +143,11 @@ def _worker_ready(app: FastAPI, settings: Settings) -> bool:
         and heartbeat_at is not None
         and time.monotonic() - heartbeat_at <= WORKER_HEARTBEAT_MAX_AGE_SECONDS
     )
+
+
+def _email_ready(app: FastAPI) -> bool:
+    task = getattr(app.state, "email_task", None)
+    return bool(task is not None and not task.done())
 
 
 def create_app() -> FastAPI:
@@ -188,6 +199,7 @@ def create_app() -> FastAPI:
         profiles_router,
         feedback_router,
         visits_router,
+        notifications_router,
         admin_router,
         admin_demo_router,
         admin_people_router,
@@ -206,6 +218,7 @@ def create_app() -> FastAPI:
             "database": await _database_ready(app),
             "worker": _worker_ready(app, settings),
             "model": bool(getattr(app.state, "model_artifact_ready", False)),
+            "email": _email_ready(app),
         }
         is_ready = all(checks.values())
         return JSONResponse(

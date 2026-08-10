@@ -124,6 +124,67 @@ SchedulerTick = Callable[["asyncpg.Pool"], Awaitable[None]]
 FetchersFactory = Callable[[], dict[int, Fetcher]]
 
 
+async def _score_snapshot(
+    pool: asyncpg.Pool, job: asyncpg.Record
+) -> dict[tuple[UUID, UUID], tuple[float, list[dict[str, Any]]]]:
+    """The exact score facts P3-22 compares around one claimed Job."""
+    if job["hunt_listing_id"] is not None:
+        rows = await pool.fetch(
+            """select hunt_listing_id,floor_plan_id,total,breakdown
+                 from scores where hunt_listing_id=$1""",
+            job["hunt_listing_id"],
+        )
+    else:
+        rows = await pool.fetch(
+            """select s.hunt_listing_id,s.floor_plan_id,s.total,s.breakdown
+                 from scores s join hunt_listings hl on hl.id=s.hunt_listing_id
+                where hl.hunt_id=$1 and hl.status='active'""",
+            job["hunt_id"],
+        )
+    result = {}
+    for row in rows:
+        breakdown = row["breakdown"]
+        if isinstance(breakdown, str):
+            breakdown = json.loads(breakdown)
+        result[(row["hunt_listing_id"], row["floor_plan_id"])] = (
+            float(row["total"]),
+            list((breakdown or {}).get("gates") or []),
+        )
+    return result
+
+
+async def _enqueue_score_changes(
+    pool: asyncpg.Pool,
+    job_id: UUID,
+    before: dict[tuple[UUID, UUID], tuple[float, list[dict[str, Any]]]],
+    after: dict[tuple[UUID, UUID], tuple[float, list[dict[str, Any]]]],
+) -> None:
+    by_listing: dict[UUID, list[dict[str, Any]]] = {}
+    for listing_id, floor_plan_id in sorted(
+        before.keys() | after.keys(), key=lambda key: (str(key[0]), str(key[1]))
+    ):
+        current = after.get((listing_id, floor_plan_id))
+        previous = before.get((listing_id, floor_plan_id))
+        if previous == current:
+            continue
+        by_listing.setdefault(listing_id, []).append(
+            {
+                "floor_plan_id": str(floor_plan_id),
+                "old_total": previous[0] if previous else None,
+                "new_total": current[0] if current else None,
+                "old_gates": previous[1] if previous else [],
+                "new_gates": current[1] if current else [],
+            }
+        )
+    for listing_id, changes in by_listing.items():
+        await pool.fetchval(
+            "select private.enqueue_score_change_notification($1,$2,$3::jsonb)",
+            job_id,
+            listing_id,
+            json.dumps(changes),
+        )
+
+
 # ── queue primitives ─────────────────────────────────────────────────────────
 
 
@@ -2937,10 +2998,36 @@ async def run_worker_loop(
             continue
 
         log.info("job_claimed", job_id=str(job["id"]), job_type=job_type_raw, worker=worker_id)
+        scores_before: dict[tuple[UUID, UUID], tuple[float, list[dict[str, Any]]]] = {}
+        score_notifications_ready = True
+        try:
+            scores_before = await _score_snapshot(pool, job)
+        except Exception as error:
+            # Product notifications are deliberately outside the Job's truth
+            # path. A missing preference/outbox table during a rolling deploy,
+            # or any later notification regression, must never fail the Job.
+            score_notifications_ready = False
+            log.warning(
+                "score_notification_snapshot_failed",
+                job_id=str(job["id"]),
+                error=str(error),
+            )
         try:
             async with pool.acquire() as conn:
                 await heartbeat(conn, job["id"])
             await handler(pool, job)
+            if score_notifications_ready and await pool.fetchval(
+                "select state = 'done' from jobs where id=$1", job["id"]
+            ):
+                try:
+                    scores_after = await _score_snapshot(pool, job)
+                    await _enqueue_score_changes(pool, job["id"], scores_before, scores_after)
+                except Exception as error:
+                    log.warning(
+                        "score_notification_enqueue_failed",
+                        job_id=str(job["id"]),
+                        error=str(error),
+                    )
         except asyncio.CancelledError:
             raise  # shutdown/cancellation: leave the row locked for orphan reclaim
         except Exception as error:

@@ -39,7 +39,7 @@ export function invalidationKeysForRealtime(
       return [["hunt_listing_refresh_status", huntId]];
     case "jobs":
     case "job_events":
-      return [["jobs", huntId]];
+      return [["jobs", huntId], ["attention", huntId]];
     // Visit rows carry no hunt_id of their own below `visits`, and one member
     // can be looking at a different Visit than the writer, so these invalidate
     // the whole family rather than one visit's keys. The list, the drawer's

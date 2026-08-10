@@ -27,7 +27,7 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconHome, IconUserCircle } from "@tabler/icons-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { PageHeader } from "../../components/PageHeader";
@@ -54,6 +54,14 @@ import { ApiError } from "../../lib/apiClient";
 import { resolveSettings, SOURCE_POLICIES, type HuntSettings } from "../../lib/contracts";
 import { useHunt, usePatchHunt, usePatchHuntSettings, type Hunt } from "./api";
 import { useGhostMode } from "../admin/useGhostMode";
+import {
+  NOTIFICATION_EVENTS,
+  NOTIFICATION_LABELS,
+  useHuntNotificationPreferences,
+  useSaveHuntNotificationPreferences,
+  type HuntNotificationPreferences,
+  type NotificationEvent,
+} from "../notifications/api";
 
 const TABS: SettingsTab[] = [
   {
@@ -433,6 +441,8 @@ function YourProfilePanel({ hunt }: { hunt: Hunt }) {
   const { data: currentMember } = useCurrentMember(hunt.id);
   const setColor = useSetMemberColor(hunt.id, currentUserId);
   const setDisplayName = useSetMemberDisplayName(hunt.id, currentUserId);
+  const preferences = useHuntNotificationPreferences(hunt.id);
+  const savePreferences = useSaveHuntNotificationPreferences(hunt.id);
 
   const savedName = currentMember?.display_name ?? "";
   const savedColor = currentMember?.color ?? null;
@@ -442,18 +452,35 @@ function YourProfilePanel({ hunt }: { hunt: Hunt }) {
   // Seed the editors from the loaded member row once it arrives, without
   // clobbering in-progress edits.
   const [seeded, setSeeded] = useState(false);
+  const [alertDraft, setAlertDraft] = useState<{
+    huntId: string;
+    values: Record<NotificationEvent, boolean | null>;
+  } | null>(null);
   if (!seeded && currentMember) {
     setName(savedName);
     setColorDraft(savedColor);
     setSeeded(true);
   }
+  useEffect(() => {
+    if (preferences.data && alertDraft?.huntId !== hunt.id) {
+      setAlertDraft({ huntId: hunt.id, values: preferences.data.email_overrides });
+    }
+  }, [alertDraft?.huntId, hunt.id, preferences.data]);
 
   const owner = members.find((member) => member.role === "owner");
-  const saving = setDisplayName.isPending || setColor.isPending;
+  const saving = setDisplayName.isPending || setColor.isPending || savePreferences.isPending;
+  const overrides = alertDraft?.huntId === hunt.id ? alertDraft.values : null;
 
   const dirtyLabels: string[] = [];
   if (seeded && name !== savedName) dirtyLabels.push("display name");
   if (seeded && color !== savedColor) dirtyLabels.push("color");
+  if (overrides && preferences.data) {
+    for (const event of NOTIFICATION_EVENTS) {
+      if (overrides[event] !== preferences.data.email_overrides[event]) {
+        dirtyLabels.push(`${NOTIFICATION_LABELS[event].label.toLowerCase()} alert`);
+      }
+    }
+  }
 
   const save = () => {
     if (name !== savedName) {
@@ -465,6 +492,21 @@ function YourProfilePanel({ hunt }: { hunt: Hunt }) {
     // pre-seed state, which cannot be dirty.
     if (color !== null && color !== savedColor) {
       setColor.mutate(color, { onError: notifyError("Couldn't save color") });
+    }
+    if (
+      overrides &&
+      preferences.data &&
+      NOTIFICATION_EVENTS.some(
+        (event) => overrides[event] !== preferences.data?.email_overrides[event],
+      )
+    ) {
+      savePreferences.mutate(
+        { email_overrides: overrides },
+        {
+          onSuccess: () => notifications.show({ message: "Hunt alerts saved", color: "green" }),
+          onError: notifyError("Couldn't save Hunt alerts"),
+        },
+      );
     }
   };
 
@@ -500,6 +542,14 @@ function YourProfilePanel({ hunt }: { hunt: Hunt }) {
         />
       )}
 
+      <HuntAlertsCard
+        preferences={preferences.data}
+        error={preferences.error}
+        loading={preferences.isLoading}
+        overrides={overrides}
+        onChange={(values) => setAlertDraft({ huntId: hunt.id, values })}
+      />
+
       <SettingsSaveBar
         dirtyLabels={dirtyLabels}
         saving={saving}
@@ -507,8 +557,70 @@ function YourProfilePanel({ hunt }: { hunt: Hunt }) {
         onDiscard={() => {
           setName(savedName);
           setColorDraft(savedColor);
+          if (preferences.data) {
+            setAlertDraft({ huntId: hunt.id, values: preferences.data.email_overrides });
+          }
         }}
       />
+    </>
+  );
+}
+
+function HuntAlertsCard({
+  preferences,
+  error,
+  loading,
+  overrides,
+  onChange,
+}: {
+  preferences: HuntNotificationPreferences | undefined;
+  error: Error | null;
+  loading: boolean;
+  overrides: Record<NotificationEvent, boolean | null> | null;
+  onChange: (values: Record<NotificationEvent, boolean | null>) => void;
+}) {
+  if (error) {
+    return (
+      <Alert color="red" title="Couldn't load Hunt alerts">
+        {error.message}
+      </Alert>
+    );
+  }
+  if (!overrides || loading || !preferences) return <Loader size="sm" />;
+
+  return (
+    <>
+      <SectionCard title="Email alerts" hint="Overrides for this Hunt">
+        <Stack gap="md">
+          <Text size="sm" c="dimmed">
+            Inherit follows your account default. An override changes only this Hunt.
+          </Text>
+          {NOTIFICATION_EVENTS.map((event) => {
+            const inherited = preferences.account_email[event] ? "On" : "Off";
+            const value = overrides[event] === null ? "inherit" : overrides[event] ? "on" : "off";
+            return (
+              <Select
+                key={event}
+                label={NOTIFICATION_LABELS[event].label}
+                description={NOTIFICATION_LABELS[event].description}
+                value={value}
+                allowDeselect={false}
+                data={[
+                  { value: "inherit", label: `Inherit — ${inherited}` },
+                  { value: "on", label: "On" },
+                  { value: "off", label: "Off" },
+                ]}
+                onChange={(next) =>
+                  onChange({
+                    ...overrides,
+                    [event]: next === "inherit" ? null : next === "on",
+                  })
+                }
+              />
+            );
+          })}
+        </Stack>
+      </SectionCard>
     </>
   );
 }

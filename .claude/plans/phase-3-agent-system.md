@@ -277,7 +277,7 @@ Full task detail in §4–§13; every task below carries its what/why.
 | P3-18 ✅ | D | **Landed 2026-07-19** (DESIGN §20) — hunt-wide filters: `hunt_shared_filters`, Owner/Curator publish, seed-on-open, expanded predicate registry | one agreed starting view without locking anyone's exploration |
 | P3-19 ✅ | D | **Landed 2026-07-26** (DESIGN v3.14) — map surfaces: drawer Location card + hunt Map view at `/h/:huntId/map` | the hunt is a geography problem the table could only answer as text |
 | P3-21 ✅ | C | **Landed 2026-07-27** (DESIGN v3.17) — property contact: leasing phone + contact URL by provenance precedence (official → Places → listing) | the app could say a Property was worth calling but not how to call it |
-| P3-22 ⚠ | — | **Deferred, specified 2026-07-29** (DESIGN §18, §20 v3.27) — notification system + attention indicators; §13 below | preferences without delivery are a promise the app can't keep, so the surface is designed and parked rather than shipped |
+| P3-22 ✅ | — | **Landed 2026-08-10** (DESIGN v3.75) — hybrid Auth/product email ownership, durable Resend delivery, preferences, Invite mail, and attention indicators; §13 below | all preference surfaces shipped with their delivery path; push remains deferred |
 | P3-23 ⚠ | — | **Deferred, specified 2026-07-29** (DESIGN §18) — self-service account deletion, gated on transferring owned Hunts; email change declined outright | a Hunt always needs an Owner, so deletion is an ownership problem before it is a data problem |
 
 ---
@@ -895,16 +895,15 @@ refreshes `observed_at` rather than appending; the drawer Contact row shows the
 precedence-resolved winner per kind; no person-shaped field exists anywhere in
 the path.
 
-### P3-22 ⚠ — Notification system + attention indicators (deferred, specified)
+### P3-22 ✅ — Notification system + attention indicators (landed 2026-08-10)
 
-**Status:** deferred (DESIGN §18). Specified 2026-07-29 so the parked design is
-recorded rather than re-derived; **needs an explicit ruling to start**, exactly
-like P3-17. Nothing here is on the Phase 3 critical path and none of it is an
-exit condition.
+**Status:** landed under DESIGN v3.75 after the Owner explicitly pulled it in.
+It remains outside the Phase 3 critical path and is not an exit condition.
 
 **What/why:** four pieces, designed as one so they cannot contradict each other.
-(a) **Delivery** — email through the Supabase Auth mail path already in the
-stack; push is a later option and never a prerequisite. Events: checkpoint
+(a) **Delivery** — Supabase Auth keeps Auth/security email; the Manzil API sends
+product/Hunt email through a durable Resend HTTPS outbox. Push is a later option
+and never a prerequisite. Events: checkpoint
 waiting on you, Listing score changed, run failed, comment or rating added, and
 invited to a Hunt (that mail always sends — it is how the invite arrives).
 (b) The account **Alerts** tab in P3-16's `/account` shell, per-event ×
@@ -917,12 +916,8 @@ something is known, drawn in **clay**, the hue checkpoints already own for
 "waiting on the user", never the primary; fed by the Realtime subscription the
 Tasks tab already holds.
 
-**Sequencing note:** (d) needs neither delivery nor preference storage and
-**may ship ahead of (a)–(c)** if the system slips again — it is scoped here so
-the badge is designed once rather than invented twice by whoever gets there
-first. (b) and (c) must not ship before (a): an alerts screen whose toggles
-deliver nothing is worse than no screen, which is the whole reason this task
-exists rather than the preference tabs simply being built with P3-16.
+All four pieces shipped together. The attention count reuses Jobs/Job Events
+Realtime invalidation; the preference surfaces never existed without delivery.
 
 **Done when:** a checkpoint raised in a second browser badges that member's
 Tasks nav item within the Realtime round trip and clears on answer; turning an

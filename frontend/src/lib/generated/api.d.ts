@@ -282,6 +282,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/invites/{invite_id}/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resend Invite */
+        post: operations["resend_invite_v1_invites__invite_id__resend_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/invites/{invite_id}": {
         parameters: {
             query?: never;
@@ -951,6 +968,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/notification-preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Account Preferences */
+        get: operations["get_account_preferences_v1_notification_preferences_get"];
+        /** Put Account Preferences */
+        put: operations["put_account_preferences_v1_notification_preferences_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/hunts/{hunt_id}/notification-preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Hunt Preferences */
+        get: operations["get_hunt_preferences_v1_hunts__hunt_id__notification_preferences_get"];
+        /** Put Hunt Preferences */
+        put: operations["put_hunt_preferences_v1_hunts__hunt_id__notification_preferences_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/hunts/{hunt_id}/attention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Attention */
+        get: operations["get_attention_v1_hunts__hunt_id__attention_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/webhooks/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resend Webhook */
+        post: operations["resend_webhook_v1_webhooks_resend_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/me": {
         parameters: {
             query?: never;
@@ -1497,6 +1584,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/ghost/hunts/{hunt_id}/attention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Hunt Attention */
+        get: operations["hunt_attention_v1_admin_ghost_hunts__hunt_id__attention_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/ghost/hunts/{hunt_id}": {
         parameters: {
             query?: never;
@@ -1856,6 +1960,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/ghost/invites/{invite_id}/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resend Invite */
+        post: operations["resend_invite_v1_admin_ghost_invites__invite_id__resend_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/ghost/hunts/{hunt_id}/invitation-links": {
         parameters: {
             query?: never;
@@ -1998,6 +2119,13 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AccountNotificationPreferences */
+        AccountNotificationPreferences: {
+            /** Email */
+            email: {
+                [key: string]: boolean;
+            };
+        };
         /** ActionResult */
         ActionResult: {
             /**
@@ -2082,6 +2210,11 @@ export interface components {
             tier3_credits_allowance?: number | null;
             /** Feedback New */
             feedback_new: number;
+        };
+        /** AttentionResponse */
+        AttentionResponse: {
+            /** Waiting Checkpoint Count */
+            waiting_checkpoint_count: number;
         };
         /** AuditEntry */
         AuditEntry: {
@@ -2563,6 +2696,28 @@ export interface components {
              */
             domain: "rent" | "buy";
         };
+        /** HuntNotificationPreferenceUpdate */
+        HuntNotificationPreferenceUpdate: {
+            /** Email Overrides */
+            email_overrides: {
+                [key: string]: boolean | null;
+            };
+        };
+        /** HuntNotificationPreferences */
+        HuntNotificationPreferences: {
+            /** Account Email */
+            account_email: {
+                [key: string]: boolean;
+            };
+            /** Email Overrides */
+            email_overrides: {
+                [key: string]: boolean | null;
+            };
+            /** Effective Email */
+            effective_email: {
+                [key: string]: boolean;
+            };
+        };
         /**
          * HuntOption
          * @description One typeahead suggestion — no roll-ups, because nobody reads them here.
@@ -2794,6 +2949,12 @@ export interface components {
             expires_at: string;
             /** Link */
             link: string;
+            /**
+             * Delivery Status
+             * @default queued
+             * @enum {string}
+             */
+            delivery_status: "queued" | "sending" | "sent" | "delivered" | "delayed" | "failed" | "bounced" | "suppressed" | "complained" | "disabled" | "cancelled";
         };
         /** JobDetail */
         JobDetail: {
@@ -4784,6 +4945,37 @@ export interface operations {
             };
         };
     };
+    resend_invite_v1_invites__invite_id__resend_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invite_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     revoke_invite_v1_invites__invite_id__delete: {
         parameters: {
             query?: never;
@@ -6244,6 +6436,187 @@ export interface operations {
             };
         };
     };
+    get_account_preferences_v1_notification_preferences_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountNotificationPreferences"];
+                };
+            };
+        };
+    };
+    put_account_preferences_v1_notification_preferences_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AccountNotificationPreferences"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountNotificationPreferences"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_hunt_preferences_v1_hunts__hunt_id__notification_preferences_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HuntNotificationPreferences"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_hunt_preferences_v1_hunts__hunt_id__notification_preferences_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HuntNotificationPreferenceUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HuntNotificationPreferences"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_attention_v1_hunts__hunt_id__attention_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttentionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resend_webhook_v1_webhooks_resend_post: {
+        parameters: {
+            query?: never;
+            header: {
+                "svix-id": string;
+                "svix-timestamp": string;
+                "svix-signature": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     whoami_v1_admin_me_get: {
         parameters: {
             query?: never;
@@ -7242,6 +7615,37 @@ export interface operations {
             };
         };
     };
+    hunt_attention_v1_admin_ghost_hunts__hunt_id__attention_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttentionResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     patch_hunt_v1_admin_ghost_hunts__hunt_id__patch: {
         parameters: {
             query?: never;
@@ -8020,6 +8424,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resend_invite_v1_admin_ghost_invites__invite_id__resend_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                invite_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteResponse"];
+                };
             };
             /** @description Validation Error */
             422: {
