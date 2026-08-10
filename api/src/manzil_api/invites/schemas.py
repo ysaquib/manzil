@@ -19,6 +19,19 @@ class InviteResponse(BaseModel):
     role_granted: str
     expires_at: datetime
     link: str
+    delivery_status: Literal[
+        "queued",
+        "sending",
+        "sent",
+        "delivered",
+        "delayed",
+        "failed",
+        "bounced",
+        "suppressed",
+        "complained",
+        "disabled",
+        "cancelled",
+    ] = "queued"
 
 
 class InviteAccepted(BaseModel):

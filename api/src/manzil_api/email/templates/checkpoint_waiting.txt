@@ -1,0 +1,7 @@
+{{ context.property_name }} needs your input on Manzil
+
+Manzil paused while working on {{ context.property_name }} and needs your answer before it can continue.
+
+Answer checkpoint: {{ context.cta_url }}
+
+Manage email alerts: {{ context.alerts_url }}

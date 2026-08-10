@@ -165,6 +165,7 @@ async def test_inprocess_loop_processes_a_job_while_serving_and_drains(monkeypat
                     "database": "ok",
                     "worker": "ok",
                     "model": "ok",
+                    "email": "ok",
                 }
 
                 async def job_state() -> str:

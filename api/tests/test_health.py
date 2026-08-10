@@ -47,6 +47,7 @@ class _Task:
 async def test_ready_checks_database_worker_and_model(app) -> None:  # type: ignore[no-untyped-def]
     app.state.db_pool = _Pool()
     app.state.worker_task = _Task()
+    app.state.email_task = _Task()
     app.state.worker_heartbeat_at = time.monotonic()
     app.state.model_artifact_ready = True
 
@@ -56,7 +57,7 @@ async def test_ready_checks_database_worker_and_model(app) -> None:  # type: ign
     assert response.status_code == 200
     assert response.json() == {
         "status": "ready",
-        "checks": {"database": "ok", "worker": "ok", "model": "ok"},
+        "checks": {"database": "ok", "worker": "ok", "model": "ok", "email": "ok"},
     }
 
 
@@ -79,6 +80,7 @@ async def test_ready_fails_closed_without_exposing_internal_details(
         app = create_app()
         app.state.db_pool = None
         app.state.worker_task = _Task(done=True)
+        app.state.email_task = _Task(done=True)
         app.state.worker_heartbeat_at = time.monotonic() - 999
         app.state.model_artifact_ready = False
 
@@ -92,5 +94,10 @@ async def test_ready_fails_closed_without_exposing_internal_details(
     assert response.status_code == 503
     assert response.json() == {
         "status": "not_ready",
-        "checks": {"database": "failed", "worker": "failed", "model": "failed"},
+        "checks": {
+            "database": "failed",
+            "worker": "failed",
+            "model": "failed",
+            "email": "failed",
+        },
     }

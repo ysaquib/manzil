@@ -1,0 +1,7 @@
+{{ context.actor_name }} commented on {{ context.property_name }}
+
+{{ context.actor_name }} added a comment in {{ context.hunt_name }}.
+
+Read comment: {{ context.cta_url }}
+
+Manage email alerts: {{ context.alerts_url }}

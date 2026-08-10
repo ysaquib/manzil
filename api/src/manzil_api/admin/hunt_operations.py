@@ -64,6 +64,7 @@ from manzil_api.listings.schemas import (
     UnitGroupStatePatch,
     UnitGroupStateResponse,
 )
+from manzil_api.notifications.schemas import AttentionResponse
 from manzil_api.overrides import service as override_service
 from manzil_api.overrides.schemas import OverrideCreate, OverrideResponse
 from manzil_api.rubric import service as rubric_service
@@ -82,6 +83,15 @@ from manzil_api.utilities.schemas import (
 from supabase import Client
 
 router = APIRouter(prefix="/admin/ghost", tags=["admin", "ghost-view"])
+
+
+@router.get("/hunts/{hunt_id}/attention", response_model=AttentionResponse)
+async def hunt_attention(hunt_id: UUID, admin: AdminUser, pool: DbPool) -> AttentionResponse:
+    await _require_ghost_hunt(pool, hunt_id, admin)
+    count = await pool.fetchval(
+        "select count(*) from jobs where hunt_id=$1 and state='waiting_user'", hunt_id
+    )
+    return AttentionResponse(waiting_checkpoint_count=count)
 
 
 class GhostViewUnavailable(ManzilAPIError):
@@ -704,7 +714,7 @@ async def list_invites(
     settings: SettingsDep,
 ) -> list[InviteResponse]:
     await _require_ghost_hunt(pool, hunt_id, admin)
-    return await invite_service.list_invites(client, settings.frontend_url, hunt_id)
+    return await invite_service.list_invites(client, settings.frontend_url, hunt_id, pool)
 
 
 @router.post("/hunts/{hunt_id}/invites", response_model=InviteResponse, status_code=201)
@@ -748,6 +758,33 @@ async def revoke_invite(
         target_id=invite_id,
         before={"email": row["email"]},
     )
+
+
+@router.post("/invites/{invite_id}/resend", response_model=InviteResponse)
+async def resend_invite(
+    invite_id: UUID,
+    admin: AdminUser,
+    pool: DbPool,
+    client: ServiceClient,
+    settings: SettingsDep,
+    audit: Audit,
+) -> InviteResponse:
+    row = await pool.fetchrow("select hunt_id from invites where id=$1", invite_id)
+    if row is None:
+        raise GhostTargetNotFound("Invite not found")
+    hunt_id = UUID(str(row["hunt_id"]))
+    await _require_ghost_hunt(pool, hunt_id, admin)
+    result = await invite_service.resend_invite(
+        client, pool, settings.frontend_url, invite_id, str(admin.id)
+    )
+    await _audit_hunt(
+        audit,
+        "hunt.invite.resend",
+        hunt_id,
+        target_type="invite",
+        target_id=invite_id,
+    )
+    return result
 
 
 @router.get("/hunts/{hunt_id}/invitation-links", response_model=list[InvitationLinkResponse])

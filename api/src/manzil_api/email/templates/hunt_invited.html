@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% macro subject(context) -%}{{ context.inviter_name }} invited you to {{ context.hunt_name }} on Manzil{%- endmacro %}
+{% block heading %}You’re invited to {{ context.hunt_name }}{% endblock %}
+{% block body %}<strong>{{ context.inviter_name }}</strong> invited you to join their Hunt as a {{ context.role|title }}.{% endblock %}
+{% block cta %}Accept invitation{% endblock %}
+{% block footer %}This invitation expires {{ context.expires_at_display }}. If you weren’t expecting it, you can ignore this email.{% endblock %}
