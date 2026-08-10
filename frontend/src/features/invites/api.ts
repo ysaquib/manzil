@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { apiFetch } from "../../lib/apiClient";
+import { ApiError, apiFetch } from "../../lib/apiClient";
 import type { components } from "../../lib/generated/api";
 import { useGhostMutationPath } from "../admin/useGhostMode";
 
@@ -52,6 +52,16 @@ export function useCreateInvite(huntId: string) {
     mutationFn: (body: InviteCreate) =>
       apiFetch<Invite>(mutationPath(`/v1/hunts/${huntId}/invites`), { method: "POST", body }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["invites", huntId] }),
+    // `invite_email_failed` is a 502 raised *after* the invite row is written —
+    // the API sends the mail through Supabase Auth, which refuses an address
+    // that has no account (FR13: only a Site Admin creates one). The invite is
+    // real and its link works, so refresh the list rather than leaving the
+    // Owner with an error and an invitation they cannot see or copy.
+    onError: (error) => {
+      if (error instanceof ApiError && error.code === "invite_email_failed") {
+        void qc.invalidateQueries({ queryKey: ["invites", huntId] });
+      }
+    },
   });
 }
 

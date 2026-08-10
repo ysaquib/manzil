@@ -1,14 +1,21 @@
 import { Center, Loader } from "@mantine/core";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { supabase } from "../lib/supabase";
+import { nextQuery } from "./returnTo";
 
 export function SignOutPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [params] = useSearchParams();
   const started = useRef(false);
+  // Signing out mid-flow is usually "wrong account, let me fix that" rather
+  // than "I am done" — an invitation opened in a browser already signed in as
+  // someone else. Carrying `next` through means the correct account lands back
+  // on the invitation instead of the homepage.
+  const next = nextQuery(params.get("next"));
 
   useEffect(() => {
     if (started.current) return;
@@ -16,9 +23,9 @@ export function SignOutPage() {
 
     void supabase.auth.signOut({ scope: "local" }).finally(() => {
       queryClient.clear();
-      navigate("/login", { replace: true });
+      navigate(`/login${next}`, { replace: true });
     });
-  }, [navigate, queryClient]);
+  }, [navigate, next, queryClient]);
 
   return (
     <Center h="100vh" aria-label="Signing out">

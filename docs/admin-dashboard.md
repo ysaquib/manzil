@@ -213,7 +213,9 @@ reviewed; an explicit **Publish updates** replaces that replay membership.
 
 ## Deleting people (AD-3)
 
-The one operation with no undo, so it is refused rather than confirmed.
+The one operation with no undo. It is **refused** where it would destroy a
+Hunt, and **confirmed against a named list** everywhere it is allowed
+(DESIGN §20 v3.73).
 
 `hunts.owner_id` has no cascade, but `hunt_members`, `hunt_listings`, `jobs`,
 `visits` and every fact under them do — deleting the account of someone who owns
@@ -237,6 +239,20 @@ person. The check reflects the FK catalogue, so a future table adding another
 usually reach for. It is an auth-level ban (`ban_duration`), not a column of
 ours: a second source of truth for "can this person sign in" is exactly the kind
 of thing that drifts, and the ban is what Supabase actually enforces.
+
+A delete the API *would* accept still goes through `ConfirmDeleteModal`
+(`frontend/src/components/`): the account is named in the modal and the operator
+types its **email address** back before the button enables. The roster also has
+per-row checkboxes with a page-scoped select-all and a **Delete N accounts**
+bar; that confirmation lists every selected account in a scrolling pane and asks
+for the phrase `permanently delete all selected accounts`. Accounts that own a
+Hunt are listed with *Skipped — owns N Hunts* and are never sent, which is the
+`blocking_owned_hunts` refusal rendered before the request rather than after it.
+Bulk deletes run **one request at a time**: each is an audited account deletion,
+and a partial failure has to be able to name the accounts that survived — those
+stay ticked in the roster with the server's reason in the notification. Removing
+a *membership* uses the same modal without the typing, since the Hunt picker
+directly beneath it puts them back.
 
 Promoting someone to owner routes through `transfer_hunt_ownership` rather than
 writing the role — a Hunt has exactly one owner, and setting a second directly
