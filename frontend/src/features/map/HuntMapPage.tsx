@@ -50,7 +50,7 @@ import {
   svgDataUri,
   type MapPoint,
 } from "./mapPoints";
-import { huntBasemap } from "./demoBasemap";
+import { useHuntBasemap } from "./demoBasemap";
 import { projectOntoStill } from "./demoProjection";
 import { MapFrame } from "./MapFrame";
 import { markerOutline, scoreHex } from "./mapTheme";
@@ -239,7 +239,8 @@ function MapCanvas({
   // Demo: the same pins, drawn over a pre-captured basemap and projected with
   // the geometry the still was captured at. They stay clickable, so the map
   // remains the way into the drawer rather than a picture of one.
-  const basemap = isDemo() ? huntBasemap(dark) : null;
+  const releaseBasemap = useHuntBasemap(dark);
+  const basemap = isDemo() ? releaseBasemap : null;
   const demoOverlay = useCallback(
     (container: { width: number; height: number }) => {
       if (!basemap) return null;
