@@ -310,9 +310,7 @@ async def test_demo_principal_cannot_read_page_text_through_jobs(db_pool, bodies
                 """,
                 bodies_hunt["hunt_id"],
             )
-            generation = await conn.fetchval(
-                "select demo_generation from site_settings"
-            )
+            generation = await conn.fetchval("select demo_generation from site_settings")
             release_id = await conn.fetchval(
                 """
                 insert into private.demo_publications
