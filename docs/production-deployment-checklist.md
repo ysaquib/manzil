@@ -50,6 +50,7 @@ Do **not** use `api.example.com` for Supabase. A paid Supabase custom domain, if
 - [ ] Production multi-stage Dockerfile (uv workspace, `manzil-api[vision-onnx]`, Playwright Chromium, ONNX archive)
 - [ ] `.dockerignore` (excludes `.env`, local/eval fixtures, caches; retains workspace packages)
 - [ ] ONNX archive uploaded to private object store with stable authenticated URL
+- [ ] GitHub Actions `production` environment secret `MANZIL_CLIP_ARCHIVE_URL` set to that authenticated HTTPS URL (required by `docker-api-image`)
 - [ ] GitHub Actions `deploy-production-db` job added to CI
 - [ ] (After manual deploy is proven) `render.yaml` committed
 
