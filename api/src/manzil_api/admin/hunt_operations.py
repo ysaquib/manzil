@@ -54,6 +54,8 @@ from manzil_api.jobs.schemas import CheckpointAnswer, JobResponse
 from manzil_api.listings import service as listing_service
 from manzil_api.listings.schemas import (
     ListingCreate,
+    ListingDeletionImpact,
+    ListingPermanentDelete,
     ListingResponse,
     ListingStatusPatch,
     PinsPatch,
@@ -322,6 +324,44 @@ async def patch_listing_status(
         before={"status": listing["status"]},
         after={"status": body.status},
     )
+    return result
+
+
+@router.get("/listings/{listing_id}/deletion-impact", response_model=ListingDeletionImpact)
+async def listing_deletion_impact(
+    listing_id: UUID,
+    admin: AdminUser,
+    pool: DbPool,
+) -> ListingDeletionImpact:
+    await _require_ghost_listing(pool, listing_id, admin)
+    async with pool.acquire() as connection:
+        return await listing_service.get_deletion_impact_admin(connection, listing_id)
+
+
+@router.delete("/listings/{listing_id}", response_model=ListingDeletionImpact)
+async def delete_listing_permanently(
+    listing_id: UUID,
+    body: ListingPermanentDelete,
+    admin: AdminUser,
+    pool: DbPool,
+    audit: Audit,
+) -> ListingDeletionImpact:
+    listing = await _require_ghost_listing(pool, listing_id, admin)
+    async with pool.acquire() as connection, connection.transaction():
+        result = await listing_service.delete_listing_permanently_admin(
+            connection, listing_id, UUID(admin.id), body.confirmation_name
+        )
+        await audit.record(
+            "listing.permanent_delete",
+            target_type="listing",
+            target_id=listing_id,
+            target_label=result.property_name,
+            hunt_id=UUID(str(listing["hunt_id"])),
+            before={"status": result.status, "counts": result.counts.model_dump()},
+            after={"deleted": True},
+            via_ghost_view=True,
+            conn=connection,
+        )
     return result
 
 

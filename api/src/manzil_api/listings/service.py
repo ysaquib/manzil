@@ -2,18 +2,28 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlsplit
 from uuid import UUID
 
+import asyncpg
 from manzil_worker.fetching.slug_hint import search_hint
+from postgrest.exceptions import APIError
 
 from manzil_api.hunts.exceptions import InsufficientRole
 from manzil_api.jobs.schemas import JobResponse
 from manzil_api.jobs.service import JOB_COLUMNS, job_payload, row_to_response
+from manzil_api.listings.exceptions import (
+    ListingConfirmationMismatch,
+    ListingHasActiveJobs,
+    ListingNotArchived,
+    ListingNotFound,
+)
 from manzil_api.listings.schemas import (
     ListingCreate,
+    ListingDeletionImpact,
     ListingResponse,
     ListingStatusPatch,
     PinsPatch,
@@ -94,11 +104,105 @@ def _role(client: Client, hunt_id: str, user_id: str) -> str:
     return response.data["role"]
 
 
-async def delete_listing(client: Client, listing_id: UUID, user_id: str) -> None:
-    listing = await get_listing_row(client, listing_id)
-    if listing is None or _role(client, listing["hunt_id"], user_id) != "owner":
-        raise InsufficientRole("Only the Hunt Owner may delete Listings")
-    client.table("hunt_listings").update({"status": "archived"}).eq("id", str(listing_id)).execute()
+def _deletion_error(exc: Exception) -> Exception:
+    message = getattr(exc, "message", None) or str(exc)
+    if "listing_not_found" in message:
+        return ListingNotFound("Listing not found")
+    if "listing_not_archived" in message:
+        return ListingNotArchived("Archive this Listing before permanently deleting it")
+    if "listing_confirmation_mismatch" in message:
+        return ListingConfirmationMismatch("The confirmation does not match the Property name")
+    if "listing_has_active_jobs" in message:
+        return ListingHasActiveJobs("Cancel or finish active Jobs before deleting this Listing")
+    return exc
+
+
+async def get_deletion_impact(
+    client: Client, listing: dict[str, Any], user_id: str
+) -> ListingDeletionImpact:
+    if _role(client, listing["hunt_id"], user_id) != "owner":
+        raise InsufficientRole("Only the Hunt Owner may permanently delete Listings")
+    try:
+        data = (
+            client.rpc("get_listing_deletion_impact", {"p_listing_id": listing["id"]})
+            .execute()
+            .data
+        )
+    except APIError as exc:
+        mapped = _deletion_error(exc)
+        if mapped is exc:
+            raise
+        raise mapped from exc
+    if data is None:
+        raise ListingNotFound("Listing not found")
+    return ListingDeletionImpact.model_validate(data)
+
+
+async def delete_listing_permanently(
+    client: Client,
+    listing: dict[str, Any],
+    user_id: str,
+    confirmation_name: str,
+) -> ListingDeletionImpact:
+    impact = await get_deletion_impact(client, listing, user_id)
+    if impact.status != "archived":
+        raise ListingNotArchived("Archive this Listing before permanently deleting it")
+    if confirmation_name != impact.property_name:
+        raise ListingConfirmationMismatch("The confirmation does not match the Property name")
+    if impact.active_jobs:
+        raise ListingHasActiveJobs("Cancel or finish active Jobs before deleting this Listing")
+    try:
+        data = (
+            client.rpc(
+                "delete_listing_permanently",
+                {
+                    "p_listing_id": listing["id"],
+                    "p_confirmation_name": confirmation_name,
+                },
+            )
+            .execute()
+            .data
+        )
+    except APIError as exc:
+        mapped = _deletion_error(exc)
+        if mapped is exc:
+            raise
+        raise mapped from exc
+    return ListingDeletionImpact.model_validate(data)
+
+
+async def get_deletion_impact_admin(
+    connection: asyncpg.Connection, listing_id: UUID
+) -> ListingDeletionImpact:
+    data = await connection.fetchval("select private.listing_deletion_impact($1)", listing_id)
+    if data is None:
+        raise ListingNotFound("Listing not found")
+    if isinstance(data, str):
+        data = json.loads(data)
+    return ListingDeletionImpact.model_validate(data)
+
+
+async def delete_listing_permanently_admin(
+    connection: asyncpg.Connection,
+    listing_id: UUID,
+    actor_id: UUID,
+    confirmation_name: str,
+) -> ListingDeletionImpact:
+    try:
+        data = await connection.fetchval(
+            "select private.delete_hunt_listing_permanently($1, $2, $3, true)",
+            listing_id,
+            actor_id,
+            confirmation_name,
+        )
+    except asyncpg.PostgresError as exc:
+        mapped = _deletion_error(exc)
+        if mapped is not exc:
+            raise mapped from exc
+        raise
+    if isinstance(data, str):
+        data = json.loads(data)
+    return ListingDeletionImpact.model_validate(data)
 
 
 async def patch_status(
@@ -109,7 +213,7 @@ async def patch_status(
     *,
     authorized_admin: bool = False,
 ) -> ListingResponse:
-    """Archive or restore — the same owner gate as delete_listing (archive's alias)."""
+    """Archive or restore; permanent deletion is a separate guarded operation."""
     if not authorized_admin and _role(client, listing["hunt_id"], user_id) != "owner":
         raise InsufficientRole("Only the Hunt Owner may archive or restore Listings")
     listing_id = UUID(listing["id"])

@@ -96,6 +96,8 @@ export function useCompareSet(huntId: string) {
     move: (from: number, to: number) => setStored(moveEntry(entries, from, to)),
     remove: (entry: CompareEntry) =>
       setStored(entries.filter((e) => entryKey(e) !== entryKey(entry))),
+    removeListing: (listingId: string) =>
+      setStored(entries.filter((entry) => entry.listingId !== listingId)),
     prune: (validKeys: Set<string>) => {
       const pruned = pruneEntries(entries, validKeys);
       if (pruned !== entries) setStored(pruned);
