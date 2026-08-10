@@ -163,6 +163,7 @@ async def put_rubric(client: Client, hunt_id: UUID, body: RubricPut) -> list[Rub
         if (parsed := CustomCriterionDef.model_validate(row["custom_def"]))
     }
     custom_keys: set[str] = set()
+    custom_defs_by_key: dict[str, CustomCriterionDef] = {}
     for crit in body.criteria:
         if crit.catalog_key is None and crit.custom_def is None:
             raise InvalidRubricOption("Each criterion needs catalog_key or custom_def")
@@ -177,9 +178,16 @@ async def put_rubric(client: Client, hunt_id: UUID, body: RubricPut) -> list[Rub
             if custom.key in custom_keys:
                 raise InvalidRubricOption(f"Duplicate custom Criterion key: {custom.key}")
             custom_keys.add(custom.key)
+            custom_defs_by_key[custom.key] = custom
             prior = existing_defs.get(custom.key)
             if prior is not None:
-                semantic_fields = ("description", "fact_scope", "value_schema", "requires_tool")
+                semantic_fields = (
+                    "description",
+                    "fact_scope",
+                    "value_schema",
+                    "requires_tool",
+                    "acquisition",
+                )
                 if any(
                     getattr(prior, field) != getattr(custom, field) for field in semantic_fields
                 ):
@@ -219,7 +227,9 @@ async def put_rubric(client: Client, hunt_id: UUID, body: RubricPut) -> list[Rub
     client.table("hunts").update({"rubric_version": current + 1}).eq("id", str(hunt_id)).execute()
 
     await enqueue_rescore(client, hunt_id)
-    new_keys = sorted(custom_keys - set(existing_defs))
+    new_keys = sorted(
+        key for key in custom_keys - set(existing_defs) if not custom_defs_by_key[key].is_manual
+    )
     if new_keys:
         listings = (
             client.table("hunt_listings")

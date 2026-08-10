@@ -140,6 +140,10 @@ class RefreshClass(StrEnum):
     IMAGES = "images"
     REVIEWS = "reviews"
     LOCATION = "location"
+    # Manual custom Criteria are answered by a person, never refetched. The class
+    # exists so a manual definition states that honestly instead of borrowing a
+    # producer's TTL; nothing schedules it (§10.9).
+    MANUAL = "manual"
 
 
 class ListingStatus(StrEnum):
@@ -231,10 +235,16 @@ class CustomCriterionDef(BaseModel):
     description: str = Field(min_length=1, max_length=500)
     fact_scope: Literal["property", "floor_plan"]
     value_schema: dict[str, Any]
+    acquisition: Literal["extracted", "manual"] = "extracted"
     requires_tool: RequiresTool | None = None
     refresh_class: RefreshClass
     routing_confirmed: bool
     route_modifiers: CustomRouteModifiers | None = None
+
+    @property
+    def is_manual(self) -> bool:
+        """Manual Criteria have no producer: the only value path is an Override."""
+        return self.acquisition == "manual"
 
     @field_validator("label", "description")
     @classmethod
@@ -272,6 +282,18 @@ class CustomCriterionDef(BaseModel):
     def route_contract(self) -> CustomCriterionDef:
         if not self.routing_confirmed:
             raise ValueError("custom Criterion routing must be human-confirmed")
+        if self.is_manual:
+            # No producer runs for a manual Criterion, so a tool route or a
+            # refetch TTL would be a claim nothing honours.
+            if self.requires_tool is not None:
+                raise ValueError("manual custom Criteria cannot require a tool")
+            if self.refresh_class is not RefreshClass.MANUAL:
+                raise ValueError("refresh_class must be 'manual' for a manual custom Criterion")
+            if self.route_modifiers is not None:
+                raise ValueError("route modifiers apply only to Maps custom Criteria")
+            return self
+        if self.refresh_class is RefreshClass.MANUAL:
+            raise ValueError("refresh_class 'manual' requires acquisition 'manual'")
         if self.requires_tool in (RequiresTool.VISION, RequiresTool.WEB_SEARCH):
             raise ValueError(f"custom route {self.requires_tool.value!r} is deferred")
         expected = (

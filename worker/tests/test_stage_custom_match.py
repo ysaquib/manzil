@@ -142,3 +142,61 @@ def test_custom_match_rejects_values_outside_the_author_schema() -> None:
 
     with pytest.raises(StageRetryable, match="violates its schema"):
         asyncio.run(custom_match_stage(_state(), StageCtx(rubric=[criterion], call_structured=llm)))
+
+
+def _manual_criterion(*, scope: str = "property") -> RubricCriterion:
+    return RubricCriterion(
+        hunt_id=uuid4(),
+        custom_def=CustomCriterionDef(
+            key=f"custom:{uuid4()}",
+            label="Landlord was straight with us",
+            description="How the leasing agent came across on the phone.",
+            fact_scope=scope,
+            value_schema={"type": "string", "enum": ["evasive", "fine", "great"]},
+            acquisition="manual",
+            refresh_class=RefreshClass.MANUAL,
+            routing_confirmed=True,
+        ),
+        options=[RubricOption(match=OptionMatch(op=MatchOp.EQ, value="great"), delta=1)],
+    )
+
+
+def test_manual_custom_criteria_never_reach_the_stage() -> None:
+    """A manual Criterion has no producer: an Override is its only value path,
+    so CUSTOM_MATCH must not dispatch — not even to warn about an unknown route."""
+    criterion = _manual_criterion()
+    # An empty FakeLLM raises on any call, so a dispatch here fails loudly.
+    llm = FakeLLM({})
+
+    out = asyncio.run(
+        custom_match_stage(_state(), StageCtx(rubric=[criterion], call_structured=llm))
+    )
+
+    assert out.custom_claims == []
+    assert out.warnings == []
+
+
+def test_a_manual_criterion_does_not_suppress_its_extracted_siblings() -> None:
+    manual = _manual_criterion()
+    text = _criterion()
+    llm = FakeLLM(
+        {
+            "custom_match": {
+                "results": [
+                    {
+                        "target": "property",
+                        "value": True,
+                        "confidence": "high",
+                        "source_url": URL,
+                        "evidence_quote": "quiet hours run from 10 PM to 7 AM",
+                    }
+                ]
+            }
+        }
+    )
+
+    out = asyncio.run(
+        custom_match_stage(_state(), StageCtx(rubric=[manual, text], call_structured=llm))
+    )
+
+    assert [claim.criterion_key for claim in out.custom_claims] == [text.custom_def.key]

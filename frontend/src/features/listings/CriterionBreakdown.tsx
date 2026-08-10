@@ -437,6 +437,11 @@ function CriterionRow({
   const showOverrideDot = savedOverride && !isPending;
   const valueOverridden = savedOverride || isPending;
   const evidenceOverridden = savedOverride || isPending;
+  // An extracted Criterion reading unknown means the pipeline found nothing; a
+  // manual one means nobody has answered it yet. Those are different problems
+  // and must not render identically (§9.2).
+  const needsAnswer =
+    entry?.acquisition === "manual" && criterion.unknown && !isPending && !valueOverridden;
   const flag = rowFlag(criterion, extraction, isPending);
   const showRevert = showOverrideDot || isPending;
 
@@ -480,9 +485,16 @@ function CriterionRow({
         size="sm"
         fw={600}
         className={valueOverridden ? classes.overridden : undefined}
-        c={criterion.unknown && !isPending && !valueOverridden ? "dimmed" : undefined}
+        c={
+          needsAnswer
+            ? undefined
+            : criterion.unknown && !isPending && !valueOverridden
+              ? "dimmed"
+              : undefined
+        }
+        fs={needsAnswer ? "italic" : undefined}
       >
-        {formatCriterionValue(value, criterion.key)}
+        {needsAnswer ? "Needs your answer" : formatCriterionValue(value, criterion.key)}
       </Text>
       <Text
         size="sm"

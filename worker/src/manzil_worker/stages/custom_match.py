@@ -55,6 +55,10 @@ def _active_customs(state: RunState, ctx: StageCtx):
         custom = criterion.custom_def
         if custom is None or (selected and custom.key not in selected):
             continue
+        if custom.is_manual:
+            # Manual Criteria have no producer: a person supplies the value via
+            # Override directly, so CUSTOM_MATCH never dispatches for them.
+            continue
         if state.job_type.value == "refresh" and state.refresh_fields and not selected:
             if custom.requires_tool is None and "listing_details" not in state.refresh_fields:
                 continue
