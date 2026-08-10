@@ -1,5 +1,5 @@
 import { MantineProvider } from "@mantine/core";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -79,6 +79,20 @@ describe("CommentsSection", () => {
       { commentId: "c1", body: "Booked a tour" },
       expect.objectContaining({ onSuccess: expect.any(Function) }),
     );
+  });
+
+  it("confirms before deleting, showing the comment it is about to take", async () => {
+    const user = userEvent.setup();
+    renderSection();
+    await user.click(screen.getByRole("button", { name: "comment actions" }));
+    await user.click(await screen.findByRole("menuitem", { name: "Delete" }));
+
+    expect(mutations.remove).not.toHaveBeenCalled();
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Worth touring")).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Delete comment" }));
+    expect(mutations.remove).toHaveBeenCalledWith("c1", expect.anything());
   });
 
   it("can scope a new comment to the current Unit Group", async () => {

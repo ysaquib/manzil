@@ -1,4 +1,4 @@
-import { fireEvent, screen } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -157,12 +157,19 @@ describe("the defect log", () => {
     });
   });
 
-  it("removes a defect, and says the check keeps its answer", async () => {
+  it("removes a defect after confirming, and says the check keeps its answer", async () => {
     mockDefects = [defect({ title: "Window won't latch" })];
     render();
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: /Remove defect: Window won't latch/ }));
-    expect(deleteDefect).toHaveBeenCalledWith("d1");
+
+    // A mis-tap on a phone must not delete the tour's record of the problem.
+    expect(deleteDefect).not.toHaveBeenCalled();
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/check it came from keeps its answer/)).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Remove defect" }));
+    expect(deleteDefect).toHaveBeenCalledWith("d1", expect.anything());
   });
 
   it("logs something the checklist never asked about, attached to the active unit", async () => {

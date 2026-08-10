@@ -14,11 +14,13 @@ import dayjs from "dayjs";
 import { useState } from "react";
 
 import { useAuth } from "../../auth/useAuth";
+import { ConfirmDeleteModal } from "../../components/ConfirmDeleteModal";
 import {
   useComments,
   useCreateComment,
   useDeleteComment,
   useUpdateComment,
+  type Comment,
   type HuntMember,
 } from "./api";
 import { memberColor } from "./memberColors";
@@ -48,6 +50,7 @@ export function CommentsSection({
   const [scopeToCurrentGroup, setScopeToCurrentGroup] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editBody, setEditBody] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<Comment | null>(null);
   const { data: comments = [] } = useComments(listingId);
   const create = useCreateComment(listingId);
   const update = useUpdateComment(listingId);
@@ -138,7 +141,7 @@ export function CommentsSection({
                   </Menu.Item>
                   <Menu.Item
                     color="red"
-                    onClick={() => remove.mutate(comment.id)}
+                    onClick={() => setPendingDelete(comment)}
                     leftSection={<IconTrash size={14} stroke={1.5} />}
                   >
                     Delete
@@ -206,6 +209,35 @@ export function CommentsSection({
           </Button>
         </Group>
       )}
+
+      {/* A comment is other members' context too, and the Delete item sits one
+          pixel under Edit in the same menu — so it asks first. Short and
+          untyped: the subject is right there in the modal. */}
+      <ConfirmDeleteModal
+        opened={pendingDelete !== null}
+        onClose={() => setPendingDelete(null)}
+        noun={{ singular: "comment", plural: "comments" }}
+        title="Delete this comment?"
+        confirmLabel="Delete comment"
+        requireTypedConfirmation={false}
+        loading={remove.isPending}
+        warning="It disappears for everyone in this Hunt and cannot be restored."
+        targets={
+          pendingDelete
+            ? [
+                {
+                  id: pendingDelete.id,
+                  label: pendingDelete.body,
+                  description: dayjs(pendingDelete.created_at).format("MMM D, YYYY"),
+                },
+              ]
+            : []
+        }
+        onConfirm={() => {
+          if (!pendingDelete) return;
+          remove.mutate(pendingDelete.id, { onSuccess: () => setPendingDelete(null) });
+        }}
+      />
     </Stack>
   );
 }
