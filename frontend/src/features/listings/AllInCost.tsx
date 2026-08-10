@@ -7,6 +7,7 @@ import { Box, Group, Stack, Text, Tooltip } from "@mantine/core";
 import { IconAlertTriangle, IconUserEdit } from "@tabler/icons-react";
 
 import type { AllInComponents } from "./types";
+import classes from "./OverviewTable.module.css";
 
 const BADGE_COPY: Record<string, string> = {
   fees_unverified: "Fees unverified",
@@ -58,7 +59,9 @@ export function AllInCell({
   const overridden = composition?.overridden === true;
   return (
     <Group gap={6} wrap="nowrap">
-      <Text size="sm">{allIn === null ? "—" : `$${allIn.toLocaleString()}`}</Text>
+      <Text size="sm" className={classes.figure}>
+        {allIn === null ? "—" : `$${allIn.toLocaleString()}`}
+      </Text>
       {overridden ? (
         <Tooltip label="Overridden manually — see the drawer for the composed figure">
           <Box c="dimmed" display="flex" style={{ flexShrink: 0 }}>
@@ -68,7 +71,7 @@ export function AllInCell({
       ) : (
         allIn !== null &&
         est > 0 && (
-          <Text size="xs" c="dimmed">
+          <Text size="xs" c="dimmed" className={classes.figure}>
             (~${est.toLocaleString()} est.)
           </Text>
         )
