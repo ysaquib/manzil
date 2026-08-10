@@ -247,6 +247,27 @@ export interface paths {
         patch: operations["patch_member_v1_hunts__hunt_id__members__target_user_id__patch"];
         trace?: never;
     };
+    "/v1/hunts/{hunt_id}/leave": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Leave Hunt
+         * @description Any member may leave — except the Owner (transfer first) and the last
+         *     member (archive instead).
+         */
+        post: operations["leave_hunt_v1_hunts__hunt_id__leave_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/hunts/{hunt_id}/transfer-ownership": {
         parameters: {
             query?: never;
@@ -4832,6 +4853,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MemberResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    leave_hunt_v1_hunts__hunt_id__leave_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

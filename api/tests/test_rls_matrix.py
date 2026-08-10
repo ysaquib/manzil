@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import asyncpg
 import pytest
@@ -510,6 +510,54 @@ def test_rls_owner_row_cannot_be_deleted(collab_hunt, seeded_users) -> None:
         .delete()
         .eq("hunt_id", collab_hunt["hunt_id"])
         .eq("user_id", seeded_users["owner"].user_id)
+        .execute()
+    )
+    assert response.data == []
+
+
+def test_rls_member_can_delete_only_their_own_membership(collab_hunt, seeded_users) -> None:
+    """Leaving is a self-delete, and it is bounded to the caller's own row."""
+    hunt_id = collab_hunt["hunt_id"]
+    others = (
+        seeded_users["member"]
+        .supabase.table("hunt_members")
+        .delete()
+        .eq("hunt_id", hunt_id)
+        .eq("user_id", seeded_users["curator"].user_id)
+        .execute()
+    )
+    assert others.data == []
+
+    own = (
+        seeded_users["member"]
+        .supabase.table("hunt_members")
+        .delete()
+        .eq("hunt_id", hunt_id)
+        .eq("user_id", seeded_users["member"].user_id)
+        .execute()
+    )
+    assert [row["user_id"] for row in own.data] == [seeded_users["member"].user_id]
+
+
+@pytest.mark.asyncio
+async def test_rls_last_member_cannot_leave_directly(collab_hunt, seeded_users, db_pool) -> None:
+    """The count clause, proven rather than inferred.
+
+    Rule 1 (no Owner may leave) makes this state unreachable through the app:
+    the last member of a Hunt is always its Owner. Service-role SQL can produce
+    it anyway, so strip the Hunt down to a lone Curator and check the policy
+    still refuses — that is what the clause is there for.
+    """
+    hunt_id = collab_hunt["hunt_id"]
+    await db_pool.execute(
+        "delete from hunt_members where hunt_id = $1 and role <> 'curator'", UUID(hunt_id)
+    )
+    response = (
+        seeded_users["curator"]
+        .supabase.table("hunt_members")
+        .delete()
+        .eq("hunt_id", hunt_id)
+        .eq("user_id", seeded_users["curator"].user_id)
         .execute()
     )
     assert response.data == []
