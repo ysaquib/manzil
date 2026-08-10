@@ -46,7 +46,9 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
+from dotenv import load_dotenv
 
+load_dotenv()
 import httpx
 
 MANAGEMENT_API = "https://api.supabase.com"
@@ -280,9 +282,9 @@ def main() -> int:
 
     ref = os.environ.get("SUPABASE_PROJECT_REF")
     token = os.environ.get("SUPABASE_ACCESS_TOKEN")
-    url = os.environ.get("SUPABASE_URL")
-    anon_key = os.environ.get("SUPABASE_ANON_KEY")
-    frontend_url = os.environ.get("MANZIL_FRONTEND_URL")
+    url = os.environ.get("SUPABASE_PROD_URL")
+    anon_key = os.environ.get("SUPABASE_PUB_KEY")
+    frontend_url = os.environ.get("MANZIL_PROD_FRONTEND_URL")
 
     if url and ("localhost" in url or "127.0.0.1" in url):
         sys.exit(
