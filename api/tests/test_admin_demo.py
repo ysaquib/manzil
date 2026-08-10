@@ -178,9 +178,7 @@ async def test_publication_rechecks_preflight_blockers_server_side(demo_admin, d
     client, hunt_id = demo_admin
     review = await client.post("/v1/admin/demo/preflight", json={"hunt_id": str(hunt_id)})
     assert review.status_code == 200, review.text
-    await db_pool.execute(
-        "update hunt_members set display_name = null where hunt_id = $1", hunt_id
-    )
+    await db_pool.execute("update hunt_members set display_name = null where hunt_id = $1", hunt_id)
 
     bypass = await client.post(
         "/v1/admin/demo/publications",
