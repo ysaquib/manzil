@@ -29,9 +29,13 @@ COPY worker/prompts/vision_refs worker/prompts/vision_refs
 
 RUN uv sync --frozen --package manzil-api --extra vision-onnx --no-dev
 
-RUN --mount=type=secret,id=manzil_clip_archive_url \
+RUN --mount=type=secret,id=manzil_clip_archive_url,required=true \
     set -eu; \
     archive_url="$(cat /run/secrets/manzil_clip_archive_url)"; \
+    if [ -z "$(printf '%s' "$archive_url" | tr -d '[:space:]')" ]; then \
+      echo >&2 'BuildKit secret manzil_clip_archive_url is blank; provide the authenticated HTTPS URL for the pinned CLIP ONNX archive'; \
+      exit 1; \
+    fi; \
     mkdir -p .manzil/models/clip-vision-uint8; \
     curl --proto '=https' --tlsv1.2 --fail --location --retry 5 \
       "$archive_url" -o /tmp/manzil-clip-vision-uint8.tar.gz; \

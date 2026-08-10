@@ -111,13 +111,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [[ -z "${MANZIL_CLIP_ARCHIVE_URL//[[:space:]]/}" ]]; then
+            echo "::error::Repository secret MANZIL_CLIP_ARCHIVE_URL is missing or blank. Set it to the authenticated HTTPS URL for the pinned CLIP ONNX archive."
+            exit 1
+          fi
+          trap 'rm -f /tmp/manzil_clip_archive_url' EXIT
           printf '%s' "$MANZIL_CLIP_ARCHIVE_URL" > /tmp/manzil_clip_archive_url
           DOCKER_BUILDKIT=1 docker build \
             --platform linux/amd64 \
             --secret id=manzil_clip_archive_url,src=/tmp/manzil_clip_archive_url \
             -t manzil-api:ci \
             .
-          rm -f /tmp/manzil_clip_archive_url
       - name: Validate image contents
         shell: bash
         run: |
