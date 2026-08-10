@@ -13,6 +13,7 @@ import {
   IconGauge,
   IconListCheck,
   IconMessage2,
+  IconPresentation,
   IconServer2,
   IconShieldLock,
   IconUsers,
@@ -36,6 +37,7 @@ const ADMIN_ITEMS: RailItem[] = [
   { to: "/admin/hunts", label: "Hunts", icon: IconClipboardList },
   { to: "/admin/jobs", label: "Jobs", icon: IconListCheck },
   { to: "/admin/feedback", label: "Feedback", icon: IconMessage2 },
+  { to: "/admin/demo", label: "Demo Mode", icon: IconPresentation },
 ];
 
 const OPERATIONS_ITEMS: RailItem[] = [
