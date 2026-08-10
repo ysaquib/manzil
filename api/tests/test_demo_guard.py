@@ -261,6 +261,45 @@ async def _demo_claims(conn) -> dict:
     return {"manzil_demo": True, "manzil_demo_gen": generation}
 
 
+async def _select_demo_hunt(conn, hunt_id: UUID) -> UUID:
+    """Give an RLS test the complete release configuration production requires."""
+    owner = await conn.fetchval("select owner_id from hunts where id = $1", hunt_id)
+    await conn.execute(
+        """
+        update hunt_members
+           set display_name = coalesce(display_name, 'Demo collaborator')
+         where hunt_id = $1
+        """,
+        hunt_id,
+    )
+    await conn.execute(
+        "insert into site_admins (user_id) values ($1) on conflict do nothing",
+        owner,
+    )
+    generation = await conn.fetchval("select demo_generation from site_settings")
+    release = await conn.fetchval(
+        """
+        insert into private.demo_publications
+            (hunt_id, requested_by, state, expected_generation, source_fingerprint,
+             published_at, finished_at)
+        values ($1, $2, 'ready', $3, 'guard-test', now(), now())
+        returning id
+        """,
+        hunt_id,
+        owner,
+        generation,
+    )
+    await conn.execute(
+        """
+        update site_settings
+           set demo_enabled = true, demo_hunt_id = $1, demo_release_id = $2
+        """,
+        hunt_id,
+        release,
+    )
+    return release
+
+
 async def test_demo_reads_are_scoped_to_the_demo_hunt(collab_hunt, demo_conn) -> None:
     """Not merely "returns nothing" -- exactly the Demo Hunt's own rows.
 
@@ -275,7 +314,7 @@ async def test_demo_reads_are_scoped_to_the_demo_hunt(collab_hunt, demo_conn) ->
     """
     conn, user_id = demo_conn
     hunt_id = UUID(collab_hunt["hunt_id"])
-    await conn.execute("update site_settings set demo_enabled = true, demo_hunt_id = $1", hunt_id)
+    await _select_demo_hunt(conn, hunt_id)
 
     outsider = await conn.fetchval(
         "insert into properties (name, canonical_address) "
@@ -328,7 +367,7 @@ async def test_a_claimed_token_goes_dark_when_the_marker_row_is_deleted(
     """The C1 case. A live token must lose access, not gain it."""
     conn, user_id = demo_conn
     hunt_id = UUID(collab_hunt["hunt_id"])
-    await conn.execute("update site_settings set demo_enabled = true, demo_hunt_id = $1", hunt_id)
+    await _select_demo_hunt(conn, hunt_id)
     claims = await _demo_claims(conn)
     assert await _visible_property_ids(conn, user_id, **claims), "precondition"
 
@@ -341,7 +380,7 @@ async def test_a_claimed_token_goes_dark_when_the_singleton_names_someone_else(
 ) -> None:
     conn, user_id = demo_conn
     hunt_id = UUID(collab_hunt["hunt_id"])
-    await conn.execute("update site_settings set demo_enabled = true, demo_hunt_id = $1", hunt_id)
+    await _select_demo_hunt(conn, hunt_id)
     claims = await _demo_claims(conn)
 
     await conn.execute("delete from demo_accounts")
@@ -359,7 +398,7 @@ async def test_a_claimed_token_goes_dark_when_the_demo_hunt_is_unset(
     half of the same inconsistency -- and it must read nothing, not everything."""
     conn, user_id = demo_conn
     hunt_id = UUID(collab_hunt["hunt_id"])
-    await conn.execute("update site_settings set demo_enabled = true, demo_hunt_id = $1", hunt_id)
+    await _select_demo_hunt(conn, hunt_id)
     claims = await _demo_claims(conn)
 
     await conn.execute("update site_settings set demo_enabled = false, demo_hunt_id = null")
@@ -378,7 +417,7 @@ async def test_a_token_issued_before_a_disable_stays_dark_after_re_enabling(
     conn, user_id = demo_conn
     hunt_id = UUID(collab_hunt["hunt_id"])
     actor = seeded_users["owner"].user_id
-    await conn.execute("update site_settings set demo_enabled = true, demo_hunt_id = $1", hunt_id)
+    await _select_demo_hunt(conn, hunt_id)
 
     claims = await _demo_claims(conn)
     assert await _visible_property_ids(conn, user_id, **claims), "precondition"
@@ -412,7 +451,7 @@ async def test_a_claimed_token_with_no_marker_cannot_read_a_real_membership(
     """
     conn, _ = demo_conn
     hunt_id = UUID(collab_hunt["hunt_id"])
-    await conn.execute("update site_settings set demo_enabled = true, demo_hunt_id = $1", hunt_id)
+    await _select_demo_hunt(conn, hunt_id)
     claims = await _demo_claims(conn)
     await conn.execute("delete from demo_accounts")
 
@@ -437,7 +476,7 @@ async def test_an_unclaimed_ordinary_user_is_untouched_by_all_of_this(
     """The other half of the contract: none of the above may narrow real users."""
     conn, _ = demo_conn
     hunt_id = UUID(collab_hunt["hunt_id"])
-    await conn.execute("update site_settings set demo_enabled = true, demo_hunt_id = $1", hunt_id)
+    await _select_demo_hunt(conn, hunt_id)
     total = await conn.fetchval("select count(*) from properties")
     visible = await _visible_property_ids(conn, seeded_users["owner"].user_id)
     assert len(visible) == total
@@ -452,7 +491,7 @@ async def test_kill_switch_darkens_reads_at_the_database(collab_hunt, demo_conn)
     conn, user_id = demo_conn
     hunt_id = UUID(collab_hunt["hunt_id"])
 
-    await conn.execute("update site_settings set demo_enabled = true, demo_hunt_id = $1", hunt_id)
+    await _select_demo_hunt(conn, hunt_id)
     assert await _visible_property_ids(conn, user_id)
 
     await conn.execute("update site_settings set demo_enabled = false")
@@ -556,7 +595,7 @@ async def test_demo_role_is_synthesised_and_follows_the_kill_switch(collab_hunt,
         finally:
             await inner.rollback()
 
-    await conn.execute("update site_settings set demo_enabled = true, demo_hunt_id = $1", hunt_id)
+    await _select_demo_hunt(conn, hunt_id)
     assert await role_for(hunt_id) == "curator"
 
     other = await conn.fetchval(
@@ -647,7 +686,7 @@ async def test_kill_switch_darkens_hunt_scoped_reads(collab_hunt, demo_conn) -> 
         hunt_id,
         user_id,
     )
-    await conn.execute("update site_settings set demo_enabled = true, demo_hunt_id = $1", hunt_id)
+    await _select_demo_hunt(conn, hunt_id)
     # The Curator role is synthesised, so no membership row is inserted. The
     # comment is authored by a real member -- the demo principal cannot write.
     await conn.execute(
@@ -684,7 +723,7 @@ async def test_demo_cannot_read_a_foreign_hunt_even_when_enabled(
         "insert into hunts (name, owner_id) values ('Other Hunt', $1) returning id",
         seeded_users["owner"].user_id,
     )
-    await conn.execute("update site_settings set demo_enabled = true, demo_hunt_id = $1", hunt_id)
+    await _select_demo_hunt(conn, hunt_id)
     assert (await _demo_visible_counts(conn, user_id, other))["hunts"] == 0
 
 
@@ -704,7 +743,7 @@ async def test_storage_objects_are_scoped_for_a_demo_account(collab_hunt, demo_c
         "insert into properties (name, canonical_address)"
         " values ('Foreign', '9 Elsewhere') returning id"
     )
-    await conn.execute("update site_settings set demo_enabled = true, demo_hunt_id = $1", hunt_id)
+    await _select_demo_hunt(conn, hunt_id)
     for prop in (in_scope, out_of_scope):
         await conn.execute(
             "insert into storage.objects (bucket_id, name) values ($1, $2)",
@@ -859,7 +898,7 @@ async def test_demo_metadata_is_not_directly_readable(collab_hunt, demo_conn) ->
 async def test_demo_context_exposes_exactly_two_facts(collab_hunt, demo_conn) -> None:
     conn, user_id = demo_conn
     hunt_id = UUID(collab_hunt["hunt_id"])
-    await conn.execute("update site_settings set demo_enabled = true, demo_hunt_id = $1", hunt_id)
+    await _select_demo_hunt(conn, hunt_id)
     inner = conn.transaction()
     await inner.start()
     try:
