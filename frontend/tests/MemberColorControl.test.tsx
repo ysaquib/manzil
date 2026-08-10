@@ -29,6 +29,27 @@ describe("MemberColorControl", () => {
     expect(screen.getAllByRole("radio")).toHaveLength(MEMBER_COLOR_TOKENS.length + 1);
   });
 
+  it("offers every non-neutral theme palette and excludes dark and gray", () => {
+    expect(MEMBER_COLOR_TOKENS).toEqual([
+      "dusky",
+      "brick",
+      "orange",
+      "ochre",
+      "olive",
+      "moss",
+      "teal",
+      "cyan",
+      "blue",
+      "indigo",
+      "violet",
+      "plum",
+      "pink",
+    ]);
+    expect(MEMBER_COLOR_TOKENS).not.toContain("dark");
+    expect(MEMBER_COLOR_TOKENS).not.toContain("gray");
+    expect(MEMBER_COLOR_TOKENS).not.toContain("stone");
+  });
+
   it("marks the current token as the checked swatch", () => {
     renderControl({ value: "ochre" });
     expect(swatch("ochre")).toHaveAttribute("aria-checked", "true");

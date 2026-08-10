@@ -82,9 +82,9 @@ async def test_member_color_accepts_token_and_canonicalizes_hex(
     collab_hunt, as_member: AsyncClient, seeded_users
 ) -> None:
     path = f"/v1/hunts/{collab_hunt['hunt_id']}/members/{seeded_users['member'].user_id}"
-    token = await as_member.patch(path, json={"color": "moss"})
+    token = await as_member.patch(path, json={"color": "cyan"})
     assert token.status_code == 200
-    assert token.json()["color"] == "moss"
+    assert token.json()["color"] == "cyan"
     custom = await as_member.patch(path, json={"color": "#a1b2c3"})
     assert custom.status_code == 200
     assert custom.json()["color"] == "#A1B2C3"
