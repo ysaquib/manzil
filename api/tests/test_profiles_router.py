@@ -8,7 +8,7 @@ from httpx import AsyncClient
 from manzil_api.config import get_settings
 from manzil_api.database import create_service_client
 
-MEMBER_COLOR_TOKENS = ("moss", "ochre", "brick", "olive", "stone", "plum")
+DEFAULT_MEMBER_COLOR_TOKENS = ("moss", "ochre", "brick", "olive", "stone", "plum")
 
 
 async def test_profile_onboarding_upserts_and_trims(
@@ -26,7 +26,7 @@ async def test_profile_onboarding_upserts_and_trims(
     assert created.status_code == 200
     assert created.json()["default_display_name"] == "Yusuf"
     assert created.json()["user_id"] == seeded_users["owner"].user_id
-    assert created.json()["default_color"] in MEMBER_COLOR_TOKENS
+    assert created.json()["default_color"] in DEFAULT_MEMBER_COLOR_TOKENS
 
     fetched = await as_owner.get("/v1/profile")
     assert fetched.json()["default_display_name"] == "Yusuf"
@@ -39,7 +39,7 @@ async def test_profile_rejects_blank_name(as_owner: AsyncClient) -> None:
 
 
 async def test_profile_rejects_obsolete_and_null_colors(as_owner: AsyncClient) -> None:
-    for bad in ("dusk", "clay", None):
+    for bad in ("dark", "gray", "dusk", "clay", None):
         response = await as_owner.put(
             "/v1/profile",
             json={"default_display_name": "Yusuf", "default_color": bad},
@@ -58,6 +58,15 @@ async def test_profile_accepts_custom_hex(as_owner: AsyncClient, db_pool, seeded
     )
     assert response.status_code == 200
     assert response.json()["default_color"] == "#AABBCC"
+
+
+async def test_profile_accepts_new_theme_palette_color(as_owner: AsyncClient) -> None:
+    response = await as_owner.put(
+        "/v1/profile",
+        json={"default_display_name": "Yusuf", "default_color": "cyan"},
+    )
+    assert response.status_code == 200
+    assert response.json()["default_color"] == "cyan"
 
 
 @pytest.mark.asyncio
@@ -93,7 +102,7 @@ async def test_profile_default_color_assigns_unused_then_wraps(
         assert resp.status_code == 200
         assigned.append(resp.json()["default_color"])
 
-    assert assigned == list(MEMBER_COLOR_TOKENS[:4])
+    assert assigned == list(DEFAULT_MEMBER_COLOR_TOKENS[:4])
     assert len(set(assigned)) == 4
 
     admin = create_service_client(get_settings())
@@ -121,7 +130,7 @@ async def test_profile_default_color_assigns_unused_then_wraps(
             )
             assigned.append(color)
 
-        assert assigned[:6] == list(MEMBER_COLOR_TOKENS)
+        assert assigned[:6] == list(DEFAULT_MEMBER_COLOR_TOKENS)
         assert assigned[6] == "moss"
         assert assigned[7] == "ochre"
     finally:

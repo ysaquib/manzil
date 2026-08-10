@@ -12,7 +12,24 @@ from manzil_api.invites.exceptions import InviteGone, InviteNotFound
 from manzil_api.invites.schemas import InviteAccepted, InviteCreate, InviteResponse
 from supabase import Client
 
-MEMBER_COLOR_TOKENS = ("moss", "ochre", "brick", "olive", "stone", "plum")
+MEMBER_COLOR_TOKENS = (
+    "dusky",
+    "brick",
+    "orange",
+    "ochre",
+    "olive",
+    "moss",
+    "teal",
+    "cyan",
+    "blue",
+    "indigo",
+    "violet",
+    "plum",
+    "pink",
+)
+# Existing profiles may still carry the former gray-backed `stone` token. It
+# remains valid on reads/writes but is intentionally absent from the picker.
+ACCEPTED_MEMBER_COLOR_TOKENS = (*MEMBER_COLOR_TOKENS, "stone")
 
 
 def _response(row: dict[str, Any], frontend_url: str) -> InviteResponse:

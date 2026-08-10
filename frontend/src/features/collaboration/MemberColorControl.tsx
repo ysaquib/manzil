@@ -1,10 +1,10 @@
 // Member color picker (P3-16 reshape, DESIGN §20 v3.27): a row of swatches
 // rather than a dropdown.
 //
-// A color is chosen by looking at it, so the six palette tokens are all visible
+// A color is chosen by looking at it, so every non-neutral theme color is visible
 // at once — a Select hid every option behind a click and named them in words
 // ("moss", "ochre") that only mean anything once you have already seen the
-// color. The seventh swatch opens the custom picker and previews the custom
+// color. The final swatch opens the custom picker and previews the custom
 // color it would apply.
 import { ColorInput, Group, Stack, Text, UnstyledButton } from "@mantine/core";
 import { IconPencil } from "@tabler/icons-react";
