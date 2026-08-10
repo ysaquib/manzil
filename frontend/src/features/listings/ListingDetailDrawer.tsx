@@ -10,6 +10,7 @@ import {
   Box,
   Button,
   Center,
+  Divider,
   Drawer,
   Group,
   Loader,
@@ -39,6 +40,7 @@ import { ListingLocationMap } from "../map/ListingLocationMap";
 import { useResolvedCatalog } from "../rubric/api";
 import { activeOverrides, extractionForFloorPlan } from "./overrides";
 import { CriterionBreakdown } from "./CriterionBreakdown";
+import { ManualAnswerPanel, useManualCriteria } from "./ManualAnswerPanel";
 import { DrawerHero } from "./DrawerHero";
 import { CostAndFees } from "./CostAndFees";
 import { FloorPlanDetailModal } from "./FloorPlanDetailModal";
@@ -98,6 +100,7 @@ export function ListingDetailDrawer({
   jobs = [],
   answeringCheckpoint = false,
   onAnswerCheckpoint,
+  isGhost = false,
 }: {
   huntId: string;
   selection: DrawerSelection | null;
@@ -108,6 +111,7 @@ export function ListingDetailDrawer({
   jobs?: Job[];
   answeringCheckpoint?: boolean;
   onAnswerCheckpoint?: (jobId: string, choice: string, text?: string) => void;
+  isGhost?: boolean;
 }) {
   const isMobile = useMediaQuery("(max-width: 48em)");
   const onCloseRef = useRef(onClose);
@@ -140,6 +144,7 @@ export function ListingDetailDrawer({
             jobs={jobs}
             answeringCheckpoint={answeringCheckpoint}
             onAnswerCheckpoint={onAnswerCheckpoint}
+            isGhost={isGhost}
           />
         ) : null}
       </Drawer.Content>
@@ -158,6 +163,7 @@ function SelectionGate({
   jobs,
   answeringCheckpoint,
   onAnswerCheckpoint,
+  isGhost,
 }: {
   huntId: string;
   selection: DrawerSelection;
@@ -169,6 +175,7 @@ function SelectionGate({
   jobs: Job[];
   answeringCheckpoint: boolean;
   onAnswerCheckpoint?: (jobId: string, choice: string, text?: string) => void;
+  isGhost: boolean;
 }) {
   const { data: listings, isLoading: listingsLoading } = useListings(huntId);
   const { listing } = resolveRow(listings ?? [], selection.listingId, selection.groupKey);
@@ -204,6 +211,7 @@ function SelectionGate({
         jobs={jobs}
         answeringCheckpoint={answeringCheckpoint}
         onAnswerCheckpoint={onAnswerCheckpoint}
+        isGhost={isGhost}
       />
     </ListingDetailDraftProvider>
   );
@@ -220,6 +228,7 @@ function DrawerShell({
   jobs,
   answeringCheckpoint,
   onAnswerCheckpoint,
+  isGhost,
 }: {
   huntId: string;
   selection: DrawerSelection;
@@ -231,6 +240,7 @@ function DrawerShell({
   jobs: Job[];
   answeringCheckpoint: boolean;
   onAnswerCheckpoint?: (jobId: string, choice: string, text?: string) => void;
+  isGhost: boolean;
 }) {
   const { draftPins, setDraftPin, isDirty, saving, saveAll, resetDraft } = useListingDetailDraft();
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
@@ -263,6 +273,7 @@ function DrawerShell({
     huntId,
   );
   const { data: overrides } = useOverrides(listing?.id ?? "");
+  const manualCriteria = useManualCriteria(huntId);
   const { data: fees } = useFees(listing?.id ?? "");
   const { data: utilityOverrides } = useUtilityOverrides(listing?.id ?? "");
   const { data: images, isLoading: imagesLoading } = usePropertyImages(
@@ -426,6 +437,7 @@ function DrawerShell({
                 <AutoResolvedCheckpointReview
                   checkpoint={autoResolvedJob.auto_resolved_checkpoint}
                   canAnswer={
+                    isGhost === true ||
                     currentMember?.role === "owner" ||
                     currentMember?.role === "curator" ||
                     currentMember?.user_id === listing.added_by
@@ -434,6 +446,16 @@ function DrawerShell({
                   onAnswer={(choice, text) =>
                     onAnswerCheckpoint?.(autoResolvedJob.id, choice, text)
                   }
+                />
+              </SectionCard>
+            )}
+
+            {manualCriteria.length > 0 && (
+              <SectionCard title="Your answers">
+                <ManualAnswerPanel
+                  huntId={huntId}
+                  overrides={overrides ?? []}
+                  floorPlanId={displayFloorPlanId}
                 />
               </SectionCard>
             )}
@@ -562,6 +584,7 @@ function DrawerShell({
                     Ratings become available with a Unit Group.
                   </Text>
                 )}
+                <Divider />
                 <CommentsSection
                   listingId={listing.id}
                   members={members}
@@ -595,7 +618,9 @@ function DrawerShell({
                 listingId={listing.id}
                 singleSourceReason={listing.single_source_reason}
                 canEdit={
-                  currentMember?.role === "owner" || currentMember?.user_id === listing.added_by
+                  isGhost === true ||
+                  currentMember?.role === "owner" ||
+                  currentMember?.user_id === listing.added_by
                 }
                 jobs={jobs}
               />

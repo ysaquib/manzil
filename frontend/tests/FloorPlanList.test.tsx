@@ -279,7 +279,7 @@ describe("FloorPlanList — collapsed cards", () => {
 
   it("says which plan the Unit Group row is showing", () => {
     renderList();
-    expect(screen.getByText(/No pin — showing best score:/)).toBeInTheDocument();
+    expect(screen.getByText(/No pin — showing preferred plan:/)).toBeInTheDocument();
   });
 });
 
@@ -304,7 +304,7 @@ describe("FloorPlanList — pin", () => {
     await user.click(screen.getByRole("button", { name: "Pin The Cedar for 1 bd / 1 ba" }));
     await user.click(screen.getByRole("button", { name: "Unpin The Cedar for 1 bd / 1 ba" }));
 
-    expect(screen.getByText(/No pin — showing best score:/)).toBeInTheDocument();
+    expect(screen.getByText(/No pin — showing preferred plan:/)).toBeInTheDocument();
   });
 });
 

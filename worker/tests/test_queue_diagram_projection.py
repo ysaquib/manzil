@@ -79,8 +79,14 @@ def _state(url: str, *, images: list[PropertyImageIn], plans: list[FloorPlanIn])
     state.scores = [
         PlanScore(
             plan_name=plan.plan_name,
-            breakdown={"base": 10, "total": 10, "rubric_version": 1,
-                       "clamped": False, "gates": [], "criteria": []},
+            breakdown={
+                "base": 10,
+                "total": 10,
+                "rubric_version": 1,
+                "clamped": False,
+                "gates": [],
+                "criteria": [],
+            },
         )
         for plan in plans
     ]
@@ -126,8 +132,7 @@ async def test_refreshing_one_source_never_retires_another_sources_images(
         current = {
             row["content_hash"]
             for row in await pg_pool.fetch(
-                "select content_hash from property_images "
-                "where property_id = $1 and is_current",
+                "select content_hash from property_images where property_id = $1 and is_current",
                 property_id,
             )
         }
@@ -199,9 +204,7 @@ async def test_cap_saturated_partial_does_not_unlink_diagrams(pg_pool: asyncpg.P
             _state(
                 OFFICIAL,
                 plans=[
-                    FloorPlanIn(
-                        response_key="fp1", plan_name="Official Winslow", beds=2, baths=2
-                    )
+                    FloorPlanIn(response_key="fp1", plan_name="Official Winslow", beds=2, baths=2)
                 ],
                 images=[_image("aa" * 16, OFFICIAL, refs=["fp1"])],
             ),
@@ -236,9 +239,7 @@ async def test_an_image_links_only_to_its_own_sources_floor_plan(
             _state(
                 OFFICIAL,
                 plans=[
-                    FloorPlanIn(
-                        response_key="fp1", plan_name="Official Winslow", beds=2, baths=2
-                    )
+                    FloorPlanIn(response_key="fp1", plan_name="Official Winslow", beds=2, baths=2)
                 ],
                 images=[_image("aa" * 16, OFFICIAL, refs=["fp1"])],
             ),
@@ -250,9 +251,7 @@ async def test_an_image_links_only_to_its_own_sources_floor_plan(
             _state(
                 OTHER,
                 plans=[
-                    FloorPlanIn(
-                        response_key="fp1", plan_name="Aggregator Harlow", beds=1, baths=1
-                    )
+                    FloorPlanIn(response_key="fp1", plan_name="Aggregator Harlow", beds=1, baths=1)
                 ],
                 images=[_image("bb" * 16, OTHER, refs=["fp1"])],
             ),

@@ -98,3 +98,69 @@ jobs:
       - run: pnpm test
       # `build` runs tsc against the committed API types, catching drift from the API.
       - run: pnpm build
+
+  docker-api-image:
+    # GitHub withholds repository secrets from Dependabot-triggered workflows,
+    # even though Dependabot's PR head belongs to this repository. Build the
+    # secret-backed production image on ordinary same-repository PRs and pushes;
+    # the push build remains the required verification for Dependabot changes.
+    if: >-
+      github.actor != 'dependabot[bot]' &&
+      (github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
+    env:
+      MANZIL_CLIP_ARCHIVE_URL: ${{ secrets.MANZIL_CLIP_ARCHIVE_URL }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build production API image
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${MANZIL_CLIP_ARCHIVE_URL//[[:space:]]/}" ]]; then
+            echo "::error::Repository secret MANZIL_CLIP_ARCHIVE_URL is missing or blank. Set it to the authenticated HTTPS URL for the pinned CLIP ONNX archive."
+            exit 1
+          fi
+          trap 'rm -f /tmp/manzil_clip_archive_url' EXIT
+          printf '%s' "$MANZIL_CLIP_ARCHIVE_URL" > /tmp/manzil_clip_archive_url
+          DOCKER_BUILDKIT=1 docker build \
+            --platform linux/amd64 \
+            --secret id=manzil_clip_archive_url,src=/tmp/manzil_clip_archive_url \
+            -t manzil-api:ci \
+            .
+      - name: Validate image contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            --env SUPABASE_URL=https://ci.invalid \
+            --env SUPABASE_ANON_KEY=ci-anon-key \
+            --env SUPABASE_SECRET_KEY=ci-secret-key \
+            --env DATABASE_URL=postgresql://ci:ci@localhost:5432/ci \
+            --env MANZIL_WORKER_INPROCESS=false \
+            manzil-api:ci \
+            /app/.venv/bin/python -c 'import manzil_api.main'
+          docker run --rm manzil-api:ci /app/.venv/bin/python -c \
+            'from pathlib import Path; from manzil_worker.vision_onnx import artifact_digest, ONNX_SHADOW_ARTIFACT_SHA256; \
+             p=Path("/app/.manzil/models/clip-vision-uint8"); \
+             assert artifact_digest(p)==ONNX_SHADOW_ARTIFACT_SHA256'
+          docker run --rm manzil-api:ci /app/.venv/bin/python -c \
+            'from manzil_worker.llm.prompt_loader import load_prompt; \
+             [load_prompt(s) for s in ("extract","verify","vision","discover")]'
+          docker run --rm manzil-api:ci /app/.venv/bin/python -c \
+            'from manzil_worker.vision_refs import VISION_REFS_DIR, vision_references_ready; \
+             assert (VISION_REFS_DIR / "manifest.json").is_file(), VISION_REFS_DIR; \
+             assert vision_references_ready()'
+          docker run --rm manzil-api:ci /app/.venv/bin/playwright --version
+      - name: Require ONNX build secret
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        shell: bash
+        run: |
+          set -euo pipefail
+          if DOCKER_BUILDKIT=1 docker build --no-cache --platform linux/amd64 \
+               -t manzil-api:no-secret . 2>/dev/null; then
+            echo "Expected build to fail without ONNX secret"
+            exit 1
+          fi

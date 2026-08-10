@@ -29,10 +29,10 @@ from fastapi import APIRouter, Query, status
 from manzil_api.admin.dependencies import AdminUser, Audit
 from manzil_api.admin.schemas import (
     ActionResult,
-    InvitePerson,
     PersonDetail,
     PersonMembership,
     PersonRow,
+    ProvisionPerson,
     SetMembership,
     UpdatePerson,
 )
@@ -144,7 +144,7 @@ async def _blocking_references(pool: asyncpg.Pool, user_id: UUID) -> list[tuple[
     blocking: list[tuple[str, int]] = []
     for fk in fks:
         count = await pool.fetchval(
-            f'select count(*) from {fk["tbl"]} where {fk["col"]} = $1', user_id
+            f"select count(*) from {fk['tbl']} where {fk['col']} = $1", user_id
         )
         if count:
             blocking.append((fk["tbl"], count))
@@ -215,20 +215,26 @@ async def get_person(user_id: UUID, admin: AdminUser, pool: DbPool) -> PersonDet
     "",
     response_model=ActionResult,
     status_code=status.HTTP_201_CREATED,
-    summary="Invite someone",
+    summary="Provision an account",
 )
-async def invite_person(
-    body: InvitePerson, admin: AdminUser, pool: DbPool, audit: Audit
+async def provision_person(
+    body: ProvisionPerson, admin: AdminUser, pool: DbPool, audit: Audit
 ) -> ActionResult:
-    """Sends the ordinary Supabase invite email. If a Hunt and role are given the
-    membership is written once the account exists — the invite is the account,
-    the membership is the Hunt, and conflating them is how you end up with a
-    half-joined user."""
+    """Create an Auth account and send its password-enrollment email.
+
+    This is the sole account-creation path. The Site Admin dependency and audit
+    record are therefore part of the security boundary, not UI conveniences.
+    If a Hunt and role are given, membership is a separate fact written only
+    after Supabase has created the account.
+    """
     service = _service()
     try:
-        response = service.auth.admin.invite_user_by_email(body.email)
+        response = service.auth.admin.invite_user_by_email(
+            body.email,
+            {"redirect_to": (f"{_settings().frontend_url.rstrip('/')}/auth/reset-password")},
+        )
     except Exception as exc:
-        raise AuthOperationFailed(f"Supabase could not send the invite: {exc}") from exc
+        raise AuthOperationFailed(f"Supabase could not provision the account: {exc}") from exc
 
     invited_id = getattr(getattr(response, "user", None), "id", None)
     if invited_id and body.hunt_id and body.role:
@@ -241,14 +247,14 @@ async def invite_person(
         )
 
     await audit.record(
-        "user.invite",
+        "user.provision",
         target_type="user",
         target_id=invited_id,
         target_label=body.email,
         hunt_id=body.hunt_id,
         after={"email": body.email, "role": body.role},
     )
-    return ActionResult(detail=f"Invite sent to {body.email}")
+    return ActionResult(detail=f"Account created; password setup sent to {body.email}")
 
 
 @router.patch("/{user_id}", response_model=PersonDetail, summary="Update an account")
@@ -302,9 +308,7 @@ async def suspend_person(
     if str(user_id) == admin.id:
         raise CannotDeleteSelf("An admin cannot suspend their own account")
     try:
-        _service().auth.admin.update_user_by_id(
-            str(user_id), {"ban_duration": SUSPEND_DURATION}
-        )
+        _service().auth.admin.update_user_by_id(str(user_id), {"ban_duration": SUSPEND_DURATION})
     except Exception as exc:
         raise AuthOperationFailed(f"Supabase rejected the suspension: {exc}") from exc
 
@@ -431,9 +435,7 @@ async def remove_membership(
     return await get_person(user_id, admin, pool)
 
 
-@router.delete(
-    "/{user_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete an account"
-)
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete an account")
 async def delete_person(user_id: UUID, admin: AdminUser, pool: DbPool, audit: Audit) -> None:
     if str(user_id) == admin.id:
         raise CannotDeleteSelf("An admin cannot delete their own account")
@@ -474,6 +476,9 @@ async def delete_person(user_id: UUID, admin: AdminUser, pool: DbPool, audit: Au
         raise AuthOperationFailed(f"Supabase could not delete the account: {exc}") from exc
 
     await audit.record(
-        "user.delete", target_type="user", target_id=user_id, target_label=email,
+        "user.delete",
+        target_type="user",
+        target_id=user_id,
+        target_label=email,
         before={"email": email},
     )

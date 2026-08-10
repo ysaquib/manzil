@@ -31,7 +31,7 @@ export function ScoreCell({
     ? "pinned shown"
     : filterSelected
       ? "best filter match shown"
-      : "best shown";
+      : "preferred plan shown";
   return (
     <Group wrap="nowrap" gap={6}>
       <Group gap={0} c={scoreColor(total)}>

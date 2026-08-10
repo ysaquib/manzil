@@ -9,11 +9,13 @@ import pytest
 from manzil_shared.errors import ExtractionInvalid
 from manzil_shared.models import Confidence
 from manzil_worker.fetching.cleaner import clean_html
+from manzil_worker.llm.client import StructuredValidationError
 from manzil_worker.llm.config import model_for_stage
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.extract import extract_stage
-from manzil_worker.stages.schema_gen import extractable_entries
+from manzil_worker.stages.schema_gen import build_extraction_schema, extractable_entries
 from manzil_worker.state import SourceClaim, SourceState
+from pydantic import ValidationError
 from worker_helpers import (
     PAGES,
     FakeLLM,
@@ -85,6 +87,7 @@ def test_extract_populates_every_criterion_with_provenance() -> None:
         "ceiling_fans",
         "stainless_steel_appliances",
         "flooring_materials",
+        "is_renovated",
     }
     beds = get_claim(state, "beds")
     assert beds.value == 2
@@ -112,7 +115,6 @@ def test_extract_preserves_property_facts_and_floor_plan_unit_types() -> None:
     payload = maple_extraction()
     payload["pool"] = field_payload("outdoor", "Outdoor swimming pool")
     payload["property_types"] = field_payload(["apartment"], "Apartment homes")
-    payload["unit_types"] = field_payload(["apartment"], "Apartment homes")
     payload["floor_plans"][0]["unit_types"] = ["loft"]
     state = asyncio.run(
         extract_stage(
@@ -124,8 +126,7 @@ def test_extract_preserves_property_facts_and_floor_plan_unit_types() -> None:
     pool = get_claim(state, "pool")
     assert pool.value == "outdoor"
     assert pool.applicability is None
-    generalized_type = get_claim(state, "unit_types")
-    assert generalized_type.applicability == "unit_scope_unspecified"
+    assert not any(claim.criterion_key == "unit_types" for claim in state.source_claims)
     assert state.floor_plans[0].unit_types == ["loft"]
 
 
@@ -185,6 +186,32 @@ def test_invalid_first_response_gets_one_corrective_retry() -> None:
     retry_content = llm.calls[1][1]
     assert "failed schema validation" in retry_content
     assert "beds" in retry_content  # the validation error travels back to the model
+
+
+def test_corrective_retry_includes_the_invalid_scoped_claim_fragment() -> None:
+    repeated = scoped_claim_payload(True, "Renovated kitchen") * 2
+    bad = extraction_payload(is_renovated=repeated)
+    schema = build_extraction_schema()
+    with pytest.raises(ValidationError) as raised:
+        schema.model_validate(bad)
+    invalid = StructuredValidationError(raised.value, bad)
+    calls: list[str] = []
+
+    async def retrying_llm(stage, response_schema, content):  # type: ignore[no-untyped-def]
+        assert stage == "extract"
+        calls.append(content)
+        if len(calls) == 1:
+            raise invalid
+        return response_schema.model_validate(maple_extraction())
+
+    state = asyncio.run(
+        extract_stage(make_state(cleaned_text=CLEANED), StageCtx(call_structured=retrying_llm))
+    )
+
+    assert get_claim(state, "beds").value == 2
+    assert len(calls) == 2
+    assert '"is_renovated"' in calls[1]
+    assert calls[1].index("invalid portion") < calls[1].index("URL:")
 
 
 def test_conflicting_laundry_none_and_on_site_canonicalizes_to_positive() -> None:

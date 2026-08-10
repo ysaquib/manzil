@@ -25,6 +25,7 @@ function score(
   floorPlanId: string,
   total: number,
   dishwasher: "confirmed" | "none" | null = null,
+  allIn: number | null = null,
 ): Score {
   return {
     hunt_listing_id: "listing-1",
@@ -43,6 +44,15 @@ function score(
     },
     rubric_version: 1,
     computed_at: "2026-07-08T00:00:00Z",
+    all_in_components: allIn === null
+      ? null
+      : {
+          total: allIn,
+          estimated_total: 0,
+          components: [{ name: "rent", amount: allIn, tag: "actual" }],
+          badges: [],
+          mode: "conservative",
+        },
   };
 }
 
@@ -131,6 +141,45 @@ describe("deriveUnitGroups", () => {
     expect(rows[0].displayPlan.id).toBe("b");
     expect(rows[0].scoredPlanCount).toBe(2);
     expect(rows[0].pinnedPlanId).toBeNull();
+  });
+
+  it("prefers the highest-rated plan with known base rent over a higher-rated unpriced plan", () => {
+    const rows = deriveUnitGroups(
+      listing(
+        [
+          plan({ id: "unpriced" }),
+          plan({ id: "priced-low", rent_min: 2100 }),
+          plan({ id: "priced-high", rent_max: 2300 }),
+        ],
+        [score("unpriced", 12), score("priced-low", 9), score("priced-high", 10)],
+      ),
+    );
+
+    expect(rows[0].displayPlan.id).toBe("priced-high");
+    expect(rows[0].displayScore?.total).toBe(10);
+  });
+
+  it("falls back to the highest-rated plan when every scored plan lacks base rent", () => {
+    const rows = deriveUnitGroups(
+      listing(
+        [plan({ id: "unpriced-low" }), plan({ id: "unpriced-high" })],
+        [score("unpriced-low", 9), score("unpriced-high", 12)],
+      ),
+    );
+
+    expect(rows[0].displayPlan.id).toBe("unpriced-high");
+  });
+
+  it("breaks an equal score tie in favor of a plan with known all-in cost", () => {
+    const rows = deriveUnitGroups(
+      listing(
+        [plan({ id: "unpriced" }), plan({ id: "priced" })],
+        [score("unpriced", 11.5), score("priced", 11.5, null, 2400)],
+      ),
+    );
+
+    expect(rows[0].displayPlan.id).toBe("priced");
+    expect(rows[0].displayScore?.all_in_components?.total).toBe(2400);
   });
 
   it("a per-group pin switches the display plan and score", () => {

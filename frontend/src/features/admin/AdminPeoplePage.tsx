@@ -33,7 +33,7 @@ import {
   useAdminPeople,
   useAdminPerson,
   useDeletePerson,
-  useInvitePerson,
+  useProvisionPerson,
   usePersonAction,
   useRemoveMembership,
   useSetMembership,
@@ -262,15 +262,15 @@ function PersonDetailPanel({ userId }: { userId: string }) {
   );
 }
 
-function InviteModal({ opened, onClose }: { opened: boolean; onClose: () => void }) {
-  const invite = useInvitePerson();
+function ProvisionModal({ opened, onClose }: { opened: boolean; onClose: () => void }) {
+  const provision = useProvisionPerson();
   const hunts = useAdminHunts();
   const [email, setEmail] = useState("");
   const [huntId, setHuntId] = useState<string | null>(null);
   const [role, setRole] = useState("member");
 
   return (
-    <Modal opened={opened} onClose={onClose} title="Invite someone" centered>
+    <Modal opened={opened} onClose={onClose} title="Create account" centered>
       <Stack gap="sm">
         <TextInput
           label="Email"
@@ -298,14 +298,17 @@ function InviteModal({ opened, onClose }: { opened: boolean; onClose: () => void
             onChange={(v) => v && setRole(v)}
           />
         )}
-        {invite.isError && (
-          <Alert color="red">{(invite.error as Error).message}</Alert>
+        <Text size="sm" c="dimmed">
+          They will receive a secure link to choose their password. Public registration is disabled.
+        </Text>
+        {provision.isError && (
+          <Alert color="red">{(provision.error as Error).message}</Alert>
         )}
         <Button
           disabled={!email.trim()}
-          loading={invite.isPending}
+          loading={provision.isPending}
           onClick={() =>
-            invite.mutate(
+            provision.mutate(
               {
                 email: email.trim(),
                 ...(huntId ? { hunt_id: huntId, role } : {}),
@@ -320,7 +323,7 @@ function InviteModal({ opened, onClose }: { opened: boolean; onClose: () => void
             )
           }
         >
-          Send invite
+          Create account
         </Button>
       </Stack>
     </Modal>
@@ -330,7 +333,7 @@ function InviteModal({ opened, onClose }: { opened: boolean; onClose: () => void
 export function AdminPeoplePage() {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
-  const [inviteOpen, { open: openInvite, close: closeInvite }] = useDisclosure(false);
+  const [provisionOpen, { open: openProvision, close: closeProvision }] = useDisclosure(false);
   const people = useAdminPeople(search);
 
   return (
@@ -346,13 +349,19 @@ export function AdminPeoplePage() {
             onChange={(e) => setSearch(e.currentTarget.value)}
             w={220}
           />
-          <Button size="xs" leftSection={<IconUserPlus size={14} />} onClick={openInvite}>
-            Invite
+          <Button size="xs" leftSection={<IconUserPlus size={14} />} onClick={openProvision}>
+            Create account
           </Button>
         </Group>
       </Group>
 
-      <Group align="flex-start" gap="md" wrap="nowrap" style={{ alignItems: "stretch" }}>
+      <Group
+        component="section"
+        aria-label="People directory"
+        align="flex-start"
+        gap="md"
+        wrap="nowrap"
+      >
         <Card padding={0} radius="md" withBorder style={{ flex: 1, minWidth: 0 }}>
           {people.isPending && (
             <Group p="md">
@@ -450,7 +459,7 @@ export function AdminPeoplePage() {
         </div>
       </Group>
 
-      <InviteModal opened={inviteOpen} onClose={closeInvite} />
+      <ProvisionModal opened={provisionOpen} onClose={closeProvision} />
     </Stack>
   );
 }

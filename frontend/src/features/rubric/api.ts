@@ -9,6 +9,7 @@ import { useMemo } from "react";
 import { apiFetch } from "../../lib/apiClient";
 import type { NonNegotiable, RubricOption } from "../../lib/contracts";
 import { supabase } from "../../lib/supabase";
+import { useGhostMutationPath } from "../admin/useGhostMode";
 import { catalogWithCustomLabels } from "./customCriterion";
 import type { ValueSchema } from "./widgets/types";
 
@@ -23,6 +24,8 @@ export interface CatalogEntry {
   extraction_hint: string;
   requires_tool: string | null;
   refresh_class: string;
+  /** Only ever set on the synthetic entry for a custom Criterion (§9.2). */
+  acquisition?: CustomAcquisition;
 }
 
 export interface RubricCriterion {
@@ -46,6 +49,14 @@ export interface CustomRouteModifiers {
   avoid_ferries?: boolean;
 }
 
+/**
+ * How a custom Criterion's value is acquired. `extracted` is the pipeline —
+ * listing text or Maps. `manual` has no producer at all: a person answers it on
+ * each Listing and the answer is stored as an ordinary Override (DESIGN §9.2).
+ * Absent in older stored definitions, which are `extracted`.
+ */
+export type CustomAcquisition = "extracted" | "manual";
+
 export interface CustomCriterionDef {
   schema_version: 1;
   key: string;
@@ -53,10 +64,16 @@ export interface CustomCriterionDef {
   description: string;
   fact_scope: "property" | "floor_plan";
   value_schema: ValueSchema;
+  acquisition?: CustomAcquisition;
   requires_tool: CustomRoute;
-  refresh_class: "listing_details" | "location";
+  refresh_class: "listing_details" | "location" | "manual";
   routing_confirmed: boolean;
   route_modifiers?: CustomRouteModifiers | null;
+}
+
+/** Manual Criteria are answered by hand; nothing extracts or refetches them. */
+export function isManualCriterion(custom: CustomCriterionDef | null | undefined): boolean {
+  return custom?.acquisition === "manual";
 }
 
 export interface CustomRoutingResponse {
@@ -114,9 +131,10 @@ export function useResolvedCatalog(huntId: string, domain: "rent" | "buy" = "ren
 
 export function usePutRubric(huntId: string) {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: (criteria: RubricCriterion[]) =>
-      apiFetch<RubricCriterion[]>(`/v1/hunts/${huntId}/rubric`, {
+      apiFetch<RubricCriterion[]>(mutationPath(`/v1/hunts/${huntId}/rubric`), {
         method: "PUT",
         body: { criteria },
       }),
@@ -131,11 +149,27 @@ export function usePutRubric(huntId: string) {
 }
 
 export function useClassifyCustomRouting(huntId: string) {
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: (body: { label: string; description: string }) =>
-      apiFetch<CustomRoutingResponse>(`/v1/hunts/${huntId}/rubric/custom-routing`, {
+      apiFetch<CustomRoutingResponse>(mutationPath(`/v1/hunts/${huntId}/rubric/custom-routing`), {
         method: "POST",
         body,
+        // Classification is an LLM call, so the demo genuinely cannot run it —
+        // and its caller reads four fields off the response (R2 M5). Answer
+        // `supported: false`, which is the branch the modal already renders as
+        // "we can't route this", rather than inventing a routing decision that
+        // no model made.
+        demoResult: () => ({
+          key: body.label
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "_")
+            .replace(/^_|_$/g, ""),
+          suggested_requires_tool: null as CustomRoute,
+          reason: "Custom Criteria are not classified in the demo.",
+          supported: false,
+        }),
       }),
   });
 }

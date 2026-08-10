@@ -162,9 +162,7 @@ async def test_enrich_refresh_rederives_grocery_and_rescores() -> None:
             )
             assert breakdown is not None
             grocery = next(
-                c
-                for c in json.loads(breakdown)["criteria"]
-                if c["key"] == "grocery_proximity"
+                c for c in json.loads(breakdown)["criteria"] if c["key"] == "grocery_proximity"
             )
             assert grocery["value"] == 12.0
     finally:

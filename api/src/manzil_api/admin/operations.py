@@ -275,8 +275,7 @@ async def costs(
         bucket["calls"] += int(row["llm_calls"] or 0)
 
     credits = await pool.fetch(
-        "select provider, credits from tier3_credit_usage "
-        "where month = date_trunc('month', now())"
+        "select provider, credits from tier3_credit_usage where month = date_trunc('month', now())"
     )
 
     def bucket(row: Any) -> SpendBucket:

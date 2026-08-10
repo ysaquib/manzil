@@ -135,6 +135,26 @@ def test_load_labels_split_still_raises_on_broken_labels(tmp_path: Path) -> None
         load_labels_split(labels_dir=tmp_path)
 
 
+def test_load_labels_split_validates_all_labels_before_partitioning(tmp_path: Path) -> None:
+    write_label(tmp_path / "good.json", valid_payload() | {"slug": "good"})
+    write_label(
+        tmp_path / "bad-a.json",
+        valid_payload() | {"slug": "bad-a", "criteria": {"kitchen_vibes": 5}},
+    )
+    write_label(
+        tmp_path / "bad-b.json",
+        valid_payload() | {"slug": "bad-b", "criteria": {"kitchen_vibes": 6}},
+    )
+
+    with pytest.raises(LabelError) as error:
+        load_labels_split(labels_dir=tmp_path)
+
+    message = str(error.value)
+    assert "bad-a" in message
+    assert "bad-b" in message
+    assert "kitchen_vibes" in message
+
+
 # ── skeleton scaffolding ─────────────────────────────────────────────────────
 
 
@@ -165,6 +185,7 @@ def test_skeleton_prefills_every_extractable_key_as_null(tmp_path: Path) -> None
         "fireplace",
         "ceiling_fans",
         "stainless_steel_appliances",
+        "is_renovated",
         "flooring_materials",
         "heating_type",
     }
@@ -259,6 +280,92 @@ def test_scoped_label_validates_targets_and_claim_schema(tmp_path: Path) -> None
     payload["scoped_claims"]["dishwasher"][0]["floor_plan_refs"] = ["invented"]
     with pytest.raises(LabelError, match="unknown label Floor Plans"):
         load_label(write_label(tmp_path / "x.json", payload))
+
+
+def _scoped_claim_payload(scoped_claims: dict[str, object]) -> dict[str, object]:
+    payload = valid_payload()
+    payload["unknown"] = []
+    payload["floor_plans"] = [
+        {
+            "response_key": "a1",
+            "plan_name": "A1",
+            "beds": 2,
+            "baths": 1.0,
+            "rent_min": 1500.0,
+        }
+    ]
+    payload["scoped_claims"] = scoped_claims
+    return payload
+
+
+def test_multi_claim_parking_allows_distinct_values_at_generalized_scope(tmp_path: Path) -> None:
+    payload = _scoped_claim_payload(
+        {
+            "parking": [
+                {"value": "carport", "applicability": "unit_scope_unspecified"},
+                {"value": "garage", "applicability": "all_units"},
+                {"value": "dedicated_lot", "applicability": "unit_scope_unspecified"},
+            ]
+        },
+    )
+    label = load_label(write_label(tmp_path / "x.json", payload))
+    assert len(label.scoped_claims["parking"]) == 3
+
+
+def test_multi_claim_parking_rejects_duplicate_value_at_same_target(tmp_path: Path) -> None:
+    payload = _scoped_claim_payload(
+        {
+            "parking": [
+                {"value": "carport", "applicability": "unit_scope_unspecified"},
+                {"value": "carport", "applicability": "all_units"},
+            ]
+        },
+    )
+    with pytest.raises(LabelError, match="duplicates the same value"):
+        load_label(write_label(tmp_path / "x.json", payload))
+
+
+def test_multi_claim_parking_rejects_none_with_positive_at_same_target(tmp_path: Path) -> None:
+    payload = _scoped_claim_payload(
+        {
+            "parking": [
+                {"value": "carport", "applicability": "unit_scope_unspecified"},
+                {"value": "none", "applicability": "all_units"},
+            ]
+        },
+    )
+    with pytest.raises(LabelError, match="none cannot coexist"):
+        load_label(write_label(tmp_path / "x.json", payload))
+
+
+def test_boolean_scoped_claim_allows_only_one_value_per_target(tmp_path: Path) -> None:
+    payload = _scoped_claim_payload(
+        {
+            "dishwasher": [
+                {"value": True, "applicability": "unit_scope_unspecified"},
+                {"value": True, "applicability": "all_units"},
+            ]
+        },
+    )
+    with pytest.raises(LabelError, match="duplicates a concrete claim target"):
+        load_label(write_label(tmp_path / "x.json", payload))
+
+
+def test_multi_claim_parking_allows_exact_and_generalized_targets(tmp_path: Path) -> None:
+    payload = _scoped_claim_payload(
+        {
+            "parking": [
+                {"value": "carport", "applicability": "unit_scope_unspecified"},
+                {
+                    "value": "garage",
+                    "applicability": "specific_floor_plans",
+                    "floor_plan_refs": ["a1"],
+                },
+            ]
+        },
+    )
+    label = load_label(write_label(tmp_path / "x.json", payload))
+    assert len(label.scoped_claims["parking"]) == 2
 
 
 def test_scoped_heating_label_uses_utility_claim_vocabulary(tmp_path: Path) -> None:

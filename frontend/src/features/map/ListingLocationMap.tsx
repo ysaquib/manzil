@@ -9,9 +9,11 @@ import { Anchor, Group, Stack, Text, useComputedColorScheme } from "@mantine/cor
 import { IconExternalLink, IconMapPin } from "@tabler/icons-react";
 import { useCallback, useRef } from "react";
 
+import { isDemo } from "../../lib/demo";
 import { googleMapsLink } from "../../lib/googleMaps";
 import { scoreColor } from "../listings/scoreBands";
 import type { Property } from "../listings/types";
+import { propertyBasemap } from "./demoBasemap";
 import { markerArt, svgDataUri } from "./mapPoints";
 import { MapFrame } from "./MapFrame";
 import { markerOutline, scoreHex } from "./mapTheme";
@@ -60,11 +62,41 @@ export function ListingLocationMap({
     [property.lat, property.lng, property.name, score, dark],
   );
 
+  // The still is captured centred on this Property, so its pin is the container
+  // centre by construction — no projection, and it stays correct at any size.
+  const basemap = isDemo() && hasCoords ? propertyBasemap(property.name, dark) : null;
+  const demoPin = markerArt(
+    [score === null ? scoreHex("gray", dark) : scoreHex(scoreColor(score), dark)],
+    { outline: markerOutline(dark) },
+  );
+
   return (
     <Stack gap="xs">
       <MapFrame
         height={200}
         onReady={onReady}
+        demoBasemap={basemap}
+        demoOverlay={
+          basemap
+            ? () => (
+                <img
+                  src={svgDataUri(demoPin.svg)}
+                  alt={property.name}
+                  width={demoPin.width}
+                  height={demoPin.height}
+                  style={{
+                    position: "absolute",
+                    left: "50%",
+                    top: "50%",
+                    // Anchor the tip on the coordinate, exactly as the real
+                    // marker's `anchor` does.
+                    transform: `translate(${-demoPin.anchorX}px, ${-demoPin.anchorY}px)`,
+                    pointerEvents: "none",
+                  }}
+                />
+              )
+            : undefined
+        }
         emptyLabel={
           hasCoords
             ? null

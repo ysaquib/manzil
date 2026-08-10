@@ -67,6 +67,8 @@ vi.mock("../src/features/rubric/api", () => ({
   useResolvedCatalog: () => ({
     data: [{ key: "in_unit_laundry", label: "In-unit laundry", category: "unit", domain: "rent", fact_scope: "mixed", value_schema: { type: "string" }, default_options: [], extraction_hint: "", requires_tool: null, refresh_class: "listing_details" }],
   }),
+  // This hunt has no manual Criteria, so the "Your answers" section stays away.
+  useRubric: () => ({ data: [] }),
 }));
 
 import { ListingDetailDrawer } from "../src/features/listings/ListingDetailDrawer";
@@ -176,6 +178,9 @@ it("shows Problematic when reconciliation used a conservative disputed fallback"
   );
 
   expect(screen.getByLabelText("Problematic")).toBeInTheDocument();
+  expect(screen.getByLabelText("Problematic").parentElement).toHaveStyle({
+    color: "var(--mantine-color-dimmed)",
+  });
 });
 
 describe("ListingDetailDrawer", () => {

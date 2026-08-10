@@ -27,6 +27,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { PageHeader } from "../../components/PageHeader";
+import { isDemo } from "../../lib/demo";
+import { useGhostMode } from "../admin/useGhostMode";
 import { useListings, useUnitGroupStates } from "../listings/api";
 import { useOverviewFilters } from "../listings/filterState";
 import { ListingDetailDrawer } from "../listings/ListingDetailDrawer";
@@ -48,6 +50,8 @@ import {
   svgDataUri,
   type MapPoint,
 } from "./mapPoints";
+import { huntBasemap } from "./demoBasemap";
+import { projectOntoStill } from "./demoProjection";
 import { MapFrame } from "./MapFrame";
 import { markerOutline, scoreHex } from "./mapTheme";
 
@@ -55,6 +59,7 @@ export function HuntMapPage() {
   const { huntId = "" } = useParams();
   const { data: listings, isLoading } = useListings(huntId);
   const { data: unitGroupStates = [] } = useUnitGroupStates(huntId);
+  const { isGhost } = useGhostMode(huntId);
   const { filters, setFilters, sharedFilters, canPublish, publish, publishPending } =
     useOverviewFilters();
   const isCompact = useMediaQuery("(max-width: 48em)") ?? false;
@@ -138,6 +143,7 @@ export function HuntMapPage() {
         opened={drawer.opened}
         onClose={drawer.close}
         onExited={drawer.onExited}
+        isGhost={isGhost === true}
         filters={filters}
       />
     </Stack>
@@ -230,10 +236,55 @@ function MapCanvas({
     };
   }, []);
 
+  // Demo: the same pins, drawn over a pre-captured basemap and projected with
+  // the geometry the still was captured at. They stay clickable, so the map
+  // remains the way into the drawer rather than a picture of one.
+  const basemap = isDemo() ? huntBasemap(dark) : null;
+  const demoOverlay = useCallback(
+    (container: { width: number; height: number }) => {
+      if (!basemap) return null;
+      return (
+        <>
+          {points.map((point) => {
+            const at = projectOntoStill({
+              point: { lat: point.lat, lng: point.lng },
+              still: basemap,
+              container,
+            });
+            if (!at) return null;
+            const colors = pinColorTokens(point.groups).map((token) => scoreHex(token, dark));
+            const art = markerArt(colors, { outline: markerOutline(dark) });
+            return (
+              <img
+                key={point.listingId}
+                src={svgDataUri(art.svg)}
+                alt={`${point.propertyName} — ${pinSummary(point.groups)}`}
+                title={`${point.propertyName} — ${pinSummary(point.groups)}`}
+                width={art.width}
+                height={art.height}
+                onClick={() => onPinClick(point)}
+                style={{
+                  position: "absolute",
+                  left: at.x - art.anchorX,
+                  top: at.y - art.anchorY,
+                  cursor: "pointer",
+                  zIndex: Math.round(point.bestScore * 10),
+                }}
+              />
+            );
+          })}
+        </>
+      );
+    },
+    [basemap, points, dark, onPinClick],
+  );
+
   return (
     <MapFrame
       height={compact ? 420 : "min(88vh, 44rem)"}
       onReady={onReady}
+      demoBasemap={basemap}
+      demoOverlay={basemap ? demoOverlay : undefined}
       emptyLabel={
         isLoading
           ? null

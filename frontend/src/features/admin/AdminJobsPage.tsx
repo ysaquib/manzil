@@ -77,6 +77,14 @@ export function AdminJobsPage() {
   const [state, setState] = useState<string | null>("failed");
   const [staleOnly, setStaleOnly] = useState(false);
   const jobs = useAdminJobs(staleOnly ? null : state, staleOnly);
+  // demo-guarded: useReleaseLocks — `releaseLocks.data?.detail` is read below,
+  // and an intercepted demo write would leave `isSuccess` true with nothing to
+  // show: an empty "it worked" alert for an operation that did not run. No
+  // guard is added here because the whole panel is unreachable for a demo
+  // subject by a *database* control rather than a frontend one — the demo
+  // principal is not a Site Admin, and `private.is_site_admin()` is itself
+  // demo-aware (DESIGN §16 0a), so `/admin/me` answers false and AdminLayout
+  // redirects before this page mounts.
   const releaseLocks = useReleaseLocks();
 
   const staleCount = (jobs.data ?? []).filter((job) => job.stale).length;

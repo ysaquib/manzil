@@ -29,6 +29,10 @@ def _all_in(breakdown: dict) -> float | None:  # type: ignore[type-arg]
     return entry["value"]
 
 
+def _gate(gates: list[dict[str, object]], *, key: str, kind: str) -> dict[str, object]:
+    return next(g for g in gates if g["key"] == key and g["kind"] == kind)
+
+
 def make_ctx() -> StageCtx:
     return StageCtx(rubric=phase0_rubric(), rubric_version=PHASE0_RUBRIC_VERSION)
 
@@ -56,9 +60,10 @@ def test_each_plan_scores_independently_and_best_plan_is_display() -> None:
     assert affordable["total"] == 13.5
     assert affordable["gates"] == []
     # Premium: conservative rent 2100 > 2000 -> the all-in non-negotiable fires.
-    assert premium["gates"] == [
-        {"key": "all_in_monthly", "kind": "non_negotiable", "set_score": 3.0}
-    ]
+    premium_gate = _gate(premium["gates"], key="all_in_monthly", kind="non_negotiable")
+    assert premium_gate["set_score"] == 3.0
+    assert premium_gate["value"] == 2100.0
+    assert premium_gate["matched"] == {"op": "gt", "value": 2000}
     assert premium["total"] == 3.0
     assert state.display_score_index == 0  # best plan displays (§9.4)
 
@@ -81,9 +86,10 @@ def test_no_plans_scores_once_property_level_with_all_in_unknown() -> None:
     assert state.scores[0].plan_name is None
     breakdown = state.scores[0].breakdown
     # all_in_monthly unknown -> its non-negotiable fires (unknown never passes a gate).
-    assert {"key": "all_in_monthly", "kind": "non_negotiable", "set_score": 3.0} in breakdown[
-        "gates"
-    ]
+    gate = _gate(breakdown["gates"], key="all_in_monthly", kind="non_negotiable")
+    assert gate["set_score"] == 3.0
+    assert gate["value"] is None
+    assert gate["matched"] is None
 
 
 def test_reconciled_and_effective_values_are_recorded() -> None:
@@ -112,7 +118,10 @@ def test_low_confidence_value_scores_as_unknown_and_fires_its_gate() -> None:
     assert "pets_policy" not in state.effective_values  # thresholded out
     assert get_claim(state, "pets_policy").value == "cats_and_dogs"  # provenance kept
     breakdown = state.scores[0].breakdown
-    assert {"key": "pets_policy", "kind": "non_negotiable", "set_score": 2.0} in breakdown["gates"]
+    gate = _gate(breakdown["gates"], key="pets_policy", kind="non_negotiable")
+    assert gate["set_score"] == 2.0
+    assert gate["value"] is None
+    assert gate["matched"] is None
 
 
 def _score_with_pets(pet_costs: PetCostsIn | None, *, cats: int, dogs: int, rent: float) -> dict:  # type: ignore[type-arg]
@@ -231,13 +240,19 @@ def test_low_confidence_vision_is_kept_for_points_but_cannot_pass_gate() -> None
 
     assert state.effective_values["kitchen_quality"] == 4
     assert state.scores[0].breakdown["total"] == 2.0
-    assert state.scores[0].breakdown["gates"] == [
-        {
-            "key": "kitchen_quality",
-            "kind": "non_negotiable",
-            "set_score": 2.0,
-        }
-    ]
+    gate = _gate(
+        state.scores[0].breakdown["gates"],
+        key="kitchen_quality",
+        kind="non_negotiable",
+    )
+    assert gate["set_score"] == 2.0
+    assert gate["value"] is None
+    assert gate["matched"] is None
+    kitchen = next(
+        c for c in state.scores[0].breakdown["criteria"] if c["key"] == "kitchen_quality"
+    )
+    assert kitchen["value"] == 4
+    assert kitchen["delta"] == 1.0
 
 
 def test_exact_unit_feature_changes_only_target_floor_plan() -> None:
@@ -343,6 +358,11 @@ def test_unspecified_laundry_cannot_pass_gate() -> None:
     state = asyncio.run(score_stage(state, make_ctx()))
 
     assert state.effective_values["in_unit_laundry"] == ["advertised_unconfirmed"]
-    assert state.scores[0].breakdown["gates"] == [
-        {"key": "in_unit_laundry", "kind": "non_negotiable", "set_score": 2.0}
-    ]
+    gate = _gate(
+        state.scores[0].breakdown["gates"],
+        key="in_unit_laundry",
+        kind="non_negotiable",
+    )
+    assert gate["set_score"] == 2.0
+    assert gate["value"] == ["advertised_unconfirmed"]
+    assert gate["matched"] == {"op": "contains_any", "value": ["advertised_unconfirmed"]}

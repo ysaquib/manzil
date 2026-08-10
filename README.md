@@ -150,11 +150,20 @@ triggers in DESIGN §5 are observed.
 invite redirects (`http://localhost:5173` locally). Supabase's local Mailpit
 inbox is at `http://127.0.0.1:54324` after `supabase start`.
 
-Local Auth requires email confirmation via `supabase/config.toml`. For hosted
-Supabase, also enable **Confirm email** in Authentication → Providers → Email,
+Local Auth disables public sign-up via `supabase/config.toml`; Site Admins
+provision accounts from Admin → People. For hosted Supabase, disable **Allow new
+users to sign up** and enable **Confirm email** in Authentication → Providers → Email,
 allow the deployed `/auth/callback` and `/auth/reset-password` redirect URLs,
 and keep both `{{ .ConfirmationURL }}` and `{{ .Token }}` in the magic-link
-email template so users can click the link or enter its six-digit code.
+email template so existing users can click the link or enter its six-digit code.
+
+To restore public registration in a future product phase, make it an explicit
+security change: set `[auth].enable_signup` to `true`, restore a Register mode
+that calls `supabase.auth.signUp`, and add back the anonymous-signup acceptance
+test. Keep `[auth.email].enable_signup = true` in both postures: in the local
+CLI it enables the email provider itself, including password login. Do not
+enable only the UI or only GoTrue; the two-layer switch prevents an API caller
+from bypassing the product surface while registration is disabled.
 
 The frontend origin must exactly match `API_CORS_ORIGINS`; `localhost` and
 `127.0.0.1` are different browser origins. To allow either local spelling:

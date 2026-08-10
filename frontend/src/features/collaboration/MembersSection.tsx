@@ -37,14 +37,16 @@ export function MembersSection({
   members,
   currentUserId,
   isOwner,
+  isGhost = false,
 }: {
   huntId: string;
   members: HuntMember[];
   currentUserId: string;
   isOwner: boolean;
+  isGhost?: boolean;
 }) {
-  const setRole = useSetMemberRole(huntId);
-  const removeMember = useRemoveMember(huntId);
+  const setRole = useSetMemberRole(huntId, isGhost);
+  const removeMember = useRemoveMember(huntId, isGhost);
   const [pendingRemove, setPendingRemove] = useState<HuntMember | null>(null);
 
   const removeName = pendingRemove?.display_name ?? "this Member";

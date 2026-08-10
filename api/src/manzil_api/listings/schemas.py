@@ -51,6 +51,32 @@ class ListingStatusPatch(BaseModel):
     status: Literal["active", "archived"]
 
 
+class ListingPermanentDelete(BaseModel):
+    """Irreversible-delete confirmation; compared exactly on the server."""
+
+    confirmation_name: str = Field(min_length=1, max_length=500)
+
+
+class ListingDeletionCounts(BaseModel):
+    unit_groups: int
+    scores: int
+    manual_values: int
+    collaboration_records: int
+    task_records: int
+    visits: int
+    visit_records: int
+    hunt_scoped_extractions: int
+
+
+class ListingDeletionImpact(BaseModel):
+    listing_id: UUID
+    property_id: UUID
+    property_name: str
+    status: Literal["active", "archived"]
+    active_jobs: int
+    counts: ListingDeletionCounts
+
+
 class PinsPatch(BaseModel):
     """Per-Unit-Group pinned floor plan (DESIGN §8.2 `hunt_listings.pins`)."""
 

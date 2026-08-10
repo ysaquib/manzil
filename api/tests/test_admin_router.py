@@ -85,8 +85,8 @@ async def test_every_other_route_refuses_a_non_admin(
     as_nobody: AsyncClient, method: str, path: str
 ) -> None:
     call = getattr(as_nobody, method)
-    response = await call(path, json={"user_id": str(uuid4())}) if method == "post" else await call(
-        path
+    response = (
+        await call(path, json={"user_id": str(uuid4())}) if method == "post" else await call(path)
     )
     assert response.status_code == 403
     assert response.json()["code"] == "not_site_admin"
@@ -129,7 +129,7 @@ async def test_an_admin_reads_across_hunts_they_do_not_belong_to(
     assert summary.json()["tier3_credits_allowance"] == 5000
 
     feed = await as_admin.get(f"/v1/admin/hunts/{collab_hunt['hunt_id']}/activity")
-    assert feed.status_code == 200
+    assert feed.status_code == 200, feed.text
 
 
 # ── the ledger ───────────────────────────────────────────────────────────────
@@ -177,9 +177,10 @@ async def test_the_primordial_admin_is_refused_with_a_useful_status(
         response = await as_admin.delete(f"/v1/admin/admins/{target}")
         assert response.status_code == 409
         assert response.json()["code"] == "primordial_admin_protected"
-        assert await db_pool.fetchval(
-            "select count(*) from site_admins where user_id = $1", target
-        ) == 1
+        assert (
+            await db_pool.fetchval("select count(*) from site_admins where user_id = $1", target)
+            == 1
+        )
     finally:
         await db_pool.execute(
             "alter table site_admins disable trigger site_admins_protect_primordial"

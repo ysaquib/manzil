@@ -50,6 +50,10 @@ from manzil_worker.state import (
 
 # Composed by the pipeline, never extracted from the page (§9.5).
 COMPOSED_KEYS = frozenset({"all_in_monthly", "estimated_move_in_cost"})
+# `unit_types` remains a Catalog Criterion, but its effective Floor Plan value
+# already comes from the Floor Plan block. Do not request a second generalized
+# claim that could disagree with that canonical input.
+FLOOR_PLAN_DERIVED_KEYS = frozenset({"unit_types"})
 log = structlog.get_logger()
 _SELECT_SCOPE_RE = re.compile(
     r"\b(select(?:ed)?|some|certain|var(?:y|ies) by)\b",
@@ -128,6 +132,9 @@ def _normalize_top_level(cls: type[BaseModel], data: Any) -> Any:
     """
     if isinstance(data, dict):
         normalized = {key: _maybe_decode_container(value) for key, value in data.items()}
+        # v3.48 derives this from the Floor Plan block. Keep pre-v3.48 response
+        # recordings replayable without permitting unknown fields generally.
+        normalized.pop("unit_types", None)
         criterion_keys = {entry.key for entry in extractable_entries()}
         for key in criterion_keys & normalized.keys():
             if normalized[key] is None:
@@ -279,7 +286,11 @@ def _validate_scoped_refs(self: BaseModel) -> BaseModel:
 
 
 def extractable_entries(catalog: tuple[CatalogEntry, ...] = CATALOG) -> list[CatalogEntry]:
-    return [e for e in catalog if e.requires_tool is None and e.key not in COMPOSED_KEYS]
+    return [
+        e
+        for e in catalog
+        if e.requires_tool is None and e.key not in COMPOSED_KEYS | FLOOR_PLAN_DERIVED_KEYS
+    ]
 
 
 def _value_type(value_schema: dict[str, Any]) -> Any:

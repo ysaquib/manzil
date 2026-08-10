@@ -8,6 +8,7 @@ import pytest
 from manzil_shared.config import DIAGRAM_MAX_DIM, IMAGE_MAX_DIM
 from manzil_worker.enrich.images import (
     ImageError,
+    SupabaseImageStore,
     discover_image_urls,
     discover_images,
     normalize_diagram,
@@ -77,6 +78,19 @@ def test_normalize_resizes_to_webp_and_hashes_normalized_bytes() -> None:
 def test_normalize_rejects_non_image_bytes() -> None:
     with pytest.raises(ImageError, match="invalid image"):
         normalize_image(b"not an image")
+
+
+def test_storage_opaque_secret_key_is_never_used_as_a_bearer_token() -> None:
+    store = SupabaseImageStore("https://project.supabase.co", "sb_secret_example")
+
+    assert store._headers() == {"apikey": "sb_secret_example"}
+
+
+def test_storage_local_legacy_jwt_retains_bearer_compatibility() -> None:
+    jwt = "header.payload.signature"
+    store = SupabaseImageStore("http://127.0.0.1:54321", jwt)
+
+    assert store._headers() == {"apikey": jwt, "Authorization": f"Bearer {jwt}"}
 
 
 # --- P3-SC5: full-size anchor target and the diagram profile ---

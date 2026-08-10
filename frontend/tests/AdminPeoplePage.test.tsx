@@ -89,6 +89,16 @@ describe("AdminPeoplePage", () => {
     expect(screen.getByText("$11.22")).toBeInTheDocument();
   });
 
+  it("keeps the roster card independent from the detail panel height", async () => {
+    renderWithProviders(<AdminPeoplePage />);
+
+    await screen.findByText("N. Rahman");
+    const directory = screen.getByRole("region", { name: "People directory" });
+
+    expect(directory).toHaveStyle("--group-align: flex-start");
+    expect(directory).not.toHaveStyle("align-items: stretch");
+  });
+
   it("disables Delete for a Hunt owner and names the Hunt blocking it", async () => {
     const user = userEvent.setup();
     renderWithProviders(<AdminPeoplePage />);

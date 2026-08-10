@@ -8,6 +8,7 @@ history with it, and there is no undo.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -108,9 +109,7 @@ async def test_deleting_a_hunt_owner_is_refused_and_says_which_hunt(
     assert "Collab Hunt" in response.json()["detail"]
 
     # And the account is untouched.
-    assert await db_pool.fetchval(
-        "select count(*) from auth.users where id = $1", owner_id
-    ) == 1
+    assert await db_pool.fetchval("select count(*) from auth.users where id = $1", owner_id) == 1
 
 
 async def test_the_transfer_unblocks_the_delete(
@@ -149,8 +148,7 @@ async def test_removing_the_owner_from_their_own_hunt_is_refused(
     as_admin: AsyncClient, collab_hunt, seeded_users
 ) -> None:
     response = await as_admin.delete(
-        f"/v1/admin/people/{seeded_users['owner'].user_id}"
-        f"/memberships/{collab_hunt['hunt_id']}"
+        f"/v1/admin/people/{seeded_users['owner'].user_id}/memberships/{collab_hunt['hunt_id']}"
     )
     assert response.status_code == 409
     assert response.json()["code"] == "person_owns_a_hunt"
@@ -194,9 +192,9 @@ async def test_deleting_someone_who_left_work_behind_is_refused_not_a_500(
         assert "Suspend" in detail, "the refusal must name the way forward"
 
         # And the account is untouched.
-        assert await db_pool.fetchval(
-            "select count(*) from auth.users where id = $1", curator_id
-        ) == 1
+        assert (
+            await db_pool.fetchval("select count(*) from auth.users where id = $1", curator_id) == 1
+        )
     finally:
         await db_pool.execute("delete from visits where id = $1", visit_id)
 
@@ -204,9 +202,41 @@ async def test_deleting_someone_who_left_work_behind_is_refused_not_a_500(
 # ── the reversible action ────────────────────────────────────────────────────
 
 
-async def test_suspend_and_restore_round_trip(
-    as_admin: AsyncClient, seeded_users, db_pool
+async def test_site_admin_provisioning_is_audited(
+    as_admin: AsyncClient, db_pool, seeded_users, monkeypatch
 ) -> None:
+    from manzil_api.admin import people
+
+    new_id = uuid4()
+    captured: dict = {}
+
+    class AdminAuth:
+        def invite_user_by_email(self, email, options):  # type: ignore[no-untyped-def]
+            captured.update(email=email, options=options)
+            return SimpleNamespace(user=SimpleNamespace(id=str(new_id)))
+
+    monkeypatch.setattr(
+        people,
+        "_service",
+        lambda: SimpleNamespace(auth=SimpleNamespace(admin=AdminAuth())),
+    )
+
+    response = await as_admin.post("/v1/admin/people", json={"email": "new-person@example.com"})
+
+    assert response.status_code == 201
+    assert captured["email"] == "new-person@example.com"
+    assert captured["options"]["redirect_to"].endswith("/auth/reset-password")
+    audit = await db_pool.fetchrow(
+        "select action, target_id, target_label from admin_audit_log "
+        "where admin_user_id = $1 order by occurred_at desc limit 1",
+        seeded_users["outsider"].user_id,
+    )
+    assert audit["action"] == "user.provision"
+    assert audit["target_id"] == new_id
+    assert audit["target_label"] == "new-person@example.com"
+
+
+async def test_suspend_and_restore_round_trip(as_admin: AsyncClient, seeded_users, db_pool) -> None:
     """Suspension is the reversible alternative to deletion, and it is an
     auth-level ban rather than a column of ours — a second source of truth for
     "can this person sign in" is exactly what drifts."""
@@ -274,9 +304,7 @@ async def test_deleting_an_account_that_owns_nothing_succeeds_and_is_audited(
 
     response = await as_admin.delete(f"/v1/admin/people/{user_id}")
     assert response.status_code == 204
-    assert await db_pool.fetchval(
-        "select count(*) from auth.users where id = $1", user_id
-    ) == 0
+    assert await db_pool.fetchval("select count(*) from auth.users where id = $1", user_id) == 0
 
     row = await db_pool.fetchrow(
         "select action, target_label from admin_audit_log "
@@ -299,5 +327,8 @@ async def test_a_non_admin_is_refused_everywhere(admin_app, seeded_users, collab
         target = seeded_users["owner"].user_id
         assert (await client.get("/v1/admin/people")).status_code == 403
         assert (await client.get(f"/v1/admin/people/{target}")).status_code == 403
+        assert (
+            await client.post("/v1/admin/people", json={"email": "blocked@example.com"})
+        ).status_code == 403
         assert (await client.post(f"/v1/admin/people/{target}/suspend")).status_code == 403
         assert (await client.delete(f"/v1/admin/people/{target}")).status_code == 403

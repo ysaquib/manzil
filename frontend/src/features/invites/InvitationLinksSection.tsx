@@ -16,6 +16,7 @@ import { useState } from "react";
 
 import { Section } from "../../components/Section";
 import { ApiError } from "../../lib/apiClient";
+import { isDemo } from "../../lib/demo";
 import {
   type InvitationLink,
   invitationLinkForCurrentOrigin,
@@ -211,6 +212,21 @@ export function InvitationLinksSection({ huntId }: { huntId: string }) {
 
   const create = () => {
     if (!expires) return;
+    // demo-guarded: useCreateInvitationLink — `onSuccess` copies `link.link` to
+    // the clipboard, and a demo write resolves with nothing, so the handler
+    // would throw. There is no honest synthetic answer either: a minted link is
+    // a bearer capability into a real Hunt, and handing a visitor a URL that
+    // cannot work would be worse than saying no. This section renders only for
+    // the Hunt Owner and the demo principal is a synthesized Curator, so the
+    // guard is belt-and-braces — kept because a later permissions change should
+    // not silently make this reachable.
+    if (isDemo()) {
+      notifications.show({
+        message: "Invitation Links can't be created in the demo.",
+        color: "yellow",
+      });
+      return;
+    }
     createLink.mutate(
       {
         name: name.trim() || null,

@@ -75,9 +75,10 @@ def test_low_confidence_vision_scores_points_but_never_enters_gate_values() -> N
         resolution_rule="vision_weighted_median_gallery",
         confidence=Confidence.LOW,
     )
-    assert scoring_values_for_policy(
-        {"exact": exact, "gallery": gallery}, "full_rubric"
-    ) == ({"exact": 3, "gallery": 4}, {})
+    assert scoring_values_for_policy({"exact": exact, "gallery": gallery}, "full_rubric") == (
+        {"exact": 3, "gallery": 4},
+        {},
+    )
 
     criterion = RubricCriterion(
         hunt_id=uuid4(),
@@ -99,6 +100,10 @@ def test_low_confidence_vision_scores_points_but_never_enters_gate_values() -> N
     )
     assert breakdown.total == 2.0
     assert breakdown.gates[0].key == "exact"
+    assert breakdown.gates[0].value is None
+    assert breakdown.gates[0].matched is None
+    assert breakdown.criteria[0].delta == 1.0
+    assert breakdown.criteria[0].value == 3
 
 
 def test_vision_uses_its_own_low_default_threshold() -> None:

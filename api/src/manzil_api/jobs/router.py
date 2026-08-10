@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends
 from manzil_shared.models import JobState
 
 from manzil_api.dependencies import CurrentUser, UserClient
-from manzil_api.hunts.dependencies import MemberHunt
+from manzil_api.hunts.dependencies import ValidHunt
 from manzil_api.jobs import service
 from manzil_api.jobs.dependencies import parse_job_states
 from manzil_api.jobs.schemas import CheckpointAnswer, JobResponse
@@ -21,10 +21,15 @@ router = APIRouter(tags=["jobs"])
 @router.get("/hunts/{hunt_id}/jobs", response_model=list[JobResponse])
 async def list_jobs(
     hunt_id: UUID,
-    hunt: MemberHunt,
+    hunt: ValidHunt,
     client: UserClient,
     state: Annotated[list[JobState] | None, Depends(parse_job_states)],
 ) -> list[JobResponse]:
+    # `valid_hunt_id` is backed by the caller's RLS-scoped client. Members can
+    # see their Hunts; Site Admins can additionally see a non-member Hunt via
+    # the SELECT-only Ghost View predicate. Requiring a membership row here
+    # incorrectly turned that valid admin read into a 404. Mutations keep their
+    # separate manage/checkpoint permission paths below.
     return await service.list_jobs(client, hunt_id, state)
 
 

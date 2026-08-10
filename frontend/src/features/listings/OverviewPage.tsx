@@ -31,10 +31,12 @@ import { OverviewRowList } from "./OverviewRowList";
 import { resolveSettings } from "../../lib/contracts";
 import { sentenceCase } from "../../lib/text";
 import { useHunt } from "../hunts/api";
+import { isDemo } from "../../lib/demo";
+import { useGhostMode } from "../admin/useGhostMode";
+import { useCurrentMember } from "../collaboration/api";
 import { usePatchListingStatus, usePatchUnitGroupState } from "./api";
 import {
   useListings,
-  useProblematicPropertyIds,
   useRefreshStatuses,
   useUnitGroupStates,
 } from "./api";
@@ -82,6 +84,9 @@ export function OverviewPage() {
   const patchListingStatus = usePatchListingStatus(huntId);
   const patchState = usePatchUnitGroupState(huntId);
   const compare = useCompareSet(huntId);
+  const { isGhost } = useGhostMode(huntId);
+  const { data: currentMember } = useCurrentMember(huntId);
+  const canManageListings = isGhost === true || currentMember?.role === "owner";
 
   const [sort, setSort] = useState<SortState>({ key: "score", dir: "desc" });
   const [view, setView] = useState<"active" | "archived">("active");
@@ -144,9 +149,6 @@ export function OverviewPage() {
   const allRows = buildRows(listings ?? [], unitGroupStates);
   const filterResult = analyzeOverviewFilters(allRows, filters);
   const rows = sortRows(filterResult.rows, sort);
-  const { data: problematicPropertyIds = new Set<string>() } = useProblematicPropertyIds(
-    (listings ?? []).map((listing) => listing.property_id),
-  );
   const staleClassesByListing = useMemo(
     () => statusesByListing(
       refreshStatuses,
@@ -291,16 +293,23 @@ export function OverviewPage() {
         </Box>
         <Paper withBorder p={3} radius="md">
           <Group gap={2} wrap="nowrap">
-            <SegmentedControl
-              size="xs"
-              variant="subtle"
-              value={view}
-              onChange={(next) => setView(next as "active" | "archived")}
-              data={[
-                { value: "active", label: "Active" },
-                { value: "archived", label: "Archived" },
-              ]}
-            />
+            {/* DM-9: the Demo Hunt's staged Listing sits `archived` until
+                "submitted" (`scripts/seed_demo_hunt.py`), so opening this view
+                early would spoil it. Hiding the toggle is UX, not a security
+                boundary -- the row is genuinely there and RLS scopes it the
+                same as any other Listing. */}
+            {!isDemo() && (
+              <SegmentedControl
+                size="xs"
+                variant="subtle"
+                value={view}
+                onChange={(next) => setView(next as "active" | "archived")}
+                data={[
+                  { value: "active", label: "Active" },
+                  { value: "archived", label: "Archived" },
+                ]}
+              />
+            )}
             {!isCompact && (
               <>
                 <Divider orientation="vertical" my={4} />
@@ -312,7 +321,9 @@ export function OverviewPage() {
         </Paper>
       </Group>
 
-      {view === "archived" && <ArchivedListings huntId={huntId} />}
+      {view === "archived" && (
+        <ArchivedListings huntId={huntId} canManage={canManageListings} />
+      )}
 
       {view === "active" && isLoading && (
         <Center py="xl">
@@ -377,15 +388,17 @@ export function OverviewPage() {
             >
               Send to Compare
             </Button>
-            <Button
-              variant="light"
-              color="red"
-              size="xs"
-              leftSection={<IconArchive size={14} stroke={1.5} />}
-              onClick={bulkArchive}
-            >
-              Archive
-            </Button>
+            {canManageListings && (
+              <Button
+                variant="light"
+                color="red"
+                size="xs"
+                leftSection={<IconArchive size={14} stroke={1.5} />}
+                onClick={bulkArchive}
+              >
+                Archive
+              </Button>
+            )}
             <Button variant="subtle" size="xs" onClick={clearSelection}>
               Clear selection
             </Button>
@@ -398,11 +411,10 @@ export function OverviewPage() {
             huntId={huntId}
             rows={rows}
             pipeline={pipeline}
-            problematicPropertyIds={problematicPropertyIds}
             staleClassesByListing={staleClassesByListing}
             autoResolvedListingIds={autoResolvedListingIds}
             onOpen={openDrawer}
-            onArchive={archiveRow}
+            onArchive={canManageListings ? archiveRow : undefined}
           />
         ) : (
           <OverviewTable
@@ -412,7 +424,6 @@ export function OverviewPage() {
             density={density}
             columns={columns}
             pipeline={pipeline}
-            problematicPropertyIds={problematicPropertyIds}
             staleClassesByListing={staleClassesByListing}
             autoResolvedListingIds={autoResolvedListingIds}
             selectedKeys={selected}
@@ -420,7 +431,7 @@ export function OverviewPage() {
             onToggleAll={toggleAll}
             onSort={onSort}
             onOpen={openDrawer}
-            onArchive={archiveRow}
+            onArchive={canManageListings ? archiveRow : undefined}
             visitScores={visitScoreIndex}
           />
         ))}
@@ -431,6 +442,7 @@ export function OverviewPage() {
         opened={drawer.opened}
         onClose={drawer.close}
         onExited={drawer.onExited}
+        isGhost={isGhost === true}
         filters={filters}
         jobs={jobs}
         answeringCheckpoint={answerCheckpoint.isPending}

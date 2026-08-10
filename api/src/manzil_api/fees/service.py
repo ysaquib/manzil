@@ -25,6 +25,7 @@ async def upsert_fee(
     user_id: str,
     fee_slot: str,
     body: FeeEntryUpsert,
+    authorized_admin: bool = False,
 ) -> FeeEntryResponse:
     listing = (
         client.table("hunt_listings")
@@ -34,16 +35,18 @@ async def upsert_fee(
         .execute()
         .data
     )
-    role = (
-        client.table("hunt_members")
-        .select("role")
-        .eq("hunt_id", str(hunt_id))
-        .eq("user_id", user_id)
-        .single()
-        .execute()
-        .data["role"]
-    )
-    if role == "member" and listing["added_by"] != user_id:
+    role = None
+    if not authorized_admin:
+        role = (
+            client.table("hunt_members")
+            .select("role")
+            .eq("hunt_id", str(hunt_id))
+            .eq("user_id", user_id)
+            .single()
+            .execute()
+            .data["role"]
+        )
+    if not authorized_admin and role == "member" and listing["added_by"] != user_id:
         raise InsufficientRole("Members may edit fees only on their own Listings")
     response = (
         client.table("fee_checklist")

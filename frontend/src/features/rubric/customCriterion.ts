@@ -34,5 +34,6 @@ export function customCatalogEntry(custom: CustomCriterionDef): CatalogEntry {
     extraction_hint: custom.description,
     requires_tool: custom.requires_tool,
     refresh_class: custom.refresh_class,
+    acquisition: custom.acquisition ?? "extracted",
   };
 }

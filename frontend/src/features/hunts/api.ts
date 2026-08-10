@@ -2,9 +2,12 @@
 // apiClient with generated DTOs. Assumptions: frontend/API_ASSUMPTIONS.md.
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { useAuth } from "../../auth/useAuth";
 import { apiFetch } from "../../lib/apiClient";
+import { demoPrincipalId } from "../../lib/demo";
 import type { components } from "../../lib/generated/api";
 import { supabase } from "../../lib/supabase";
+import { useGhostMutationPath } from "../admin/useGhostMode";
 
 type HuntCreate = components["schemas"]["HuntCreate"];
 type HuntUpdate = components["schemas"]["HuntUpdate"];
@@ -22,17 +25,27 @@ export interface Hunt {
 }
 
 export function useHunts() {
+  const { session } = useAuth();
+  const userId = session?.user.id;
+
   return useQuery({
-    queryKey: ["hunts"],
+    queryKey: ["hunts", "mine", userId],
     queryFn: async (): Promise<Hunt[]> => {
+      if (!userId) return [];
+
+      // Site Admin SELECT policies deliberately expose every Hunt for Ghost
+      // View. The switcher means "Your hunts", so membership must be an
+      // explicit query condition rather than an accidental consequence of RLS.
       const { data, error } = await supabase
         .from("hunts")
-        .select("*")
+        .select("*, hunt_members!inner(user_id)")
+        .eq("hunt_members.user_id", userId)
         .is("archived_at", null)
         .order("created_at", { ascending: false });
       if (error) throw error;
       return (data ?? []) as Hunt[];
     },
+    enabled: Boolean(userId),
   });
 }
 
@@ -57,9 +70,10 @@ export function useCreateHunt() {
 
 export function usePatchHunt(huntId: string) {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: (body: HuntUpdate) =>
-      apiFetch<Hunt>(`/v1/hunts/${huntId}`, { method: "PATCH", body }),
+      apiFetch<Hunt>(mutationPath(`/v1/hunts/${huntId}`), { method: "PATCH", body }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["hunts"] }),
   });
 }
@@ -90,11 +104,18 @@ export function useSharedFilters(huntId: string) {
 
 export function usePublishSharedFilters(huntId: string) {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: (filters: object) =>
-      apiFetch<SharedFiltersRow>(`/v1/hunts/${huntId}/shared-filters`, {
+      apiFetch<SharedFiltersRow>(mutationPath(`/v1/hunts/${huntId}/shared-filters`), {
         method: "PUT",
         body: { filters },
+        demoResult: () => ({
+          hunt_id: huntId,
+          filters: filters as Record<string, unknown>,
+          updated_by: demoPrincipalId() ?? "",
+          updated_at: new Date().toISOString(),
+        }),
       }),
     onSuccess: (saved) => {
       qc.setQueryData(["hunt_shared_filters", huntId], saved);
@@ -104,9 +125,10 @@ export function usePublishSharedFilters(huntId: string) {
 
 export function usePatchHuntSettings(huntId: string) {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: (body: HuntSettingsPatch) =>
-      apiFetch<Hunt>(`/v1/hunts/${huntId}/settings`, { method: "PATCH", body }),
+      apiFetch<Hunt>(mutationPath(`/v1/hunts/${huntId}/settings`), { method: "PATCH", body }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["hunts"] });
       // Scoring-affecting settings take the bump+rescore path (§8.2) — the

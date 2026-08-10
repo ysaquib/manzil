@@ -7,7 +7,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
 
-from manzil_api.invites.service import MEMBER_COLOR_TOKENS
+from manzil_api.invites.service import ACCEPTED_MEMBER_COLOR_TOKENS
 
 
 class CommentCreate(BaseModel):
@@ -83,7 +83,7 @@ class MemberPatch(BaseModel):
     def validate_color(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        if value in MEMBER_COLOR_TOKENS:
+        if value in ACCEPTED_MEMBER_COLOR_TOKENS:
             return value
         if len(value) == 7 and value.startswith("#"):
             try:

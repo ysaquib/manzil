@@ -56,7 +56,7 @@ DedupeCandidates = Callable[[], Awaitable[list["DedupeCandidate"]]]
 GeocodeAddress = Callable[[str], Awaitable["GeocodeIn"]]
 ExistingImageHashes = Callable[[UUID], Awaitable[set[str]]]
 ExistingImageClassifications = Callable[[UUID], Awaitable[dict[str, dict[str, Any]]]]
-ImageClassifyShadow = Callable[[list[tuple[str, bytes]]], Awaitable["ONNXShadowBatch"]]
+ImageClassifyONNX = Callable[[list[tuple[str, bytes]]], Awaitable["ONNXShadowBatch"]]
 
 # ENRICH's Maps seams (P3-8): plain function calls, not tools (§10.2 — ENRICH is
 # not a tool-loop stage). Defaults wrap the live Maps calls lazily, mirroring
@@ -102,9 +102,13 @@ async def _no_existing_image_classifications(
     return {}
 
 
-def _configured_image_classify_shadow() -> ImageClassifyShadow | None:
-    """Build the optional shadow seam without importing ONNX Runtime in-process."""
-    model_dir = os.getenv("MANZIL_IMAGE_CLASSIFY_ONNX_SHADOW_DIR", "").strip()
+def _configured_image_classify_onnx() -> ImageClassifyONNX | None:
+    """Build the canonical ONNX seam without importing ONNX Runtime in-process."""
+    model_dir = os.getenv("MANZIL_IMAGE_CLASSIFY_ONNX_DIR", "").strip()
+    if not model_dir:
+        # Bounded compatibility alias for installations configured while ONNX
+        # was observation-only. Authority comes from code, never this old name.
+        model_dir = os.getenv("MANZIL_IMAGE_CLASSIFY_ONNX_SHADOW_DIR", "").strip()
     if not model_dir:
         return None
 
@@ -230,10 +234,10 @@ class StageCtx:
     existing_image_classifications: ExistingImageClassifications = (
         _no_existing_image_classifications
     )
-    # Optional observation-only ONNX classifier. It runs out-of-process and its
-    # predictions never affect image kind, selectors, VISION, or SCORE.
-    image_classify_shadow: ImageClassifyShadow | None = field(
-        default_factory=_configured_image_classify_shadow
+    # Canonical ONNX classifier. It runs out-of-process; absence is a deployment
+    # error when IMAGE_CLASSIFY has images rather than permission to call an LLM.
+    image_classify_onnx: ImageClassifyONNX | None = field(
+        default_factory=_configured_image_classify_onnx
     )
     # DISCOVER's bounded loop writes every local/server tool use through this
     # sink. Queue mode wires Postgres; CLI/tests may leave it null (log-only).

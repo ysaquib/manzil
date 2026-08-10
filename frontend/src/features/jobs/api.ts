@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/apiClient";
 import type { components } from "../../lib/generated/api";
 import { supabase } from "../../lib/supabase";
+import { useGhostMutationPath } from "../admin/useGhostMode";
 
 export type JobState = components["schemas"]["JobState"];
 export type JobType = components["schemas"]["JobType"];
@@ -53,23 +54,26 @@ export const ACTIVE_STATES = "queued,running,waiting_user";
 export const HISTORY_STATES = "done,failed,cancelled";
 
 export function useActiveJobs(huntId: string) {
+  const mutationPath = useGhostMutationPath(huntId);
   return useQuery({
     queryKey: ["jobs", huntId, "active"],
-    queryFn: () => apiFetch<Job[]>(`/v1/hunts/${huntId}/jobs?state=${ACTIVE_STATES}`),
+    queryFn: () => apiFetch<Job[]>(mutationPath(`/v1/hunts/${huntId}/jobs?state=${ACTIVE_STATES}`)),
   });
 }
 
 export function useJobs(huntId: string) {
+  const mutationPath = useGhostMutationPath(huntId);
   return useQuery({
     queryKey: ["jobs", huntId],
-    queryFn: () => apiFetch<Job[]>(`/v1/hunts/${huntId}/jobs`),
+    queryFn: () => apiFetch<Job[]>(mutationPath(`/v1/hunts/${huntId}/jobs`)),
   });
 }
 
 export function useHistoryJobs(huntId: string) {
+  const mutationPath = useGhostMutationPath(huntId);
   return useQuery({
     queryKey: ["jobs", huntId, "history"],
-    queryFn: () => apiFetch<Job[]>(`/v1/hunts/${huntId}/jobs?state=${HISTORY_STATES}`),
+    queryFn: () => apiFetch<Job[]>(mutationPath(`/v1/hunts/${huntId}/jobs?state=${HISTORY_STATES}`)),
   });
 }
 
@@ -100,9 +104,10 @@ export function useJobEvents(jobId: string, enabled: boolean) {
 
 function useJobAction(huntId: string, action: "cancel" | "retry") {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: (jobId: string) =>
-      apiFetch<Job>(`/v1/jobs/${jobId}/${action}`, { method: "POST" }),
+      apiFetch<Job>(mutationPath(`/v1/jobs/${jobId}/${action}`), { method: "POST" }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["jobs", huntId] }),
   });
 }
@@ -124,12 +129,17 @@ export function checkpointAnswer(choice: string, text?: string): { answer: Recor
 
 export function useAnswerCheckpoint(huntId: string) {
   const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
     mutationFn: ({ jobId, choice, text }: { jobId: string; choice: string; text?: string }) =>
-      apiFetch<Job>(`/v1/jobs/${jobId}/checkpoint`, {
+      apiFetch<Job>(mutationPath(`/v1/jobs/${jobId}/checkpoint`), {
         method: "POST",
         body: checkpointAnswer(choice, text),
       }),
+    // Demo mode never reaches this: a Replay Capture animates through a
+    // recorded checkpoint as an ordinary timeline beat rather than parking, so
+    // there is no answer control to click (DESIGN §20 v3.58). This hook is for
+    // a real Hunt's real checkpoint.
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["jobs", huntId] }),
   });
 }

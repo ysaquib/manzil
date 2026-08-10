@@ -1,47 +1,48 @@
-# ONNX image classification: architecture, operation, and promotion
+# ONNX image classification: architecture and operation
 
-**Status:** ONNX shadow implemented; ONNX-only authority not implemented or approved
+**Status:** ONNX is the exclusive authoritative `IMAGE_CLASSIFY` backend (DESIGN v3.52)
 
-**Last updated:** 2026-08-01
+**Last updated:** 2026-08-03
 
 This guide is the operational reference for Manzil's local ONNX
-`IMAGE_CLASSIFY` candidate. It covers the model and classification logic, the
-implemented shadow path, local development, production deployment, and the
-work required before the LLM classifier can be removed. The benchmark evidence
+`IMAGE_CLASSIFY` backend. It covers the model and classification logic, the
+canonical runtime path, local development, production deployment, and the
+accepted limitations of the narrowed selector contract. The benchmark evidence
 and model comparison remain in
 [`image-classification-ml-analysis.md`](image-classification-ml-analysis.md).
 
 ## 1. What is implemented now
 
-The authoritative `IMAGE_CLASSIFY` result is still the structured VISION-seam
-classifier described by DESIGN §10.8. When explicitly enabled, the selected
-ONNX model runs beside it as an observation-only shadow:
+The selected ONNX model is the only workflow classifier. The former structured
+VISION-seam classifier remains in code as a disabled legacy function; no
+production path invokes or falls back to it:
 
 ```text
 normalized Property image
           |
-          +--> incumbent classifier --> vision_assessment.classification
-          |                               |
-          |                               +--> image kind and target selection
-          |
-          +--> ONNX subprocess ------> vision_assessment.classification_shadow
-                                          observation only
+          +--> ONNX subprocess --> vision_assessment.classification
+                                      |
+                                      +--> diagram kind promotion
+                                      +--> top-three kitchen_score selector
+                                      +--> anchored quality VISION
 ```
 
-The shadow cannot change image kind, deterministic target selection, quality
-`VISION`, Extractions, or SCORE. Its failure is logged and never fails or parks
-the Job. No database migration is needed because `property_images` already
-persists the complete `vision_assessment` JSON object.
+ONNX may promote a visually detected diagram but never demotes deterministic
+diagram evidence. Its `kitchen_score` orders quality targets; it does not rate
+kitchen quality. Failure is fatal to the Stage and follows ordinary Job retry
+policy—there is no LLM fallback. No database migration is needed because
+`property_images` already persists the complete `vision_assessment` JSON object.
 
 Implementation:
 
 - `worker/src/manzil_worker/vision_onnx.py` owns artifact verification,
   preprocessing, ONNX Runtime inference, subprocess transport, and telemetry.
-- `worker/src/manzil_worker/stages/base.py` enables the injected shadow seam
-  only when `MANZIL_IMAGE_CLASSIFY_ONNX_SHADOW_DIR` is set.
-- `worker/src/manzil_worker/stages/image_classify.py` reads/writes the shadow
-  cache, validates exact response identity, persists results, and logs
-  disagreements without consulting them for pipeline decisions.
+- `worker/src/manzil_worker/stages/base.py` enables the canonical injected seam
+  from `MANZIL_IMAGE_CLASSIFY_ONNX_DIR` (with the former shadow variable accepted
+  temporarily as a compatibility alias).
+- `worker/src/manzil_worker/stages/image_classify.py` reads/writes the canonical
+  cache, validates exact response identity, persists results, promotes old
+  shadow rows, and ranks kitchen targets.
 - `worker/src/manzil_worker/evals/clip_onnx.py` reproducibly exports the model.
 - `worker/src/manzil_worker/evals/vision_ml_benchmark.py` grades it against the
   public held-out datasets.
@@ -84,11 +85,11 @@ inter-op thread, with its CPU arena, memory pattern, and weight prepacking
 disabled. The parent launches a short-lived subprocess so model memory is
 reclaimed before a later browser-tier Job.
 
-The persisted shadow shape is:
+The canonical persisted shape is:
 
 ```json
 {
-  "classification_shadow": {
+  "classification": {
     "cache_key": "<backend>:<artifact digest>:thresholds-v1",
     "backend": "clip-vit-b32-vision-uint8-onnx",
     "artifact_sha256": "af06481...",
@@ -106,13 +107,13 @@ The persisted shadow shape is:
 }
 ```
 
-## 3. Local development: shadow mode available now
+## 3. Local development
 
 Add the absolute local artifact directory to the repository-root `.env`:
 
 ```dotenv
 MANZIL_WORKER_INPROCESS=true
-MANZIL_IMAGE_CLASSIFY_ONNX_SHADOW_DIR=/Users/ysaquib/Workshop/Experiments/manzil/worker/tests/fixtures/vision_benchmark/models/clip-vision-onnx-uint8
+MANZIL_IMAGE_CLASSIFY_ONNX_DIR=/Users/ysaquib/Workshop/Experiments/manzil/worker/tests/fixtures/vision_benchmark/models/clip-vision-onnx-uint8
 ```
 
 Then run the API with its optional runtime extra:
@@ -131,14 +132,15 @@ pnpm -C frontend dev
 ```
 
 Submit a Listing through the UI. The API owns the in-process worker loop, so
-the shadow runs automatically when the Job reaches `IMAGE_CLASSIFY`. The
+ONNX runs automatically when the Job reaches `IMAGE_CLASSIFY`. The
 existing `scripts/dev` launcher does not request the optional extra; use the
 manual API command above until that launcher is deliberately changed.
 
-Unset or empty `MANZIL_IMAGE_CLASSIFY_ONNX_SHADOW_DIR` to disable the shadow.
-This is the entire rollback in the current implementation.
+`MANZIL_IMAGE_CLASSIFY_ONNX_SHADOW_DIR` remains a bounded compatibility alias
+for existing installations. If neither variable is set, a Job with images fails
+at `IMAGE_CLASSIFY`; it never activates the LLM classifier.
 
-## 4. Production API: shadow mode available now
+## 4. Production API
 
 Manzil currently deploys one Uvicorn process with the durable worker loop in
 the API lifespan. The production API therefore needs the optional dependency,
@@ -175,7 +177,7 @@ runtime service with:
 
 ```dotenv
 MANZIL_WORKER_INPROCESS=true
-MANZIL_IMAGE_CLASSIFY_ONNX_SHADOW_DIR=.manzil/models/clip-vision-uint8
+MANZIL_IMAGE_CLASSIFY_ONNX_DIR=.manzil/models/clip-vision-uint8
 MANZIL_LLM_MODE=live
 ```
 
@@ -192,12 +194,12 @@ the extra, artifact, and variable on that worker and disable the API claimant;
 the current repository does not yet have the standalone production entry
 point.
 
-## 5. Observing a shadow run
+## 5. Observing a run
 
-An uncached run emits `image_classify_onnx_shadow_complete` with classified and
-cached counts, parent-observed wall time, throughput, child peak RSS, and the
-hashes where kitchen or diagram decisions disagree with the incumbent.
-`image_classify_onnx_shadow_failed` reports optional-backend failures.
+An uncached run emits `image_classify_onnx_complete` with classified and cached
+counts, parent-observed wall time, throughput, and child peak RSS. A cached run
+emits `image_classify_onnx_cached`. Failures propagate into ordinary Stage retry
+and terminal Job error handling.
 
 Inspect persisted output with:
 
@@ -205,21 +207,21 @@ Inspect persisted output with:
 select
   id,
   content_hash,
-  vision_assessment -> 'classification' as incumbent,
-  vision_assessment -> 'classification_shadow' as onnx_shadow
+  vision_assessment -> 'classification' as onnx_classification,
+  vision_assessment -> 'classification_llm_legacy' as prior_llm_classification
 from property_images
-where vision_assessment ? 'classification_shadow'
+where vision_assessment -> 'classification' ? 'backend'
 order by created_at desc;
 ```
 
 The local hard-limit simulation processed 30 images in 2.58 seconds and
 reached about 442 MB combined cgroup peak under a 512 MB limit. The real Render
 graph remains authoritative. Record service peak memory, API latency, and Job
-IDs during representative Listing runs before promotion.
+IDs during representative Listing runs as ongoing operational evidence.
 
-## 6. Why ONNX-only cannot be enabled yet
+## 6. Deliberately narrowed contract
 
-The current ONNX result is intentionally narrower than the authoritative
+The canonical ONNX result is intentionally narrower than the former LLM
 `ImageClassification` contract:
 
 | Current authoritative field | ONNX currently supplies it? |
@@ -233,17 +235,17 @@ The current ONNX result is intentionally narrower than the authoritative
 | irrelevant asset | No; maps, blanks, logos, collages, and contact cards are not covered |
 | confidence | No calibrated Manzil confidence/abstention policy |
 
-The deterministic kitchen selector requires high confidence, assessable kitchen
-visibility, usable framing, and non-irrelevant/non-diagram status. Treating
-every ONNX kitchen prediction as an assessable full-room kitchen would silently
-change what reaches the anchored quality call. Filling the missing fields with
-`unknown` would be honest but would select no kitchen targets. Neither behavior
-is an acceptable production switch.
+No missing field is synthesized. Deterministic `other` and Floor Plan kinds plus
+ONNX diagram predictions are excluded; every remaining photo is ranked by
+descending `kitchen_score`, and the top three go to anchored quality VISION.
+That call still returns `visible | not_visible`, rating, and confidence, so a
+high-probability but unrateable image is rejected at the stage that can actually
+make that judgment.
 
-## 7. Work required for ONNX-only authority
+## 7. Accepted debt and follow-up evidence
 
-Promotion is an implementation project and a material DESIGN decision, not an
-environment-only toggle. It requires all of the following.
+DESIGN v3.52 explicitly accepts promotion before the previously listed target-set
+evidence is complete. The following remain debt, not runtime gates.
 
 ### 7.1 Finish the local classification contract
 
@@ -258,62 +260,46 @@ Add fixed, versioned prototype groups or deterministic producers for:
 - an explicit abstention/confidence policy based on calibrated score and margin
   thresholds.
 
-Alternatively, narrow the selector contract so it consumes explicit ONNX
-scores rather than pretending the missing LLM fields exist. That still needs a
-validated kitchen-usability gate. Deterministic decoding, size/uniformity, and
-duplicate rules should handle assets they can measure more reliably than CLIP.
+The shipped selector consumes explicit ONNX scores rather than pretending the
+missing LLM fields exist. Deterministic decoding, size/uniformity, and duplicate
+rules remain possible follow-up improvements where they outperform CLIP.
 
 Define and test the mapping from MIT labels into Manzil's scene vocabulary. For
 example, `kitchen` and `restaurant_kitchen` can map to `kitchen`, but indoor-only
 MIT labels cannot establish `exterior`, and amenity versus unit interiors
 cannot be inferred from scene identity alone.
 
-### 7.2 Add an explicit backend setting
+### 7.2 Runtime configuration
 
-Introduce a setting such as:
+`MANZIL_IMAGE_CLASSIFY_ONNX_DIR` names the required artifact. There is no backend
+mode switch: DESIGN v3.52 makes ONNX authoritative in code, so artifact presence
+cannot select LLM behavior. `MANZIL_IMAGE_CLASSIFY_ONNX_SHADOW_DIR` is accepted
+only as a bounded path alias for installations created before promotion.
 
-```dotenv
-MANZIL_IMAGE_CLASSIFY_BACKEND=llm|onnx_shadow|onnx
-MANZIL_IMAGE_CLASSIFY_ONNX_DIR=/path/to/pinned/artifact
-```
+### 7.3 Persistence, migration, and rollback
 
-Neither setting exists today in this neutral form. The implemented
-`MANZIL_IMAGE_CLASSIFY_ONNX_SHADOW_DIR` remains shadow-specific; promotion
-should introduce the neutral artifact variable above (with a bounded migration
-alias if needed) instead of making a variable named `SHADOW_DIR` authoritative.
-The backend setting must make one backend authoritative at a time:
+The implemented path:
 
-- `llm`: current behavior, no ONNX call;
-- `onnx_shadow`: incumbent authoritative, ONNX observational;
-- `onnx`: ONNX writes the canonical `classification`; no classifier LLM call.
-
-Do not infer authority merely from whether an artifact directory happens to be
-set. The artifact location and the product decision are separate settings.
-
-### 7.3 Change persistence and selection deliberately
-
-In ONNX-only mode:
-
-1. validate the artifact during service startup so a missing or corrupt model
-   fails deployment before Jobs are claimed;
-2. run the ONNX subprocess before selection;
+1. requires a configured artifact before classifying a non-empty gallery;
+2. verifies the pinned digest in the ONNX subprocess before selection;
 3. persist a versioned canonical `classification` record with backend,
    artifact digest, prototype version, thresholds, and normalized assessment;
 4. run image-kind changes and target selection only from that canonical record;
-5. remove the `call_vision("image_classify", ...)` path from the selected mode;
+5. never invokes `call_vision("image_classify", ...)` on the workflow path;
 6. make runtime inference failure retryable or fail closed with no targets;
    never silently fall back unless fallback is an explicit backend policy;
-7. preserve the old incumbent and shadow records long enough to audit and roll
-   back without rewriting historical evidence.
+7. promotes old shadow records without re-inference and retains replaced LLM
+   records under `classification_llm_legacy`.
 
-Existing image rows need reclassification because their incumbent cache keys
-describe another backend. Provide a bounded reclassification command or
-image-scoped refresh; do not rely on waiting 30 days for the image TTL.
+Existing image rows migrate through an image-scoped refresh; they do not wait for
+the 30-day TTL. Rollback is a code decision, not an environment flip: restore the
+retained legacy function as the workflow entry point, issue a new DESIGN ruling,
+and refresh affected images. Stored legacy evidence remains available for audit.
 
-### 7.4 Clear promotion evidence
+### 7.4 Owed evidence
 
 The public benchmark establishes room and diagram behavior, not Manzil gallery
-behavior. Before ONNX becomes authoritative:
+behavior. The following evidence remains owed after the Owner-directed promotion:
 
 - run representative real Listing galleries through shadow mode;
 - review maps, blanks, logos, collages, renderings, amenity kitchens,
@@ -325,24 +311,20 @@ behavior. Before ONNX becomes authoritative:
   behavior;
 - run deterministic invalid-asset, exact-hash, cache, retry, rollback, and
   selector tests;
-- record the final model/prototype/threshold pin and the promotion in DESIGN
-  §20.
+- keep the pinned model/prototype/threshold record and operational telemetry
+  current.
 
 This does not require labeling the duplicate-heavy 294-image set or training a
 model. A small, deduplicated disagreement audit is sufficient for the rollout
 decision, but some human review is unavoidable if the claim is that routing on
 real Listing images is safe.
 
-## 8. Local and production operation after promotion
-
-These commands describe the intended post-implementation operation; setting
-the proposed backend variable today has no effect.
+## 8. Local and production operation
 
 Local `.env`:
 
 ```dotenv
 MANZIL_WORKER_INPROCESS=true
-MANZIL_IMAGE_CLASSIFY_BACKEND=onnx
 MANZIL_IMAGE_CLASSIFY_ONNX_DIR=/absolute/path/to/clip-vision-onnx-uint8
 ```
 
@@ -351,20 +333,12 @@ unchanged. `IMAGE_CLASSIFY` should emit no OpenRouter call or Langfuse LLM trace
 while later text and anchored quality stages still use their existing model
 seams.
 
-Production uses the same artifact build and one-process start from §4, plus:
-
-```dotenv
-MANZIL_IMAGE_CLASSIFY_BACKEND=onnx
-```
-
 Promotion does not remove `OPENROUTER_API_KEY` from the API/worker environment:
 other pipeline stages and the separate anchored quality `VISION` stage still
 use it. It removes only the generative `IMAGE_CLASSIFY` call.
 
-Rollback sets the backend to `llm`, redeploys, and reclassifies affected hashes
-under the incumbent cache key. Stored images, Floor Plan associations, quality
-assessments, Extractions, and Scores remain intact; only classifier-derived
-image kinds and target sets are recomputed.
+Rollback requires the code-and-DESIGN procedure in §7.3; it is intentionally not
+an unreviewed environment toggle.
 
 ## 9. Git and artifact handling
 

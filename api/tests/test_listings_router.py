@@ -41,7 +41,9 @@ async def test_create_listing_inserts_property_and_ingest_job(client: AsyncClien
 
 
 @pytest.mark.asyncio
-async def test_delete_listing_soft_archives(client: AsyncClient, db_pool) -> None:
+async def test_permanent_delete_removes_hunt_data_but_keeps_property(
+    client: AsyncClient, db_pool
+) -> None:
     hunt_id, listing_id, property_id = uuid4(), uuid4(), uuid4()
     await db_pool.execute(
         "insert into hunts (id, name, owner_id) values ($1, 'L', $2)",
@@ -54,8 +56,8 @@ async def test_delete_listing_soft_archives(client: AsyncClient, db_pool) -> Non
     )
     await db_pool.execute(
         """
-        insert into hunt_listings (id, hunt_id, property_id, added_by)
-        values ($1, $2, $3, $4)
+        insert into hunt_listings (id, hunt_id, property_id, added_by, status)
+        values ($1, $2, $3, $4, 'archived')
         """,
         listing_id,
         hunt_id,
@@ -71,16 +73,187 @@ async def test_delete_listing_soft_archives(client: AsyncClient, db_pool) -> Non
         listing_id,
     )
     try:
-        resp = await client.delete(f"/v1/listings/{listing_id}")
-        assert resp.status_code == 204
-        status = await db_pool.fetchval(
-            "select status from hunt_listings where id = $1", listing_id
+        impact = await client.get(f"/v1/listings/{listing_id}/deletion-impact")
+        assert impact.status_code == 200, impact.text
+        assert impact.json()["property_name"] == "P"
+        assert impact.json()["counts"]["task_records"] >= 1
+
+        resp = await client.request(
+            "DELETE", f"/v1/listings/{listing_id}", json={"confirmation_name": "P"}
         )
-        assert status == "archived"
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["listing_id"] == str(listing_id)
+        assert (
+            await db_pool.fetchval(
+                "select exists(select 1 from hunt_listings where id = $1)", listing_id
+            )
+            is False
+        )
         job_exists = await db_pool.fetchval("select id from jobs where id = $1", job_id)
-        assert job_exists is not None
+        assert job_exists is None
+        assert (
+            await db_pool.fetchval(
+                "select exists(select 1 from properties where id = $1)", property_id
+            )
+            is True
+        )
+        tombstone = await db_pool.fetchrow(
+            "select deleted_by, detail from deletion_tombstones "
+            "where entity_type='hunt_listing' and entity_id=$1 order by deleted_at desc limit 1",
+            listing_id,
+        )
+        assert str(tombstone["deleted_by"]) == str(FAKE_USER.id)
+        detail = (
+            json.loads(tombstone["detail"])
+            if isinstance(tombstone["detail"], str)
+            else tombstone["detail"]
+        )
+        assert detail["counts"]["task_records"] >= 1
     finally:
         await db_pool.execute("delete from hunts where id = $1", hunt_id)
+        await db_pool.execute("delete from properties where id = $1", property_id)
+
+
+@pytest.mark.asyncio
+async def test_permanent_delete_requires_archive_exact_name_and_no_active_jobs(
+    client: AsyncClient, db_pool
+) -> None:
+    hunt_id, listing_id, property_id = uuid4(), uuid4(), uuid4()
+    await db_pool.execute(
+        "insert into hunts (id, name, owner_id) values ($1, 'L', $2)", hunt_id, FAKE_USER.id
+    )
+    await db_pool.execute(
+        "insert into properties (id, name, canonical_address) values ($1, 'Exact Name', 'a')",
+        property_id,
+    )
+    await db_pool.execute(
+        "insert into hunt_listings (id, hunt_id, property_id, added_by) values ($1,$2,$3,$4)",
+        listing_id,
+        hunt_id,
+        property_id,
+        FAKE_USER.id,
+    )
+    try:
+        response = await client.request(
+            "DELETE", f"/v1/listings/{listing_id}", json={"confirmation_name": "Exact Name"}
+        )
+        assert response.status_code == 409
+        assert response.json()["code"] == "listing_not_archived"
+
+        await db_pool.execute("update hunt_listings set status='archived' where id=$1", listing_id)
+        response = await client.request(
+            "DELETE", f"/v1/listings/{listing_id}", json={"confirmation_name": "exact name"}
+        )
+        assert response.status_code == 422
+        assert response.json()["code"] == "listing_confirmation_mismatch"
+
+        await db_pool.execute(
+            "insert into jobs(hunt_id,hunt_listing_id,type,state,payload) "
+            "values($1,$2,'refresh','queued','{}'::jsonb)",
+            hunt_id,
+            listing_id,
+        )
+        response = await client.request(
+            "DELETE", f"/v1/listings/{listing_id}", json={"confirmation_name": "Exact Name"}
+        )
+        assert response.status_code == 409
+        assert response.json()["code"] == "listing_has_active_jobs"
+        assert (
+            await db_pool.fetchval(
+                "select exists(select 1 from hunt_listings where id=$1)", listing_id
+            )
+            is True
+        )
+    finally:
+        await db_pool.execute("delete from hunts where id=$1", hunt_id)
+        await db_pool.execute("delete from properties where id=$1", property_id)
+
+
+@pytest.mark.asyncio
+async def test_permanent_delete_is_hunt_bounded_and_removes_visits_and_custom_facts(
+    collab_hunt, as_owner: AsyncClient, db_pool, seeded_users
+) -> None:
+    hunt_id = collab_hunt["hunt_id"]
+    listing_id = collab_hunt["owner_listing_id"]
+    property_id = collab_hunt["owner_property_id"]
+    other_hunt = await db_pool.fetchval(
+        "insert into hunts(name, owner_id) values('Other Hunt', $1) returning id",
+        seeded_users["owner"].user_id,
+    )
+    other_listing = await db_pool.fetchval(
+        "insert into hunt_listings(hunt_id, property_id, added_by) values($1, $2, $3) returning id",
+        other_hunt,
+        property_id,
+        seeded_users["owner"].user_id,
+    )
+    target_extraction = await db_pool.fetchval(
+        """insert into extractions
+           (property_id, hunt_id, criterion_key, record_kind, origin_key,
+            target_scope, value, confidence, model, resolution_rule)
+           values ($1, $2, 'target_custom', 'resolved', 'fixture:target',
+                   'property', 'true'::jsonb, 'high', 'fixture', 'fixture')
+           returning id""",
+        property_id,
+        hunt_id,
+    )
+    other_extraction = await db_pool.fetchval(
+        """insert into extractions
+           (property_id, hunt_id, criterion_key, record_kind, origin_key,
+            target_scope, value, confidence, model, resolution_rule)
+           values ($1, $2, 'other_custom', 'resolved', 'fixture:other',
+                   'property', 'true'::jsonb, 'high', 'fixture', 'fixture')
+           returning id""",
+        property_id,
+        other_hunt,
+    )
+    global_extraction = await db_pool.fetchval(
+        """insert into extractions
+           (property_id, criterion_key, record_kind, origin_key,
+            target_scope, value, confidence, model, resolution_rule)
+           values ($1, 'global_fixture', 'resolved', 'fixture:global',
+                   'property', 'true'::jsonb, 'high', 'fixture', 'fixture')
+           returning id""",
+        property_id,
+    )
+    visit_id = await db_pool.fetchval(
+        "insert into visits(hunt_id, property_id, created_by, template_version) "
+        "values($1, $2, $3, 1) returning id",
+        hunt_id,
+        property_id,
+        seeded_users["owner"].user_id,
+    )
+    await db_pool.execute("update hunt_listings set status='archived' where id=$1", listing_id)
+    try:
+        response = await as_owner.request(
+            "DELETE",
+            f"/v1/listings/{listing_id}",
+            json={"confirmation_name": "Owner Property"},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["counts"]["visits"] == 1
+        assert response.json()["counts"]["hunt_scoped_extractions"] == 1
+
+        assert not await db_pool.fetchval(
+            "select exists(select 1 from visits where id=$1)", visit_id
+        )
+        assert not await db_pool.fetchval(
+            "select exists(select 1 from extractions where id=$1)", target_extraction
+        )
+        assert await db_pool.fetchval(
+            "select exists(select 1 from hunt_listings where id=$1)", other_listing
+        )
+        assert await db_pool.fetchval(
+            "select exists(select 1 from extractions where id=$1)", other_extraction
+        )
+        assert await db_pool.fetchval(
+            "select exists(select 1 from extractions where id=$1)", global_extraction
+        )
+        assert await db_pool.fetchval(
+            "select exists(select 1 from properties where id=$1)", property_id
+        )
+    finally:
+        await db_pool.execute("delete from hunts where id=$1", other_hunt)
+        await db_pool.execute("delete from extractions where id=$1", global_extraction)
 
 
 @pytest.mark.asyncio

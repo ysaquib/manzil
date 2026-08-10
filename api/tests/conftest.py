@@ -17,7 +17,12 @@ from pathlib import Path
 from uuid import UUID
 
 from dotenv import load_dotenv
-from local_supabase import LOCAL_ANON_KEY, LOCAL_SERVICE_ROLE_KEY, LOCAL_SUPABASE_URL
+from local_supabase import (
+    LOCAL_ANON_KEY,
+    LOCAL_JWT_SECRET,
+    LOCAL_SERVICE_ROLE_KEY,
+    LOCAL_SUPABASE_URL,
+)
 
 load_dotenv(Path(__file__).resolve().parents[2] / "infra" / ".env", override=False)
 load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=False)
@@ -26,8 +31,14 @@ if not os.environ.get("SUPABASE_URL", "").strip():
     os.environ["SUPABASE_URL"] = LOCAL_SUPABASE_URL
 if not os.environ.get("SUPABASE_ANON_KEY", "").strip():
     os.environ["SUPABASE_ANON_KEY"] = LOCAL_ANON_KEY
-if not os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip():
-    os.environ["SUPABASE_SERVICE_ROLE_KEY"] = LOCAL_SERVICE_ROLE_KEY
+if not os.environ.get("SUPABASE_SECRET_KEY", "").strip():
+    # The local CLI currently exposes only the legacy service-role JWT. The
+    # production variable deliberately has the new API-key name.
+    os.environ["SUPABASE_SECRET_KEY"] = LOCAL_SERVICE_ROLE_KEY
+if not os.environ.get("SUPABASE_JWT_SECRET", "").strip():
+    # Demo Mode mints its own viewer tokens with the project JWT secret
+    # (DESIGN §16); without this the demo suites cannot sign one.
+    os.environ["SUPABASE_JWT_SECRET"] = LOCAL_JWT_SECRET
 os.environ.setdefault("DATABASE_URL", "postgresql://postgres:postgres@127.0.0.1:54322/postgres")
 os.environ.setdefault("API_ENVIRONMENT", "local")
 os.environ.setdefault("MANZIL_WORKER_INPROCESS", "false")
@@ -59,7 +70,6 @@ class TestIdentity:
         return create_user_client(get_settings(), self.token)
 
 
-
 async def _purge_user_references(pool, user_id: str) -> None:
     """Delete everything that would block removing this account.
 
@@ -86,7 +96,7 @@ async def _purge_user_references(pool, user_id: str) -> None:
     )
     for fk in fks:
         with suppress(Exception):
-            await pool.execute(f'delete from {fk["tbl"]} where {fk["col"]} = $1', UUID(user_id))
+            await pool.execute(f"delete from {fk['tbl']} where {fk['col']} = $1", UUID(user_id))
 
 
 @pytest.fixture(scope="session")
@@ -297,9 +307,7 @@ async def no_primordial_admin(db_pool):  # type: ignore[no-untyped-def]
         await db_pool.execute(
             "alter table site_admins disable trigger site_admins_protect_primordial"
         )
-        await db_pool.execute(
-            "delete from site_admins where user_id = $1", existing["user_id"]
-        )
+        await db_pool.execute("delete from site_admins where user_id = $1", existing["user_id"])
         await db_pool.execute(
             "alter table site_admins enable trigger site_admins_protect_primordial"
         )

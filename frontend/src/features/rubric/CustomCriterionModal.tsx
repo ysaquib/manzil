@@ -16,6 +16,7 @@ import { useState } from "react";
 
 import type { RubricOption } from "../../lib/contracts";
 import type {
+  CustomAcquisition,
   CustomRoute,
   CustomRouteModifiers,
   RubricCriterion,
@@ -49,6 +50,7 @@ export function CustomCriterionModal({
   const classify = useClassifyCustomRouting(huntId);
   const [label, setLabel] = useState("");
   const [description, setDescription] = useState("");
+  const [acquisition, setAcquisition] = useState<CustomAcquisition>("extracted");
   const [key, setKey] = useState<string | null>(null);
   const [route, setRoute] = useState<CustomRoute>(null);
   const [reason, setReason] = useState("");
@@ -65,6 +67,7 @@ export function CustomCriterionModal({
   const reset = () => {
     setLabel("");
     setDescription("");
+    setAcquisition("extracted");
     setKey(null);
     setRoute(null);
     setReason("");
@@ -78,6 +81,17 @@ export function CustomCriterionModal({
     reset();
     onClose();
   };
+  // The routing endpoint mints the key for an extracted Criterion. A manual one
+  // never calls it — there is no route to classify — so it mints its own here.
+  const chooseAcquisition = (next: CustomAcquisition) => {
+    setAcquisition(next);
+    setRoute(null);
+    setReason("");
+    setUnsupported(false);
+    setRouteModifiers({ avoid_highways: false, avoid_tolls: false, avoid_ferries: false });
+    setKey(next === "manual" ? `custom:${crypto.randomUUID()}` : null);
+  };
+
   const classifyRoute = () =>
     classify.mutate(
       { label, description },
@@ -96,6 +110,7 @@ export function CustomCriterionModal({
   const normalizedEnum = enumValues.map((value) => value.trim()).filter(Boolean);
   const canAdd =
     key !== null &&
+    canClassify &&
     (route === null || route === "maps") &&
     !(route === "maps" && scope === "floor_plan") &&
     (valueType !== "enum" ||
@@ -119,10 +134,13 @@ export function CustomCriterionModal({
         description: description.trim(),
         fact_scope: scope,
         value_schema: valueSchema,
-        requires_tool: route,
-        refresh_class: route === "maps" ? "location" : "listing_details",
+        acquisition,
+        requires_tool: acquisition === "manual" ? null : route,
+        refresh_class:
+          acquisition === "manual" ? "manual" : route === "maps" ? "location" : "listing_details",
         routing_confirmed: true,
         route_modifiers:
+          acquisition === "extracted" &&
           route === "maps" &&
           (routeModifiers.avoid_highways ||
             routeModifiers.avoid_tolls ||
@@ -151,6 +169,25 @@ export function CustomCriterionModal({
           minRows={3}
           onChange={(event) => setDescription(event.currentTarget.value)}
         />
+        <Stack gap={6}>
+          <Text size="sm" fw={600}>
+            How is it answered?
+          </Text>
+          <SegmentedControl
+            aria-label="Acquisition"
+            value={acquisition}
+            onChange={(value) => chooseAcquisition(value as CustomAcquisition)}
+            data={[
+              { value: "extracted", label: "Manzil finds it" },
+              { value: "manual", label: "I answer it" },
+            ]}
+          />
+          <Text size="xs" c="dimmed">
+            {acquisition === "manual"
+              ? "Nothing is read off the listing. You enter the value on each Listing yourself, and it scores as unknown until you do."
+              : "Manzil reads it from the listing text or looks it up on Maps."}
+          </Text>
+        </Stack>
         {key === null ? (
           <>
             {classify.isError && (
@@ -164,6 +201,7 @@ export function CustomCriterionModal({
           </>
         ) : (
           <>
+            {acquisition === "extracted" && (
             <Stack gap="xs">
               <Text size="sm" fw={600}>Confirm routing</Text>
               {reason && <Text size="sm" c="dimmed">{reason}</Text>}
@@ -188,6 +226,7 @@ export function CustomCriterionModal({
                 </Group>
               </Radio.Group>
             </Stack>
+            )}
             <SegmentedControl
               aria-label="Fact scope"
               value={scope}
@@ -198,7 +237,7 @@ export function CustomCriterionModal({
                 { value: "floor_plan", label: "Floor Plan" },
               ]}
             />
-            {route === "maps" && (
+            {acquisition === "extracted" && route === "maps" && (
               <Stack gap={6}>
                 <Text size="sm" fw={600}>
                   Route preferences

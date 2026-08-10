@@ -305,9 +305,7 @@ async def test_split_recomputes_both_sides_of_multi_source_resolution(
                 floor_plan_ids_by_source_ref={},
             )
         async with pg_pool.acquire() as conn:
-            result = await split_property(
-                conn, property_id=fx.property_id, source_url=URL2
-            )
+            result = await split_property(conn, property_id=fx.property_id, source_url=URL2)
         fx.new_property_id = result.new_property_id
 
         old = await pg_pool.fetchrow(

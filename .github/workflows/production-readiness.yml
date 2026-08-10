@@ -1,0 +1,30 @@
+name: Production readiness
+
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-readiness
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require the production API origin
+        env:
+          PRODUCTION_API_URL: ${{ vars.PRODUCTION_API_URL }}
+        run: test -n "$PRODUCTION_API_URL"
+      - name: Probe operational readiness
+        env:
+          PRODUCTION_API_URL: ${{ vars.PRODUCTION_API_URL }}
+        run: >-
+          curl --fail --silent --show-error
+          --max-time 10 --retry 2 --retry-all-errors
+          "$PRODUCTION_API_URL/v1/ready"

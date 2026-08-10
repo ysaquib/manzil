@@ -126,8 +126,7 @@ async def _append_split_resolution(
         ),
     )
     values = {
-        json.dumps(_json_value(row["value"]), sort_keys=True, default=str)
-        for row in candidates
+        json.dumps(_json_value(row["value"]), sort_keys=True, default=str) for row in candidates
     }
     target_scope = TargetScope(resolution["target_scope"])
     applicability = (
@@ -380,17 +379,12 @@ async def split_property(
                 )
             if new_side:
                 moved_floor_plan_id = resolution["floor_plan_id"]
-                if (
-                    moved_floor_plan_id is not None
-                    and not await conn.fetchval(
-                        "select property_id = $1 from floor_plans where id = $2",
-                        new_property_id,
-                        moved_floor_plan_id,
-                    )
+                if moved_floor_plan_id is not None and not await conn.fetchval(
+                    "select property_id = $1 from floor_plans where id = $2",
+                    new_property_id,
+                    moved_floor_plan_id,
                 ):
-                    raise SplitError(
-                        "mixed exact Floor Plan resolution crosses Source identity"
-                    )
+                    raise SplitError("mixed exact Floor Plan resolution crosses Source identity")
                 await _append_split_resolution(
                     conn,
                     property_id=new_property_id,

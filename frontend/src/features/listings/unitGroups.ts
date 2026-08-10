@@ -50,6 +50,14 @@ function rangeMax(values: (number | null)[]): number | null {
   return known.length ? Math.max(...known) : null;
 }
 
+function hasKnownAllIn(score: Score | undefined): boolean {
+  return typeof score?.all_in_components?.total === "number";
+}
+
+function hasKnownBaseRent(plan: FloorPlan): boolean {
+  return typeof plan.rent_min === "number" || typeof plan.rent_max === "number";
+}
+
 export function deriveUnitGroups(listing: Listing): UnitGroupRow[] {
   const scoreByPlan = new Map<string, Score>();
   for (const score of listing.scores) scoreByPlan.set(score.floor_plan_id, score);
@@ -66,12 +74,22 @@ export function deriveUnitGroups(listing: Listing): UnitGroupRow[] {
   const rows: UnitGroupRow[] = [];
   for (const [key, plans] of groups) {
     const scored = plans.filter((p) => scoreByPlan.has(p.id));
-    const best = scored.length
-      ? scored.reduce((a, b) =>
-          (scoreByPlan.get(b.id)?.total ?? -Infinity) > (scoreByPlan.get(a.id)?.total ?? -Infinity)
-            ? b
-            : a,
-        )
+    // A missing base rent makes a Floor Plan unfit to represent an otherwise
+    // comparable Unit Group. Only fall back to it when every scored plan lacks
+    // a rent; pins and filter selection remain authoritative elsewhere.
+    const scoredWithKnownRent = scored.filter(hasKnownBaseRent);
+    const preferredCandidates = scoredWithKnownRent.length ? scoredWithKnownRent : scored;
+    const best = preferredCandidates.length
+      ? preferredCandidates.reduce((a, b) => {
+          const aScore = scoreByPlan.get(a.id);
+          const bScore = scoreByPlan.get(b.id);
+          const totalDelta = (bScore?.total ?? -Infinity) - (aScore?.total ?? -Infinity);
+          if (totalDelta !== 0) return totalDelta > 0 ? b : a;
+          // Equal scores must remain deterministic. Prefer a plan whose own
+          // complete composition can fill the Overview all-in cell; never
+          // borrow a sibling plan's cost or displace a higher score.
+          return hasKnownAllIn(bScore) && !hasKnownAllIn(aScore) ? b : a;
+        })
       : null;
 
     const pinnedPlanId = listing.pins[key] ?? null;
