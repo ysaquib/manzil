@@ -1,3 +1,5 @@
+/* global window, document */
+
 try {
   var stored = window.localStorage.getItem("manzil-color-scheme");
   var colorScheme =
@@ -9,7 +11,7 @@ try {
         ? "dark"
         : "light";
   document.documentElement.setAttribute("data-mantine-color-scheme", computed);
-} catch (_error) {
+} catch {
   // Storage can be unavailable in hardened/private browser contexts. Mantine
   // will apply its normal default after mount.
 }
