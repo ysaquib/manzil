@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% macro subject(context) -%}A Manzil run failed for {{ context.property_name }}{%- endmacro %}
+{% block heading %}The run didn’t finish{% endblock %}
+{% block body %}Manzil couldn’t finish its run for <strong>{{ context.property_name }}</strong>. Open Tasks to review the failure and retry it.{% endblock %}
+{% block cta %}Review failed run{% endblock %}

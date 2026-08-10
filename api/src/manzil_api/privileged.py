@@ -1,7 +1,7 @@
 """Auditable home for the narrowly-scoped privileged collaboration operations.
 
-The seam is established in P2-2; invite acceptance/email and ownership transfer
-are added by their owning tasks. Ordinary API mutations must not use it.
+The seam is established in P2-2; invite acceptance and ownership transfer are
+added by their owning tasks. Ordinary API mutations must not use it.
 """
 
 from __future__ import annotations
@@ -9,7 +9,6 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from manzil_api.invites.exceptions import InviteEmailFailed
 from supabase import Client
 
 
@@ -25,23 +24,6 @@ def join_invitation_link(service_client: Client, token: str, user_id: str) -> di
         "join_hunt_invitation_link", {"p_token": token, "p_user_id": user_id}
     ).execute()
     return response.data
-
-
-def send_invite_email(service_client: Client, email: str, token: str, frontend_url: str) -> None:
-    try:
-        service_client.auth.sign_in_with_otp(
-            {
-                "email": email,
-                "options": {
-                    "email_redirect_to": f"{frontend_url.rstrip('/')}/invite/{token}",
-                    # Hunt Owners may invite an existing account to their Hunt,
-                    # but only a Site Admin may provision an Auth account.
-                    "should_create_user": False,
-                },
-            }
-        )
-    except Exception as exc:
-        raise InviteEmailFailed("Supabase could not send the invite email") from exc
 
 
 def transfer_ownership(service_client: Client, hunt_id: UUID, new_owner_id: UUID) -> dict[str, Any]:

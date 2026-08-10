@@ -13,6 +13,6 @@ class InviteGone(ManzilAPIError):
     code = "invite_gone"
 
 
-class InviteEmailFailed(ManzilAPIError):
-    status_code = status.HTTP_502_BAD_GATEWAY
-    code = "invite_email_failed"
+class InviteDeliveryNotRetryable(ManzilAPIError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "invite_delivery_not_retryable"
