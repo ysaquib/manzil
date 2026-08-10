@@ -22,6 +22,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from manzil_worker.vision_onnx import ONNX_SHADOW_ARTIFACT_SHA256, artifact_digest
 
+from manzil_api.admin.demo import router as admin_demo_router
 from manzil_api.admin.hunt_operations import router as admin_hunt_operations_router
 from manzil_api.admin.operations import router as admin_operations_router
 from manzil_api.admin.people import router as admin_people_router
@@ -188,6 +189,7 @@ def create_app() -> FastAPI:
         feedback_router,
         visits_router,
         admin_router,
+        admin_demo_router,
         admin_people_router,
         admin_operations_router,
         admin_hunt_operations_router,
