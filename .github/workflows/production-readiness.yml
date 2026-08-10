@@ -16,7 +16,7 @@ jobs:
   probe:
     environment: production
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 3
     steps:
       - name: Require the production API origin
         env:
@@ -25,7 +25,9 @@ jobs:
       - name: Probe operational readiness
         env:
           PRODUCTION_API_URL: ${{ vars.PRODUCTION_API_URL }}
+        # Render startup currently takes about 45 seconds before the first byte.
+        # One 60-second attempt plus one retry stays bounded by the job timeout.
         run: >-
           curl --fail --silent --show-error
-          --max-time 10 --retry 2 --retry-all-errors
+          --max-time 60 --retry 1 --retry-all-errors
           "$PRODUCTION_API_URL/v1/ready"
