@@ -13,7 +13,7 @@ import { isDemo } from "../../lib/demo";
 import { googleMapsLink } from "../../lib/googleMaps";
 import { scoreColor } from "../listings/scoreBands";
 import type { Property } from "../listings/types";
-import { propertyBasemap } from "./demoBasemap";
+import { usePropertyBasemap } from "./demoBasemap";
 import { markerArt, svgDataUri } from "./mapPoints";
 import { MapFrame } from "./MapFrame";
 import { markerOutline, scoreHex } from "./mapTheme";
@@ -64,7 +64,8 @@ export function ListingLocationMap({
 
   // The still is captured centred on this Property, so its pin is the container
   // centre by construction — no projection, and it stays correct at any size.
-  const basemap = isDemo() && hasCoords ? propertyBasemap(property.name, dark) : null;
+  const releaseBasemap = usePropertyBasemap(property.id, dark);
+  const basemap = isDemo() && hasCoords ? releaseBasemap : null;
   const demoPin = markerArt(
     [score === null ? scoreHex("gray", dark) : scoreHex(scoreColor(score), dark)],
     { outline: markerOutline(dark) },

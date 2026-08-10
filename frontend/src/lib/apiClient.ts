@@ -92,9 +92,33 @@ export async function apiFetch<T>(path: string, req: ApiRequest<T> = {}): Promis
     } catch {
       // non-JSON error body — keep the status text
     }
+    if (isDemo() && code === "demo_unavailable") demoSessionEnded();
     throw new ApiError(response.status, code, detail);
   }
 
   if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
+}
+
+/** Authenticated binary read, used for private Demo map stills. */
+export async function apiFetchBlob(path: string, signal?: AbortSignal): Promise<Blob> {
+  const response = await fetch(`${BASE_URL}${path}`, {
+    headers: await authHeader(),
+    signal,
+  });
+  if (!response.ok) {
+    if (response.status === 401 && isDemo()) demoSessionEnded();
+    let code = "unknown";
+    let detail = response.statusText;
+    try {
+      const payload = (await response.json()) as { code?: string; detail?: string };
+      code = payload.code ?? code;
+      detail = payload.detail ?? detail;
+    } catch {
+      // Keep the HTTP status text for a non-JSON upstream error.
+    }
+    if (isDemo() && code === "demo_unavailable") demoSessionEnded();
+    throw new ApiError(response.status, code, detail);
+  }
+  return response.blob();
 }

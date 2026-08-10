@@ -11,18 +11,23 @@
 // spend two runs on one animation.
 
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
 
 import { isDemo } from "../../../lib/demo";
 import type { Capture } from "./capture";
-import { claimDemoRun, demoSlateSnapshot, subscribeToDemoSlate } from "./demoSlate";
+import {
+  claimDemoRun,
+  demoSlateSnapshot,
+  subscribeToDemoSlate,
+  syncDemoSlateRelease,
+} from "./demoSlate";
 import {
   replaySnapshot,
   startReplay,
   type ReplayState,
   subscribeToReplay,
 } from "./replayEngine";
-import { useDemoCaptures } from "./useDemoCapture";
+import { useDemoCapture, useDemoRelease } from "./useDemoCapture";
 import { compressionFactor, DEFAULT_TIMING, type ReplayTimingOptions } from "./replayTiming";
 
 export interface ReplayHandle extends ReplayState {
@@ -38,6 +43,8 @@ export interface ReplayHandle extends ReplayState {
   exhausted: boolean;
   /** This build ships no recordings at all, so there is nothing to offer. */
   empty: boolean;
+  /** Release or the next protected capture is still loading. */
+  loading: boolean;
 }
 
 export function useDemoReplay(
@@ -51,7 +58,12 @@ export function useDemoReplay(
     demoSlateSnapshot,
     demoSlateSnapshot,
   );
-  const captures = useDemoCaptures();
+  const release = useDemoRelease();
+  const ordinals = release.data?.capture_ordinals ?? [];
+
+  useEffect(() => {
+    syncDemoSlateRelease(release.data?.release_id ?? null);
+  }, [release.data?.release_id]);
 
   // Timing options are constants in practice, but the object identity is fresh
   // every render. Destructuring the primitives keeps `start` stable without a
@@ -59,19 +71,21 @@ export function useDemoReplay(
   // depends on it — and this one spends a run.
   const { targetMs, minGapMs, maxGapMs, maxGapFraction, variance, seed } = options;
 
-  const total = captures.length;
+  const total = ordinals.length;
   const remaining = Math.max(0, total - used);
-  const next = remaining > 0 ? (captures[used] ?? null) : null;
+  const ordinal = remaining > 0 ? (ordinals[used] ?? null) : null;
+  const capture = useDemoCapture(ordinal);
+  const next = capture.data ?? null;
 
   const start = useCallback(() => {
     if (!isDemo()) return;
     // Claim first, then play. `claimDemoRun` is the single arbiter of whether a
     // run is available, so two clicks landing in the same tick cannot both pass.
-    const index = claimDemoRun(captures.length);
+    if (!capture.data) return;
+    const index = claimDemoRun(ordinals.length);
     if (index === null) return;
-    const capture = captures[index];
-    if (!capture) return;
-    startReplay(qc, huntId, capture, {
+    if (ordinals[index] !== ordinal) return;
+    startReplay(qc, huntId, capture.data, {
       targetMs,
       minGapMs,
       maxGapMs,
@@ -80,7 +94,9 @@ export function useDemoReplay(
       seed,
     });
   }, [
-    captures,
+    capture.data,
+    ordinal,
+    ordinals,
     huntId,
     qc,
     targetMs,
@@ -98,7 +114,8 @@ export function useDemoReplay(
     total,
     remaining,
     exhausted: total > 0 && remaining === 0,
-    empty: total === 0,
+    empty: release.isSuccess && total === 0,
+    loading: release.isPending || (ordinal !== null && capture.isPending),
   };
 }
 

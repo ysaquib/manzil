@@ -13,9 +13,13 @@ import { Anchor, Group, Text } from "@mantine/core";
 import { IconEye } from "@tabler/icons-react";
 
 import { exitDemo, resetDemo } from "../../lib/demo";
+import { useDemoRelease } from "./api";
 import classes from "./DemoBanner.module.css";
 
 export function DemoBanner() {
+  // Mount the protected-release sentinel on every Hunt route, not only the
+  // Overview and Map pages that need release data for their own rendering.
+  useDemoRelease();
   return (
     <div className={classes.bar} role="status">
       <Group gap="xs" wrap="nowrap" justify="center">

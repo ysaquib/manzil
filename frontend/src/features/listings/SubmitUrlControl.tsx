@@ -69,6 +69,14 @@ export function SubmitUrlControl({
    * instead (DM-9, DESIGN §3).
    */
   const offerReplay = (pastedUrl: string | null) => {
+    if (replay.loading) {
+      notifications.show({
+        title: "Loading the recorded ingest",
+        message: "The protected Demo release is still loading. Try again in a moment.",
+        color: "gray",
+      });
+      return;
+    }
     if (replay.empty) {
       // No recordings in this build. Say so rather than falling through to a
       // write the database will refuse and a toast that would claim success.
@@ -119,7 +127,7 @@ export function SubmitUrlControl({
   // lower by the time the run is playing. The disclosure names the run the
   // visitor is about to watch, which is the one they have not yet spent.
   const runNumber = replay.total - replay.remaining + 1;
-  const demoBlocked = replay.empty || replay.exhausted || replay.running;
+  const demoBlocked = replay.loading || replay.empty || replay.exhausted || replay.running;
 
   const canSubmit = Boolean(url.trim()) && !createListing.isPending && !(demo && demoBlocked);
 

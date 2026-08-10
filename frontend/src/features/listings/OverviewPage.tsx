@@ -300,11 +300,10 @@ export function OverviewPage() {
         </Box>
         <Paper withBorder p={3} radius="md">
           <Group gap={2} wrap="nowrap">
-            {/* DM-9: the Demo Hunt's staged Listing sits `archived` until
-                "submitted" (`scripts/seed_demo_hunt.py`), so opening this view
-                early would spoil it. Hiding the toggle is UX, not a security
-                boundary -- the row is genuinely there and RLS scopes it the
-                same as any other Listing. */}
+            {/* DM-9: archived Demo-Hunt Listings are the published replay slate,
+                so opening this view would spoil what each submission reveals.
+                Hiding the toggle is UX, not a security boundary -- the rows are
+                genuinely there and RLS scopes them like every other Listing. */}
             {!isDemo() && (
               <SegmentedControl
                 size="xs"
