@@ -7,7 +7,7 @@
 import { Badge, Button, Group, Modal, Select, Stack, Text, TextInput } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconPlayerPlay } from "@tabler/icons-react";
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 
 import { ApiError } from "../../lib/apiClient";
 import { SOURCE_POLICIES, type SourcePolicy } from "../../lib/contracts";
@@ -69,6 +69,14 @@ export function SubmitUrlControl({
    * instead (DM-9, DESIGN §3).
    */
   const offerReplay = (pastedUrl: string | null) => {
+    if (replay.loading) {
+      notifications.show({
+        title: "Loading the recorded ingest",
+        message: "The protected Demo release is still loading. Try again in a moment.",
+        color: "gray",
+      });
+      return;
+    }
     if (replay.empty) {
       // No recordings in this build. Say so rather than falling through to a
       // write the database will refuse and a toast that would claim success.
@@ -119,10 +127,25 @@ export function SubmitUrlControl({
   // lower by the time the run is playing. The disclosure names the run the
   // visitor is about to watch, which is the one they have not yet spent.
   const runNumber = replay.total - replay.remaining + 1;
-  const demoBlocked = replay.empty || replay.exhausted || replay.running;
+  const demoBlocked = replay.loading || replay.empty || replay.exhausted || replay.running;
+
+  const canSubmit = Boolean(url.trim()) && !createListing.isPending && !(demo && demoBlocked);
 
   return (
-    <Group gap="sm" align="flex-end" wrap="wrap">
+    // A real <form>: paste a URL, hit Enter. Reaching for the mouse to finish a
+    // one-field paste is the wrong shape for the app's most frequent write.
+    // Every other button below is `type="button"` on purpose — a bare <button>
+    // inside a form submits it.
+    <Group
+      component="form"
+      gap="sm"
+      align="flex-end"
+      wrap="wrap"
+      onSubmit={(event: FormEvent) => {
+        event.preventDefault();
+        if (canSubmit) submit();
+      }}
+    >
       <TextInput
         label="Add a listing"
         placeholder="Paste a listing URL"
@@ -138,10 +161,7 @@ export function SubmitUrlControl({
         allowDeselect={false}
         // w={170}
       />
-      <Button
-        onClick={submit}
-        disabled={!url.trim() || createListing.isPending || (demo && demoBlocked)}
-      >
+      <Button type="submit" disabled={!canSubmit}>
         Add listing
       </Button>
 
@@ -151,6 +171,7 @@ export function SubmitUrlControl({
       {demo && !replay.empty && (
         <Group gap="xs" align="center">
           <Button
+            type="button"
             variant="light"
             leftSection={<IconPlayerPlay size={15} aria-hidden />}
             onClick={() => offerReplay(null)}

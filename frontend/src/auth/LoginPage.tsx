@@ -9,7 +9,7 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router-dom";
 
 import { PublicPageShell } from "../components/PublicPageShell";
@@ -89,6 +89,24 @@ export function LoginPage() {
     else setSent(true);
   }
 
+  // Real <form>s, so Enter in any field runs the primary action. Every
+  // secondary button inside one needs `type="button"` spelled out: a bare
+  // <button> in a form submits it, and Mantine does not set a default.
+  const codeReady = code.length === 6;
+  const credentialsReady = Boolean(email) && (mode === "magic" || Boolean(password));
+
+  function onSubmitCode(event: FormEvent) {
+    event.preventDefault();
+    if (busy || !codeReady) return;
+    void verifyCode();
+  }
+
+  function onSubmitCredentials(event: FormEvent) {
+    event.preventDefault();
+    if (busy || !credentialsReady) return;
+    void (mode === "magic" ? sendLink() : submit());
+  }
+
   return <PublicPageShell><Center py="xl"><Card withBorder w="100%" maw={420}><Stack>
     <div><Text fw={600} size="lg">Welcome to Manzil</Text><Text c="dimmed" size="sm">Sign in with an account created by an administrator.</Text></div>
     <SegmentedControl fullWidth value={mode} onChange={(value) => { setMode(value as Mode); setSent(false); setError(null); }}
@@ -96,18 +114,22 @@ export function LoginPage() {
     <>
       {sent && mode === "magic" ? <>
         <Text>Link sent. Check your email and you’ll land right back here, or enter the code below.</Text>
-        <TextInput label="Email code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code}
-          onChange={(e) => setCode(e.currentTarget.value.replace(/\D/g, "").slice(0, 6))} />
-        <Button loading={busy} disabled={code.length !== 6} onClick={verifyCode}>Verify code</Button>
-        <Button variant="subtle" loading={busy} onClick={sendLink}>Resend link and code</Button>
+        <form onSubmit={onSubmitCode}><Stack>
+          <TextInput label="Email code" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code}
+            onChange={(e) => setCode(e.currentTarget.value.replace(/\D/g, "").slice(0, 6))} />
+          <Button type="submit" loading={busy} disabled={!codeReady}>Verify code</Button>
+        </Stack></form>
+        <Button type="button" variant="subtle" loading={busy} onClick={sendLink}>Resend link and code</Button>
       </> : <>
-        <TextInput label="Email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.currentTarget.value)} />
-        {mode !== "magic" && <PasswordInput label="Password" autoComplete="current-password"
-          value={password} onChange={(e) => setPassword(e.currentTarget.value)} />}
-        <Button loading={busy} disabled={!email || (mode !== "magic" && !password)} onClick={mode === "magic" ? sendLink : submit}>
-          {mode === "magic" ? "Send magic link" : "Sign in"}
-        </Button>
-        {mode === "password" && <><Divider /><Button variant="subtle" disabled={!email} loading={busy} onClick={resetPassword}>Forgot password?</Button></>}
+        <form onSubmit={onSubmitCredentials}><Stack>
+          <TextInput label="Email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.currentTarget.value)} />
+          {mode !== "magic" && <PasswordInput label="Password" autoComplete="current-password"
+            value={password} onChange={(e) => setPassword(e.currentTarget.value)} />}
+          <Button type="submit" loading={busy} disabled={!credentialsReady}>
+            {mode === "magic" ? "Send magic link" : "Sign in"}
+          </Button>
+        </Stack></form>
+        {mode === "password" && <><Divider /><Button type="button" variant="subtle" disabled={!email} loading={busy} onClick={resetPassword}>Forgot password?</Button></>}
       </>}
     </>
     {error && <Text c="red" size="sm">{error}</Text>}

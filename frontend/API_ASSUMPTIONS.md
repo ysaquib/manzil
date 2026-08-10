@@ -46,6 +46,26 @@ comma-separated value (`state=queued,running,waiting_user`) — the form the Tas
 | `PUT /v1/profile` | `/account/profile` (`auth/AccountPage.tsx`) | generated `ProfileUpsert`/`ProfileResponse`; optional `default_color` is omitted by onboarding and required when explicitly sent | DESIGN §13.1 / P3-16 | implemented |
 | `POST /v1/feedback` | `useSubmitFeedback` (`features/feedback/api.ts`) | generated `FeedbackCreate`/`FeedbackResponse`. Identity is server-side (`user_id` from the bearer token, `user_agent` from the request); `route` must be a site-relative path; a `hunt_id` the caller cannot read is a 403; the per-hour cap returns 429 `feedback_rate_limited`. **No read hook exists or can exist** — `feedback` has no `SELECT` policy for anyone, so the response confirms receipt rather than echoing the row | P3-16 | implemented |
 
+### Demo publication and protected release (DESIGN v3.72)
+
+| Method & path | Hook (file) | Shape | Backing task | Status |
+|---|---|---|---|---|
+| `GET /v1/admin/demo` | `useAdminDemoStatus` (`features/admin/api.ts`) | hand-typed status: configured `enabled` plus effective `available`, selected release, live/replay/map counts, staleness, blockers/warnings and latest in-flight/failure; Site Admin only | DM-10 | implemented |
+| `GET /v1/admin/demo/hunts?q=` | `useDemoHuntOptions` (`features/admin/api.ts`) | hand-typed owned-Hunt options, capped at 50; ownership is enforced server-side and not inferred from Ghost View visibility | DM-10 | implemented |
+| `POST /v1/admin/demo/preflight` | `useDemoPreflight` (`features/admin/api.ts`) | hand-typed ten-minute confirmation plus public-content counts, warnings and blockers; may idempotently create the virtual Demo principal | DM-10 | implemented |
+| `POST /v1/admin/demo/publications` | `usePublishDemo` (`features/admin/api.ts`) | `202 {publication_id,state}`; requires unexpired confirmation, exact Hunt name, unchanged fingerprint, caller ownership, server-clean content/security preflight, and permits `enable_on_success` only for the initial selection | DM-10 | implemented |
+| `PATCH /v1/admin/demo` | `useToggleDemo` (`features/admin/api.ts`) | `{enabled}`; enable requires the selected current release and owner, disable is immediate and keeps Hunt/release | DM-5/DM-10 | implemented |
+| `GET /v1/demo/release` | `useDemoRelease` (`features/demo/api.ts`) | hand-typed current release id/time, capture ordinals and map manifest; Demo token + matching generation only, `private, no-store` | DM-9/DM-10 | implemented |
+| `GET /v1/demo/release/captures/{ordinal}` | `useDemoCapture` (`features/demo/api.ts`) | validated immutable `DemoCapture`; fetched lazily by current-release ordinal and remains available if the source Listing is later restored or deleted, until an explicit publication replaces it | DM-9 | implemented |
+| `GET /v1/demo/release/maps/{asset}` | `useDemoMapAsset` (`features/demo/api.ts`) | protected WebP blob; the client sends only a path taken from the current manifest and the API independently checks that allow-list | DM-9 | implemented |
+
+The Demo release hooks deliberately use the API rather than direct Supabase reads. `DemoBanner`
+mounts the release sentinel on every Hunt route and the release query rechecks every 15 seconds, so
+an already-open session exits after disablement even when the visitor is not on Overview or Map. The private
+publication/capture tables have no client grants and the `demo-assets` bucket has no browser read
+policy; `apiFetchBlob` carries the short-lived Demo token and exits the Demo session if the release
+is disabled or replaced underneath it.
+
 ### Visits (VC-1 backend, VC-2 hooks)
 
 | Method & path | Hook (file) | Shape | Backing task | Status |

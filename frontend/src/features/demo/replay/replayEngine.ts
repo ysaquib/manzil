@@ -11,10 +11,10 @@
 //
 // It does not pause. An earlier version stopped the clock at a recorded
 // checkpoint and waited for the visitor to "answer" it, but rendering a real
-// prompt turned out to need either publishing page excerpts into
-// `capture.json` — a world-readable build artifact — or a per-checkpoint-kind
-// allow-list, both deferred (DESIGN §20 v3.58, see `capture.ts`). A recorded
-// checkpoint now animates through as an ordinary timeline beat.
+// prompt turned out to need a per-checkpoint-kind safe-field allow-list. The
+// current protected publication sanitizer deliberately omits those fields
+// (DESIGN §20 v3.58, see `capture.ts`), so a recorded checkpoint animates
+// through as an ordinary timeline beat.
 
 import type { QueryClient } from "@tanstack/react-query";
 

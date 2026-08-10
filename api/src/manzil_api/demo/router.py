@@ -15,16 +15,20 @@ is defence in depth; it is not the first packet sink.
 
 from __future__ import annotations
 
+import json
 import time
 from typing import Annotated
 
 import anyio
-from fastapi import APIRouter, Depends, Request, status
+import asyncpg
+import httpx
+from fastapi import APIRouter, Depends, Request, Response, status
 from pydantic import BaseModel
 
 from manzil_api.config import Settings, get_settings
 from manzil_api.database import create_service_client
 from manzil_api.demo import service
+from manzil_api.dependencies import CurrentUser, DbPool, UserContext
 from manzil_api.exceptions import ManzilAPIError
 
 router = APIRouter(prefix="/demo", tags=["demo"])
@@ -70,10 +74,9 @@ class DemoSessionResponse(BaseModel):
     hunt_id: str | None = None
 
 
-def _settings_row(settings: Settings) -> dict:
+def _demo_is_available(settings: Settings) -> bool:
     client = create_service_client(settings)
-    rows = client.table("site_settings").select("demo_enabled").execute()
-    return (rows.data or [{}])[0]
+    return bool(client.rpc("demo_available").execute().data)
 
 
 def reset_config_cache() -> None:
@@ -86,6 +89,18 @@ def reset_config_cache() -> None:
     """
     global _config_cache
     _config_cache = None
+
+
+def _json_value(value: object, fallback: object) -> object:
+    """Normalize asyncpg's text JSON codec without weakening shape checks."""
+    if value is None:
+        return fallback
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return fallback
+    return value
 
 
 @router.get(
@@ -105,11 +120,7 @@ async def demo_config(settings: SettingsDep) -> DemoConfigResponse:
     if _config_cache is not None and now < _config_cache[0]:
         return DemoConfigResponse(enabled=_config_cache[1])
 
-    # supabase-py is synchronous; calling it straight from an `async def`
-    # handler blocks the event loop, so a slow upstream on this public route
-    # would stall every other request in the process (R2 M1).
-    row = await anyio.to_thread.run_sync(_settings_row, settings)
-    enabled = bool(row.get("demo_enabled"))
+    enabled = await anyio.to_thread.run_sync(_demo_is_available, settings)
     _config_cache = (now + _CONFIG_TTL_SECONDS, enabled)
     return DemoConfigResponse(enabled=enabled)
 
@@ -138,6 +149,11 @@ async def create_demo_session(request: Request, settings: SettingsDep) -> DemoSe
         raise DemoRateLimited("The demo is busy right now. Please try again shortly.")
     if status_value != "issued":
         raise DemoUnavailable("The demo is not available.")
+    # Issuance accounting happens even when the release configuration is
+    # incomplete. Only after the DB has recorded the attempt do we refuse a
+    # token that RLS would immediately darken.
+    if not await anyio.to_thread.run_sync(_demo_is_available, settings):
+        raise DemoUnavailable("The demo is not available.")
 
     generation = outcome.get("generation")
     if not isinstance(generation, int):
@@ -152,4 +168,114 @@ async def create_demo_session(request: Request, settings: SettingsDep) -> DemoSe
         access_token=session.access_token,
         expires_in=session.expires_in,
         hunt_id=outcome.get("hunt_id"),
+    )
+
+
+async def _current_release(user: UserContext, pool: asyncpg.Pool) -> asyncpg.Record:
+    if not user.is_demo or user.demo_generation is None:
+        raise DemoUnavailable("The demo is not available.")
+    row = await pool.fetchrow(
+        """
+        select s.demo_hunt_id, s.demo_release_id, s.demo_generation,
+               p.published_at, p.map_manifest
+          from site_settings s
+          join hunts h on h.id = s.demo_hunt_id
+          join site_admins sa on sa.user_id = h.owner_id
+          join private.demo_publications p
+            on p.id = s.demo_release_id and p.hunt_id = h.id and p.state = 'ready'
+           and p.requested_by = h.owner_id
+         where s.demo_enabled and s.demo_generation = $1
+           and not exists (
+               select 1 from hunt_members hm
+                where hm.hunt_id = h.id
+                  and (hm.display_name is null or btrim(hm.display_name) = '')
+           )
+        """,
+        user.demo_generation,
+    )
+    if row is None:
+        raise DemoUnavailable("The demo is not available.")
+    return row
+
+
+@router.get("/release", summary="The current protected Demo release")
+async def demo_release(user: CurrentUser, pool: DbPool, response: Response) -> dict:
+    release = await _current_release(user, pool)
+    ordinals = await pool.fetch(
+        """
+        select ordinal
+          from private.demo_replay_captures
+         where publication_id = $1
+         order by ordinal
+        """,
+        release["demo_release_id"],
+    )
+    response.headers["Cache-Control"] = "private, no-store"
+    return {
+        "release_id": str(release["demo_release_id"]),
+        "published_at": release["published_at"],
+        "capture_ordinals": [row["ordinal"] for row in ordinals],
+        "map_manifest": _json_value(release["map_manifest"], {}),
+    }
+
+
+@router.get("/release/captures/{ordinal}", summary="One current Replay Capture")
+async def demo_capture(ordinal: int, user: CurrentUser, pool: DbPool, response: Response) -> dict:
+    release = await _current_release(user, pool)
+    payload = await pool.fetchval(
+        """
+        select payload
+          from private.demo_replay_captures
+         where publication_id = $1 and ordinal = $2
+        """,
+        release["demo_release_id"],
+        ordinal,
+    )
+    if payload is None:
+        raise DemoUnavailable("That replay is no longer part of the Demo Hunt.")
+    response.headers["Cache-Control"] = "private, no-store"
+    decoded = _json_value(payload, None)
+    if not isinstance(decoded, dict):
+        raise DemoUnavailable("That replay is not available.")
+    return decoded
+
+
+def _manifest_assets(manifest: dict) -> set[str]:
+    assets: set[str] = set()
+    properties = manifest.get("properties")
+    entries = list(properties.values()) if isinstance(properties, dict) else []
+    if isinstance(manifest.get("hunt"), dict):
+        entries.append(manifest["hunt"])
+    for entry in entries:
+        if not isinstance(entry, dict) or not isinstance(entry.get("images"), dict):
+            continue
+        assets.update(path for path in entry["images"].values() if isinstance(path, str))
+    return assets
+
+
+@router.get("/release/maps/{asset:path}", summary="One authenticated Demo map still")
+async def demo_map_asset(
+    asset: str,
+    user: CurrentUser,
+    pool: DbPool,
+    settings: SettingsDep,
+) -> Response:
+    release = await _current_release(user, pool)
+    manifest = _json_value(release["map_manifest"], {})
+    if not isinstance(manifest, dict):
+        raise DemoUnavailable("The Demo map manifest is not available.")
+    if asset not in _manifest_assets(manifest):
+        raise DemoUnavailable("That map is not part of the current Demo release.")
+    endpoint = f"{settings.supabase_url.rstrip('/')}/storage/v1/object/demo-assets/{asset}"
+    headers = {"apikey": settings.supabase_secret_key}
+    if settings.supabase_secret_key.count(".") == 2:
+        headers["Authorization"] = f"Bearer {settings.supabase_secret_key}"
+    async with httpx.AsyncClient(timeout=15) as client:
+        upstream = await client.get(endpoint, headers=headers)
+    if upstream.status_code != 200:
+        raise DemoUnavailable("That map is not available.")
+    return Response(
+        content=upstream.content,
+        media_type="image/webp",
+        headers={"Cache-Control": "private, no-store"},
     )

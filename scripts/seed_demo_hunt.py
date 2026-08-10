@@ -1,4 +1,9 @@
-"""DM-6: set up the Demo Hunt and the virtual demo principal.
+"""Legacy DM-6 fixture/setup helper (superseded by DESIGN v3.72).
+
+Production Demo setup now happens through ordinary Hunt UI plus Admin → Demo
+Mode. This script can create synthetic opinions/a Visit and can replace an
+adopted Rubric, so it is deliberately refused unless `--allow-legacy` is
+spelled out. `--status` remains read-only and needs no acknowledgement.
 
 Idempotent. Re-running reconciles rather than piling up, so it is safe to run
 after every `supabase db reset` and safe to run again when you have added
@@ -17,7 +22,7 @@ admin API: there is deliberately no account. Its Curator role is synthesised by
 membership guard will refuse one if you try.
 
 Usage:
-    uv run python scripts/seed_demo_hunt.py            # set up / reconcile
+    uv run python scripts/seed_demo_hunt.py --allow-legacy  # legacy fixture setup
     uv run python scripts/seed_demo_hunt.py --status   # report, change nothing
 
 The Demo Hunt id is derived, so re-running reconciles the same rows. Set
@@ -26,9 +31,8 @@ Owner created through the UI and has already ingested into. An adopted Hunt is
 treated as somebody else's work: its name, owner and Rubric are left alone
 (`--force-rubric` overrides the last of those, destructively).
 
-Enabling the demo is deliberately NOT done here. Use the audited admin route
-(`PATCH /v1/admin/demo`), which runs `private.demo_preflight()` in the same
-transaction and writes the Admin Audit Log entry.
+Do not use this as the production workflow. Admin publication now owns virtual
+principal setup, exposure review, derived assets, selection, and enablement.
 """
 
 from __future__ import annotations
@@ -604,6 +608,11 @@ async def main() -> None:
         "--status", action="store_true", help="report configuration, change nothing"
     )
     parser.add_argument(
+        "--allow-legacy",
+        action="store_true",
+        help="acknowledge that this superseded helper may create synthetic fixture content",
+    )
+    parser.add_argument(
         "--force-rubric",
         action="store_true",
         help=(
@@ -613,6 +622,12 @@ async def main() -> None:
         ),
     )
     args = parser.parse_args()
+
+    if not args.status and not args.allow_legacy:
+        parser.error(
+            "this setup path was superseded by Admin → Demo Mode (DESIGN v3.72); "
+            "use --allow-legacy only for an intentional local/fixture reconciliation"
+        )
 
     conn = await asyncpg.connect(_env("DATABASE_URL"))
     try:
@@ -628,10 +643,7 @@ async def main() -> None:
             sys.exit(f"{exc}\nRefusing to seed.")
         print("Demo Hunt reconciled.\n")
         await _status(conn)
-        print(
-            "\nNext: ingest a few real listings as the Owner, re-run this script to "
-            "add opinions, then enable via PATCH /v1/admin/demo."
-        )
+        print("\nLegacy reconciliation complete. Do not use this path for production setup.")
     finally:
         await conn.close()
 

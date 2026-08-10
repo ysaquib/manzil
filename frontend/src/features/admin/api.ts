@@ -91,6 +91,123 @@ export function useAdminIdentity() {
   });
 }
 
+// ── Demo Mode ───────────────────────────────────────────────────────────────
+
+export interface DemoPublicationState {
+  id: string;
+  hunt_id: string;
+  state: "queued" | "building" | "failed" | "superseded";
+  attempts: number;
+  error: string | null;
+  created_at: string;
+  started_at: string | null;
+}
+
+export interface AdminDemoStatus {
+  enabled: boolean;
+  available: boolean;
+  hunt_id: string | null;
+  hunt_name: string | null;
+  owned_by_caller: boolean;
+  release_id: string | null;
+  release_state: "ready" | null;
+  published_at: string | null;
+  replay_count: number;
+  active_count: number;
+  mapped_count: number;
+  warnings: string[];
+  blockers: string[];
+  stale: boolean;
+  freshness_error: string | null;
+  updated_at: string;
+  publication: DemoPublicationState | null;
+}
+
+export interface DemoHuntOption {
+  hunt_id: string;
+  name: string;
+  active_listings: number;
+  archived_listings: number;
+}
+
+export interface DemoPreflight {
+  confirmation_id: string;
+  source_fingerprint: string;
+  expires_in: number;
+  hunt_id: string;
+  hunt_name: string;
+  active_listings: number;
+  archived_listings: number;
+  replay_ready: number;
+  mapped_properties: number;
+  human_content: Record<string, number>;
+  blockers: string[];
+  warnings: string[];
+}
+
+export function useAdminDemoStatus() {
+  return useQuery({
+    queryKey: ["admin", "demo"],
+    queryFn: () => apiFetch<AdminDemoStatus>("/v1/admin/demo"),
+    refetchInterval: (query) => {
+      const state = query.state.data?.publication?.state;
+      return state === "queued" || state === "building" ? 2_000 : false;
+    },
+  });
+}
+
+export function useDemoHuntOptions(query: string) {
+  const term = query.trim();
+  return useQuery({
+    queryKey: ["admin", "demo", "hunts", term],
+    queryFn: () =>
+      apiFetch<DemoHuntOption[]>(`/v1/admin/demo/hunts?q=${encodeURIComponent(term)}`),
+    staleTime: 30_000,
+  });
+}
+
+export function useDemoPreflight() {
+  return useMutation({
+    mutationFn: (huntId: string) =>
+      apiFetch<DemoPreflight>("/v1/admin/demo/preflight", {
+        method: "POST",
+        body: { hunt_id: huntId },
+      }),
+  });
+}
+
+export function usePublishDemo() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {
+      confirmationId: string;
+      confirmationText: string;
+      enableOnSuccess: boolean;
+    }) =>
+      apiFetch<{ publication_id: string; state: string }>("/v1/admin/demo/publications", {
+        method: "POST",
+        body: {
+          confirmation_id: input.confirmationId,
+          confirmation_text: input.confirmationText,
+          enable_on_success: input.enableOnSuccess,
+        },
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin", "demo"] }),
+  });
+}
+
+export function useToggleDemo() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (enabled: boolean) =>
+      apiFetch<{ enabled: boolean }>("/v1/admin/demo", {
+        method: "PATCH",
+        body: { enabled },
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin", "demo"] }),
+  });
+}
+
 export function useAdminSummary(enabled = true) {
   return useQuery({
     queryKey: ["admin", "summary"],
@@ -99,11 +216,65 @@ export function useAdminSummary(enabled = true) {
   });
 }
 
-export function useAdminHunts(enabled = true) {
+export interface HuntPage {
+  items: HuntSummary[];
+  total: number;
+}
+
+/**
+ * One page of the Hunt table (AD-4).
+ *
+ * Search, ordering and slicing are all the server's: this route carries
+ * per-Hunt roll-ups, so "fetch everything and filter in the browser" costs the
+ * whole installation's cost aggregation on every keystroke. `total` comes back
+ * with the page because a pager cannot render "of N" without it.
+ */
+export function useAdminHunts(
+  { search, limit, offset }: { search: string; limit: number; offset: number },
+  enabled = true,
+) {
+  const term = search.trim();
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (term) params.set("search", term);
   return useQuery({
-    queryKey: ["admin", "hunts"],
-    queryFn: () => apiFetch<HuntSummary[]>("/v1/admin/hunts"),
+    queryKey: ["admin", "hunts", "list", term, limit, offset],
+    queryFn: () => apiFetch<HuntPage>(`/v1/admin/hunts?${params.toString()}`),
     enabled,
+    // Without this the table blanks to a spinner on every keystroke and every
+    // page step; keeping the previous page visible while the next loads is what
+    // makes paging feel like paging.
+    placeholderData: (previous) => previous,
+  });
+}
+
+export interface HuntOption {
+  hunt_id: string;
+  name: string;
+  owner_name: string | null;
+}
+
+/** Minimum characters before the Hunt typeahead asks the server anything. */
+export const HUNT_SEARCH_MIN_CHARS = 3;
+
+/**
+ * Hunt suggestions for a picker (AD-3).
+ *
+ * Deliberately *not* `useAdminHunts`: that route returns every Hunt in the
+ * installation with per-Hunt roll-ups, which is fine for a table someone
+ * navigated to and ruinous for a dropdown that opens on focus. Below the
+ * threshold the query is disabled, so an unfocused picker costs one request:
+ * none.
+ */
+export function useHuntOptions(query: string) {
+  const term = query.trim();
+  return useQuery({
+    queryKey: ["admin", "hunts", "options", term],
+    queryFn: () =>
+      apiFetch<HuntOption[]>(`/v1/admin/hunts/options?q=${encodeURIComponent(term)}`),
+    enabled: term.length >= HUNT_SEARCH_MIN_CHARS,
+    // Typing "bro" → "broo" → "bro" should not re-hit the server.
+    staleTime: 30_000,
+    placeholderData: (previous) => previous,
   });
 }
 

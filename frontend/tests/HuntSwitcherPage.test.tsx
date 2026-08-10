@@ -19,6 +19,7 @@ const HUNTS = [
     id: "mine-1",
     name: "Detroit apartments",
     rubric_version: 3,
+    created_at: "2026-07-08T00:00:00Z",
   },
 ];
 
@@ -53,6 +54,9 @@ describe("HuntSwitcherPage", () => {
     renderPage();
 
     expect(screen.queryByRole("link", { name: /admin panel/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /detroit apartments/i })).toBeInTheDocument();
+    const hunt = screen.getByRole("link", { name: /detroit apartments/i });
+    expect(hunt).toBeInTheDocument();
+    expect(hunt).toHaveTextContent("Created Wednesday, 08 July, 2026");
+    expect(hunt).not.toHaveTextContent(/rubric v/i);
   });
 });

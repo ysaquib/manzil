@@ -5,7 +5,8 @@ Status tracker and orientation for the Manzil operator surface.
 owns the task table and acceptance evidence. **This file is the map** — where the
 pieces are and why they are shaped that way.
 
-Last updated 2026-08-01 (AD-5 — **workstream complete**).
+Last updated 2026-08-10 (DESIGN v3.72 — Admin-managed Demo Mode added after the
+AD workstream completed).
 
 ---
 
@@ -32,6 +33,7 @@ Route: `/admin/*`, deliberately outside the `/h/:huntId` tree, with its own shel
 | **AD-3 / PR-1** | People — roster, detail, provision/update/suspend/delete, memberships; sole account-creation path | ✅ 2.0.110 / 2.0.121 |
 | **AD-4** | Hunts + the ghost view (`open as owner`) | ✅ 2.0.111 |
 | **AD-5** | Jobs, Costs, System, Audit log — with `@mantine/charts` | ✅ 2.0.112 |
+| **DM-10** | Owned-Hunt Demo publication, freshness, and kill switch | ✅ 2.0.149 |
 
 **The workstream is complete (AD-C, AD-G, AD-0…AD-5).**
 
@@ -75,6 +77,7 @@ supabase/migrations/
   20260828000000_feedback_triage.sql     AD-2  feedback.triage
   20260829000000_admin_read_predicate.sql AD-4 SELECT-only admin predicate (31 policies)
   20260901000011_hunt_activity_access.sql AD-F private union + bounded Owner RPC
+  20260901000014_demo_publications.sql   DM-10 private releases/captures + demo-assets
 
 api/src/manzil_api/admin/
   dependencies.py   require_site_admin (the gate) + AdminAudit (the ledger writer)
@@ -95,9 +98,11 @@ frontend/src/features/admin/
   AdminCostsPage.tsx    @mantine/charts spend, three ways
   AdminSystemPage.tsx   read-only machine state
   AdminAuditPage.tsx    what admins did
+  AdminDemoPage.tsx     owned-Hunt publication, review, stale state, kill switch
   api.ts                hooks — all via apiFetch, never direct Supabase
 
 worker/src/manzil_worker/costs.py   AD-C  CostTally, outside llm/ on purpose
+worker/src/manzil_worker/ops/demo_publication.py  durable Demo release builder
 ```
 
 `POST /v1/admin/people` is the only account-creation path. It is Site-Admin
@@ -127,7 +132,53 @@ accounts only; neither may create one.
 | `POST .../jobs/{id}/retry` · `/cancel` · `/jobs/release-locks` | admin | Queue control, all audited |
 | `GET /v1/admin/costs?days=` | admin | Spend by stage, Hunt and model + daily series |
 | `GET /v1/admin/system` | admin | Queue health, model pins, key **presence** |
+| `GET /v1/admin/demo` · `/demo/hunts` | admin | Current release/freshness and only the caller's owned Hunt candidates |
+| `POST /v1/admin/demo/preflight` · `/demo/publications` | admin | Exposure inventory, exact-name-confirmed durable publication |
+| `PATCH /v1/admin/demo` | selected Hunt's admin Owner | Enable current release or immediately disable without deselecting |
 | `/v1/admin/ghost/...` | admin non-member of the target Hunt | Mirrors Owner Hunt/listing/rubric/people mutations; every write is audited with `via_ghost_view = true` |
+
+## Demo Mode publication (DM-10)
+
+The Demo page is intentionally stricter than Ghost View. A Site Admin can
+support any Hunt through Ghost View, but may publish only a Hunt whose
+`hunts.owner_id` is their own account. That prevents operational access from
+becoming permission to expose another Owner's comments, ratings, Visits, or Job
+history publicly.
+
+Selection is two-step: preflight inventories the public surface and returns a
+ten-minute, single-use confirmation bound to the actor, Hunt, and source
+fingerprint; publication requires the exact Hunt name. Every member needs an
+explicit per-Hunt display name. The worker builds a versioned release and
+promotes it only after rechecking the Hunt fingerprint, ownership, Site Admin
+grant, and demo generation. There is one in-flight publication installation-
+wide. The old release remains current through queued/building/failed/superseded
+states.
+
+The status response distinguishes configured `enabled` from effective
+`available`. The Admin badge says **Blocked**, not **Public**, if ownership,
+publisher consent, explicit member names, the current release, or another
+fail-closed prerequisite has drifted. A direct publication request reruns both
+content and security preflight on the server; UI-disabled controls are not an
+authorization boundary. Only the first select-and-enable operation may request
+enablement on promotion.
+
+A building worker heartbeats its publication lease. A second worker may reclaim
+a stale lease after the queue orphan interval, retry it up to three times, and
+then fail it without displacing the prior ready release. Promotion, supersede,
+and failure writes all verify lease ownership so a late worker cannot overwrite
+a reclaimed result.
+
+Active Listings are live reads. Archived Listings define the release's replay
+slate, and mapped Properties define its frozen basemaps. Consequently the page
+shows these as separate counts and marks the derived release stale when those
+inputs change. Updates are explicit; no Hunt mutation automatically calls
+Google or changes the public replay slate. Disabling is the exception to every
+workflow guard: it is immediate, retains Hunt/release, rotates the session
+generation, and stands even if its audit write fails.
+
+The current release is an immutable snapshot. Restoring or permanently deleting
+a source Listing does not punch a hole in a capture that an operator already
+reviewed; an explicit **Publish updates** replaces that replay membership.
 
 ## Things that will bite you
 
@@ -145,6 +196,18 @@ accounts only; neither may create one.
   in a dev database you must disable `site_admins_protect_primordial` first.
 - **`admin_audit_log` refuses UPDATE and DELETE**, so test teardown cannot clean
   it up. That is the property under test.
+- **Private Demo tables and `demo-assets` are not frontend data sources.** They
+  have no client grants/read policy. The public API accepts only a current Demo
+  token and exact current-manifest paths; do not add a Storage policy to make a
+  broken image easier to debug.
+- **Publish updates while disabled must stay disabled.** `enable_on_success` is
+  an explicit first-selection intent, not `!demo_enabled`; deriving it from the
+  current switch would turn a maintenance publish into an accidental public
+  launch.
+- **A release belongs to the Site Admin who published it as Hunt Owner.** If
+  ownership transfers, even to another Site Admin, the release goes dark until
+  the new Owner reviews and publishes it. Ownership alone is not inherited
+  consent to expose collaboration history.
 - Two Supabase advisor findings on these objects are **accepted, not
   oversights** — see IMPLEMENTATION.md §7.
 

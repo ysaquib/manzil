@@ -21,10 +21,16 @@ import {
   TextInput,
   Title,
 } from "@mantine/core";
+import { useDebouncedValue, useMediaQuery } from "@mantine/hooks";
 import { IconExternalLink, IconSearch } from "@tabler/icons-react";
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
+import {
+  TablePagination,
+  usePageControls,
+  usePagerState,
+} from "../../components/TablePagination";
 import { useAdminHunts, useHuntActivity, type ActivityEntry } from "./api";
 
 function relative(iso: string | null): string {
@@ -118,29 +124,35 @@ function HuntDetail({ huntId, name }: { huntId: string; name: string }) {
 }
 
 export function AdminHuntsPage() {
-  const hunts = useAdminHunts();
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
+  const isCompact = useMediaQuery("(max-width: 48em)") ?? false;
+  // Server-side now: this route carries per-Hunt roll-ups, so filtering in the
+  // browser meant fetching the whole installation first.
+  const [debouncedSearch] = useDebouncedValue(search.trim(), 250);
+  const pager = usePagerState("admin-hunts");
+  const hunts = useAdminHunts({
+    search: debouncedSearch,
+    limit: pager.pageSize,
+    offset: pager.offset,
+  });
+  const rows = hunts.data?.items ?? [];
+  const paged = usePageControls(pager, hunts.data?.total);
 
-  const rows = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    if (!needle) return hunts.data ?? [];
-    return (hunts.data ?? []).filter(
-      (hunt) =>
-        hunt.name.toLowerCase().includes(needle) ||
-        (hunt.owner_name ?? "").toLowerCase().includes(needle),
-    );
-  }, [hunts.data, search]);
+  // A new search is a new list; staying on page 7 of the old one would show an
+  // empty table and blame the search.
+  const { setPage } = pager;
+  useEffect(() => setPage(1), [debouncedSearch, setPage]);
 
   const selectedHunt = rows.find((hunt) => hunt.hunt_id === selected);
 
   return (
     <Stack gap="md">
-      <Group justify="space-between" align="center">
+      <Group justify="space-between" align="center" wrap="wrap" gap="xs">
         <Title order={2}>Hunts</Title>
         <TextInput
           size="xs"
-          w={240}
+          w={isCompact ? "100%" : 240}
           placeholder="Search Hunt or owner…"
           leftSection={<IconSearch size={14} />}
           value={search}
@@ -156,10 +168,11 @@ export function AdminHuntsPage() {
         )}
         {hunts.data && rows.length === 0 && (
           <Text p="md" size="sm" c="dimmed">
-            No Hunt matches that search.
+            {debouncedSearch ? "No Hunt matches that search." : "No Hunts yet."}
           </Text>
         )}
         {rows.length > 0 && (
+          <>
           <Table.ScrollContainer minWidth={720}>
             <Table highlightOnHover verticalSpacing="xs">
               <Table.Thead>
@@ -233,6 +246,8 @@ export function AdminHuntsPage() {
               </Table.Tbody>
             </Table>
           </Table.ScrollContainer>
+          <TablePagination state={paged} noun="Hunts" />
+          </>
         )}
       </Card>
 

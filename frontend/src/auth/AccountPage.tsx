@@ -201,19 +201,17 @@ function AccountPanel() {
             readOnly
             disabled
           />
-          <Group justify="space-between" wrap="nowrap" gap="sm">
-            <Stack gap={0} style={{ minWidth: 0 }}>
-              <Text size="sm" fw={600}>
-                Password
-              </Text>
-              <Text size="xs" c="dimmed">
-                Set a password, or change the one you have.
-              </Text>
-            </Stack>
-            <Button variant="default" onClick={() => navigate("/auth/reset-password")}>
-              Change password
-            </Button>
-          </Group>
+          <Stack gap={0} style={{ minWidth: 0 }}>
+            <Text size="sm" fw={600}>
+              Password
+            </Text>
+            <Text size="xs" c="dimmed">
+              Set a password, or change the one you have.
+            </Text>
+          </Stack>
+          <Button variant="default" onClick={() => navigate("/auth/reset-password")}>
+            Change password
+          </Button>
         </Stack>
       </SectionCard>
 
@@ -222,11 +220,9 @@ function AccountPanel() {
           <Text size="sm" c="dimmed">
             Ends this session on this device. Your hunts, ratings, and comments are untouched.
           </Text>
-          <Group>
-            <Button variant="default" onClick={() => navigate("/signout")}>
-              Sign out
-            </Button>
-          </Group>
+          <Button variant="default" onClick={() => navigate("/signout")}>
+            Sign out
+          </Button>
         </Stack>
       </SectionCard>
 

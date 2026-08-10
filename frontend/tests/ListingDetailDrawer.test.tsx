@@ -1,5 +1,7 @@
 import { MantineProvider } from "@mantine/core";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Listing } from "../src/features/listings/types";
@@ -73,6 +75,17 @@ vi.mock("../src/features/rubric/api", () => ({
 
 import { ListingDetailDrawer } from "../src/features/listings/ListingDetailDrawer";
 
+function renderWithProviders(children: ReactNode) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MantineProvider>{children}</MantineProvider>
+    </QueryClientProvider>,
+  );
+}
+
 function makeListing(): Listing {
   return {
     id: "l1",
@@ -145,15 +158,13 @@ function makeListing(): Listing {
 function renderDrawer() {
   data.listings = [makeListing()];
   data.extractions = [];
-  return render(
-    <MantineProvider>
-      <ListingDetailDrawer
-        huntId="h1"
-        selection={{ listingId: "l1", groupKey: "2-2" }}
-        opened
-        onClose={() => {}}
-      />
-    </MantineProvider>,
+  return renderWithProviders(
+    <ListingDetailDrawer
+      huntId="h1"
+      selection={{ listingId: "l1", groupKey: "2-2" }}
+      opened
+      onClose={() => {}}
+    />,
   );
 }
 
@@ -166,15 +177,13 @@ it("shows Problematic when reconciliation used a conservative disputed fallback"
       resolution_rule: "conservative_disputed",
     },
   ];
-  render(
-    <MantineProvider>
-      <ListingDetailDrawer
-        huntId="h1"
-        selection={{ listingId: "l1", groupKey: "2-2" }}
-        opened
-        onClose={() => {}}
-      />
-    </MantineProvider>,
+  renderWithProviders(
+    <ListingDetailDrawer
+      huntId="h1"
+      selection={{ listingId: "l1", groupKey: "2-2" }}
+      opened
+      onClose={() => {}}
+    />,
   );
 
   expect(screen.getByLabelText("Problematic")).toBeInTheDocument();

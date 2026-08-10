@@ -87,27 +87,57 @@
   padding: 0 var(--mantine-spacing-md) var(--mantine-spacing-sm);
 }
 
+/* Mantine's Drawer body is content-height, so the rail's surface stopped
+   partway down the panel and the nav looked like it was floating in a hole.
+   Make the content a column and let the body take the slack. */
+.drawerContent {
+  display: flex;
+  flex-direction: column;
+}
+
+.drawerBody {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Phone header. Only rendered below `sm`, where the rail lives in a Drawer
+   instead — the rail's own styles are reused verbatim in there, so the two
+   widths stay one design rather than two. */
+.mobileBar {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-sm);
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-md);
+  border-bottom: 1px solid var(--mantine-color-default-border);
+  background-color: var(--mantine-color-default);
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+/* Takes the slack so the ← Manzil link sits at the far end. */
+.mobileTitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @media (max-width: 48em) {
   .shell {
     grid-template-columns: 1fr;
+    /* One column, two rows: the bar, then the page. */
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
+  /* Inside the Drawer it is the whole panel, so it keeps the vertical layout
+     and drops the divider it no longer sits beside. */
   .rail {
     border-inline-end: 0;
-    border-bottom: 1px solid var(--mantine-color-default-border);
-    flex-direction: row;
-    flex-wrap: wrap;
-    padding: var(--mantine-spacing-xs);
-  }
-
-  .groupLabel {
-    display: none;
-  }
-
-  .item {
-    border-inline-start: 0;
-    border-radius: var(--mantine-radius-xl);
-    padding: 6px var(--mantine-spacing-sm);
+    height: 100%;
   }
 
   .main {
