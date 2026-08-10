@@ -83,7 +83,12 @@ def _demo_hunt_id() -> tuple[UUID, bool]:
 DEMO_HUNT_ID, DEMO_HUNT_ADOPTED = _demo_hunt_id()
 DEMO_PRINCIPAL_ID = uuid5(_NS, "demo-principal")
 
-PERSONA_EMAIL = os.environ.get("MANZIL_DEMO_PERSONA_EMAIL", "sam@manzil.local")
+PERSONA_EMAIL = os.environ.get("MANZIL_DEMO_PERSONA_EMAIL", "yusufsaquib@gmail.com")
+
+# The persona's per-Hunt display name, overridden for the same §16 reason as the
+# Owner's: the persona is now a real personal account, so its
+# `default_display_name` must not be what the public demo publishes.
+PERSONA_DEMO_NAME = os.environ.get("MANZIL_DEMO_PERSONA_NAME", "Yusuf")
 
 HUNT_SETTINGS = {
     "default_source_policy": "tiers_1_2_3",
@@ -122,9 +127,17 @@ def _service_key() -> str:
 # ── The persona ──────────────────────────────────────────────────────────────
 # One additional member so the collaboration surfaces -- member colours,
 # per-member Visit impressions, comment attribution -- have more than one voice.
-# A real account, created confirmed with a random password and never signed into;
-# no email is sent. The demo principal cannot fill this role because it is not a
-# person and holds no membership.
+# The demo principal cannot fill this role because it is not a person and holds
+# no membership, and the Hunt Owner cannot either: `_seed_opinions` alternates
+# between two distinct voices, and collapsing them to one user makes the rating
+# upsert overwrite itself and the comment guard skip every second listing.
+#
+# This is now the Owner's own personal account (`PERSONA_EMAIL`) rather than a
+# throwaway. That changes the safety calculus, so the lookup comes first and
+# creation is the fallback, not the other way round: minting an account on a
+# real personal email address is not something a seed script should do silently,
+# and PR-1 exists to restrict provisioning to Site Admins. When it does create,
+# it says so.
 def _ensure_persona(api_url: str, service_key: str) -> UUID | None:
     def _call(method: str, path: str, body: dict | None) -> tuple[int, str]:
         req = urllib.request.Request(
@@ -143,6 +156,12 @@ def _ensure_persona(api_url: str, service_key: str) -> UUID | None:
         except urllib.error.HTTPError as exc:
             return exc.code, exc.read().decode()
 
+    code, body = _call("GET", f"/auth/v1/admin/users?filter={PERSONA_EMAIL}", None)
+    if code == 200:
+        users = json.loads(body).get("users") or []
+        if users:
+            return UUID(users[0]["id"])
+
     code, body = _call(
         "POST",
         "/auth/v1/admin/users",
@@ -153,13 +172,11 @@ def _ensure_persona(api_url: str, service_key: str) -> UUID | None:
         },
     )
     if code == 200:
+        print(
+            f"  · created the persona account {PERSONA_EMAIL} (confirmed, random "
+            "password, no email sent). Sign in via password reset if you want it."
+        )
         return UUID(json.loads(body)["id"])
-
-    code, body = _call("GET", f"/auth/v1/admin/users?filter={PERSONA_EMAIL}", None)
-    if code == 200:
-        users = json.loads(body).get("users") or []
-        if users:
-            return UUID(users[0]["id"])
     print(f"  ! could not provision the persona ({code}); continuing without it")
     return None
 
@@ -311,29 +328,32 @@ async def _seed(
         await conn.execute(
             """
             insert into user_profiles (user_id, default_display_name)
-            values ($1, 'Sam')
+            values ($1, $2)
             on conflict (user_id) do nothing
             """,
             persona,
+            PERSONA_DEMO_NAME,
         )
         await conn.execute(
             """
             insert into hunt_members (hunt_id, user_id, role, display_name, color)
-            values ($1, $2, 'curator', 'Sam', 'moss')
+            values ($1, $2, 'curator', $3, 'moss')
             on conflict (hunt_id, user_id) do update
                 set role = excluded.role, display_name = excluded.display_name
             """,
             DEMO_HUNT_ID,
             persona,
+            PERSONA_DEMO_NAME,
         )
         # Same BEFORE INSERT trigger, same separate UPDATE (see above).
         await conn.execute(
             """
-            update hunt_members set display_name = 'Sam', color = 'moss'
+            update hunt_members set display_name = $3, color = 'moss'
              where hunt_id = $1 and user_id = $2
             """,
             DEMO_HUNT_ID,
             persona,
+            PERSONA_DEMO_NAME,
         )
 
     # ── The virtual principal ────────────────────────────────────────────────
