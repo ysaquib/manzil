@@ -11,7 +11,7 @@ import asyncpg
 import pytest
 from manzil_shared.models import Confidence
 from manzil_worker.phase0_rubric import phase0_rubric
-from manzil_worker.queue import build_dispatch, run_worker_loop
+from manzil_worker.queue import _enqueue_score_changes, build_dispatch, run_worker_loop
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL", "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
@@ -186,6 +186,59 @@ async def test_rescore_applies_override_and_persists_scores() -> None:
             beds_entry = next(c for c in parsed["criteria"] if c["key"] == "beds")
             assert beds_entry["value"] == 2
             assert parsed["rubric_version"] == 1
+            score_event = await conn.fetchrow(
+                """select event_type,context from private.notification_events
+                    where source_kind='job' and source_id=$1
+                      and event_type='listing_score_changed'""",
+                job_id,
+            )
+            assert score_event["event_type"] == "listing_score_changed"
+            event_context = json.loads(score_event["context"])
+            assert event_context["listing_id"] == str(listing_id)
+            assert event_context["changes"][0]["old_total"] is None
+            assert event_context["changes"][0]["floor_plan_id"] == str(floor_plan_id)
+    finally:
+        await pool.execute("delete from hunts where id = $1", hunt_id)
+        await pool.close()
+
+
+async def test_score_notification_records_a_removed_floor_plan_score() -> None:
+    try:
+        pool = await asyncpg.create_pool(DATABASE_URL, timeout=5, min_size=1, max_size=4)
+    except (OSError, asyncpg.PostgresError) as exc:  # pragma: no cover
+        pytest.skip(f"Postgres unreachable at {DATABASE_URL}: {exc}")
+
+    hunt_id, listing_id, floor_plan_id = await _seed_rescore_fixture(pool)
+    job_id = uuid4()
+    try:
+        await pool.execute(
+            """insert into jobs(id,hunt_id,hunt_listing_id,type,state)
+               values($1,$2,$3,'rescore','done')""",
+            job_id,
+            hunt_id,
+            listing_id,
+        )
+        await _enqueue_score_changes(
+            pool,
+            job_id,
+            {(listing_id, floor_plan_id): (12.0, [{"criterion_key": "beds"}])},
+            {},
+        )
+        context = await pool.fetchval(
+            """select context from private.notification_events
+                 where event_type='listing_score_changed' and source_id=$1""",
+            job_id,
+        )
+        parsed = json.loads(context)
+        assert parsed["changes"] == [
+            {
+                "floor_plan_id": str(floor_plan_id),
+                "new_gates": [],
+                "new_total": None,
+                "old_gates": [{"criterion_key": "beds"}],
+                "old_total": 12.0,
+            }
+        ]
     finally:
         await pool.execute("delete from hunts where id = $1", hunt_id)
         await pool.close()
