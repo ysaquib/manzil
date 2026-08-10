@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% macro subject(context) -%}{{ context.actor_name }} commented on {{ context.property_name }}{%- endmacro %}
+{% block heading %}A new comment in {{ context.hunt_name }}{% endblock %}
+{% block body %}<strong>{{ context.actor_name }}</strong> commented on <strong>{{ context.property_name }}</strong>.{% endblock %}
+{% block cta %}Read comment{% endblock %}

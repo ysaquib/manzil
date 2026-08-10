@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% macro subject(context) -%}{{ context.property_name }} needs your input on Manzil{%- endmacro %}
+{% block heading %}A run is waiting for you{% endblock %}
+{% block body %}Manzil paused while working on <strong>{{ context.property_name }}</strong> and needs your answer before it can continue.{% endblock %}
+{% block cta %}Answer checkpoint{% endblock %}

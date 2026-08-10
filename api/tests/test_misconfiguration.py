@@ -48,3 +48,28 @@ def test_create_anon_client_rejects_empty_key(monkeypatch: pytest.MonkeyPatch) -
     with pytest.raises(BackendMisconfigured, match="SUPABASE_ANON_KEY"):
         create_anon_client(settings)
     get_settings.cache_clear()
+
+
+def test_production_requires_resend_product_mail() -> None:
+    settings = Settings(
+        supabase_url="http://127.0.0.1:54321",
+        supabase_anon_key="x",
+        supabase_secret_key="x",
+        database_url="postgresql://postgres:postgres@127.0.0.1:54322/postgres",
+        environment="production",
+        email_mode="disabled",
+    )
+    with pytest.raises(RuntimeError, match="MANZIL_EMAIL_MODE=resend"):
+        settings.validate_email_delivery()
+
+
+def test_resend_mode_requires_send_and_webhook_secrets() -> None:
+    settings = Settings(
+        supabase_url="http://127.0.0.1:54321",
+        supabase_anon_key="x",
+        supabase_secret_key="x",
+        database_url="postgresql://postgres:postgres@127.0.0.1:54322/postgres",
+        email_mode="resend",
+    )
+    with pytest.raises(RuntimeError, match=r"RESEND_API_KEY.*RESEND_WEBHOOK_SECRET"):
+        settings.validate_email_delivery()

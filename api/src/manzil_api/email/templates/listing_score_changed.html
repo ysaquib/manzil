@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% macro subject(context) -%}Scores changed for {{ context.property_name }}{%- endmacro %}
+{% block heading %}Scores changed for {{ context.property_name }}{% endblock %}
+{% block body %}A completed Manzil run changed {{ context.changes|length }} Floor Plan score{% if context.changes|length != 1 %}s{% endif %}. Open the Listing to review the current breakdown and Gate outcomes.{% endblock %}
+{% block cta %}Review Listing{% endblock %}

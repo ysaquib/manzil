@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% macro subject(context) -%}{{ context.actor_name }} rated {{ context.property_name }}{%- endmacro %}
+{% block heading %}A rating changed in {{ context.hunt_name }}{% endblock %}
+{% block body %}<strong>{{ context.actor_name }}</strong> rated <strong>{{ context.property_name }}</strong> {{ context.rating }} out of 5.{% endblock %}
+{% block cta %}Review Listing{% endblock %}

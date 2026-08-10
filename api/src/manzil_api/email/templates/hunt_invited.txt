@@ -1,0 +1,7 @@
+{{ context.inviter_name }} invited you to {{ context.hunt_name }} on Manzil
+
+{{ context.inviter_name }} invited you to join their Hunt as a {{ context.role|title }}.
+
+Accept invitation: {{ context.cta_url }}
+
+This invitation expires {{ context.expires_at_display }}. If you weren't expecting it, you can ignore this email.

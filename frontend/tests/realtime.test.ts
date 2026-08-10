@@ -12,8 +12,8 @@ describe("Realtime invalidation map", () => {
     ["ratings", [["ratings"]]],
     ["listing_unit_group_states", [["listing_unit_group_states", huntId]]],
     ["hunt_listing_refresh_status", [["hunt_listing_refresh_status", huntId]]],
-    ["jobs", [["jobs", huntId]]],
-    ["job_events", [["jobs", huntId]]],
+    ["jobs", [["jobs", huntId], ["attention", huntId]]],
+    ["job_events", [["jobs", huntId], ["attention", huntId]]],
     // Visit families invalidate broadly: the rows below `visits` carry no
     // hunt_id, and the writer may be on a different Visit than the reader.
     ["visits", [["visits", huntId], ["visit"], ["visit_unit_group_scores", huntId]]],

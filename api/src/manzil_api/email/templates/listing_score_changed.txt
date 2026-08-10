@@ -1,0 +1,7 @@
+Scores changed for {{ context.property_name }}
+
+A completed Manzil run changed {{ context.changes|length }} Floor Plan score{% if context.changes|length != 1 %}s{% endif %}. Open the Listing to review the current breakdown and Gate outcomes.
+
+Review Listing: {{ context.cta_url }}
+
+Manage email alerts: {{ context.alerts_url }}
