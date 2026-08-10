@@ -573,14 +573,23 @@ describe("allInValue / rowComposition (per-plan, P3-9 follow-up)", () => {
     expect(rowComposition(twoBed)?.components[0].amount).toBe(1179);
   });
 
-  it("falls back to the listing-level composition for pre-column scores", () => {
+  it("falls back to the listing-level total when the Unit Group has no plan cost", () => {
     const listing = withPerPlanComposition();
     listing.scores[0].all_in_components = null;
     listing.scores[1].all_in_components = null;
+    listing.property.floor_plans[0].rent_max = null;
     const rows = buildRows([listing]);
     const oneBed = rows.find((r) => r.group?.beds === 1)!;
-    expect(rowComposition(oneBed)?.components[0].amount).toBe(1179); // status quo
-    expect(allInValue(oneBed)).toBeNull(); // criterion absent from breakdown
+    expect(rowComposition(oneBed)?.components[0].amount).toBe(1179);
+    expect(allInValue(oneBed)).toBe(1179 + 280);
+  });
+
+  it("does not borrow the listing total when the Unit Group has explicit base rent", () => {
+    const listing = withPerPlanComposition();
+    listing.scores[0].all_in_components = null;
+    const rows = buildRows([listing]);
+    const oneBed = rows.find((r) => r.group?.beds === 1)!;
+    expect(allInValue(oneBed)).toBeNull();
   });
 });
 
