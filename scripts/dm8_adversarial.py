@@ -69,10 +69,19 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlparse
 
 import asyncpg
 import httpx
 import jwt
+from dotenv import load_dotenv
+
+# Parity with check_hosted_auth.py: the operator keeps these values in .env, and
+# a harness that silently saw none of them would report a missing environment
+# rather than the security result. Env is read in Env.load(), so this is early
+# enough. Note the consequence: if .env carries the hosted values, this runs
+# against the hosted project -- which is the DM-8 step, but check the banner.
+load_dotenv()
 
 DEMO_CLAIM = "manzil_demo"
 DEMO_GEN_CLAIM = "manzil_demo_gen"
@@ -146,32 +155,98 @@ class Env:
 
     @classmethod
     def load(cls) -> Env:
-        # Either key name. Production moved to `SUPABASE_SECRET_KEY`, while the
-        # local Supabase CLI still emits only the legacy service-role JWT, so a
-        # harness that insisted on one of them would refuse to run in one of the
-        # two places it is meant to run.
-        service_key = os.environ.get("SUPABASE_SECRET_KEY") or os.environ.get(
-            "SUPABASE_SERVICE_ROLE_KEY"
-        )
-        missing = [
-            name
-            for name in ("SUPABASE_URL", "SUPABASE_ANON_KEY", "DATABASE_URL")
-            if not os.environ.get(name)
-        ]
+        # This harness runs in two places with two naming conventions, so each
+        # value accepts every name it legitimately goes by rather than forcing
+        # one environment to keep a duplicate of the other's variable.
+        #
+        #   * the local Supabase CLI emits only the legacy `anon` / service-role
+        #     JWTs, so those names must keep working;
+        #   * the hosted project uses the newer publishable / secret keys, which
+        #     are revocable and can be minted per-task -- the point of using them
+        #     here is that a key for one adversarial run never has to be reused;
+        #   * the operator's own shell distinguishes prod from local by name
+        #     (`SUPABASE_PROD_URL`), and silently reading the wrong one would
+        #     point a destructive-looking harness at the wrong database.
+        #
+        # First match wins, in the order listed.
+        def first(*names: str) -> str | None:
+            for name in names:
+                value = os.environ.get(name, "").strip()
+                if value:
+                    return value
+            return None
+
+        url = first("SUPABASE_URL", "SUPABASE_PROD_URL")
+        anon_key = first("SUPABASE_ANON_KEY", "SUPABASE_PUB_KEY", "SUPABASE_PUBLISHABLE_KEY")
+        service_key = first("SUPABASE_SECRET_KEY", "SUPABASE_SERVICE_ROLE_KEY")
+        secret = first("SUPABASE_JWT_SECRET")
+        database_url = first("DATABASE_URL", "SUPABASE_DB_URL")
+
+        missing: list[str] = []
+        if not url:
+            missing.append("SUPABASE_URL (or SUPABASE_PROD_URL)")
+        if not anon_key:
+            missing.append("SUPABASE_ANON_KEY (or SUPABASE_PUB_KEY)")
         if not service_key:
             missing.append("SUPABASE_SECRET_KEY (or SUPABASE_SERVICE_ROLE_KEY)")
-        secret = os.environ.get("SUPABASE_JWT_SECRET")
         if not secret:
+            # Not an API key and not replaceable by one: the demo principal has
+            # no `auth.users` row (DESIGN v3.55), so its token is *minted*, and
+            # the adversarial cases deliberately forge tokens the app would
+            # never issue. Both need the project's signing secret.
             missing.append("SUPABASE_JWT_SECRET")
+        if not database_url:
+            missing.append(
+                "DATABASE_URL (Supavisor session pooler, port 5432 -- Connect -> "
+                "Session pooler in the dashboard; not the API URL, and not 6543)"
+            )
         if missing:
-            sys.exit(f"Missing environment: {', '.join(missing)}")
+            sys.exit("Missing environment:\n  - " + "\n  - ".join(missing))
+
+        # The API plane and the database must be the same project. Nothing else
+        # here checks that, and the failure is silent and dangerous: on
+        # 2026-08-09 a shell carrying a local `SUPABASE_URL` beside a production
+        # `DATABASE_URL` sent this harness's *setup* -- which enables demo mode
+        # and writes a principal -- to production while its probes went to
+        # localhost. Teardown happened to restore production, but only because
+        # the run reached the end. Every token check failed `401`, which reads
+        # like a broken secret rather than "you are attacking the wrong
+        # database", so the operator is not warned by the output either.
+        api_host = (urlparse(url).hostname or "").lower()  # type: ignore[arg-type]
+        db_host = (urlparse(database_url).hostname or "").lower()  # type: ignore[arg-type]
+        local = {"127.0.0.1", "localhost", "::1", "host.docker.internal"}
+        api_local, db_local = api_host in local, db_host in local
+        if api_local != db_local:
+            sys.exit(
+                f"Refusing to run: the API plane and the database are different "
+                f"targets.\n  API      {api_host}  ({'local' if api_local else 'remote'})"
+                f"\n  DATABASE {db_host}  ({'local' if db_local else 'remote'})\n\n"
+                "Setup writes to DATABASE_URL and the probes go to the API host; "
+                "split across two projects, this enables demo mode on one and "
+                "tests nothing on the other. Set both to the same project."
+            )
+        if not api_local:
+            # Hosted: the pooler username is `postgres.<project-ref>`, and the
+            # API host starts with the same ref. Two different hosted projects
+            # would otherwise pass the local/remote test above.
+            ref = api_host.split(".")[0]
+            user = (urlparse(database_url).username or "").lower()  # type: ignore[arg-type]
+            if ref and user and not user.endswith(ref):
+                sys.exit(
+                    f"Refusing to run: the API host is project '{ref}' but "
+                    f"DATABASE_URL authenticates as '{user}'. These are different "
+                    "hosted projects."
+                )
         return cls(
-            supabase_url=os.environ["SUPABASE_URL"].rstrip("/"),
-            anon_key=os.environ["SUPABASE_ANON_KEY"],
+            supabase_url=url.rstrip("/"),  # type: ignore[union-attr]
+            anon_key=anon_key,  # type: ignore[arg-type]
             service_key=service_key,  # type: ignore[arg-type]
             jwt_secret=secret,  # type: ignore[arg-type]
-            database_url=os.environ["DATABASE_URL"],
-            api_base_url=(os.environ.get("MANZIL_API_BASE_URL") or "").rstrip("/") or None,
+            database_url=database_url,  # type: ignore[arg-type]
+            api_base_url=(first("MANZIL_API_BASE_URL", "MANZIL_PROD_API_BASE_URL") or "").rstrip(
+                "/"
+            )
+            or None,
         )
 
 

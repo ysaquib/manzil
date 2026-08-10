@@ -22,10 +22,14 @@ Usage:
 
     export SUPABASE_PROJECT_REF=abcdefghijklmnop
     export SUPABASE_ACCESS_TOKEN=sbp_...          # a personal access token
-    export SUPABASE_URL=https://abcdefghijklmnop.supabase.co
-    export SUPABASE_ANON_KEY=eyJ...
-    export MANZIL_FRONTEND_URL=https://app.example.com
+    export SUPABASE_PROD_URL=https://abcdefghijklmnop.supabase.co
+    export SUPABASE_PUB_KEY=sb_publishable_...    # or the legacy SUPABASE_ANON_KEY
+    export MANZIL_PROD_FRONTEND_URL=https://app.example.com
     uv run python scripts/check_hosted_auth.py
+
+The unprefixed names (`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `MANZIL_FRONTEND_URL`)
+are accepted as fallbacks. The `*_PROD_*` names win when both are set, because
+this script refuses to run against a local stack anyway.
 
 Either half may be run alone: without a PAT it runs behavioural probes only,
 without a URL it checks declared config only. Both halves must pass before Demo
@@ -46,10 +50,13 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
+
+import httpx
 from dotenv import load_dotenv
 
+# Env is only read inside main(), so loading .env here is early enough and keeps
+# the import block sorted.
 load_dotenv()
-import httpx
 
 MANAGEMENT_API = "https://api.supabase.com"
 # RFC 2606 reserves example.test; nothing can receive mail there, so a probe
@@ -177,7 +184,9 @@ def check_declared_config(ref: str, token: str, frontend_url: str | None, report
             f"{frontend_url} against {entries}",
         )
     else:
-        report.skip("redirect allow-list: set MANZIL_FRONTEND_URL to check it")
+        report.skip(
+            "redirect allow-list: set MANZIL_PROD_FRONTEND_URL (or MANZIL_FRONTEND_URL) to check it"
+        )
 
     limits = {key: value for key, value in config.items() if key.startswith("rate_limit_")}
     report.record(
@@ -280,16 +289,27 @@ def main() -> int:
     parser.add_argument("--evidence", default="docs/hosted-auth-evidence.md")
     args = parser.parse_args()
 
-    ref = os.environ.get("SUPABASE_PROJECT_REF")
-    token = os.environ.get("SUPABASE_ACCESS_TOKEN")
-    url = os.environ.get("SUPABASE_PROD_URL")
-    anon_key = os.environ.get("SUPABASE_PUB_KEY")
-    frontend_url = os.environ.get("MANZIL_PROD_FRONTEND_URL")
+    # Each value accepts every name it legitimately goes by. The `*_PROD_*`
+    # names come first here, deliberately: this script refuses to run against a
+    # local stack at all, so when a shell carries both, the hosted one is always
+    # the one meant.
+    def first(*names: str) -> str | None:
+        for name in names:
+            value = os.environ.get(name, "").strip()
+            if value:
+                return value
+        return None
+
+    ref = first("SUPABASE_PROJECT_REF")
+    token = first("SUPABASE_ACCESS_TOKEN")
+    url = first("SUPABASE_PROD_URL", "SUPABASE_URL")
+    anon_key = first("SUPABASE_PUB_KEY", "SUPABASE_ANON_KEY", "SUPABASE_PUBLISHABLE_KEY")
+    frontend_url = first("MANZIL_PROD_FRONTEND_URL", "MANZIL_FRONTEND_URL")
 
     if url and ("localhost" in url or "127.0.0.1" in url):
         sys.exit(
-            "SUPABASE_URL points at the local stack. This script exists to check a "
-            "*hosted* project, whose settings config.toml does not govern."
+            "The resolved project URL points at the local stack. This script exists "
+            "to check a *hosted* project, whose settings config.toml does not govern."
         )
 
     report = Report()
@@ -302,7 +322,10 @@ def main() -> int:
     if url and anon_key:
         check_observed_behaviour(url, anon_key, report)
     else:
-        report.skip("observed behaviour: set SUPABASE_URL and SUPABASE_ANON_KEY")
+        report.skip(
+            "observed behaviour: set SUPABASE_PROD_URL (or SUPABASE_URL) and "
+            "SUPABASE_PUB_KEY (or SUPABASE_ANON_KEY)"
+        )
 
     if not report.findings:
         sys.exit("Nothing was checked. Provide a Management API token, an anon key, or both.")
