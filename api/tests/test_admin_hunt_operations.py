@@ -9,6 +9,7 @@ from uuid import UUID
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from manzil_api.admin.dependencies import AdminAudit
 from manzil_api.main import create_app
 
 pytestmark = pytest.mark.asyncio
@@ -55,6 +56,58 @@ async def test_ghost_archives_a_listing_and_records_the_actor(
     assert after["status"] == "archived"
 
 
+async def test_ghost_permanently_deletes_an_archived_listing_atomically(
+    ghost_client: AsyncClient, db_pool, collab_hunt, seeded_users
+) -> None:
+    listing_id = UUID(collab_hunt["owner_listing_id"])
+    await db_pool.execute("update hunt_listings set status='archived' where id=$1", listing_id)
+
+    impact = await ghost_client.get(f"/v1/admin/ghost/listings/{listing_id}/deletion-impact")
+    assert impact.status_code == 200, impact.text
+    assert impact.json()["property_name"] == "Owner Property"
+
+    response = await ghost_client.request(
+        "DELETE",
+        f"/v1/admin/ghost/listings/{listing_id}",
+        json={"confirmation_name": "Owner Property"},
+    )
+    assert response.status_code == 200, response.text
+    assert (
+        await db_pool.fetchval("select exists(select 1 from hunt_listings where id=$1)", listing_id)
+        is False
+    )
+    audit = await db_pool.fetchrow(
+        "select admin_user_id, via_ghost_view, before, after from admin_audit_log "
+        "where action='listing.permanent_delete' and target_id=$1 "
+        "order by occurred_at desc limit 1",
+        listing_id,
+    )
+    assert str(audit["admin_user_id"]) == seeded_users["outsider"].user_id
+    assert audit["via_ghost_view"] is True
+
+
+async def test_ghost_delete_rolls_back_when_audit_fails(
+    ghost_client: AsyncClient, db_pool, collab_hunt, monkeypatch
+) -> None:
+    listing_id = UUID(collab_hunt["owner_listing_id"])
+    await db_pool.execute("update hunt_listings set status='archived' where id=$1", listing_id)
+
+    async def fail_audit(*args, **kwargs) -> None:  # type: ignore[no-untyped-def]
+        raise RuntimeError("audit unavailable")
+
+    monkeypatch.setattr(AdminAudit, "record", fail_audit)
+    response = await ghost_client.request(
+        "DELETE",
+        f"/v1/admin/ghost/listings/{listing_id}",
+        json={"confirmation_name": "Owner Property"},
+    )
+    assert response.status_code == 500
+    assert (
+        await db_pool.fetchval("select exists(select 1 from hunt_listings where id=$1)", listing_id)
+        is True
+    )
+
+
 async def test_admin_members_cannot_elevate_their_hunt_role(
     db_pool, collab_hunt, seeded_users
 ) -> None:
@@ -77,6 +130,23 @@ async def test_admin_members_cannot_elevate_their_hunt_role(
             )
         assert response.status_code == 403
         assert response.json()["code"] == "ghost_view_unavailable"
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            headers={"Authorization": f"Bearer {identity.token}"},
+        ) as client:
+            response = await client.request(
+                "DELETE",
+                f"/v1/admin/ghost/listings/{collab_hunt['owner_listing_id']}",
+                json={"confirmation_name": "Owner Property"},
+            )
+        assert response.status_code == 403
+        assert response.json()["code"] == "ghost_view_unavailable"
+        assert await db_pool.fetchval(
+            "select exists(select 1 from hunt_listings where id=$1)",
+            collab_hunt["owner_listing_id"],
+        )
     finally:
         await db_pool.execute(
             "delete from site_admins where user_id=$1", seeded_users["member"].user_id

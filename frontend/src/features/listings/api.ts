@@ -27,6 +27,7 @@ type OverrideCreate = components["schemas"]["OverrideCreate"];
 type OverrideResponse = components["schemas"]["OverrideResponse"];
 type FeeEntryUpsert = components["schemas"]["FeeEntryUpsert"];
 type FeeEntryResponse = components["schemas"]["FeeEntryResponse"];
+export type ListingDeletionImpact = components["schemas"]["ListingDeletionImpact"];
 
 // `property_sources.cleaned_text` is deliberately service-role-only (DESIGN
 // §16). A wildcard nested select requests that protected column and PostgREST
@@ -306,6 +307,51 @@ export function usePatchListingStatus(huntId: string) {
         body: { status } satisfies components["schemas"]["ListingStatusPatch"],
       }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["hunt_listings", huntId] }),
+  });
+}
+
+export function useListingDeletionImpact(
+  huntId: string,
+  listingId: string | null,
+  enabled: boolean,
+) {
+  const mutationPath = useGhostMutationPath(huntId);
+  return useQuery({
+    queryKey: ["listing_deletion_impact", listingId],
+    queryFn: () => apiFetch<ListingDeletionImpact>(
+      mutationPath(`/v1/listings/${listingId}/deletion-impact`),
+    ),
+    enabled: enabled && Boolean(listingId),
+  });
+}
+
+export function usePermanentDeleteListing(huntId: string) {
+  const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
+  return useMutation({
+    mutationFn: ({ listingId, confirmationName }: {
+      listingId: string;
+      confirmationName: string;
+    }) => apiFetch<ListingDeletionImpact>(mutationPath(`/v1/listings/${listingId}`), {
+      method: "DELETE",
+      body: { confirmation_name: confirmationName } satisfies components["schemas"]["ListingPermanentDelete"],
+    }),
+    onSuccess: (_result, { listingId }) => {
+      qc.removeQueries({
+        predicate: (query) => query.queryKey.some((part) => part === listingId),
+      });
+      for (const key of [
+        "hunt_listings",
+        "jobs",
+        "visits",
+        "visit_unit_group_scores",
+        "listing_unit_group_states",
+        "hunt_listing_refresh_status",
+        "hunt_activity",
+      ]) {
+        void qc.invalidateQueries({ queryKey: [key, huntId] });
+      }
+    },
   });
 }
 

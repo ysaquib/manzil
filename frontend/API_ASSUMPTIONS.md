@@ -19,7 +19,8 @@ declared at all · `implemented` = working · `no table` = table not yet in a mi
 | `PUT /v1/hunts/{id}/rubric` | `usePutRubric` (`features/rubric/api.ts`) | generated (shared §8.2 shape) | P1-5 | implemented |
 | `POST /v1/hunts/{id}/rubric/custom-routing` | `useClassifyCustomRouting` (`features/rubric/api.ts`) | generated `CustomRoutingRequest`/`CustomRoutingResponse`; Owner-only, one traced classification; response includes an opaque key, suggested route, reason, and whether v1 supports the route | P3-10 | implemented |
 | `POST /v1/hunts/{id}/listings` | `useCreateListing` (`features/listings/api.ts`) | generated `ListingCreate`/`ListingResponse` | P1-7 | implemented |
-| `DELETE /v1/listings/{id}` | *(no hook — superseded in the UI by the status patch below; endpoint kept)* | generated (204) | P1-7 | implemented |
+| `GET /v1/listings/{id}/deletion-impact` | `useListingDeletionImpact` (`features/listings/api.ts`) | generated `ListingDeletionImpact`; Owner-only preflight with grouped Hunt-local counts and active-Job count | DESIGN v3.68 | implemented |
+| `DELETE /v1/listings/{id}` | `usePermanentDeleteListing` (`features/listings/api.ts`) | generated `ListingPermanentDelete` / `ListingDeletionImpact`; Owner-only, archived-only, exact Property-name confirmation, active-Job refusal; global Property truth survives | DESIGN v3.68 | implemented |
 | `PATCH /v1/listings/{id}/status` | `usePatchListingStatus` (`features/listings/api.ts`) | generated `ListingStatusPatch`/`ListingResponse`; Owner-only archive/restore | m6/m7 (2026-07-19) | implemented |
 | `PATCH /v1/listings/{id}/pins` | `usePatchPins` (`features/listings/api.ts`) | generated `PinsPatch` | P1-11 mini-endpoint | implemented |
 | `PATCH /v1/listings/{id}/source-policy` | `usePatchSourcePolicy` (`features/listings/api.ts`) | generated `SourcePolicyPatch`/`ListingResponse`; Owner or submitter; relaxing atomically queues a `refresh(scope=discover)` Job | P3-5 | implemented |
@@ -122,6 +123,11 @@ Those endpoints use service-role access only after re-checking non-membership se
 `admin_audit_log` with `via_ghost_view = true`. A Site Admin who is a Hunt member always uses the
 ordinary endpoint and their assigned Hunt role. Personal comments, ratings, profile color/name, and
 Visits remain on ordinary member-only paths and are never routed through Ghost View.
+Listing permanent deletion mirrors `GET /v1/admin/ghost/listings/{id}/deletion-impact` and
+`DELETE /v1/admin/ghost/listings/{id}`. The delete and `listing.permanent_delete` audit write share
+one transaction; if the audit cannot be written, the Listing remains. Deleting the Listing also
+deletes Visits for its Hunt + Property, rather than mutating Visits through their ordinary member
+route.
 
 ## Direct Supabase reads (via `supabase-js`, RLS-guarded from P2-1)
 

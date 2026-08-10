@@ -43,7 +43,6 @@ import {
 import { sentenceCase } from "../../lib/text";
 import {
   AutoResolvedBadge,
-  ProblematicBadge,
   StaleBadge,
 } from "../../components/badges/ListingBadges";
 import type { RefreshClass } from "./types";
@@ -70,7 +69,7 @@ function ExpandedDetail({
 }: {
   row: OverviewRow;
   huntId: string;
-  onArchive: (row: OverviewRow) => void;
+  onArchive?: (row: OverviewRow) => void;
 }) {
   const group = row.group;
   const { data: members = [] } = useMembers(huntId);
@@ -165,15 +164,17 @@ function ExpandedDetail({
         >
           {entry && compare.has(entry) ? "Remove" : "Compare"}
         </Button>
-        <Button
-          variant="default"
-          size="xs"
-          color="red"
-          leftSection={<IconArchive size={14} stroke={1.5} />}
-          onClick={() => onArchive(row)}
-        >
-          Archive
-        </Button>
+        {onArchive && (
+          <Button
+            variant="default"
+            size="xs"
+            color="red"
+            leftSection={<IconArchive size={14} stroke={1.5} />}
+            onClick={() => onArchive(row)}
+          >
+            Archive
+          </Button>
+        )}
       </Box>
     </Box>
   );
@@ -185,7 +186,6 @@ function OverviewRowCard({
   pipeline,
   onOpen,
   onArchive,
-  problematic,
   staleClasses,
   autoResolved,
 }: {
@@ -193,8 +193,7 @@ function OverviewRowCard({
   huntId: string;
   pipeline: RowPipeline | null;
   onOpen: (row: OverviewRow) => void;
-  onArchive: (row: OverviewRow) => void;
-  problematic: boolean;
+  onArchive?: (row: OverviewRow) => void;
   staleClasses: RefreshClass[];
   autoResolved: boolean;
 }) {
@@ -273,7 +272,6 @@ function OverviewRowCard({
               <Text size="sm" fw={600} truncate>
                 {row.listing.property.name}
               </Text>
-              {problematic && <ProblematicBadge />}
               {autoResolved && <AutoResolvedBadge />}
               <StaleBadge classes={staleClasses} />
             </Box>
@@ -312,7 +310,6 @@ export function OverviewRowList({
   huntId,
   rows,
   pipeline,
-  problematicPropertyIds,
   staleClassesByListing,
   autoResolvedListingIds,
   onOpen,
@@ -321,11 +318,10 @@ export function OverviewRowList({
   huntId: string;
   rows: OverviewRow[];
   pipeline?: Map<string, RowPipeline>;
-  problematicPropertyIds?: Set<string>;
   staleClassesByListing?: Map<string, RefreshClass[]>;
   autoResolvedListingIds?: Set<string>;
   onOpen: (row: OverviewRow) => void;
-  onArchive: (row: OverviewRow) => void;
+  onArchive?: (row: OverviewRow) => void;
 }) {
   return (
     <Stack gap="xs">
@@ -335,7 +331,6 @@ export function OverviewRowList({
           row={row}
           huntId={huntId}
           pipeline={pipeline?.get(rowKey(row)) ?? null}
-          problematic={problematicPropertyIds?.has(row.listing.property_id) ?? false}
           staleClasses={staleClassesByListing?.get(row.listing.id) ?? []}
           autoResolved={autoResolvedListingIds?.has(row.listing.id) ?? false}
           onOpen={onOpen}

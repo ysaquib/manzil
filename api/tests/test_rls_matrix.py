@@ -479,11 +479,11 @@ async def test_api_mutation_matrix(
             json={"included": False, "monthly_amount": 80},
         )
     elif case.action == "delete_listing":
-        response = await client.delete(f"/v1/listings/{listing_id}")
+        response = await client.get(f"/v1/listings/{listing_id}/deletion-impact")
     else:  # pragma: no cover - matrix vocabulary is closed above
         raise AssertionError(case.action)
 
-    expected = 204 if case.allowed and case.action == "delete_listing" else 200
+    expected = 200
     if case.action == "override" and case.allowed:
         expected = 201
     assert response.status_code == (expected if case.allowed else 403)
@@ -513,6 +513,67 @@ def test_rls_owner_row_cannot_be_deleted(collab_hunt, seeded_users) -> None:
         .execute()
     )
     assert response.data == []
+
+
+def test_rls_even_owner_cannot_bypass_permanent_delete_controls(collab_hunt, seeded_users) -> None:
+    listing_id = collab_hunt["owner_listing_id"]
+    response = (
+        seeded_users["owner"]
+        .supabase.table("hunt_listings")
+        .delete()
+        .eq("id", listing_id)
+        .execute()
+    )
+    assert response.data == []
+    assert (
+        seeded_users["owner"]
+        .supabase.table("hunt_listings")
+        .select("id")
+        .eq("id", listing_id)
+        .execute()
+        .data
+    )
+
+
+@pytest.mark.asyncio
+async def test_rls_member_cannot_invoke_owner_permanent_delete_rpc(
+    collab_hunt, seeded_users, db_pool
+) -> None:
+    listing_id = collab_hunt["member_listing_id"]
+    await db_pool.execute("update hunt_listings set status='archived' where id=$1", listing_id)
+    with pytest.raises(APIError):
+        seeded_users["member"].supabase.rpc(
+            "delete_listing_permanently",
+            {
+                "p_listing_id": listing_id,
+                "p_confirmation_name": "Member Property",
+            },
+        ).execute()
+    assert await db_pool.fetchval(
+        "select exists(select 1 from hunt_listings where id=$1)", listing_id
+    )
+
+
+def test_rls_curator_cannot_change_listing_status_directly(collab_hunt, seeded_users) -> None:
+    with pytest.raises(APIError):
+        (
+            seeded_users["curator"]
+            .supabase.table("hunt_listings")
+            .update({"status": "archived"})
+            .eq("id", collab_hunt["owner_listing_id"])
+            .execute()
+        )
+
+
+def test_rls_owner_cannot_leave_stale_source_assurance_directly(collab_hunt, seeded_users) -> None:
+    with pytest.raises(APIError):
+        (
+            seeded_users["owner"]
+            .supabase.table("hunt_listings")
+            .update({"source_policy": "trust_link"})
+            .eq("id", collab_hunt["owner_listing_id"])
+            .execute()
+        )
 
 
 @pytest.mark.asyncio
