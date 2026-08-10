@@ -99,6 +99,15 @@ async def remove_member(
     await service.remove_member(client, hunt_id, target_user_id)
 
 
+@router.post("/hunts/{hunt_id}/leave", status_code=status.HTTP_204_NO_CONTENT)
+async def leave_hunt(
+    hunt_id: UUID, hunt: MemberHunt, user: CurrentUser, client: UserClient
+) -> None:
+    """Any member may leave — except the Owner (transfer first) and the last
+    member (archive instead)."""
+    await service.leave_hunt(client, hunt_id, user.id)
+
+
 @router.post("/hunts/{hunt_id}/transfer-ownership", response_model=TransferOwnershipResponse)
 async def transfer_ownership(
     hunt_id: UUID,
