@@ -38,6 +38,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/demo/release": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The current protected Demo release */
+        get: operations["demo_release_v1_demo_release_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/demo/release/captures/{ordinal}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One current Replay Capture */
+        get: operations["demo_capture_v1_demo_release_captures__ordinal__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/demo/release/maps/{asset}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One authenticated Demo map still */
+        get: operations["demo_map_asset_v1_demo_release_maps__asset__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/hunts": {
         parameters: {
             query?: never;
@@ -1118,6 +1169,57 @@ export interface paths {
         patch: operations["set_feedback_triage_v1_admin_feedback__feedback_id__patch"];
         trace?: never;
     };
+    "/v1/admin/demo/hunts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Demo Hunt candidates owned by this Site Admin */
+        get: operations["demo_hunt_options_v1_admin_demo_hunts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/demo/preflight": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Review a Hunt before publishing it publicly */
+        post: operations["demo_preflight_v1_admin_demo_preflight_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/demo/publications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue an atomic Demo release publication */
+        post: operations["create_demo_publication_v1_admin_demo_publications_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/demo": {
         parameters: {
             query?: never;
@@ -1125,40 +1227,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Demo mode status and preflight
-         * @description Whether the demo is on, and what currently stands in the way of turning
-         *     it on. Surfacing the blockers is the point: an operator should be able to
-         *     see why the switch will refuse before they flip it.
-         */
+        /** Demo Mode status and publication freshness */
         get: operations["demo_status_v1_admin_demo_get"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        /**
-         * Enable or disable public demo mode
-         * @description The kill switch.
-         *
-         *     Enabling runs `private.demo_preflight()` inside the same transaction as the
-         *     update, so the demo cannot be switched on while an unguarded table or a
-         *     writable view exists. Disabling never preflights -- an emergency shutoff
-         *     must not be blocked by the conditions that made it an emergency.
-         *
-         *     The two directions also differ in how they treat the Admin Audit Log, and
-         *     the asymmetry is deliberate (R2 H4, DESIGN §20). **Enabling** commits the
-         *     setting and its audit entry in one transaction: making the app publicly
-         *     reachable with no record of who did it is not an acceptable outcome, and if
-         *     the ledger is unavailable the safe answer is to stay private. **Disabling**
-         *     commits the setting first and audits afterwards, because the one thing worse
-         *     than an unaudited shutoff is a shutoff that a failing audit table can
-         *     refuse. A failure there is logged loudly rather than raised.
-         *
-         *     Either way `set_demo_enabled` rotates `demo_generation`, so every token
-         *     issued before this call stops working -- a disable is a revocation, not a
-         *     pause.
-         */
+        /** Enable or immediately disable public Demo Mode */
         patch: operations["set_demo_v1_admin_demo_patch"];
         trace?: never;
     };
@@ -2258,6 +2334,29 @@ export interface components {
         DemoConfigResponse: {
             /** Enabled */
             enabled: boolean;
+        };
+        /** DemoPreflightRequest */
+        DemoPreflightRequest: {
+            /**
+             * Hunt Id
+             * Format: uuid
+             */
+            hunt_id: string;
+        };
+        /** DemoPublicationRequest */
+        DemoPublicationRequest: {
+            /**
+             * Confirmation Id
+             * Format: uuid
+             */
+            confirmation_id: string;
+            /** Confirmation Text */
+            confirmation_text: string;
+            /**
+             * Enable On Success
+             * @default false
+             */
+            enable_on_success: boolean;
         };
         /** DemoSessionResponse */
         DemoSessionResponse: {
@@ -4043,6 +4142,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DemoSessionResponse"];
+                };
+            };
+        };
+    };
+    demo_release_v1_demo_release_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    demo_capture_v1_demo_release_captures__ordinal__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                ordinal: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    demo_map_asset_v1_demo_release_maps__asset__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -6365,6 +6550,110 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FeedbackReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    demo_hunt_options_v1_admin_demo_hunts_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    demo_preflight_v1_admin_demo_preflight_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DemoPreflightRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_demo_publication_v1_admin_demo_publications_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DemoPublicationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
