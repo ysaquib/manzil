@@ -20,6 +20,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, status
 from manzil_shared.config import TIER3_FREE_MONTHLY_CREDITS, TIER3_PRICES_USD
+from manzil_worker.fetching.tier3 import provider_configured
 from manzil_worker.llm.config import MODEL_PRICES, STAGE_MODELS, model_for_stage
 
 from manzil_api.admin.dependencies import AdminUser, Audit
@@ -373,9 +374,11 @@ async def system(admin: AdminUser, pool: DbPool) -> SystemReport:
             "configured": bool(os.environ.get("OPENROUTER_API_KEY")),
         },
         {
+            # Key AND zone: a Web Unlocker with a key but no zone is not a
+            # working tier 3, it is a 400 per request (§20 2026-08-11).
             "name": "Bright Data",
             "detail": f"Web Unlocker · tier 3 · ${TIER3_PRICES_USD.get('brightdata', 0):.4f}/req",
-            "configured": bool(os.environ.get("BRIGHTDATA_API_KEY")),
+            "configured": provider_configured("brightdata"),
         },
         {
             "name": "Google Maps",
@@ -390,7 +393,7 @@ async def system(admin: AdminUser, pool: DbPool) -> SystemReport:
         {
             "name": "ScrapingBee",
             "detail": "Alternate tier-3 provider",
-            "configured": bool(os.environ.get("SCRAPINGBEE_API_KEY")),
+            "configured": provider_configured("scrapingbee"),
         },
     ]
 
