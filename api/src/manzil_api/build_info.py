@@ -7,6 +7,8 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+FEEDBACK_VERSION_MAX_CHARS = 100
+
 
 class BuildInfo(BaseModel):
     service: str = "api"
@@ -34,3 +36,15 @@ def api_build_info(environment: str) -> BuildInfo:
         build_id=f"{release}+{short}",
         environment=environment,
     )
+
+
+def feedback_build_context(frontend_context: str | None, environment: str) -> str:
+    """Attach the serving API build without trusting a client-supplied API suffix."""
+    api_fragment = f"api {api_build_info(environment).build_id}"
+    if not frontend_context:
+        return api_fragment
+    frontend_fragment = frontend_context.split(" · api ", 1)[0].strip()
+    if not frontend_fragment.startswith("frontend "):
+        frontend_fragment = f"frontend {frontend_fragment}"
+    available = FEEDBACK_VERSION_MAX_CHARS - len(" · ") - len(api_fragment)
+    return f"{frontend_fragment[:available]} · {api_fragment}"

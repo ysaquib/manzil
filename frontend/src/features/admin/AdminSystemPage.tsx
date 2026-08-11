@@ -7,10 +7,11 @@
 //
 // Credentials are reported as *presence*, never value, following the convention
 // the env probes already use.
-import { Badge, Card, Group, Loader, SimpleGrid, Stack, Table, Text, Title } from "@mantine/core";
+import { Alert, Badge, Card, Group, Loader, SimpleGrid, Stack, Table, Text, Title } from "@mantine/core";
 import { Link } from "react-router-dom";
 
 import { useSystem } from "./api";
+import { buildsDiffer, frontendBuildInfo, useApiBuildInfo } from "../../lib/buildInfo";
 import classes from "./AdminSystemPage.module.css";
 
 function Health({
@@ -39,6 +40,7 @@ function Health({
 
 export function AdminSystemPage() {
   const system = useSystem();
+  const apiBuild = useApiBuildInfo();
 
   if (system.isPending) return <Loader size="sm" />;
   if (!system.data) return <Text c="dimmed">Could not read system state.</Text>;
@@ -83,6 +85,37 @@ export function AdminSystemPage() {
           tone={failureRate > 5 ? "bad" : "ok"}
         />
       </SimpleGrid>
+
+      <Card padding="md" radius="md" withBorder>
+        <Title order={5} mb="xs">Deploy identity</Title>
+        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+          <div>
+            <Text size="xs" c="dimmed" fw={700} tt="uppercase">Frontend</Text>
+            <Text size="sm" ff="monospace">release {frontendBuildInfo.release_version}</Text>
+            <Text size="xs" ff="monospace" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+              build {frontendBuildInfo.build_sha}
+            </Text>
+          </div>
+          <div>
+            <Text size="xs" c="dimmed" fw={700} tt="uppercase">API</Text>
+            {apiBuild.data ? (
+              <>
+                <Text size="sm" ff="monospace">release {apiBuild.data.release_version}</Text>
+                <Text size="xs" ff="monospace" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+                  build {apiBuild.data.build_sha}
+                </Text>
+              </>
+            ) : (
+              <Text size="sm" c="dimmed">Build information unavailable</Text>
+            )}
+          </div>
+        </SimpleGrid>
+        {buildsDiffer(frontendBuildInfo, apiBuild.data) && (
+          <Alert color="yellow" mt="md" title="Frontend and API are different deploys">
+            Their Git SHAs differ. This may be expected while independent deployments converge.
+          </Alert>
+        )}
+      </Card>
 
       <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="md">
         <Stack gap="md">

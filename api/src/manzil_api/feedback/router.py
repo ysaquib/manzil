@@ -20,7 +20,8 @@ from uuid import uuid4
 from fastapi import APIRouter, Request, status
 from postgrest.exceptions import APIError
 
-from manzil_api.dependencies import CurrentUser, UserClient
+from manzil_api.build_info import feedback_build_context
+from manzil_api.dependencies import CurrentUser, SettingsDep, UserClient
 from manzil_api.exceptions import ManzilAPIError
 from manzil_api.feedback.schemas import MAX_USER_AGENT, FeedbackCreate, FeedbackResponse
 
@@ -53,6 +54,7 @@ async def create_feedback(
     request: Request,
     user: CurrentUser,
     client: UserClient,
+    settings: SettingsDep,
 ) -> FeedbackResponse:
     # A report may name only a Hunt the caller can actually see. The read runs
     # under the caller's own RLS, so a Hunt they are not a member of comes back
@@ -76,7 +78,7 @@ async def create_feedback(
         "body": body.body,
         "route": body.route,
         "hunt_id": str(body.hunt_id) if body.hunt_id else None,
-        "app_version": body.app_version,
+        "app_version": feedback_build_context(body.app_version, settings.environment),
         "user_agent": user_agent,
         "created_at": created_at.isoformat(),
     }
