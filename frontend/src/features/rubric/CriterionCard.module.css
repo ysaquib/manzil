@@ -1,0 +1,59 @@
+/* Layout for one criterion's rubric editor card (§13.2), owned by
+   `CriterionCard` and imported by its child rows (`OptionGridRow`) — the
+   composed-surface exception in UI_DESIGN §3.
+
+   Desktop is an aligned grid: match | points | actions, so a criterion reads
+   down the card as a ledger. That alignment is the design, and below `48em` it
+   is also unaffordable. At a 390px viewport the card interior is 324px
+   (`AppShell.Main` and `Card` each take `padding="md"`); the fixed points and
+   action columns plus gaps take 178px of it, leaving the match column 146px —
+   and the operator `Select` holds 72–92px of that, so the value input lands at
+   68px, or 24px *each* on a `range`. Narrower than the number it displays.
+
+   The mobile branch therefore gives the match its own full-width line and drops
+   points and actions beneath it.
+
+   This file owns the *reflow only*. Control sizing is a `size` prop in
+   CriterionCard, not a variable override here: Mantine 9 writes each size to
+   inline CSS variables on the component root (`--input-height:
+   var(--input-height-xs)` sits in the wrapper's `style` attribute), and an
+   inline declaration beats any class. Overriding `--input-height-xs` on this
+   row would technically work, but it silently redefines a theme token for
+   everything that ever lands inside the row. (UI Decision Log, 2026-08-11.) */
+
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 108px 50px;
+  gap: var(--mantine-spacing-xs);
+  align-items: center;
+}
+
+@media (max-width: 48em) {
+  .row {
+    /* Points takes the free width; the actions group sizes to its two icons. */
+    grid-template-columns: minmax(0, 1fr) auto;
+    /* Tint groups the two lines back into one option, now that the columns
+       have stopped doing that job. `default-hover` is the one surface token
+       that reads as a step off the card in both schemes. */
+    background: var(--mantine-color-default-hover);
+    padding: var(--mantine-spacing-xs);
+    border-radius: var(--mantine-radius-sm);
+  }
+
+  /* The match editor gets the full width it could not have as a column. */
+  .row > *:first-child {
+    grid-column: 1 / -1;
+  }
+
+  /* Placeholders that hold the desktop columns open contribute only a gap
+     here, and an empty trailing cell would read as a missing control. */
+  .row > div:empty {
+    display: none;
+  }
+
+  /* Column headings name columns that no longer exist. The points input's own
+     ` pts` suffix carries the meaning instead. */
+  .row[data-option-row="header"] {
+    display: none;
+  }
+}

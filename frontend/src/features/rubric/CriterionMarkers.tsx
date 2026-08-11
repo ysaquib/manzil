@@ -17,7 +17,15 @@ function Mark({
   children: React.ReactNode;
 }) {
   return (
-    <Tooltip label={label} openDelay={200} maw={280} multiline>
+    // These marks exist only as a tooltip target, so on touch they have to open
+    // on tap or they carry nothing at all.
+    <Tooltip
+      label={label}
+      openDelay={200}
+      maw={280}
+      multiline
+      events={{ hover: true, focus: true, touch: true }}
+    >
       <ThemeIcon variant="transparent" color={color} size="sm" role="img" aria-label={label}>
         {children}
       </ThemeIcon>
