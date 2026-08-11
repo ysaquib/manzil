@@ -179,29 +179,16 @@ async def image_fetch_stage(state: RunState, ctx: StageCtx) -> RunState:
     # the images freshness marker. Persistence keys photo retirement off
     # `image_fetch_completed`, so an underfilled partial write stays additive.
     cap_saturated = photo_count >= MAX_STORED_IMAGES
-    if incomplete:
-        if cap_saturated:
-            message = (
-                f"{failed_candidates} image candidate"
-                f"{'s' if failed_candidates != 1 else ''} could not be downloaded; "
-                f"the gallery is at capacity ({MAX_STORED_IMAGES} photos) so this "
-                "pass is treated as complete."
-            )
-            detail: dict[str, object] = {
-                "failed_candidates": failed_candidates,
-                "prepared_images": len(prepared),
-                "cap_saturated": True,
-            }
-        else:
-            message = (
-                f"{failed_candidates} image candidate"
-                f"{'s' if failed_candidates != 1 else ''} could not be downloaded; "
-                "usable images were kept and prior images were not retired."
-            )
-            detail = {
-                "failed_candidates": failed_candidates,
-                "prepared_images": len(prepared),
-            }
+    if incomplete and not cap_saturated:
+        message = (
+            f"{failed_candidates} image candidate"
+            f"{'s' if failed_candidates != 1 else ''} could not be downloaded; "
+            "usable images were kept and prior images were not retired."
+        )
+        detail: dict[str, object] = {
+            "failed_candidates": failed_candidates,
+            "prepared_images": len(prepared),
+        }
         state.replace_warnings(
             "IMAGE_FETCH",
             [
