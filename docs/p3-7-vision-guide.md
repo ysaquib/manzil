@@ -16,12 +16,15 @@ New manifests preserve this order:
 ```
 
 Old manifests retain their recorded stage list and resume cursor. IMAGE_FETCH
-stores up to 30 exact-normalized-hash-distinct photos, source-balanced, with
-Source/page order and DOM context. A partial download is additive and cannot
-retire prior images. A complete refresh marks missing assets non-current.
+retains up to 120 exact-normalized-hash-distinct candidate photos,
+source-balanced, with Source/page order and DOM context. The visible gallery is
+separately capped at 30 classified room/exterior photos; unclassified, `other`,
+diagram, map, and unrelated assets consume no visible slot. A partial download
+is additive and cannot retire prior images. A complete refresh marks missing
+assets non-current.
 
-IMAGE_CLASSIFY classifies up to 30 unstored ≤384 px WebP thumbnails locally
-with the pinned unsigned-int8 CLIP ONNX artifact. The canonical result is
+IMAGE_CLASSIFY classifies up to 120 unstored ≤384 px WebP thumbnails locally in
+deterministic batches of 30 with the pinned unsigned-int8 CLIP ONNX artifact. The canonical result is
 cached per normalized image hash plus artifact/cache-key version under
 `vision_assessment.classification`; it contains scene probabilities,
 `kitchen_score`/`kitchen_predicted`, and diagram score/verdict. It makes no LLM
