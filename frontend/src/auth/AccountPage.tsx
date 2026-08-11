@@ -109,6 +109,7 @@ function ProfilePanel() {
       await qc.invalidateQueries({ queryKey: ["profile", session.user.id] });
       // Member lists resolve color/name fallbacks from the profile.
       await qc.invalidateQueries({ queryKey: ["hunt_members"] });
+      await qc.invalidateQueries({ queryKey: ["hunt_contributors"] });
       notifications.show({ message: "Profile saved", color: "green" });
     } catch (error) {
       notifications.show({

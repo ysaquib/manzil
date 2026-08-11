@@ -6,6 +6,7 @@ import { isDemo } from "./demo";
 import { supabase } from "./supabase";
 
 export type HuntRealtimeTable =
+  | "hunt_members"
   | "hunt_listings"
   | "scores"
   | "comments"
@@ -26,6 +27,8 @@ export function invalidationKeysForRealtime(
   huntId: string,
 ): QueryKey[] {
   switch (table) {
+    case "hunt_members":
+      return [["hunt_members", huntId], ["hunt_contributors", huntId], ["hunts"]];
     case "hunt_listings":
     case "scores":
       return [["hunt_listings", huntId]];
@@ -88,6 +91,11 @@ export function useHuntRealtime(huntId: string | undefined): void {
 
     const channel = supabase
       .channel(`hunt:${huntId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "hunt_members", filter: `hunt_id=eq.${huntId}` },
+        () => invalidate("hunt_members"),
+      )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "hunt_listings", filter: `hunt_id=eq.${huntId}` },

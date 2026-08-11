@@ -1,7 +1,7 @@
 import { Group, Rating, Text } from "@mantine/core";
 
 import { useAuth } from "../../auth/useAuth";
-import { useMembers, useRatings, useSetRating } from "./api";
+import { useHuntContributors, useMembers, useRatings, useSetRating } from "./api";
 import { starColorCss } from "./memberColors";
 import { TeamRatings } from "./TeamRatings";
 
@@ -17,6 +17,7 @@ export function RatingControl({
   const { session } = useAuth();
   const { data: ratings = [] } = useRatings(listingId);
   const { data: members = [] } = useMembers(huntId);
+  const { data: contributors = [] } = useHuntContributors(huntId);
   const setRating = useSetRating(listingId, unitGroupKey);
   const current =
     ratings.find(
@@ -51,6 +52,7 @@ export function RatingControl({
         listingId={listingId}
         unitGroupKey={unitGroupKey}
         members={members}
+        contributors={contributors}
         currentUserId={session?.user.id}
       />
     </div>

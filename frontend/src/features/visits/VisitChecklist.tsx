@@ -21,8 +21,8 @@ import { IconInfoCircle } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
 
 import { useAuth } from "../../auth/useAuth";
-import { useMembers } from "../collaboration/api";
-import { memberColor } from "../collaboration/memberColors";
+import { useHuntContributors, useMembers } from "../collaboration/api";
+import { contributorColor, contributorDisplayName } from "../collaboration/memberDisplay";
 import { useListings } from "../listings/api";
 import { unitGroupLabel } from "../listings/unitGroups";
 import {
@@ -127,6 +127,11 @@ export function VisitChecklist({
   const userId = session?.user.id ?? null;
   const membersQuery = useMembers(visit.hunt_id);
   const members = useMemo(() => membersQuery.data ?? [], [membersQuery.data]);
+  const contributorsQuery = useHuntContributors(visit.hunt_id);
+  const contributors = useMemo(
+    () => contributorsQuery.data ?? [],
+    [contributorsQuery.data],
+  );
   const units = useMemo(
     () => [...(visit.visit_units ?? [])].sort((a, b) => a.display_order - b.display_order),
     [visit.visit_units],
@@ -279,7 +284,7 @@ export function VisitChecklist({
         conflicts={conflictsQuery.data ?? []}
         items={items}
         units={units}
-        members={members}
+        contributors={contributors}
         viewerId={userId ?? null}
         onResolve={resolveConflict}
       />
@@ -466,14 +471,21 @@ export function VisitChecklist({
                             const flags = flaggedBy(team);
                             const names = flags.map(
                               (id) =>
-                                membersQuery.data?.find((m) => m.user_id === id)
-                                  ?.display_name ?? "a member",
+                                contributorDisplayName(
+                                  contributors.find((contributor) => contributor.user_id === id),
+                                ),
                             );
                             const total = membersQuery.data?.length ?? 0;
+                            const currentIds = new Set(
+                              membersQuery.data?.map((member) => member.user_id) ?? [],
+                            );
+                            const currentFlags = flags.filter((id) => currentIds.has(id)).length;
                             return flags.length > 0 ? (
                               <Text size="xs" c="dimmed">
                                 Flagged by {names.join(", ")}
-                                {total > 1 ? ` · ${flags.length} of ${total}` : ""}
+                                {total > 1 && currentFlags > 0
+                                  ? ` · ${currentFlags} of ${total} current members`
+                                  : ""}
                               </Text>
                             ) : null;
                           })()
@@ -481,23 +493,23 @@ export function VisitChecklist({
                           team.length > 1 && (
                             <Group gap={6} wrap="wrap">
                               <Text size="xs" c="dimmed">
-                                Team average {mean} ·
+                                Visit average {mean} ·
                               </Text>
                               {team.map((answer) => {
-                                const member = members.find(
+                                const contributor = contributors.find(
                                   (candidate) => candidate.user_id === answer.owner_user_id,
                                 );
                                 return (
                                   <Tooltip
                                     key={answer.id}
-                                    label={`${member?.display_name ?? "A member"} rated ${String(answer.value)}`}
+                                    label={`${contributorDisplayName(contributor)} rated ${String(answer.value)}`}
                                   >
                                     <Text size="xs" c="dimmed" span>
                                       <span
                                         aria-hidden
                                         className={classes.memberDot}
                                         style={{
-                                          backgroundColor: memberColor(member?.color ?? null),
+                                          backgroundColor: contributorColor(contributor),
                                         }}
                                       />
                                       {String(answer.value)}
@@ -510,7 +522,11 @@ export function VisitChecklist({
                       {/* Shared answers say who wrote them; an Impression is
                           yours by construction, so a byline would be noise. */}
                       {entry && ownerFor(item, userId) === null && (
-                        <VisitByline entry={entry} members={members} viewerId={userId} />
+                        <VisitByline
+                          entry={entry}
+                          contributors={contributors}
+                          viewerId={userId}
+                        />
                       )}
                       {/* VC-15: the 249th thought. A tri-state cannot say why a
                           check failed and a 2-out-of-5 cannot say what was
@@ -565,7 +581,7 @@ export function VisitChecklist({
               items={section.items}
               entries={entries}
               activeUnitId={section.hasUnitScoped ? activeUnitId : null}
-              members={members}
+              contributors={contributors}
               viewerId={userId ?? null}
               answered={sectionProgress(section).answered}
               total={sectionProgress(section).total}

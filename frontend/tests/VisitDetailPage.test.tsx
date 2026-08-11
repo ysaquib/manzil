@@ -37,6 +37,10 @@ vi.mock("../src/features/collaboration/api", () => ({
     data: [{ user_id: "u1", display_name: "Yusuf", role: "owner" }],
     isLoading: false,
   }),
+  useHuntContributors: () => ({
+    data: [{ user_id: "u1", display_name: "Yusuf", is_former: false }],
+    isLoading: false,
+  }),
   useCurrentMember: () => ({ data: { user_id: mockViewer, role: mockViewerRole } }),
 }));
 

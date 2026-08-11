@@ -21,9 +21,10 @@ import {
   useDeleteComment,
   useUpdateComment,
   type Comment,
+  type HuntContributor,
   type HuntMember,
 } from "./api";
-import { memberColor } from "./memberColors";
+import { contributorColor, contributorDisplayName } from "./memberDisplay";
 
 interface CurrentUnitGroup {
   key: string;
@@ -39,10 +40,12 @@ function unitGroupLabel(key: string): string {
 export function CommentsSection({
   listingId,
   members,
+  contributors = members,
   currentUnitGroup,
 }: {
   listingId: string;
   members: HuntMember[];
+  contributors?: (HuntContributor | HuntMember)[];
   currentUnitGroup: CurrentUnitGroup | null;
 }) {
   const { session } = useAuth();
@@ -55,7 +58,7 @@ export function CommentsSection({
   const create = useCreateComment(listingId);
   const update = useUpdateComment(listingId);
   const remove = useDeleteComment(listingId);
-  const byId = new Map(members.map((member) => [member.user_id, member]));
+  const byId = new Map(contributors.map((contributor) => [contributor.user_id, contributor]));
 
   const cancelEdit = () => {
     setEditingId(null);
@@ -66,7 +69,7 @@ export function CommentsSection({
     <Stack gap="sm">
       {comments.length === 0 && <Text size="sm" c="dimmed">No comments yet.</Text>}
       {comments.map((comment) => {
-        const member = byId.get(comment.user_id);
+        const contributor = byId.get(comment.user_id);
         const isEditing = editingId === comment.id;
         return (
           <Group key={comment.id} align="flex-start" wrap="nowrap">
@@ -76,12 +79,12 @@ export function CommentsSection({
                 height: 8,
                 marginTop: 7,
                 borderRadius: "50%",
-                background: memberColor(member?.color ?? null),
+                background: contributorColor(contributor),
               }}
             />
             <Stack gap={2} flex={1}>
               <Group gap="xs" wrap="wrap">
-                <Text size="xs" fw={600}>{member?.display_name ?? "Member"}</Text>
+                <Text size="xs" fw={600}>{contributorDisplayName(contributor)}</Text>
                 <Text size="xs" c="dimmed">
                   {dayjs(comment.created_at).format("MMM D, YYYY")}
                   {comment.edited_at ? " · edited" : ""}

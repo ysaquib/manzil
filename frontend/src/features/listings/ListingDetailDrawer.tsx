@@ -28,7 +28,7 @@ import { SectionCard } from "../../components/SectionCard";
 import { ProblematicBadge } from "../../components/badges/ListingBadges";
 import { CommentsSection } from "../collaboration/CommentsSection";
 import { RatingControl } from "../collaboration/RatingControl";
-import { useCurrentMember, useMembers } from "../collaboration/api";
+import { useCurrentMember, useHuntContributors, useMembers } from "../collaboration/api";
 import { useListingFeeProposals } from "../visits/api";
 import { ListingVisits } from "../visits/ListingVisits";
 import { memberDisplayNameMap } from "../collaboration/memberDisplay";
@@ -280,6 +280,7 @@ function DrawerShell({
     listing?.property_id ?? "",
   );
   const { data: members = [] } = useMembers(huntId);
+  const { data: contributors = [] } = useHuntContributors(huntId);
   const { data: currentMember } = useCurrentMember(huntId);
   // Figures confirmed on a tour and offered to this Listing (VC-7).
   const { data: feeProposals } = useListingFeeProposals(listing?.id);
@@ -291,7 +292,7 @@ function DrawerShell({
     cats: Number(hunt?.settings.cats ?? 0),
     dogs: Number(hunt?.settings.dogs ?? 0),
   };
-  const memberNames = memberDisplayNameMap(members);
+  const memberNames = memberDisplayNameMap(contributors);
   const autoResolvedJob = jobs.find(
     (job) =>
       job.hunt_listing_id === listing?.id &&
@@ -479,7 +480,7 @@ function DrawerShell({
                     overrides={overrides ?? []}
                     floorPlanId={displayFloorPlanId}
                     isMobile={isMobile}
-                    members={members}
+                    members={contributors}
                   />
                 )
               ) : isUnavailable ? (
@@ -588,6 +589,7 @@ function DrawerShell({
                 <CommentsSection
                   listingId={listing.id}
                   members={members}
+                  contributors={contributors}
                   currentUnitGroup={
                     group ? { key: group.key, label: unitLabel ?? group.key } : null
                   }
@@ -667,7 +669,7 @@ function DrawerShell({
           pinned={openFloorPlan ? (draftPins[group.key] ?? null) === openFloorPlan.id : false}
           saving={saving}
           isMobile={isMobile}
-          members={members}
+          members={contributors}
           onClose={() => setOpenFloorPlanId(null)}
           onTogglePin={() =>
             openFloorPlan &&

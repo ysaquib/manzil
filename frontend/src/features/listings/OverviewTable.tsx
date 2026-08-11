@@ -61,7 +61,7 @@ import { ScoreCell } from "./ScoreCell";
 import { visitScoreKey } from "../visits/api";
 import { VisitScoreCell } from "../visits/VisitScoreCell";
 import type { VisitUnitGroupScore } from "../visits/types";
-import { useComments, useCurrentMember, useMembers, useRatings } from "../collaboration/api";
+import { useComments, useCurrentMember, useHuntContributors, useMembers, useRatings } from "../collaboration/api";
 import { usePatchUnitGroupState, useRefreshListing } from "./api";
 import {
   pipelineErrorWasTruncated,
@@ -263,6 +263,7 @@ function PeopleCell({
   unitGroupKey: string | null;
 }) {
   const { data: members = [] } = useMembers(huntId);
+  const { data: contributors = [] } = useHuntContributors(huntId);
   const { data: ratings = [] } = useRatings(listingId);
   const { data: comments = [] } = useComments(listingId);
   const rowRatings = ratings.filter((rating) => rating.unit_group_key === unitGroupKey);
@@ -270,7 +271,12 @@ function PeopleCell({
     (comment) => comment.unit_group_key === null || comment.unit_group_key === unitGroupKey,
   );
   return (
-    <RatingSummary ratings={rowRatings} members={members} commentCount={rowComments.length} />
+    <RatingSummary
+      ratings={rowRatings}
+      members={members}
+      contributors={contributors}
+      commentCount={rowComments.length}
+    />
   );
 }
 
