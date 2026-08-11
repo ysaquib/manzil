@@ -11,6 +11,13 @@
 // - Boolean criteria render fixed True/False rows as plain text — never a
 //   switch; each row just gets its own points.
 //
+// Mobile (2026-08-11): below `48em` the same rows reflow — match on its own
+// line, points and actions beneath — and every control grows to a touch target.
+// That is entirely CriterionCard.module.css; the only thing this file owes it is
+// exactly three children per OptionGridRow, since the reflow spans the first
+// cell across the row. Anything a tooltip alone used to say now also has a
+// visible home, because touch has no hover.
+//
 // Header (UI Decision Log 2026-07-25): enable switch, category-hued identity
 // tile, label, the catalog's extraction hint, then quiet bonus/gate glyphs. The
 // editor only renders criteria that are switched on — everything else lives in
@@ -38,6 +45,7 @@ import {
 
 import type { RubricOption } from "../../lib/contracts";
 import type { CatalogEntry, RubricCriterion } from "./api";
+import { useControlSizes, type ControlSizes } from "./controlSizes";
 import { CriterionTile } from "./criterionIcon";
 import { BonusMark, GateMark } from "./CriterionMarkers";
 import { GateControls } from "./GateControls";
@@ -49,15 +57,17 @@ function PointsInput({
   value,
   onChange,
   ariaLabel,
+  sizes,
 }: {
   value: number;
   onChange: (next: number) => void;
   ariaLabel: string;
+  sizes: ControlSizes;
 }) {
   return (
     <NumberInput
       aria-label={ariaLabel}
-      size="xs"
+      size={sizes.input}
       step={0.25}
       prefix={value > 0 ? "+" : undefined}
       suffix=" pts"
@@ -70,15 +80,17 @@ function PointsInput({
 function DealbreakerScoreInput({
   value,
   onChange,
+  sizes,
 }: {
   value: number;
   onChange: (next: number) => void;
+  sizes: ControlSizes;
 }) {
   return (
     <Tooltip label="Matching this option sets the final score to this value" openDelay={300}>
       <NumberInput
         aria-label="dealbreaker set score"
-        size="xs"
+        size={sizes.input}
         min={0}
         max={15}
         prefix="→ "
@@ -93,9 +105,11 @@ function DealbreakerScoreInput({
 function DealbreakerToggle({
   active,
   onToggle,
+  sizes,
 }: {
   active: boolean;
   onToggle: () => void;
+  sizes: ControlSizes;
 }) {
   return (
     <Tooltip
@@ -107,16 +121,27 @@ function DealbreakerToggle({
       openDelay={300}
     >
       <ActionIcon
-        size="sm"
+        size={sizes.action}
         variant={active ? "filled" : "subtle"}
         color={active ? "red" : "gray"}
         aria-label="dealbreaker"
         aria-pressed={active}
         onClick={onToggle}
       >
-        <IconBan size={14} stroke={1.5} />
+        <IconBan size={sizes.glyph} stroke={1.5} />
       </ActionIcon>
     </Tooltip>
+  );
+}
+
+// The tooltip on the dealbreaker toggle says what arming it does; once it *is*
+// armed the consequence is a fact about this option, and a fact a phone can't
+// hover for. Rendered inside the match cell so the row keeps three children.
+function DealbreakerNote({ setScore }: { setScore: number }) {
+  return (
+    <Text size="xs" c="dimmed">
+      Matching this sets the listing's score to {setScore} instead of adding points.
+    </Text>
   );
 }
 
@@ -125,31 +150,39 @@ function OptionRow({
   entry,
   onChange,
   onRemove,
+  sizes,
 }: {
   option: RubricOption;
   entry: CatalogEntry;
   onChange: (option: RubricOption) => void;
   onRemove: () => void;
+  sizes: ControlSizes;
 }) {
   const isDealbreaker = isOptionDealbreaker(option);
   return (
     <OptionGridRow>
-      <OptionMatchEditor
-        match={option.match}
-        schema={entry.value_schema}
-        criterionKey={entry.key}
-        onChange={(match) => onChange({ ...option, match })}
-      />
+      <Stack gap={4}>
+        <OptionMatchEditor
+          match={option.match}
+          schema={entry.value_schema}
+          criterionKey={entry.key}
+          onChange={(match) => onChange({ ...option, match })}
+          sizes={sizes}
+        />
+        {isDealbreaker && <DealbreakerNote setScore={option.dealbreaker_set_score ?? 0} />}
+      </Stack>
       {isDealbreaker ? (
         <DealbreakerScoreInput
           value={option.dealbreaker_set_score ?? 0}
           onChange={(next) => onChange({ ...option, dealbreaker_set_score: next })}
+          sizes={sizes}
         />
       ) : (
         <PointsInput
           ariaLabel="option delta"
           value={option.delta}
           onChange={(delta) => onChange({ ...option, delta })}
+          sizes={sizes}
         />
       )}
       <Group gap={4} >
@@ -158,10 +191,16 @@ function OptionRow({
           onToggle={() =>
             onChange({ ...option, dealbreaker_set_score: isDealbreaker ? null : 0 })
           }
+          sizes={sizes}
         />
         <Tooltip label="Remove option" openDelay={300}>
-          <ActionIcon color="gray" size="sm" onClick={onRemove} aria-label="remove option">
-            <IconX size={14} stroke={1.5} />
+          <ActionIcon
+            color="gray"
+            size={sizes.action}
+            onClick={onRemove}
+            aria-label="remove option"
+          >
+            <IconX size={sizes.glyph} stroke={1.5} />
           </ActionIcon>
         </Tooltip>
       </Group>
@@ -175,9 +214,11 @@ function OptionRow({
 function BoolRows({
   criterion,
   onChange,
+  sizes,
 }: {
   criterion: RubricCriterion;
   onChange: (criterion: RubricCriterion) => void;
+  sizes: ControlSizes;
 }) {
   const rows = [true, false].map((boolValue) => {
     const index = criterion.options.findIndex(
@@ -204,33 +245,40 @@ function BoolRows({
         const isDealbreaker = isOptionDealbreaker(option);
         return (
           <OptionGridRow key={String(boolValue)}>
-            <Text size="sm" fw={500} pl={2}>
-              {boolValue ? "True" : "False"}
-            </Text>
+            <Stack gap={4}>
+              <Text size="sm" fw={500} pl={2}>
+                {boolValue ? "True" : "False"}
+              </Text>
+              {isDealbreaker && <DealbreakerNote setScore={option.dealbreaker_set_score ?? 0} />}
+            </Stack>
             {isDealbreaker ? (
               <DealbreakerScoreInput
                 value={option.dealbreaker_set_score ?? 0}
                 onChange={(next) =>
                   setBoolOption(index, { ...option, dealbreaker_set_score: next })
                 }
+                sizes={sizes}
               />
             ) : (
               <PointsInput
                 ariaLabel={`points when ${boolValue}`}
                 value={option.delta}
                 onChange={(delta) => setBoolOption(index, { ...option, delta })}
+                sizes={sizes}
               />
             )}
-            <DealbreakerToggle
-              active={isDealbreaker}
-              onToggle={() =>
-                setBoolOption(index, {
-                  ...option,
-                  dealbreaker_set_score: isDealbreaker ? null : 0,
-                })
-              }
-            />
-            <div />
+            <Group gap={4}>
+              <DealbreakerToggle
+                active={isDealbreaker}
+                onToggle={() =>
+                  setBoolOption(index, {
+                    ...option,
+                    dealbreaker_set_score: isDealbreaker ? null : 0,
+                  })
+                }
+                sizes={sizes}
+              />
+            </Group>
           </OptionGridRow>
         );
       })}
@@ -251,6 +299,7 @@ export function CriterionCard({
 }) {
   const isBonus = deriveIsBonus(criterion.options, criterion.unknown_delta);
   const isBoolean = entry.value_schema.type === "boolean";
+  const sizes = useControlSizes();
 
   const setOption = (index: number, option: RubricOption) => {
     const options = criterion.options.map((o, i) => (i === index ? option : o));
@@ -262,6 +311,7 @@ export function CriterionCard({
       <Stack gap="sm">
         <Group gap="xs" wrap="nowrap">
           <Switch
+            size={sizes.headerSwitch}
             checked={criterion.enabled}
             onChange={(e) => onChange({ ...criterion, enabled: e.currentTarget.checked })}
             aria-label={`enable ${entry.label}`}
@@ -270,14 +320,25 @@ export function CriterionCard({
           <Text fw={600} size="sm" truncate style={{ minWidth: 0 }}>
             {entry.label}
           </Text>
-          <Tooltip label={entry.extraction_hint} maw={320} multiline>
+          {/* The catalog hint is the one tooltip here carrying information
+              rather than a restatement, so it opens on tap and focus too. */}
+          <Tooltip
+            label={entry.extraction_hint}
+            maw={320}
+            multiline
+            events={{ hover: true, focus: true, touch: true }}
+          >
             <ActionIcon
               color="gray"
-              size="xs"
+              size={sizes.headerAction}
               variant="subtle"
               aria-label={`info about ${entry.label}`}
             >
-              <IconInfoCircle size={14} stroke={1.5} color="var(--mantine-color-dimmed)" />
+              <IconInfoCircle
+                size={sizes.glyph}
+                stroke={1.5}
+                color="var(--mantine-color-dimmed)"
+              />
             </ActionIcon>
           </Tooltip>
           {isBonus && criterion.enabled && <BonusMark />}
@@ -288,12 +349,12 @@ export function CriterionCard({
             <Tooltip label="Remove custom criterion" openDelay={300}>
               <ActionIcon
                 color="gray"
-                size="xs"
+                size={sizes.headerAction}
                 variant="subtle"
                 aria-label={`remove ${entry.label}`}
                 onClick={onRemove}
               >
-                <IconTrash size={14} stroke={1.5} />
+                <IconTrash size={sizes.glyph} stroke={1.5} />
               </ActionIcon>
             </Tooltip>
           )}
@@ -301,17 +362,18 @@ export function CriterionCard({
 
         {criterion.enabled && (
           <Stack gap="xs">
-            <OptionGridRow>
+            <OptionGridRow variant="header">
               <Text size="xs" c="dimmed">
                 When the value is…
               </Text>
               <Text size="xs" c="dimmed">
                 Points
               </Text>
+              <div />
             </OptionGridRow>
 
             {isBoolean ? (
-              <BoolRows criterion={criterion} onChange={onChange} />
+              <BoolRows criterion={criterion} onChange={onChange} sizes={sizes} />
             ) : (
               <>
                 {criterion.options.map((option, index) => (
@@ -326,13 +388,14 @@ export function CriterionCard({
                         options: criterion.options.filter((_, i) => i !== index),
                       })
                     }
+                    sizes={sizes}
                   />
                 ))}
                 <Button
                   variant="subtle"
-                  size="xs"
+                  size={sizes.button}
                   w="fit-content"
-                  leftSection={<IconPlus size={14} stroke={1.5} />}
+                  leftSection={<IconPlus size={sizes.glyph} stroke={1.5} />}
                   onClick={() =>
                     onChange({
                       ...criterion,
@@ -378,14 +441,15 @@ export function CriterionCard({
                 ariaLabel="unknown delta"
                 value={criterion.unknown_delta}
                 onChange={(unknown_delta) => onChange({ ...criterion, unknown_delta })}
+                sizes={sizes}
               />
-              <div />
               <div />
             </OptionGridRow>
 
             <GateControls
               nonNegotiable={criterion.non_negotiable}
               onChange={(non_negotiable) => onChange({ ...criterion, non_negotiable })}
+              sizes={sizes}
             />
           </Stack>
         )}
