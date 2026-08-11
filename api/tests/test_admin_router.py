@@ -220,6 +220,151 @@ async def test_hunt_options_refuses_a_non_admin(as_nobody: AsyncClient) -> None:
     assert response.json()["code"] == "not_site_admin"
 
 
+# ── Hunt management ──────────────────────────────────────────────────────────
+
+
+async def test_hunt_management_lists_transfer_targets_and_live_blockers(
+    as_admin: AsyncClient, collab_hunt, seeded_users
+) -> None:
+    response = await as_admin.get(f"/v1/admin/hunts/{collab_hunt['hunt_id']}/management")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["name"] == "Collab Hunt"
+    assert body["caller_is_member"] is False
+    by_id = {member["user_id"]: member for member in body["members"]}
+    assert by_id[seeded_users["owner"].user_id]["role"] == "owner"
+    assert by_id[seeded_users["member"].user_id]["display_name"]
+    assert isinstance(body["deletion_blockers"], list)
+
+
+async def test_admin_transfers_hunt_ownership_atomically_and_audits_it(
+    as_admin: AsyncClient, collab_hunt, db_pool, seeded_users
+) -> None:
+    hunt_id = UUID(collab_hunt["hunt_id"])
+    old_owner = UUID(seeded_users["owner"].user_id)
+    new_owner = UUID(seeded_users["member"].user_id)
+    try:
+        response = await as_admin.post(
+            f"/v1/admin/hunts/{hunt_id}/transfer-ownership",
+            json={"new_owner_id": str(new_owner)},
+        )
+        assert response.status_code == 200, response.text
+        assert (
+            await db_pool.fetchval("select owner_id from hunts where id=$1", hunt_id) == new_owner
+        )
+        roles = await db_pool.fetch(
+            "select user_id, role::text from hunt_members where hunt_id=$1", hunt_id
+        )
+        by_user = {row["user_id"]: row["role"] for row in roles}
+        assert by_user[new_owner] == "owner"
+        assert by_user[old_owner] == "curator"
+
+        audit = await db_pool.fetchrow(
+            "select action, target_label, before, after from admin_audit_log "
+            "where target_id=$1 order by occurred_at desc limit 1",
+            hunt_id,
+        )
+        assert audit["action"] == "hunt.ownership.transfer"
+        assert audit["target_label"] == "Collab Hunt"
+    finally:
+        await db_pool.execute(
+            "select transfer_hunt_ownership($1::uuid, $2::uuid)", hunt_id, old_owner
+        )
+
+
+async def test_admin_permanently_deletes_a_hunt_but_keeps_global_property_truth(
+    as_admin: AsyncClient, db_pool, seeded_users
+) -> None:
+    owner_id = UUID(seeded_users["owner"].user_id)
+    admin_id = UUID(seeded_users["outsider"].user_id)
+    hunt_id = await db_pool.fetchval(
+        "insert into hunts(name, owner_id) values('Disposable Hunt', $1) returning id",
+        owner_id,
+    )
+    property_id = await db_pool.fetchval(
+        "insert into properties(name, canonical_address) "
+        "values('Shared Building', '1 Durable St') returning id"
+    )
+    listing_id = await db_pool.fetchval(
+        "insert into hunt_listings(hunt_id, property_id, added_by) values($1, $2, $3) returning id",
+        hunt_id,
+        property_id,
+        owner_id,
+    )
+    await db_pool.execute(
+        "insert into jobs(hunt_id, hunt_listing_id, type, state, payload) "
+        "values($1, $2, 'ingest', 'done', '{}'::jsonb)",
+        hunt_id,
+        listing_id,
+    )
+    try:
+        wrong = await as_admin.request(
+            "DELETE",
+            f"/v1/admin/hunts/{hunt_id}",
+            json={"confirmation_name": "Disposable"},
+        )
+        assert wrong.status_code == 422
+        assert wrong.json()["code"] == "hunt_confirmation_mismatch"
+
+        deleted = await as_admin.request(
+            "DELETE",
+            f"/v1/admin/hunts/{hunt_id}",
+            json={"confirmation_name": "Disposable Hunt"},
+        )
+        assert deleted.status_code == 200, deleted.text
+        assert deleted.json()["listings"] == 1
+        assert await db_pool.fetchval("select count(*) from hunts where id=$1", hunt_id) == 0
+        assert (
+            await db_pool.fetchval("select count(*) from properties where id=$1", property_id) == 1
+        )
+
+        tombstone = await db_pool.fetchrow(
+            "select label, deleted_by from deletion_tombstones "
+            "where entity_type='hunt' and entity_id=$1 order by deleted_at desc limit 1",
+            hunt_id,
+        )
+        assert tombstone["label"] == "Disposable Hunt"
+        assert tombstone["deleted_by"] == admin_id
+        audit = await db_pool.fetchrow(
+            "select action, target_label from admin_audit_log "
+            "where target_id=$1 order by occurred_at desc limit 1",
+            hunt_id,
+        )
+        assert audit["action"] == "hunt.permanent_delete"
+        assert audit["target_label"] == "Disposable Hunt"
+    finally:
+        await db_pool.execute("delete from hunts where id=$1", hunt_id)
+        await db_pool.execute("delete from deletion_tombstones where hunt_id=$1", hunt_id)
+        await db_pool.execute("delete from properties where id=$1", property_id)
+
+
+async def test_active_job_blocks_admin_hunt_deletion(
+    as_admin: AsyncClient, db_pool, seeded_users
+) -> None:
+    hunt_id = await db_pool.fetchval(
+        "insert into hunts(name, owner_id) values('Busy Hunt', $1) returning id",
+        seeded_users["owner"].user_id,
+    )
+    await db_pool.execute(
+        "insert into jobs(hunt_id, type, state, payload) "
+        "values($1, 'refresh', 'queued', '{}'::jsonb)",
+        hunt_id,
+    )
+    try:
+        response = await as_admin.request(
+            "DELETE",
+            f"/v1/admin/hunts/{hunt_id}",
+            json={"confirmation_name": "Busy Hunt"},
+        )
+        assert response.status_code == 409
+        assert response.json()["code"] == "hunt_deletion_blocked"
+        assert "1 active Job" in response.json()["detail"]
+        assert await db_pool.fetchval("select count(*) from hunts where id=$1", hunt_id) == 1
+    finally:
+        await db_pool.execute("delete from hunts where id=$1", hunt_id)
+        await db_pool.execute("delete from deletion_tombstones where hunt_id=$1", hunt_id)
+
+
 # ── the ledger ───────────────────────────────────────────────────────────────
 
 
