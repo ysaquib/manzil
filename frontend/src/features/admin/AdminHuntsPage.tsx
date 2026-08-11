@@ -15,6 +15,8 @@ import {
   Card,
   Group,
   Loader,
+  Modal,
+  Select,
   Stack,
   Table,
   Text,
@@ -22,16 +24,30 @@ import {
   Title,
 } from "@mantine/core";
 import { useDebouncedValue, useMediaQuery } from "@mantine/hooks";
-import { IconExternalLink, IconSearch } from "@tabler/icons-react";
+import { notifications } from "@mantine/notifications";
+import { IconExternalLink, IconSearch, IconTrash } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
+import {
+  ConfirmDeleteModal,
+  type DeletionTarget,
+} from "../../components/ConfirmDeleteModal";
 import {
   TablePagination,
   usePageControls,
   usePagerState,
 } from "../../components/TablePagination";
-import { useAdminHunts, useHuntActivity, type ActivityEntry } from "./api";
+import { ApiError } from "../../lib/apiClient";
+import {
+  useAdminHuntManagement,
+  useAdminHunts,
+  useDeleteAdminHunt,
+  useHuntActivity,
+  useTransferAdminHuntOwnership,
+  type ActivityEntry,
+  type HuntSummary,
+} from "./api";
 
 function relative(iso: string | null): string {
   if (!iso) return "never";
@@ -76,8 +92,32 @@ function ActivityRow({ entry }: { entry: ActivityEntry }) {
   );
 }
 
-function HuntDetail({ huntId, name }: { huntId: string; name: string }) {
+function errorMessage(error: unknown): string {
+  return error instanceof ApiError ? error.message : "Unexpected error";
+}
+
+function HuntDetail({ hunt, onDeleted }: { hunt: HuntSummary; onDeleted: () => void }) {
+  const { hunt_id: huntId, name } = hunt;
   const activity = useHuntActivity(huntId);
+  const management = useAdminHuntManagement(huntId);
+  const transfer = useTransferAdminHuntOwnership(huntId);
+  const deleteHunt = useDeleteAdminHunt();
+  const [transferTarget, setTransferTarget] = useState<string | null>(null);
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
+  const transferOptions = (management.data?.members ?? [])
+    .filter((member) => member.role !== "owner")
+    .map((member) => ({ value: member.user_id, label: member.display_name }));
+  const transferName =
+    transferOptions.find((option) => option.value === transferTarget)?.label ?? "this member";
+  const blockedReason = (management.data?.deletion_blockers ?? []).join(" · ") || undefined;
+  const deleteTarget: DeletionTarget = {
+    id: huntId,
+    label: name,
+    description: `${hunt.members} members · ${hunt.listings} Listings · ${hunt.jobs} Jobs`,
+    blockedReason,
+  };
 
   return (
     <Card padding="md" radius="md" withBorder>
@@ -89,15 +129,75 @@ function HuntDetail({ huntId, name }: { huntId: string; name: string }) {
           size="xs"
           leftSection={<IconExternalLink size={14} />}
         >
-          Open as owner
+          {management.data?.caller_is_member ? "Open Hunt" : "Open as owner"}
         </Button>
       </Group>
 
-      <Alert color="accent" mb="sm">
-        You are not a member of this Hunt. Opening it shows the Owner&apos;s screens with a
-        persistent banner; you stay out of the member list and out of Presence, and Visits are
-        read-only.
-      </Alert>
+      {management.isPending ? (
+        <Loader size="xs" mb="sm" />
+      ) : management.data?.caller_is_member ? (
+        <Alert color="gray" mb="sm">
+          You belong to this Hunt. Opening it uses your assigned Hunt role; Site Admin powers
+          remain here in the audited panel.
+        </Alert>
+      ) : (
+        <Alert color="accent" mb="sm">
+          You are not a member of this Hunt. Opening it shows the Owner&apos;s screens with a
+          persistent banner; you stay out of the member list and out of Presence, and Visits are
+          read-only.
+        </Alert>
+      )}
+
+      <Title order={6} mb={4}>
+        Hunt management
+      </Title>
+      <Stack gap="xs" mb="md">
+        <Group align="flex-end" wrap="wrap">
+          <Select
+            label="New Owner"
+            placeholder={transferOptions.length ? "Choose an existing member" : "No other members"}
+            data={transferOptions}
+            value={transferTarget}
+            onChange={setTransferTarget}
+            searchable
+            disabled={management.isPending || management.isError}
+            flex={1}
+            miw={220}
+          />
+          <Button
+            variant="default"
+            disabled={!transferTarget}
+            onClick={() => setTransferOpen(true)}
+          >
+            Transfer ownership
+          </Button>
+        </Group>
+        <Group justify="space-between" align="flex-start" wrap="wrap">
+          <Text size="sm" c="dimmed" maw={520}>
+            The new Owner must already belong to the Hunt. The current Owner becomes a Curator.
+          </Text>
+          <Button
+            color="red"
+            variant="light"
+            leftSection={<IconTrash size={14} />}
+            disabled={management.isPending || management.isError}
+            onClick={() => setDeleteOpen(true)}
+          >
+            Delete Hunt permanently
+          </Button>
+        </Group>
+        {blockedReason && (
+          <Alert color="yellow" title="Deletion is currently blocked">
+            {blockedReason}
+          </Alert>
+        )}
+        {management.isError && (
+          <Alert color="red" title="Hunt management unavailable">
+            The member roster and deletion safety checks could not be loaded. Try again before
+            changing this Hunt.
+          </Alert>
+        )}
+      </Stack>
 
       <Title order={6} mb={4}>
         Recent activity
@@ -119,6 +219,83 @@ function HuntDetail({ huntId, name }: { huntId: string; name: string }) {
           </Table>
         </Table.ScrollContainer>
       )}
+
+      <Modal
+        opened={transferOpen}
+        onClose={() => setTransferOpen(false)}
+        title="Transfer Hunt ownership?"
+        centered
+      >
+        <Stack gap="md">
+          <Text size="sm">
+            <Text span fw={600}>{transferName}</Text> becomes the Owner of {name}. The current
+            Owner becomes a Curator.
+          </Text>
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setTransferOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              loading={transfer.isPending}
+              onClick={() => {
+                if (!transferTarget) return;
+                transfer.mutate(transferTarget, {
+                  onSuccess: () => {
+                    setTransferOpen(false);
+                    setTransferTarget(null);
+                    notifications.show({
+                      message: `${transferName} now owns ${name}.`,
+                      color: "green",
+                    });
+                  },
+                  onError: (error) =>
+                    notifications.show({
+                      title: "Couldn't transfer ownership",
+                      message: errorMessage(error),
+                      color: "red",
+                    }),
+                });
+              }}
+            >
+              Transfer ownership
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      <ConfirmDeleteModal
+        opened={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        noun={{ singular: "Hunt", plural: "Hunts" }}
+        title="Delete this Hunt permanently?"
+        confirmLabel="Permanently delete Hunt"
+        targets={[deleteTarget]}
+        loading={deleteHunt.isPending}
+        warning="This permanently removes the Hunt, every Listing association, score, comment, rating, Visit, Job, Rubric, invite, and Hunt-scoped Extraction. Shared Properties, Sources, Floor Plans, images, and Catalog facts remain."
+        onConfirm={() =>
+          deleteHunt.mutate(
+            { huntId, confirmationName: name },
+            {
+              onSuccess: () => {
+                setDeleteOpen(false);
+                onDeleted();
+                notifications.show({ message: `${name} deleted.`, color: "green" });
+              },
+              onError: (error) =>
+                notifications.show({
+                  title: "Couldn't delete the Hunt",
+                  message: errorMessage(error),
+                  color: "red",
+                }),
+            },
+          )
+        }
+      >
+        <Text size="sm" c="dimmed">
+          Impact: {hunt.members} memberships, {hunt.listings} Listings, {hunt.jobs} Jobs, and all
+          Visits and collaboration records owned by this Hunt.
+        </Text>
+      </ConfirmDeleteModal>
     </Card>
   );
 }
@@ -251,7 +428,13 @@ export function AdminHuntsPage() {
         )}
       </Card>
 
-      {selectedHunt && <HuntDetail huntId={selectedHunt.hunt_id} name={selectedHunt.name} />}
+      {selectedHunt && (
+        <HuntDetail
+          key={selectedHunt.hunt_id}
+          hunt={selectedHunt}
+          onDeleted={() => setSelected(null)}
+        />
+      )}
     </Stack>
   );
 }
