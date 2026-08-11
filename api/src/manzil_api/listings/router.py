@@ -7,7 +7,7 @@ from uuid import UUID
 from fastapi import APIRouter, status
 
 from manzil_api.dependencies import CurrentUser, UserClient
-from manzil_api.hunts.dependencies import CuratedHunt, MemberHunt
+from manzil_api.hunts.dependencies import MemberHunt, WritableCuratedHunt, WritableMemberHunt
 from manzil_api.jobs.schemas import JobResponse
 from manzil_api.listings import service
 from manzil_api.listings.dependencies import ValidListing
@@ -35,7 +35,7 @@ router = APIRouter(tags=["listings"])
 async def create_listing(
     hunt_id: UUID,
     body: ListingCreate,
-    hunt: MemberHunt,
+    hunt: WritableMemberHunt,
     user: CurrentUser,
     client: UserClient,
 ) -> ListingResponse:
@@ -133,7 +133,7 @@ async def refresh_listing(
 async def refresh_hunt(
     hunt_id: UUID,
     body: RefreshRequest,
-    hunt: CuratedHunt,
+    hunt: WritableCuratedHunt,
     user: CurrentUser,
     client: UserClient,
 ) -> list[JobResponse]:

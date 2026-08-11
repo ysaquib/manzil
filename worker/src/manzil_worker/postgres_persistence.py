@@ -41,6 +41,10 @@ _TERMINAL = (JobState.DONE, JobState.FAILED, JobState.CANCELLED)
 OnDone = Callable[["asyncpg.Connection", RunState], Awaitable[None]]
 
 
+class HuntExecutionFrozen(Exception):
+    """The Hunt changed to an archived/locked state at a safe Stage boundary."""
+
+
 class PostgresPersistence:
     """Persist-before-advance sink writing to one `jobs` row.
 
@@ -98,56 +102,91 @@ class PostgresPersistence:
         finished = state.status in _TERMINAL
         current_stage = self._current_stage(cursor)
 
+        frozen_reason: str | None = None
         async with self._pool.acquire() as conn, conn.transaction():
-            # The projection commits in THIS transaction, before the DONE flip is
-            # visible — so a projection failure rolls back the terminal state and
-            # the job stays reclaimable/retryable rather than ending done-empty.
-            if state.status is JobState.DONE and self._on_done is not None and not self._projected:
-                await self._on_done(conn, state)
-                self._projected = True
-            await conn.execute(
+            lifecycle = await conn.fetchrow(
                 """
-                update jobs set
-                    state = $2::job_state,
-                    current_stage = $3,
-                    error = $4,
-                    cost_actual_usd = $5,
-                    payload = jsonb_set(coalesce(payload, '{}'::jsonb),
-                                        '{run_state}', $6::jsonb, true),
-                    plan = $7::jsonb,
-                    warnings = $9::jsonb,
-                    locked_at = now(),
-                    finished_at = case when $8 then now() else finished_at end
-                where id = $1
+                select j.state::text as job_state, h.archived_at, h.locked_at
+                from jobs j join hunts h on h.id = j.hunt_id
+                where j.id = $1
+                for update of j for key share of h
                 """,
                 self.job_id,
-                state.status.value,
-                current_stage,
-                state.error,
-                Decimal(str(state.cost_usd)),
-                snapshot,
-                plan,
-                finished,
-                warnings,
             )
-            await self._save_stage_costs(conn, state)
-            # A stage completes when the cursor advances past it (persist-before-
-            # advance means outputs are already durable at that point).
-            while self._last_completed < cursor:
-                await self._emit(conn, self._stage_names[self._last_completed], "completed")
-                self._last_completed += 1
-            if not self._terminal_emitted:
-                if state.status is JobState.FAILED:
-                    await self._emit(conn, current_stage or "run", "failed", {"error": state.error})
-                    self._terminal_emitted = True
-                elif state.status is JobState.WAITING_USER and state.checkpoint is not None:
-                    await self._emit(
-                        conn,
-                        current_stage or "run",
-                        "checkpoint_asked",
-                        {"question": state.checkpoint.question},
-                    )
-                    self._terminal_emitted = True
+            if lifecycle is None or lifecycle["job_state"] == JobState.CANCELLED.value:
+                frozen_reason = "Job was cancelled while its Stage was running"
+            elif lifecycle["archived_at"] is not None or lifecycle["locked_at"] is not None:
+                await conn.execute(
+                    """
+                    update jobs set state='cancelled', finished_at=coalesce(finished_at, now()),
+                        locked_by=null, locked_at=null,
+                        error=coalesce(error, 'Cancelled because the Hunt became read-only')
+                    where id=$1
+                    """,
+                    self.job_id,
+                )
+                frozen_reason = "Hunt became read-only while its Stage was running"
+            else:
+                # The projection commits in THIS transaction, before the DONE flip is
+                # visible — so a projection failure rolls back the terminal state and
+                # the job stays reclaimable/retryable rather than ending done-empty.
+                if (
+                    state.status is JobState.DONE
+                    and self._on_done is not None
+                    and not self._projected
+                ):
+                    await self._on_done(conn, state)
+                    self._projected = True
+                await conn.execute(
+                    """
+                    update jobs set
+                        state = $2::job_state,
+                        current_stage = $3,
+                        error = $4,
+                        cost_actual_usd = $5,
+                        payload = jsonb_set(coalesce(payload, '{}'::jsonb),
+                                            '{run_state}', $6::jsonb, true),
+                        plan = $7::jsonb,
+                        warnings = $9::jsonb,
+                        locked_at = now(),
+                        finished_at = case when $8 then now() else finished_at end
+                    where id = $1
+                    """,
+                    self.job_id,
+                    state.status.value,
+                    current_stage,
+                    state.error,
+                    Decimal(str(state.cost_usd)),
+                    snapshot,
+                    plan,
+                    finished,
+                    warnings,
+                )
+                await self._save_stage_costs(conn, state)
+                # A stage completes when the cursor advances past it (persist-before-
+                # advance means outputs are already durable at that point).
+                while self._last_completed < cursor:
+                    await self._emit(conn, self._stage_names[self._last_completed], "completed")
+                    self._last_completed += 1
+                if not self._terminal_emitted:
+                    if state.status is JobState.FAILED:
+                        await self._emit(
+                            conn, current_stage or "run", "failed", {"error": state.error}
+                        )
+                        self._terminal_emitted = True
+                    elif state.status is JobState.WAITING_USER and state.checkpoint is not None:
+                        await self._emit(
+                            conn,
+                            current_stage or "run",
+                            "checkpoint_asked",
+                            {"question": state.checkpoint.question},
+                        )
+                        self._terminal_emitted = True
+
+        # Raise only after the transaction commits the cancellation. Raising
+        # inside the context manager would roll the state back to `running`.
+        if frozen_reason is not None:
+            raise HuntExecutionFrozen(frozen_reason)
 
     async def _save_stage_costs(self, conn: asyncpg.Connection, state: RunState) -> None:
         """Mirror `RunState.stage_costs` onto `job_stage_costs` (AD-C).

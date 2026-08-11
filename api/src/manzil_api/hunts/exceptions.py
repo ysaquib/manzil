@@ -30,3 +30,28 @@ class InsufficientRole(ManzilAPIError):
 class InvalidHuntSettings(ManzilAPIError):
     status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
     code = "invalid_hunt_settings"
+
+
+class HuntArchivedReadOnly(ManzilAPIError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "hunt_archived_read_only"
+
+
+class HuntLocked(ManzilAPIError):
+    status_code = status.HTTP_423_LOCKED
+    code = "hunt_locked"
+
+
+class HuntNotArchived(ManzilAPIError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "hunt_not_archived"
+
+
+class HuntDeletionBlocked(ManzilAPIError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "hunt_deletion_blocked"
+
+
+class HuntConfirmationMismatch(ManzilAPIError):
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    code = "hunt_confirmation_mismatch"
