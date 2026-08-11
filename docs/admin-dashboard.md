@@ -5,8 +5,8 @@ Status tracker and orientation for the Manzil operator surface.
 owns the task table and acceptance evidence. **This file is the map** — where the
 pieces are and why they are shaped that way.
 
-Last updated 2026-08-10 (DESIGN v3.76 — Hunt transfer/deletion and former-member
-attribution added after the AD workstream completed).
+Last updated 2026-08-11 (DESIGN v3.77 — Hunt lock/read-only lifecycle and mobile
+table layouts added after the AD workstream completed).
 
 ---
 
@@ -31,8 +31,8 @@ Route: `/admin/*`, deliberately outside the `/h/:huntId` tree, with its own shel
 | **AD-1** | Admin identity, the gate, `admin_audit_log`, router | ✅ 2.0.108 |
 | **AD-2** | Panel shell, nav entry, feedback inbox | ✅ 2.0.109 |
 | **AD-3 / PR-1** | People — roster, detail, provision/update/suspend/delete, memberships; sole account-creation path | ✅ 2.0.110 / 2.0.121 |
-| **AD-4** | Hunts + the ghost view (`open as owner`), ownership transfer, permanent Hunt deletion | ✅ 2.0.111; expanded 2.0.155 |
-| **AD-5** | Jobs, Costs, System, Audit log — with `@mantine/charts` | ✅ 2.0.112 |
+| **AD-4** | Hunts + the ghost view (`open as owner`), ownership transfer, permanent Hunt deletion, audited lock/unlock | ✅ 2.0.111; expanded 2.0.155–2.0.156 |
+| **AD-5** | Jobs, Costs, System, Audit log — with `@mantine/charts`; responsive cards/contained scrolling | ✅ 2.0.112; responsive 2.0.156 |
 | **DM-10** | Owned-Hunt Demo publication, freshness, and kill switch | ✅ 2.0.149 |
 
 **The workstream is complete (AD-C, AD-G, AD-0…AD-5).**
