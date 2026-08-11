@@ -37,11 +37,15 @@ import {
 import {
   IconBan,
   IconHelpCircle,
+  IconGripVertical,
   IconInfoCircle,
   IconPlus,
   IconTrash,
   IconX,
 } from "@tabler/icons-react";
+import { DragDropProvider } from "@dnd-kit/react";
+import { useSortable } from "@dnd-kit/react/sortable";
+import { arrayMove } from "@dnd-kit/helpers";
 
 import type { RubricOption } from "../../lib/contracts";
 import type { CatalogEntry, RubricCriterion } from "./api";
@@ -151,16 +155,22 @@ function OptionRow({
   onChange,
   onRemove,
   sizes,
+  rowRef,
+  handleRef,
+  dragging = false,
 }: {
   option: RubricOption;
   entry: CatalogEntry;
   onChange: (option: RubricOption) => void;
   onRemove: () => void;
   sizes: ControlSizes;
+  rowRef?: (element: Element | null) => void;
+  handleRef?: (element: Element | null) => void;
+  dragging?: boolean;
 }) {
   const isDealbreaker = isOptionDealbreaker(option);
   return (
-    <OptionGridRow>
+    <OptionGridRow ref={(element) => rowRef?.(element)}>
       <Stack gap={4}>
         <OptionMatchEditor
           match={option.match}
@@ -186,6 +196,20 @@ function OptionRow({
         />
       )}
       <Group gap={4} >
+        {handleRef && (
+          <Tooltip label="Drag to reorder" openDelay={300}>
+            <ActionIcon
+              ref={(element) => handleRef(element)}
+              color="gray"
+              size={sizes.action}
+              variant="subtle"
+              aria-label="reorder option"
+              style={{ cursor: dragging ? "grabbing" : "grab", opacity: dragging ? 0.55 : 1 }}
+            >
+              <IconGripVertical size={sizes.glyph} stroke={1.5} />
+            </ActionIcon>
+          </Tooltip>
+        )}
         <DealbreakerToggle
           active={isDealbreaker}
           onToggle={() =>
@@ -205,6 +229,40 @@ function OptionRow({
         </Tooltip>
       </Group>
     </OptionGridRow>
+  );
+}
+
+function SortableOptionRow({
+  id,
+  index,
+  group,
+  option,
+  entry,
+  onChange,
+  onRemove,
+  sizes,
+}: {
+  id: string;
+  index: number;
+  group: string;
+  option: RubricOption;
+  entry: CatalogEntry;
+  onChange: (option: RubricOption) => void;
+  onRemove: () => void;
+  sizes: ControlSizes;
+}) {
+  const { ref, handleRef, isDragging } = useSortable({ id, index, group });
+  return (
+    <OptionRow
+      option={option}
+      entry={entry}
+      onChange={onChange}
+      onRemove={onRemove}
+      sizes={sizes}
+      rowRef={ref}
+      handleRef={handleRef}
+      dragging={isDragging}
+    />
   );
 }
 
@@ -376,21 +434,38 @@ export function CriterionCard({
               <BoolRows criterion={criterion} onChange={onChange} sizes={sizes} />
             ) : (
               <>
-                {criterion.options.map((option, index) => (
-                  <OptionRow
-                    key={index}
-                    option={option}
-                    entry={entry}
-                    onChange={(next) => setOption(index, next)}
-                    onRemove={() =>
-                      onChange({
-                        ...criterion,
-                        options: criterion.options.filter((_, i) => i !== index),
-                      })
+                <DragDropProvider
+                  onDragEnd={(event) => {
+                    if (event.canceled) return;
+                    const source = String(event.operation.source?.id ?? "");
+                    const target = String(event.operation.target?.id ?? "");
+                    const ids = criterion.options.map((_, index) => `${entry.key}:option:${index}`);
+                    const from = ids.indexOf(source);
+                    const to = ids.indexOf(target);
+                    if (from >= 0 && to >= 0 && from !== to) {
+                      onChange({ ...criterion, options: arrayMove(criterion.options, from, to) });
                     }
-                    sizes={sizes}
-                  />
-                ))}
+                  }}
+                >
+                  {criterion.options.map((option, index) => (
+                    <SortableOptionRow
+                      key={`${entry.key}:option:${index}`}
+                      id={`${entry.key}:option:${index}`}
+                      index={index}
+                      group={`${entry.key}:options`}
+                      option={option}
+                      entry={entry}
+                      onChange={(next) => setOption(index, next)}
+                      onRemove={() =>
+                        onChange({
+                          ...criterion,
+                          options: criterion.options.filter((_, i) => i !== index),
+                        })
+                      }
+                      sizes={sizes}
+                    />
+                  ))}
+                </DragDropProvider>
                 <Button
                   variant="subtle"
                   size={sizes.button}
