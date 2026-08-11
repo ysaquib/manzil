@@ -177,7 +177,9 @@ async def get_rubric(client: Client, hunt_id: UUID) -> list[RubricCriterionOut]:
     return [_row_to_out(row) for row in response.data or []]
 
 
-async def put_rubric(client: Client, hunt_id: UUID, body: RubricPut) -> list[RubricCriterionOut]:
+async def put_rubric(
+    client: Client, hunt_id: UUID, user_id: str, body: RubricPut
+) -> list[RubricCriterionOut]:
     existing_rows = (
         client.table("rubric_criteria")
         .select("custom_def")
@@ -256,7 +258,7 @@ async def put_rubric(client: Client, hunt_id: UUID, body: RubricPut) -> list[Rub
     current = (hunt.data or [{}])[0].get("rubric_version", 0)
     client.table("hunts").update({"rubric_version": current + 1}).eq("id", str(hunt_id)).execute()
 
-    await enqueue_rescore(client, hunt_id)
+    await enqueue_rescore(client, hunt_id, requested_by=user_id)
     new_keys = sorted(
         key for key in custom_keys - set(existing_defs) if not custom_defs_by_key[key].is_manual
     )
@@ -285,6 +287,7 @@ async def put_rubric(client: Client, hunt_id: UUID, body: RubricPut) -> list[Rub
                     "hunt_listing_id": listing["id"],
                     "type": "refresh",
                     "state": "queued",
+                    "requested_by": user_id,
                     "payload": {
                         "url": url,
                         "hunt_id": str(hunt_id),

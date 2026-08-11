@@ -167,12 +167,10 @@ async def test_ghost_submits_a_listing_with_admin_attribution(
         "select added_by, property_id from hunt_listings where id=$1", listing_id
     )
     assert str(row["added_by"]) == seeded_users["outsider"].user_id
-    assert (
-        await db_pool.fetchval(
-            "select count(*) from jobs where hunt_listing_id=$1 and type='ingest'", listing_id
-        )
-        == 1
+    requester = await db_pool.fetchval(
+        "select requested_by from jobs where hunt_listing_id=$1 and type='ingest'", listing_id
     )
+    assert str(requester) == seeded_users["outsider"].user_id
     assert (
         await db_pool.fetchval(
             "select via_ghost_view from admin_audit_log where action='listing.create' "
@@ -189,7 +187,7 @@ async def test_ghost_submits_a_listing_with_admin_attribution(
 
 
 async def test_ghost_saves_the_rubric_through_the_audited_route(
-    ghost_client: AsyncClient, db_pool, collab_hunt
+    ghost_client: AsyncClient, db_pool, collab_hunt, seeded_users
 ) -> None:
     response = await ghost_client.put(
         f"/v1/admin/ghost/hunts/{collab_hunt['hunt_id']}/rubric",
@@ -197,6 +195,12 @@ async def test_ghost_saves_the_rubric_through_the_audited_route(
     )
     assert response.status_code == 200, response.text
     assert response.json() == []
+    requester = await db_pool.fetchval(
+        "select requested_by from jobs where hunt_id=$1 and type='rescore' "
+        "order by created_at desc limit 1",
+        UUID(collab_hunt["hunt_id"]),
+    )
+    assert str(requester) == seeded_users["outsider"].user_id
     assert (
         await db_pool.fetchval(
             "select via_ghost_view from admin_audit_log where action='hunt.rubric.update' "
@@ -208,7 +212,7 @@ async def test_ghost_saves_the_rubric_through_the_audited_route(
 
 
 async def test_ghost_queues_a_listing_refresh(
-    ghost_client: AsyncClient, db_pool, collab_hunt
+    ghost_client: AsyncClient, db_pool, collab_hunt, seeded_users
 ) -> None:
     listing_id = UUID(collab_hunt["owner_listing_id"])
     source_id = await db_pool.fetchval(
@@ -226,6 +230,10 @@ async def test_ghost_queues_a_listing_refresh(
     response = await ghost_client.post(f"/v1/admin/ghost/listings/{listing_id}/refresh", json={})
     assert response.status_code == 202, response.text
     assert response.json()["type"] == "refresh"
+    requester = await db_pool.fetchval(
+        "select requested_by from jobs where id=$1", UUID(response.json()["id"])
+    )
+    assert str(requester) == seeded_users["outsider"].user_id
     assert (
         await db_pool.fetchval(
             "select via_ghost_view from admin_audit_log where action='listing.refresh' "
@@ -234,3 +242,36 @@ async def test_ghost_queues_a_listing_refresh(
         )
         is True
     )
+
+
+async def test_ghost_source_policy_refresh_records_the_admin_requester(
+    ghost_client: AsyncClient, db_pool, collab_hunt, seeded_users
+) -> None:
+    listing_id = UUID(collab_hunt["owner_listing_id"])
+    await db_pool.execute(
+        "update hunt_listings set source_policy='trust_link' where id=$1", listing_id
+    )
+    if not await db_pool.fetchval(
+        "select exists(select 1 from jobs where hunt_listing_id=$1 "
+        "and type='ingest' and payload ? 'url')",
+        listing_id,
+    ):
+        await db_pool.execute(
+            "insert into jobs(hunt_id,hunt_listing_id,type,state,payload) "
+            "values($1,$2,'ingest','done',$3::jsonb)",
+            UUID(collab_hunt["hunt_id"]),
+            listing_id,
+            json.dumps({"url": "https://example.test/original"}),
+        )
+
+    response = await ghost_client.patch(
+        f"/v1/admin/ghost/listings/{listing_id}/source-policy",
+        json={"source_policy": "tier_1"},
+    )
+    assert response.status_code == 200, response.text
+    requester = await db_pool.fetchval(
+        "select requested_by from jobs where hunt_listing_id=$1 and type='refresh' "
+        "order by created_at desc limit 1",
+        listing_id,
+    )
+    assert str(requester) == seeded_users["outsider"].user_id

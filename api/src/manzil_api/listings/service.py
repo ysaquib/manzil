@@ -344,6 +344,7 @@ async def enqueue_listing_refresh(
                 "hunt_listing_id": listing["id"],
                 "type": "refresh",
                 "state": "queued",
+                "requested_by": user_id,
                 "payload": payload,
             }
         )

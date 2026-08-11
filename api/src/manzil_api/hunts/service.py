@@ -185,7 +185,9 @@ async def put_shared_filters(
     return SharedFiltersResponse.model_validate(row)
 
 
-async def patch_settings(client: Client, hunt_id: UUID, body: HuntSettingsPatch) -> HuntResponse:
+async def patch_settings(
+    client: Client, hunt_id: UUID, user_id: str, body: HuntSettingsPatch
+) -> HuntResponse:
     row = await get_hunt_row(client, hunt_id)
     if row is None:
         raise RuntimeError("hunt missing")
@@ -205,9 +207,9 @@ async def patch_settings(client: Client, hunt_id: UUID, body: HuntSettingsPatch)
         updates["rubric_version"] = row.get("rubric_version", 0) + 1
     client.table("hunts").update(updates).eq("id", str(hunt_id)).execute()
     if scoring_changed:
-        await enqueue_rescore(client, hunt_id)
+        await enqueue_rescore(client, hunt_id, requested_by=user_id)
     if proximity_changed:
-        await enqueue_enrich_refresh(client, hunt_id)
+        await enqueue_enrich_refresh(client, hunt_id, requested_by=user_id)
     updated = await get_hunt_row(client, hunt_id)
     assert updated is not None
     return _to_response(updated)

@@ -243,7 +243,7 @@ async def patch_hunt_settings(
     audit: Audit,
 ) -> HuntResponse:
     before = await _require_ghost_hunt(pool, hunt_id, admin)
-    result = await hunt_service.patch_settings(client, hunt_id, body)
+    result = await hunt_service.patch_settings(client, hunt_id, admin.id, body)
     await _audit_hunt(
         audit,
         "hunt.settings.update",
@@ -280,7 +280,7 @@ async def put_rubric(
 ) -> list[RubricCriterionOut]:
     await _require_ghost_hunt(pool, hunt_id, admin)
     before = await rubric_service.get_rubric(client, hunt_id)
-    result = await rubric_service.put_rubric(client, hunt_id, body)
+    result = await rubric_service.put_rubric(client, hunt_id, admin.id, body)
     await _audit_hunt(
         audit,
         "hunt.rubric.update",
@@ -336,11 +336,12 @@ async def create_listing(
         )
         await connection.execute(
             """
-            insert into jobs(hunt_id, hunt_listing_id, type, state, payload)
-            values($1, $2, 'ingest', 'queued', $3::jsonb)
+            insert into jobs(hunt_id, hunt_listing_id, type, state, requested_by, payload)
+            values($1, $2, 'ingest', 'queued', $3, $4::jsonb)
             """,
             hunt_id,
             row["id"],
+            UUID(admin.id),
             json.dumps({"url": body.url, "source_policy": source_policy}),
         )
     listing_row = dict(row)
@@ -484,10 +485,11 @@ async def patch_listing_source_policy(
             if not url:
                 raise GhostTargetNotFound("Listing has no submitted Source URL")
             await connection.execute(
-                """insert into jobs(hunt_id,hunt_listing_id,type,state,payload)
-                values($1,$2,'refresh','queued',$3::jsonb)""",
+                """insert into jobs(hunt_id,hunt_listing_id,type,state,requested_by,payload)
+                values($1,$2,'refresh','queued',$3,$4::jsonb)""",
                 listing["hunt_id"],
                 listing_id,
+                UUID(admin.id),
                 json.dumps(
                     {
                         "hunt_id": str(listing["hunt_id"]),
@@ -1081,12 +1083,14 @@ async def answer_checkpoint(
         plan = job_service._parse_payload(row.get("plan")) if row.get("plan") else None
         async with pool.acquire() as connection, connection.transaction():
             await connection.execute(
-                """insert into jobs(id,hunt_id,hunt_listing_id,type,state,plan,payload)
-                values($1,$2,$3,$4,'queued',$5::jsonb,$6::jsonb)""",
+                """insert into jobs(
+                    id,hunt_id,hunt_listing_id,type,state,requested_by,plan,payload
+                ) values($1,$2,$3,$4,'queued',$5,$6::jsonb,$7::jsonb)""",
                 result_id,
                 UUID(str(row["hunt_id"])),
                 row.get("hunt_listing_id"),
                 row["type"],
+                UUID(admin.id),
                 json.dumps(plan) if plan is not None else None,
                 json.dumps(corrected_payload),
             )
