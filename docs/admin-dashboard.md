@@ -5,8 +5,8 @@ Status tracker and orientation for the Manzil operator surface.
 owns the task table and acceptance evidence. **This file is the map** — where the
 pieces are and why they are shaped that way.
 
-Last updated 2026-08-10 (DESIGN v3.72 — Admin-managed Demo Mode added after the
-AD workstream completed).
+Last updated 2026-08-10 (DESIGN v3.76 — Hunt transfer/deletion and former-member
+attribution added after the AD workstream completed).
 
 ---
 
@@ -31,7 +31,7 @@ Route: `/admin/*`, deliberately outside the `/h/:huntId` tree, with its own shel
 | **AD-1** | Admin identity, the gate, `admin_audit_log`, router | ✅ 2.0.108 |
 | **AD-2** | Panel shell, nav entry, feedback inbox | ✅ 2.0.109 |
 | **AD-3 / PR-1** | People — roster, detail, provision/update/suspend/delete, memberships; sole account-creation path | ✅ 2.0.110 / 2.0.121 |
-| **AD-4** | Hunts + the ghost view (`open as owner`) | ✅ 2.0.111 |
+| **AD-4** | Hunts + the ghost view (`open as owner`), ownership transfer, permanent Hunt deletion | ✅ 2.0.111; expanded 2.0.155 |
 | **AD-5** | Jobs, Costs, System, Audit log — with `@mantine/charts` | ✅ 2.0.112 |
 | **DM-10** | Owned-Hunt Demo publication, freshness, and kill switch | ✅ 2.0.149 |
 
@@ -78,10 +78,11 @@ supabase/migrations/
   20260829000000_admin_read_predicate.sql AD-4 SELECT-only admin predicate (31 policies)
   20260901000011_hunt_activity_access.sql AD-F private union + bounded Owner RPC
   20260901000014_demo_publications.sql   DM-10 private releases/captures + demo-assets
+  20260901000016_former_member_attribution.sql removal-time contributor identity RPC
 
 api/src/manzil_api/admin/
   dependencies.py   require_site_admin (the gate) + AdminAudit (the ledger writer)
-  router.py         summary/hunts/activity/audit/admins/feedback
+  router.py         summary/hunts/management/transfer/delete/activity/audit/admins/feedback
   people.py         AD-3 account management — the half that writes to accounts
   operations.py     AD-5 jobs, costs, system
   schemas.py        response shapes
@@ -90,7 +91,7 @@ frontend/src/features/admin/
   AdminLayout.tsx       shell + rail; guard is UX only
   AdminOverviewPage.tsx counters, credit meter, needs-attention
   AdminPeoplePage.tsx   roster + detail panel, the delete refusal
-  AdminHuntsPage.tsx    roll-ups + activity + "Open as owner"
+  AdminHuntsPage.tsx    roll-ups + activity + transfer/delete + "Open as owner"
   GhostBanner.tsx       the persistent marker
   useGhostMode.ts       derived from non-membership, never URL state
   AdminFeedbackPage.tsx the inbox
@@ -117,6 +118,9 @@ accounts only; neither may create one.
 | `GET /v1/admin/me` | anyone signed in | Answers `is_site_admin: false` rather than 403 — the frontend calls it on every load, and a 403 there is console noise for every ordinary user |
 | `GET /v1/admin/summary` | admin | Overview counters |
 | `GET /v1/admin/hunts` | admin | Roll-ups incl. LLM/fetch cost split |
+| `GET /v1/admin/hunts/{id}/management` | admin | Current roster plus transfer choices and named deletion blockers |
+| `POST /v1/admin/hunts/{id}/transfer-ownership` | admin | Existing-member target; atomic one-Owner mutation; audited in the same transaction |
+| `DELETE /v1/admin/hunts/{id}` | admin | Exact-name-confirmed permanent deletion; selected Demo Hunt and active Jobs are refused |
 | `GET /v1/admin/hunts/{id}/activity` | admin | Reads grantless `private.hunt_activity_all` after the live admin gate |
 | `GET /v1/admin/audit` | admin | The ledger |
 | `POST /v1/admin/admins` · `DELETE /v1/admin/admins/{id}` | admin | Grant / revoke |
@@ -136,6 +140,12 @@ accounts only; neither may create one.
 | `POST /v1/admin/demo/preflight` · `/demo/publications` | admin | Exposure inventory, exact-name-confirmed durable publication |
 | `PATCH /v1/admin/demo` | selected Hunt's admin Owner | Enable current release or immediately disable without deselecting |
 | `/v1/admin/ghost/...` | admin non-member of the target Hunt | Mirrors Owner Hunt/listing/rubric/people mutations; every write is audited with `via_ghost_view = true` |
+
+## Hunt lifecycle actions
+
+Admin → Hunts separates installation lifecycle from Ghost View stewardship. Transfer picks an existing current member and calls the same security-definer mutation as an Owner transfer, so the old Owner becomes Curator and the one-Owner invariant is never temporarily broken. The management preflight works whether the Site Admin is also a Hunt member; the mutation is always an explicitly audited Site Admin action from this panel.
+
+Permanent deletion uses the shared named-subject modal and requires the exact Hunt name. The preflight and delete endpoint both name/refuse two blockers: the selected Demo Hunt, which must first be replaced in Demo Mode, and queued/running/waiting-for-user Jobs, which must finish or be cancelled. The Hunt row is locked before those checks, impact counts are captured, and cascade + Hunt tombstone + Admin Audit entry commit together. Hunt-owned memberships, Listing associations, scores, Overrides, comments, ratings, Visits, Jobs, Rubric, invites, and Hunt-scoped Extractions go; shared Properties, Sources, Floor Plans, images, and Catalog facts do not.
 
 ## Demo Mode publication (DM-10)
 
@@ -257,6 +267,8 @@ directly beneath it puts them back.
 Promoting someone to owner routes through `transfer_hunt_ownership` rather than
 writing the role — a Hunt has exactly one owner, and setting a second directly
 would leave the old one in place.
+
+Removing only their membership has different semantics from deleting the account. The `hunt_members` row disappears immediately, so access, the roster, Presence, notification fan-out, and current-member counts all stop. Existing collaboration history stays. `record_hunt_member_tombstone()` snapshots the effective Hunt-visible name, and remaining Hunt members read that small attribution projection through `get_hunt_contributor_identities`; comments, ratings, Tasks, and Visit work render **Former User (Name)** with neutral grey rather than calling the departed person *Member*. The tombstone/governance history itself remains Owner/Site-Admin-only.
 
 ## The ghost view (AD-4)
 

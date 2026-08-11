@@ -51,6 +51,14 @@ comma-separated value (`state=queued,running,waiting_user`) — the form the Tas
 | `GET /v1/hunts/{id}/attention` | `useAttention` (`features/notifications/api.ts`) | generated `AttentionResponse`; Owner/Curator count every waiting Checkpoint in the Hunt, Member counts only submitted Listings, Demo is zero; `jobs`/`job_events` Realtime invalidates it | P3-22 | implemented |
 | `POST /v1/feedback` | `useSubmitFeedback` (`features/feedback/api.ts`) | generated `FeedbackCreate`/`FeedbackResponse`. Identity is server-side (`user_id` from the bearer token, `user_agent` from the request); `route` must be a site-relative path; a `hunt_id` the caller cannot read is a 403; the per-hour cap returns 429 `feedback_rate_limited`. **No read hook exists or can exist** — `feedback` has no `SELECT` policy for anyone, so the response confirms receipt rather than echoing the row | P3-16 | implemented |
 
+### Admin Hunt lifecycle (DESIGN v3.76)
+
+| Method & path | Hook (file) | Shape | Status |
+|---|---|---|---|
+| `GET /v1/admin/hunts/{id}/management` | `useAdminHuntManagement` (`features/admin/api.ts`) | hand-typed current member roster, Owner identity, caller-membership flag, and named deletion blockers; Site Admin only | implemented |
+| `POST /v1/admin/hunts/{id}/transfer-ownership` | `useTransferAdminHuntOwnership` (`features/admin/api.ts`) | `{new_owner_id}` → `{status:"ok"}`; target must already be a current member; reuses the atomic one-Owner mutation and writes the Admin Audit Log in the transaction | implemented |
+| `DELETE /v1/admin/hunts/{id}` | `useDeleteAdminHunt` (`features/admin/api.ts`) | `{confirmation_name}` → Hunt-local impact counts; exact-name confirmation, selected-Demo and active-Job refusal, transactional tombstone + Admin Audit write | implemented |
+
 ### Demo publication and protected release (DESIGN v3.72)
 
 | Method & path | Hook (file) | Shape | Backing task | Status |
@@ -168,6 +176,7 @@ route.
 | `rubric_criteria` | `useRubric` (`features/rubric/api.ts`) | hand-typed `RubricCriterion` | exists (0002) |
 | `criteria_catalog` | `useCatalog` (`features/rubric/api.ts`) | hand-typed `CatalogEntry` | table exists (0001) + seed |
 | `hunt_members` (+ `user_profiles` for display-name/color defaults) | `useMembers` (`features/collaboration/api.ts`) | hand-typed `HuntMember`, including nullable Hunt-level overrides and effective coalesced identity | exists (0002+; profile coalesce P2 + 20260729000000) |
+| `get_hunt_contributor_identities(hunt_id)` RPC | `useHuntContributors` (`features/collaboration/api.ts`) | current-member identities plus removal-time `HuntContributor` snapshots; `is_former` distinguishes retained attribution from membership, former color is intentionally null so the UI renders neutral grey | exists (20260901000016) |
 | `user_profiles` for the current account | `useProfile` (`auth/profile.ts`) | hand-typed `UserProfile` (`default_display_name`, `default_color`) | exists (0002 + 20260729000000) |
 | *(derived)* same as `useMembers` | `useCurrentMember` (`features/collaboration/api.ts`) | `HuntMember \| undefined` via session user id — no extra fetch | client-side only |
 | `comments` for one Listing | `useComments` (`features/collaboration/api.ts`) | hand-typed `Comment`; nullable Unit Group scope + `edited_at` | exists (0002 + 20260724000000) |
