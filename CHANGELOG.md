@@ -13,6 +13,9 @@ repo itself.
   release version plus their exact Git SHAs. The navbar build popover and Admin
   System show both, call out a mismatch at the appropriate severity, and attach
   both build IDs to submitted feedback.
+- A manually dispatched major/minor/patch workflow now opens the isolated
+  VERSION/changelog PR, dispatches ordinary CI for that bot-created branch, and
+  publishes the matching tag and GitHub Release only after merge.
 - Job retry leases, malformed image handling, soft deletion, Hunt-wide Tasks
   severity, worker heartbeats, Admin Job inspection, and timezone-correct Hunt
   and Admin analytics landed as one coordinated reliability release.
