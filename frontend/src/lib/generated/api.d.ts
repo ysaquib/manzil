@@ -4013,6 +4013,15 @@ export interface components {
             stale_locks: number;
             /** Oldest Queued Seconds */
             oldest_queued_seconds: number;
+            /**
+             * Worker Status
+             * @enum {string}
+             */
+            worker_status: "live_idle" | "live_busy" | "unavailable";
+            /** Live Workers */
+            live_workers: number;
+            /** Busy Workers */
+            busy_workers: number;
             /** Last Heartbeat */
             last_heartbeat?: string | null;
             /** Finished 24H */

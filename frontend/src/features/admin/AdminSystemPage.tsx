@@ -37,12 +37,6 @@ function Health({
   );
 }
 
-function since(iso: string | null): string {
-  if (!iso) return "no live worker";
-  const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  return seconds < 60 ? `beat ${seconds}s ago` : `beat ${Math.floor(seconds / 60)}m ago`;
-}
-
 export function AdminSystemPage() {
   const system = useSystem();
 
@@ -64,8 +58,14 @@ export function AdminSystemPage() {
       <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm">
         <Health
           label="Worker loop"
-          value={since(s.last_heartbeat)}
-          tone={s.running > 0 ? "ok" : "warn"}
+          value={
+            s.worker_status === "live_busy"
+              ? `Live · busy (${s.busy_workers}/${s.live_workers})`
+              : s.worker_status === "live_idle"
+                ? `Live · idle (${s.live_workers})`
+                : "Unavailable"
+          }
+          tone={s.worker_status === "unavailable" ? "bad" : "ok"}
         />
         <Health
           label="Queue"

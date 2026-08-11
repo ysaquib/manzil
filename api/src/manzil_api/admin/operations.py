@@ -445,13 +445,30 @@ async def system(admin: AdminUser, pool: DbPool) -> SystemReport:
                              and locked_at < now() - ($1 || ' minutes')::interval) as stale,
             (select extract(epoch from now() - min(created_at))
                from jobs where state = 'queued')      as oldest_queued_seconds,
-            (select max(locked_at) from jobs where state = 'running') as last_heartbeat,
             count(*) filter (where finished_at > now() - interval '24 hours') as finished_24h,
             count(*) filter (where state = 'failed'
                              and finished_at > now() - interval '24 hours') as failed_24h
         from jobs
         """,
         str(STALE_LOCK_MINUTES),
+    )
+    workers = await pool.fetchrow(
+        """
+        select
+            max(wh.last_seen_at) as last_heartbeat,
+            count(*) filter (
+                where wh.last_seen_at >= now() - interval '45 seconds'
+            ) as live_workers,
+            count(*) filter (
+                where wh.last_seen_at >= now() - interval '45 seconds'
+                  and exists (
+                      select 1 from jobs j
+                       where j.state = 'running'
+                         and j.locked_by = wh.worker_id
+                  )
+            ) as busy_workers
+        from worker_heartbeats wh
+        """
     )
     migration = await pool.fetchval(
         "select version from supabase_migrations.schema_migrations order by version desc limit 1"
@@ -511,7 +528,16 @@ async def system(admin: AdminUser, pool: DbPool) -> SystemReport:
         running=queue["running"],
         stale_locks=queue["stale"],
         oldest_queued_seconds=float(queue["oldest_queued_seconds"] or 0),
-        last_heartbeat=queue["last_heartbeat"],
+        worker_status=(
+            "unavailable"
+            if workers["live_workers"] == 0
+            else "live_busy"
+            if workers["busy_workers"] > 0
+            else "live_idle"
+        ),
+        live_workers=workers["live_workers"],
+        busy_workers=workers["busy_workers"],
+        last_heartbeat=workers["last_heartbeat"],
         finished_24h=queue["finished_24h"],
         failed_24h=queue["failed_24h"],
         last_migration=migration,

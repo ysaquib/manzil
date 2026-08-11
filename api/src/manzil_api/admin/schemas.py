@@ -324,6 +324,9 @@ class SystemReport(BaseModel):
     running: int
     stale_locks: int
     oldest_queued_seconds: float
+    worker_status: Literal["live_idle", "live_busy", "unavailable"]
+    live_workers: int
+    busy_workers: int
     last_heartbeat: datetime | None = None
     finished_24h: int
     failed_24h: int

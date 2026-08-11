@@ -17,7 +17,12 @@ import pytest
 from manzil_shared.config import MANZIL_JOB_MAX_ATTEMPTS
 from manzil_shared.models import JobState, JobType
 from manzil_worker.postgres_persistence import HuntExecutionFrozen, PostgresPersistence
-from manzil_worker.queue import JOB_ORPHAN_AFTER, claim_next_job, reclaim_orphans
+from manzil_worker.queue import (
+    JOB_ORPHAN_AFTER,
+    claim_next_job,
+    reclaim_orphans,
+    run_worker_heartbeat,
+)
 from manzil_worker.runner import run_job
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.state import RunState
@@ -109,6 +114,49 @@ async def test_claim_stamps_started_at_once(pg_pool: asyncpg.Pool) -> None:
         # coalesce(started_at, now()) — a resume must not reset the metric.
         assert second["started_at"] == original
     finally:
+        await pg_pool.execute("delete from hunts where id = $1", hunt_id)
+
+
+async def test_worker_heartbeat_reports_idle_and_renews_its_job_lease(
+    pg_pool: asyncpg.Pool,
+) -> None:
+    worker_id = f"heartbeat-test-{uuid4()}"
+    job_id, hunt_id = await _seed_running_orphan(pg_pool, attempts=1)
+    await pg_pool.execute(
+        "update jobs set locked_by = $2 where id = $1",
+        job_id,
+        worker_id,
+    )
+    stop = asyncio.Event()
+    task = asyncio.create_task(
+        run_worker_heartbeat(
+            pg_pool,
+            stop,
+            worker_id=worker_id,
+            interval=0.01,
+        )
+    )
+    try:
+        for _ in range(20):
+            row = await pg_pool.fetchrow(
+                "select mode, started_at, last_seen_at from worker_heartbeats where worker_id = $1",
+                worker_id,
+            )
+            renewed = await pg_pool.fetchval(
+                "select locked_at > now() - interval '2 seconds' from jobs where id = $1",
+                job_id,
+            )
+            if row is not None and renewed:
+                break
+            await asyncio.sleep(0.01)
+        assert row is not None
+        assert row["mode"] == "workflow"
+        assert row["last_seen_at"] >= row["started_at"]
+        assert renewed is True
+    finally:
+        stop.set()
+        await task
+        await pg_pool.execute("delete from worker_heartbeats where worker_id = $1", worker_id)
         await pg_pool.execute("delete from hunts where id = $1", hunt_id)
 
 
