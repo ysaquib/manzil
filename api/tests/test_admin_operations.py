@@ -206,8 +206,12 @@ async def test_costs_report_splits_the_two_channels_three_ways(
         # The window total is the billed one too, and the shortfall is named
         # rather than dropped — the Hunt's bucket still carries the split.
         assert after["total_cost_usd"] - before["total_cost_usd"] == pytest.approx(0.050)
+        # `by_hunt` groups by Hunt *name*, and every test in this file makes a
+        # fresh "Collab Hunt" — so this bucket may carry earlier runs too. Assert
+        # only that the remainder surfaced at all; the exact arithmetic is pinned
+        # against a single Hunt in the next test.
         hunt_bucket = next(b for b in after["by_hunt"] if b["label"] == "Collab Hunt")
-        assert hunt_bucket["unattributed_cost_usd"] >= pytest.approx(0.007)
+        assert hunt_bucket["unattributed_cost_usd"] > 0
         assert hunt_bucket["llm_cost_usd"] > 0 and hunt_bucket["fetch_cost_usd"] > 0
 
         # By model is derived from the current pin, and the response says so
@@ -230,10 +234,14 @@ async def test_a_hunts_admin_total_matches_what_its_jobs_billed(
     Tasks tab summed `jobs.cost_actual_usd`, so every Job that retried a Stage
     made the two screens disagree. Both now read the same accumulator."""
 
-    def hunt_row(page: dict) -> dict:
-        return next(row for row in page["items"] if row["name"] == "Collab Hunt")
+    # Matched by id, never by name: every test in this file creates its own
+    # "Collab Hunt", and the page is ordered by spend — so a name match could
+    # read a different Hunt before and after the insert.
+    async def hunt_row() -> dict:
+        page = (await as_admin.get("/v1/admin/hunts?search=Collab Hunt&limit=250")).json()
+        return next(row for row in page["items"] if row["hunt_id"] == str(collab_hunt["hunt_id"]))
 
-    before = hunt_row((await as_admin.get("/v1/admin/hunts?search=Collab Hunt")).json())
+    before = await hunt_row()
 
     job_id = await _job(db_pool, collab_hunt, "done", cost=0.0500)
     await db_pool.execute(
@@ -243,13 +251,18 @@ async def test_a_hunts_admin_total_matches_what_its_jobs_billed(
         job_id,
     )
     try:
-        after = hunt_row((await as_admin.get("/v1/admin/hunts?search=Collab Hunt")).json())
+        after = await hunt_row()
 
         assert after["total_cost_usd"] - before["total_cost_usd"] == pytest.approx(0.050)
-        # The split is still the Stage breakdown, and the gap is stated.
+        # The split is still the Stage breakdown, and the gap is stated. This row
+        # is one Hunt created by this test, so the figures are absolute.
         assert after["llm_cost_usd"] - before["llm_cost_usd"] == pytest.approx(0.040)
         assert after["fetch_cost_usd"] - before["fetch_cost_usd"] == pytest.approx(0.003)
-        assert after["unattributed_cost_usd"] >= pytest.approx(0.007)
+        assert after["unattributed_cost_usd"] == pytest.approx(0.007)
+        # The invariant the UI renders against: the parts account for the total.
+        assert after["total_cost_usd"] == pytest.approx(
+            after["llm_cost_usd"] + after["fetch_cost_usd"] + after["unattributed_cost_usd"]
+        )
 
         # A second Job must add its whole bill once, not once per Stage row —
         # the fan-out the two-CTE shape exists to prevent.
@@ -262,7 +275,7 @@ async def test_a_hunts_admin_total_matches_what_its_jobs_billed(
             second,
         )
         try:
-            both = hunt_row((await as_admin.get("/v1/admin/hunts?search=Collab Hunt")).json())
+            both = await hunt_row()
             assert both["total_cost_usd"] - before["total_cost_usd"] == pytest.approx(0.060)
         finally:
             await db_pool.execute("delete from job_stage_costs where job_id = $1", second)
