@@ -13,7 +13,7 @@ from manzil_api.dependencies import CurrentUser, UserClient
 from manzil_api.hunts.dependencies import ValidHunt
 from manzil_api.jobs import service
 from manzil_api.jobs.dependencies import parse_job_states
-from manzil_api.jobs.schemas import CheckpointAnswer, JobResponse
+from manzil_api.jobs.schemas import CheckpointAnswer, JobDeletionReceipt, JobResponse
 
 router = APIRouter(tags=["jobs"])
 
@@ -41,6 +41,11 @@ async def cancel_job(job_id: UUID, user: CurrentUser, client: UserClient) -> Job
 @router.post("/jobs/{job_id}/retry", response_model=JobResponse)
 async def retry_job(job_id: UUID, user: CurrentUser, client: UserClient) -> JobResponse:
     return await service.retry_job(client, job_id, user.id)
+
+
+@router.delete("/jobs/{job_id}", response_model=JobDeletionReceipt)
+async def delete_job(job_id: UUID, user: CurrentUser, client: UserClient) -> JobDeletionReceipt:
+    return await service.delete_failed_job(client, job_id)
 
 
 @router.post("/jobs/{job_id}/checkpoint", response_model=JobResponse)

@@ -128,6 +128,27 @@ async def test_retry_requeues_and_resets_the_backoff_ladder(
         await db_pool.execute("delete from jobs where id = $1", job_id)
 
 
+async def test_admin_soft_delete_retains_cost_and_audits(
+    as_admin: AsyncClient, db_pool, collab_hunt
+) -> None:
+    job_id = await _job(db_pool, collab_hunt, "done", cost=0.0456)
+    response = await as_admin.delete(f"/v1/admin/jobs/{job_id}")
+    assert response.status_code == 200
+    row = await db_pool.fetchrow(
+        "select state::text, deleted_from_state::text, cost_actual_usd from jobs where id=$1",
+        job_id,
+    )
+    assert row["state"] == "deleted"
+    assert row["deleted_from_state"] == "done"
+    assert float(row["cost_actual_usd"]) == 0.0456
+    assert await db_pool.fetchval(
+        "select exists(select 1 from admin_audit_log where action='job.delete' and target_id=$1)",
+        job_id,
+    )
+    listed = await as_admin.get("/v1/admin/jobs")
+    assert str(job_id) not in {job["id"] for job in listed.json()}
+
+
 async def test_a_done_job_cannot_be_retried_or_cancelled(
     as_admin: AsyncClient, db_pool, collab_hunt
 ) -> None:

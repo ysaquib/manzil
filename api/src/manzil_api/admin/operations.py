@@ -93,7 +93,8 @@ async def list_jobs(
     rows = await pool.fetch(
         _JOB_SQL
         + """
-        where ($2::text is null or j.state::text = $2)
+        where j.state <> 'deleted'
+          and ($2::text is null or j.state::text = $2)
           and ($3::uuid is null or j.hunt_id = $3)
           and (not $4 or (j.state = 'running'
                           and j.locked_at < now() - ($1 || ' minutes')::interval))
@@ -109,9 +110,49 @@ async def list_jobs(
     return [_job_row(row) for row in rows]
 
 
+@router.delete("/jobs/{job_id}", response_model=ActionResult, summary="Soft-delete a terminal Job")
+async def delete_job(job_id: UUID, admin: AdminUser, pool: DbPool, audit: Audit) -> ActionResult:
+    async with pool.acquire() as conn, conn.transaction():
+        row = await conn.fetchrow(
+            """select j.state::text as state, j.hunt_id, j.cost_actual_usd,
+                      h.locked_at
+                 from jobs j join hunts h on h.id=j.hunt_id
+                where j.id=$1 for update of j""",
+            job_id,
+        )
+        if row is None or row["state"] == "deleted":
+            raise JobNotFound("No such Job")
+        if row["locked_at"] is not None:
+            raise AdminHuntLocked("Unlock this Hunt before deleting its Jobs")
+        if row["state"] not in ("failed", "cancelled", "done"):
+            raise JobNotRetryable("Active Jobs must finish or be cancelled before deletion")
+        await conn.execute(
+            """update jobs set state='deleted', deleted_at=now(), deleted_by=$2,
+                      deleted_from_state=$3::job_state, locked_by=null, locked_at=null
+                 where id=$1""",
+            job_id,
+            UUID(admin.id),
+            row["state"],
+        )
+        await audit.record(
+            "job.delete",
+            target_type="job",
+            target_id=job_id,
+            hunt_id=row["hunt_id"],
+            before={"state": row["state"]},
+            after={"state": "deleted", "retained_cost_usd": float(row["cost_actual_usd"])},
+            conn=conn,
+        )
+    return ActionResult(detail="Job removed from product views; cost and history retained")
+
+
 @router.get("/jobs/{job_id}", response_model=JobDetail, summary="One Job, with its timeline")
 async def get_job(job_id: UUID, admin: AdminUser, pool: DbPool) -> JobDetail:
-    row = await pool.fetchrow(_JOB_SQL + " where j.id = $2", str(STALE_LOCK_MINUTES), job_id)
+    row = await pool.fetchrow(
+        _JOB_SQL + " where j.id = $2 and j.state <> 'deleted'",
+        str(STALE_LOCK_MINUTES),
+        job_id,
+    )
     if row is None:
         raise JobNotFound("No such Job")
 

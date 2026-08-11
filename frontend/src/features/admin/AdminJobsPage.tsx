@@ -22,7 +22,14 @@ import { useMediaQuery } from "@mantine/hooks";
 import { useState } from "react";
 
 import { TablePagination, usePagedRows } from "../../components/TablePagination";
-import { useAdminJobs, useJobAction, useReleaseLocks, type JobRow } from "./api";
+import { ConfirmDeleteModal } from "../../components/ConfirmDeleteModal";
+import {
+  useAdminDeleteJob,
+  useAdminJobs,
+  useJobAction,
+  useReleaseLocks,
+  type JobRow,
+} from "./api";
 
 const STATES = ["failed", "running", "queued", "waiting_user", "done", "cancelled"];
 
@@ -45,6 +52,8 @@ function age(iso: string): string {
 
 function JobActions({ job }: { job: JobRow }) {
   const action = useJobAction();
+  const deleteJob = useAdminDeleteJob();
+  const [deleteOpened, setDeleteOpened] = useState(false);
   const retryable = job.state === "failed" || job.state === "cancelled";
   const cancellable = job.state !== "done" && job.state !== "cancelled";
 
@@ -71,6 +80,23 @@ function JobActions({ job }: { job: JobRow }) {
           Cancel
         </Button>
       )}
+      {["failed", "cancelled", "done"].includes(job.state) && (
+        <Button size="compact-xs" variant="subtle" color="red" onClick={() => setDeleteOpened(true)}>
+          Delete
+        </Button>
+      )}
+      <ConfirmDeleteModal
+        opened={deleteOpened}
+        onClose={() => setDeleteOpened(false)}
+        targets={[{
+          id: job.id,
+          label: `${job.listing_name ?? job.hunt_name ?? "Unscoped Job"} · ${job.id.slice(0, 8)}`,
+        }]}
+        noun={{ singular: "Job", plural: "Jobs" }}
+        warning="This removes the Job from admin product views. Its billed cost, Stage costs, timeline, and audit record remain in Postgres."
+        loading={deleteJob.isPending}
+        onConfirm={() => deleteJob.mutate(job.id)}
+      />
     </Group>
   );
 }

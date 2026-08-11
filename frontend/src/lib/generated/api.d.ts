@@ -665,6 +665,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Job */
+        delete: operations["delete_job_v1_jobs__job_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/jobs/{job_id}/checkpoint": {
         parameters: {
             query?: never;
@@ -1604,7 +1621,8 @@ export interface paths {
         get: operations["get_job_v1_admin_jobs__job_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Soft-delete a terminal Job */
+        delete: operations["delete_job_v1_admin_jobs__job_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3230,6 +3248,24 @@ export interface components {
              */
             delivery_status: "queued" | "sending" | "sent" | "delivered" | "delayed" | "failed" | "bounced" | "suppressed" | "complained" | "disabled" | "cancelled";
         };
+        /** JobDeletionReceipt */
+        JobDeletionReceipt: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /**
+             * Deleted At
+             * Format: date-time
+             */
+            deleted_at: string;
+            deleted_from_state: components["schemas"]["JobState"];
+            /** Removed Placeholder Listing */
+            removed_placeholder_listing: boolean;
+            /** Retained Cost Usd */
+            retained_cost_usd: number;
+        };
         /** JobDetail */
         JobDetail: {
             /**
@@ -3311,6 +3347,8 @@ export interface components {
             started_at?: string | null;
             /** Finished At */
             finished_at?: string | null;
+            /** Requested By */
+            requested_by?: string | null;
             checkpoint?: components["schemas"]["CheckpointPrompt"] | null;
             checkpoint_context?: components["schemas"]["CheckpointContext"] | null;
             auto_resolved_checkpoint?: components["schemas"]["AutoResolvedCheckpoint"] | null;
@@ -3363,7 +3401,7 @@ export interface components {
          * JobState
          * @enum {string}
          */
-        JobState: "queued" | "running" | "waiting_user" | "done" | "failed" | "cancelled";
+        JobState: "queued" | "running" | "waiting_user" | "done" | "failed" | "cancelled" | "deleted";
         /**
          * JobType
          * @enum {string}
@@ -6123,6 +6161,37 @@ export interface operations {
             };
         };
     };
+    delete_job_v1_jobs__job_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobDeletionReceipt"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     answer_checkpoint_v1_jobs__job_id__checkpoint_post: {
         parameters: {
             query?: never;
@@ -7992,6 +8061,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_job_v1_admin_jobs__job_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionResult"];
                 };
             };
             /** @description Validation Error */

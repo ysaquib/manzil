@@ -5,12 +5,14 @@ import { renderWithProviders } from "./testUtils";
 
 const useAdminJobs = vi.hoisted(() => vi.fn());
 const useJobAction = vi.hoisted(() => vi.fn());
+const useAdminDeleteJob = vi.hoisted(() => vi.fn());
 const useReleaseLocks = vi.hoisted(() => vi.fn());
 const mutate = vi.hoisted(() => vi.fn());
 
 vi.mock("../src/features/admin/api", () => ({
   useAdminJobs,
   useJobAction,
+  useAdminDeleteJob,
   useReleaseLocks,
 }));
 
@@ -39,6 +41,7 @@ describe("AdminJobsPage", () => {
     mutate.mockReset();
     useAdminJobs.mockReturnValue({ data: [FAILED_JOB], isPending: false });
     useJobAction.mockReturnValue({ mutate, isPending: false });
+    useAdminDeleteJob.mockReturnValue({ mutate: vi.fn(), isPending: false });
     useReleaseLocks.mockReturnValue({
       mutate: vi.fn(),
       isPending: false,
