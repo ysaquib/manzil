@@ -15,6 +15,7 @@ import json
 from uuid import uuid4
 
 import pytest
+from postgrest.exceptions import APIError
 
 pytestmark = pytest.mark.asyncio
 
@@ -87,6 +88,19 @@ async def test_role_changes_are_recorded_and_cosmetic_edits_are_not(
 async def test_removing_a_member_records_a_departure(db_pool, collab_hunt, seeded_users) -> None:
     hunt_id = collab_hunt["hunt_id"]
     curator = seeded_users["curator"]
+    expected_name = await db_pool.fetchval(
+        "select coalesce(hm.display_name, up.default_display_name, 'Member') "
+        "from hunt_members hm left join user_profiles up on up.user_id=hm.user_id "
+        "where hm.hunt_id=$1 and hm.user_id=$2",
+        hunt_id,
+        curator.user_id,
+    )
+    retained_comment_id = await db_pool.fetchval(
+        "insert into comments(hunt_listing_id, user_id, body) values($1, $2, $3) returning id",
+        collab_hunt["owner_listing_id"],
+        curator.user_id,
+        "Keep this attribution",
+    )
     await db_pool.execute(
         "delete from hunt_members where hunt_id = $1 and user_id = $2", hunt_id, curator.user_id
     )
@@ -99,6 +113,42 @@ async def test_removing_a_member_records_a_departure(db_pool, collab_hunt, seede
     )
     assert last["action"] == "left"
     assert last["role"] is None  # null role == the membership ended
+    assert (
+        await db_pool.fetchval(
+            "select count(*) from comments where id=$1 and deleted_at is null",
+            retained_comment_id,
+        )
+        == 1
+    )
+
+    # The roster row is gone, while the narrow attribution projection keeps the
+    # name needed by retained comments, ratings, Visits, and other history.
+    assert (
+        await db_pool.fetchval(
+            "select count(*) from hunt_members where hunt_id=$1 and user_id=$2",
+            hunt_id,
+            curator.user_id,
+        )
+        == 0
+    )
+    contributors = (
+        seeded_users["member"]
+        .supabase.rpc("get_hunt_contributor_identities", {"p_hunt_id": str(hunt_id)})
+        .execute()
+    )
+    former = next(row for row in contributors.data if row["user_id"] == curator.user_id)
+    assert former == {
+        "user_id": curator.user_id,
+        "display_name": expected_name,
+        "color": None,
+        "is_former": True,
+    }
+    with pytest.raises(APIError):
+        (
+            seeded_users["outsider"]
+            .supabase.rpc("get_hunt_contributor_identities", {"p_hunt_id": str(hunt_id)})
+            .execute()
+        )
 
 
 # ── 3. listing curation history ──────────────────────────────────────────────
