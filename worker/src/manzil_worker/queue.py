@@ -117,6 +117,7 @@ log = structlog.get_logger()
 
 _SYNTHETIC_SEED_DOMAIN = "seed.example"
 JOB_ORPHAN_AFTER = timedelta(seconds=JOB_ORPHAN_AFTER_SECONDS)
+WORKER_HEARTBEAT_SECONDS = 15.0
 
 # A dispatcher runs one claimed job to a terminal state (raising only on
 # unexpected failure — the runner maps stage errors to `failed` itself).
@@ -127,6 +128,56 @@ Dispatcher = Callable[["asyncpg.Pool", "asyncpg.Record"], Awaitable[None]]
 # and P3-12's TTL refresh extend the same seam.
 SchedulerTick = Callable[["asyncpg.Pool"], Awaitable[None]]
 FetchersFactory = Callable[[], dict[int, Fetcher]]
+
+
+async def run_worker_heartbeat(
+    pool: asyncpg.Pool,
+    stop: asyncio.Event,
+    *,
+    worker_id: str,
+    mode: str = "workflow",
+    interval: float = WORKER_HEARTBEAT_SECONDS,
+) -> None:
+    """Publish process liveness independently of queue and Stage execution.
+
+    The same tick renews this worker's active Job lease. That prevents a
+    legitimate long-running Stage from being reclaimed merely because it has
+    not crossed another persistence boundary yet.
+    """
+    started_at = datetime.now(UTC)
+    while not stop.is_set():
+        try:
+            async with pool.acquire() as conn, conn.transaction():
+                await conn.execute(
+                    """
+                    insert into worker_heartbeats (worker_id, mode, started_at, last_seen_at)
+                    values ($1, $2, $3, now())
+                    on conflict (worker_id) do update
+                       set mode = excluded.mode,
+                           started_at = excluded.started_at,
+                           last_seen_at = excluded.last_seen_at
+                    """,
+                    worker_id,
+                    mode,
+                    started_at,
+                )
+                await conn.execute(
+                    """
+                    update jobs
+                       set locked_at = now()
+                     where state = 'running'
+                       and locked_by = $1
+                    """,
+                    worker_id,
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            # A transient heartbeat failure must not terminate queue execution.
+            log.warning("worker_heartbeat_failed", worker=worker_id, error=str(error))
+
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(stop.wait(), timeout=interval)
 
 
 async def _score_snapshot(
@@ -2999,6 +3050,8 @@ async def run_worker_loop(
     priority_tick: Callable[[asyncpg.Pool], Awaitable[bool]] | None = None,
     tick_interval: float = SCHEDULER_TICK_SECONDS,
     on_tick: Callable[[], None] | None = None,
+    mode: str = "workflow",
+    heartbeat_interval: float = WORKER_HEARTBEAT_SECONDS,
 ) -> None:
     """Tick: reclaim orphans → claim → dispatch by `job_type` → repeat.
 
@@ -3022,80 +3075,103 @@ async def run_worker_loop(
     dispatch = dispatch if dispatch is not None else build_dispatch(pool)
     worker_id = worker_id or f"{socket.gethostname()}:{os.getpid()}"
     last_tick = float("-inf")
+    heartbeat_stop = asyncio.Event()
+    heartbeat_task = asyncio.create_task(
+        run_worker_heartbeat(
+            pool,
+            heartbeat_stop,
+            worker_id=worker_id,
+            mode=mode,
+            interval=heartbeat_interval,
+        )
+    )
 
-    while not stop.is_set():
-        if on_tick is not None:
-            on_tick()
-        if priority_tick is not None:
-            try:
-                if await priority_tick(pool):
-                    continue
-            except Exception as error:
-                log.warning("priority_tick_failed", error=str(error))
-        if scheduler_tick is not None:
-            now = asyncio.get_running_loop().time()
-            if now - last_tick >= tick_interval:
-                last_tick = now
+    try:
+        while not stop.is_set():
+            if on_tick is not None:
+                on_tick()
+            if priority_tick is not None:
                 try:
-                    await scheduler_tick(pool)
+                    if await priority_tick(pool):
+                        continue
                 except Exception as error:
-                    log.warning("scheduler_tick_failed", error=str(error))
+                    log.warning("priority_tick_failed", error=str(error))
+            if scheduler_tick is not None:
+                now = asyncio.get_running_loop().time()
+                if now - last_tick >= tick_interval:
+                    last_tick = now
+                    try:
+                        await scheduler_tick(pool)
+                    except Exception as error:
+                        log.warning("scheduler_tick_failed", error=str(error))
 
-        async with pool.acquire() as conn:
-            await reclaim_orphans(conn)
-            job = await claim_next_job(conn, worker_id)
-
-        if job is None:
-            if until_empty:
-                return
-            # Wake early on shutdown rather than sleeping the full backoff.
-            with contextlib.suppress(TimeoutError):
-                await asyncio.wait_for(stop.wait(), timeout=idle_backoff)
-            continue
-
-        job_type_raw = job["type"]
-        handler = dispatch.get(JobType(job_type_raw))
-        if handler is None:
-            await _mark_failed(pool, job["id"], f"no dispatcher for job_type {job_type_raw!r}")
-            continue
-
-        log.info("job_claimed", job_id=str(job["id"]), job_type=job_type_raw, worker=worker_id)
-        scores_before: dict[tuple[UUID, UUID], tuple[float, list[dict[str, Any]]]] = {}
-        score_notifications_ready = True
-        try:
-            scores_before = await _score_snapshot(pool, job)
-        except Exception as error:
-            # Product notifications are deliberately outside the Job's truth
-            # path. A missing preference/outbox table during a rolling deploy,
-            # or any later notification regression, must never fail the Job.
-            score_notifications_ready = False
-            log.warning(
-                "score_notification_snapshot_failed",
-                job_id=str(job["id"]),
-                error=str(error),
-            )
-        try:
             async with pool.acquire() as conn:
-                await heartbeat(conn, job["id"])
-            await handler(pool, job)
-            if await _cancel_if_hunt_became_read_only(pool, job["id"]):
-                log.info("job_stopped_read_only", job_id=str(job["id"]), reason="post-dispatch")
-            if score_notifications_ready and await pool.fetchval(
-                "select state = 'done' from jobs where id=$1", job["id"]
-            ):
-                try:
-                    scores_after = await _score_snapshot(pool, job)
-                    await _enqueue_score_changes(pool, job["id"], scores_before, scores_after)
-                except Exception as error:
-                    log.warning(
-                        "score_notification_enqueue_failed",
-                        job_id=str(job["id"]),
-                        error=str(error),
+                await reclaim_orphans(conn)
+                job = await claim_next_job(conn, worker_id)
+
+            if job is None:
+                if until_empty:
+                    return
+                # Wake early on shutdown rather than sleeping the full backoff.
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(stop.wait(), timeout=idle_backoff)
+                continue
+
+            job_type_raw = job["type"]
+            handler = dispatch.get(JobType(job_type_raw))
+            if handler is None:
+                await _mark_failed(pool, job["id"], f"no dispatcher for job_type {job_type_raw!r}")
+                continue
+
+            log.info("job_claimed", job_id=str(job["id"]), job_type=job_type_raw, worker=worker_id)
+            scores_before: dict[tuple[UUID, UUID], tuple[float, list[dict[str, Any]]]] = {}
+            score_notifications_ready = True
+            try:
+                scores_before = await _score_snapshot(pool, job)
+            except Exception as error:
+                # Product notifications are deliberately outside the Job's truth
+                # path. A missing preference/outbox table during a rolling deploy,
+                # or any later notification regression, must never fail the Job.
+                score_notifications_ready = False
+                log.warning(
+                    "score_notification_snapshot_failed",
+                    job_id=str(job["id"]),
+                    error=str(error),
+                )
+            try:
+                async with pool.acquire() as conn:
+                    await heartbeat(conn, job["id"])
+                await handler(pool, job)
+                if await _cancel_if_hunt_became_read_only(pool, job["id"]):
+                    log.info(
+                        "job_stopped_read_only", job_id=str(job["id"]), reason="post-dispatch"
                     )
-        except HuntExecutionFrozen as frozen:
-            log.info("job_stopped_read_only", job_id=str(job["id"]), reason=str(frozen))
-        except asyncio.CancelledError:
-            raise  # shutdown/cancellation: leave the row locked for orphan reclaim
-        except Exception as error:
-            log.error("job_dispatch_failed", job_id=str(job["id"]), error=str(error))
-            await _mark_failed(pool, job["id"], f"dispatch error: {error}")
+                if score_notifications_ready and await pool.fetchval(
+                    "select state = 'done' from jobs where id=$1", job["id"]
+                ):
+                    try:
+                        scores_after = await _score_snapshot(pool, job)
+                        await _enqueue_score_changes(pool, job["id"], scores_before, scores_after)
+                    except Exception as error:
+                        log.warning(
+                            "score_notification_enqueue_failed",
+                            job_id=str(job["id"]),
+                            error=str(error),
+                        )
+            except HuntExecutionFrozen as frozen:
+                log.info("job_stopped_read_only", job_id=str(job["id"]), reason=str(frozen))
+            except asyncio.CancelledError:
+                raise  # shutdown/cancellation: leave the row locked for orphan reclaim
+            except Exception as error:
+                log.error("job_dispatch_failed", job_id=str(job["id"]), error=str(error))
+                await _mark_failed(pool, job["id"], f"dispatch error: {error}")
+    finally:
+        heartbeat_stop.set()
+        await heartbeat_task
+        if until_empty:
+            # Bounded test/dev drains are not deployed workers and must not
+            # leave a freshly-live process behind after they return.
+            await pool.execute(
+                "delete from worker_heartbeats where worker_id = $1",
+                worker_id,
+            )

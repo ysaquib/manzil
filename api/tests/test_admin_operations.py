@@ -325,21 +325,72 @@ async def test_the_overview_counts_spend_a_running_job_has_already_made(
 
 
 async def test_system_reports_pins_and_key_presence_but_never_a_value(
-    as_admin: AsyncClient,
+    as_admin: AsyncClient, db_pool
 ) -> None:
-    response = await as_admin.get("/v1/admin/system")
-    assert response.status_code == 200
-    report = response.json()
+    await db_pool.execute(
+        """
+        insert into worker_heartbeats (worker_id, mode, started_at, last_seen_at)
+        values ('admin-system-test', 'workflow', now(), now())
+        on conflict (worker_id) do update set last_seen_at = now()
+        """
+    )
+    try:
+        response = await as_admin.get("/v1/admin/system")
+        assert response.status_code == 200
+        report = response.json()
 
-    assert report["priced_models"] > 0
-    assert any(pin["stage"] == "extract" for pin in report["model_pins"])
+        assert report["worker_status"] == "live_idle"
+        assert report["live_workers"] >= 1
+        assert report["busy_workers"] == 0
+        assert report["last_heartbeat"] is not None
+        assert report["priced_models"] > 0
+        assert any(pin["stage"] == "extract" for pin in report["model_pins"])
 
-    names = {service["name"] for service in report["services"]}
-    assert {"OpenRouter", "Bright Data", "Langfuse"} <= names
-    # Presence only — a value here would be a credential in an HTTP response.
-    for service in report["services"]:
-        assert set(service) == {"name", "detail", "configured"}
-        assert isinstance(service["configured"], bool)
+        names = {service["name"] for service in report["services"]}
+        assert {"OpenRouter", "Bright Data", "Langfuse"} <= names
+        # Presence only — a value here would be a credential in an HTTP response.
+        for service in report["services"]:
+            assert set(service) == {"name", "detail", "configured"}
+            assert isinstance(service["configured"], bool)
+    finally:
+        await db_pool.execute(
+            "delete from worker_heartbeats where worker_id = 'admin-system-test'"
+        )
+
+
+async def test_system_distinguishes_busy_and_unavailable_workers(
+    as_admin: AsyncClient, db_pool, collab_hunt
+) -> None:
+    await db_pool.execute("delete from worker_heartbeats")
+    job_id = await _job(db_pool, collab_hunt, "running")
+    try:
+        await db_pool.execute(
+            "update jobs set locked_by = 'busy-system-test' where id = $1", job_id
+        )
+        await db_pool.execute(
+            """
+            insert into worker_heartbeats (worker_id, mode, started_at, last_seen_at)
+            values ('busy-system-test', 'workflow', now(), now())
+            """
+        )
+        busy = (await as_admin.get("/v1/admin/system")).json()
+        assert busy["worker_status"] == "live_busy"
+        assert busy["busy_workers"] >= 1
+
+        await db_pool.execute(
+            "update worker_heartbeats set last_seen_at = now() - interval '2 minutes' "
+            "where worker_id = 'busy-system-test'"
+        )
+        unavailable = (await as_admin.get("/v1/admin/system")).json()
+        assert unavailable["worker_status"] == "unavailable"
+        assert unavailable["live_workers"] == 0
+        # Queue state is separate from worker liveness.
+        assert unavailable["running"] >= 1
+    finally:
+        await db_pool.execute("delete from jobs where id = $1", job_id)
+        await db_pool.execute(
+            "delete from worker_heartbeats where worker_id = 'busy-system-test'"
+        )
 
 
 # ── the gate ─────────────────────────────────────────────────────────────────

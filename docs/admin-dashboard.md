@@ -135,7 +135,7 @@ accounts only; neither may create one.
 | `GET /v1/admin/jobs` · `/{id}` | admin | Cross-Hunt queue; `stale_only=true` for dead workers' locks |
 | `POST .../jobs/{id}/retry` · `/cancel` · `/jobs/release-locks` | admin | Queue control, all audited |
 | `GET /v1/admin/costs?days=` | admin | Spend by stage, Hunt and model + daily series |
-| `GET /v1/admin/system` | admin | Queue health, model pins, key **presence** |
+| `GET /v1/admin/system` | admin | Worker liveness, queue health, model pins, key **presence** |
 | `GET /v1/admin/demo` · `/demo/hunts` | admin | Current release/freshness and only the caller's owned Hunt candidates |
 | `POST /v1/admin/demo/preflight` · `/demo/publications` | admin | Exposure inventory, exact-name-confirmed durable publication |
 | `PATCH /v1/admin/demo` | selected Hunt's admin Owner | Enable current release or immediately disable without deselecting |

@@ -618,6 +618,9 @@ export interface SystemReport {
   running: number;
   stale_locks: number;
   oldest_queued_seconds: number;
+  worker_status: "live_idle" | "live_busy" | "unavailable";
+  live_workers: number;
+  busy_workers: number;
   last_heartbeat: string | null;
   finished_24h: number;
   failed_24h: number;

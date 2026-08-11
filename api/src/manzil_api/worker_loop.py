@@ -9,6 +9,7 @@ DESIGN §5's default: the API runs the durable-queue worker loop as a
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import Callable
 
 import asyncpg
@@ -39,4 +40,5 @@ async def run_inprocess_worker(
         priority_tick=process_next_demo_publication,
         scheduler_tick=scheduler_tick,
         on_tick=on_tick,
+        mode=os.environ.get("MANZIL_MODE", "workflow"),
     )
