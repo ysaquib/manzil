@@ -195,6 +195,7 @@ async def test_ghost_saves_the_rubric_through_the_audited_route(
     )
     assert response.status_code == 200, response.text
     assert response.json() == []
+    assert response.headers["X-Manzil-Backfill-Count"] == "0"
     requester = await db_pool.fetchval(
         "select requested_by from jobs where hunt_id=$1 and type='rescore' "
         "order by created_at desc limit 1",

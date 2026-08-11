@@ -147,6 +147,25 @@ describe("apiFetch in demo mode", () => {
     await apiFetch("/v1/anything", { method: "POST", body: { a: 1 } });
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
+
+  it("exposes response headers alongside parsed JSON when requested", async () => {
+    const headers = new Headers({ "X-Manzil-Backfill-Count": "3" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers,
+        json: async () => [{ id: "criterion-1" }],
+      }),
+    );
+
+    const { apiFetchResult } = await import("../src/lib/apiClient");
+    const result = await apiFetchResult<{ id: string }[]>("/v1/rubric", { method: "PUT" });
+
+    expect(result.data).toEqual([{ id: "criterion-1" }]);
+    expect(result.headers.get("X-Manzil-Backfill-Count")).toBe("3");
+  });
 });
 
 // ── R2 M4: a stored value is only a session if it is actually usable ─────────

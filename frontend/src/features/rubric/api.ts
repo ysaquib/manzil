@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useMemo } from "react";
 
-import { apiFetch } from "../../lib/apiClient";
+import { apiFetch, apiFetchResult } from "../../lib/apiClient";
 import type { NonNegotiable, RubricOption } from "../../lib/contracts";
 import { supabase } from "../../lib/supabase";
 import { useGhostMutationPath } from "../admin/useGhostMode";
@@ -83,6 +83,11 @@ export interface CustomRoutingResponse {
   supported: boolean;
 }
 
+export interface RubricSaveResult {
+  criteria: RubricCriterion[];
+  backfillCount: number;
+}
+
 export function useCatalog(domain: "rent" | "buy" = "rent") {
   return useQuery({
     queryKey: ["criteria_catalog", domain],
@@ -133,11 +138,21 @@ export function usePutRubric(huntId: string) {
   const qc = useQueryClient();
   const mutationPath = useGhostMutationPath(huntId);
   return useMutation({
-    mutationFn: (criteria: RubricCriterion[]) =>
-      apiFetch<RubricCriterion[]>(mutationPath(`/v1/hunts/${huntId}/rubric`), {
-        method: "PUT",
-        body: { criteria },
-      }),
+    mutationFn: async (criteria: RubricCriterion[]): Promise<RubricSaveResult> => {
+      const result = await apiFetchResult<RubricCriterion[]>(
+        mutationPath(`/v1/hunts/${huntId}/rubric`),
+        {
+          method: "PUT",
+          body: { criteria },
+          demoResult: () => criteria,
+        },
+      );
+      const rawCount = Number(result.headers.get("X-Manzil-Backfill-Count") ?? 0);
+      return {
+        criteria: result.data,
+        backfillCount: Number.isSafeInteger(rawCount) && rawCount >= 0 ? rawCount : 0,
+      };
+    },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["rubric_criteria", huntId] });
       // Rubric mutation bumps rubric_version + enqueues the hunt rescore (§9.2).

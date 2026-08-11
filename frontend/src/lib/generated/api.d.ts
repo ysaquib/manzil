@@ -5844,6 +5844,8 @@ export interface operations {
             /** @description Successful Response */
             200: {
                 headers: {
+                    /** @description Number of active Listings queued for cached-evidence backfill. */
+                    "X-Manzil-Backfill-Count"?: number;
                     [name: string]: unknown;
                 };
                 content: {
@@ -8611,6 +8613,8 @@ export interface operations {
             /** @description Successful Response */
             200: {
                 headers: {
+                    /** @description Active Listings queued for cached-evidence backfill. */
+                    "X-Manzil-Backfill-Count"?: number;
                     [name: string]: unknown;
                 };
                 content: {

@@ -233,7 +233,7 @@ async def test_custom_routing_is_traced_through_the_llm_seam(
 
 
 @pytest.mark.asyncio
-async def test_new_custom_criterion_enqueues_active_listing_backfill(
+async def test_new_maps_custom_criterion_enqueues_active_listing_backfill(
     client: AsyncClient, db_pool
 ) -> None:
     hunt_id, property_id, listing_id = uuid4(), uuid4(), uuid4()
@@ -276,12 +276,12 @@ async def test_new_custom_criterion_enqueues_active_listing_backfill(
                         "custom_def": {
                             "schema_version": 1,
                             "key": custom_key,
-                            "label": "Quiet hours",
-                            "description": "Whether quiet hours are stated.",
+                            "label": "Short commute",
+                            "description": "Whether downtown is within 20 minutes.",
                             "fact_scope": "property",
                             "value_schema": {"type": "boolean"},
-                            "requires_tool": None,
-                            "refresh_class": "listing_details",
+                            "requires_tool": "maps",
+                            "refresh_class": "location",
                             "routing_confirmed": True,
                         },
                         "options": [{"match": {"op": "bool", "value": True}, "delta": 1}],
@@ -290,6 +290,7 @@ async def test_new_custom_criterion_enqueues_active_listing_backfill(
             },
         )
         assert response.status_code == 200, response.text
+        assert response.headers["X-Manzil-Backfill-Count"] == "1"
         payload = await db_pool.fetchval(
             """
             select payload from jobs

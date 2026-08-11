@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from manzil_shared.models import CheckpointPrompt, JobState
 
 from manzil_api import privileged
@@ -269,7 +269,20 @@ async def put_shared_filters(
     return result
 
 
-@router.put("/hunts/{hunt_id}/rubric", response_model=list[RubricCriterionOut])
+@router.put(
+    "/hunts/{hunt_id}/rubric",
+    response_model=list[RubricCriterionOut],
+    responses={
+        200: {
+            "headers": {
+                "X-Manzil-Backfill-Count": {
+                    "description": "Active Listings queued for cached-evidence backfill.",
+                    "schema": {"type": "integer", "minimum": 0},
+                }
+            }
+        }
+    },
+)
 async def put_rubric(
     hunt_id: UUID,
     body: RubricPut,
@@ -277,19 +290,21 @@ async def put_rubric(
     pool: DbPool,
     client: ServiceClient,
     audit: Audit,
+    response: Response,
 ) -> list[RubricCriterionOut]:
     await _require_ghost_hunt(pool, hunt_id, admin)
     before = await rubric_service.get_rubric(client, hunt_id)
     result = await rubric_service.put_rubric(client, hunt_id, admin.id, body)
+    response.headers["X-Manzil-Backfill-Count"] = str(result.backfill_count)
     await _audit_hunt(
         audit,
         "hunt.rubric.update",
         hunt_id,
         target_type="rubric",
         before={"criteria": [row.model_dump(mode="json") for row in before]},
-        after={"criteria": [row.model_dump(mode="json") for row in result]},
+        after={"criteria": [row.model_dump(mode="json") for row in result.criteria]},
     )
-    return result
+    return result.criteria
 
 
 @router.post("/hunts/{hunt_id}/rubric/custom-routing", response_model=CustomRoutingResponse)
