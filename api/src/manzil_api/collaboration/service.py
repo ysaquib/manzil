@@ -13,8 +13,10 @@ from manzil_api.collaboration.exceptions import (
     CannotRemoveOwner,
     CommentNotFound,
     InvalidUnitGroup,
+    LastMemberCannotLeaveHunt,
     MemberNotFound,
     NotCommentAuthor,
+    OwnerCannotLeaveHunt,
     TransferTargetNotMember,
 )
 from manzil_api.collaboration.schemas import (
@@ -214,6 +216,44 @@ async def remove_member(client: Client, hunt_id: UUID, target_user_id: UUID) -> 
     client.table("hunt_members").delete().eq("hunt_id", str(hunt_id)).eq(
         "user_id", str(target_user_id)
     ).execute()
+
+
+async def leave_hunt(client: Client, hunt_id: UUID, user_id: str) -> None:
+    """End the caller's own membership.
+
+    Mirrors `hunt_members_self_leave_delete` (migration
+    `20260901000016_hunt_member_self_leave.sql`), which is the boundary; this
+    exists to turn the policy's silent no-op into an answer that says which of
+    the two rules was hit and what to do instead.
+    """
+    rows = (
+        client.table("hunt_members")
+        .select("user_id, role")
+        .eq("hunt_id", str(hunt_id))
+        .execute()
+        .data
+        or []
+    )
+    mine = next((row for row in rows if row["user_id"] == user_id), None)
+    if mine is None:  # pragma: no cover - require_member already refused
+        raise MemberNotFound("You are not a member of this hunt")
+    # Order matters. A sole member is necessarily the Owner, and "transfer
+    # ownership first" is advice they have nobody to take it with.
+    if len(rows) == 1:
+        raise LastMemberCannotLeaveHunt(
+            "You are the only member of this hunt — archive it instead of leaving."
+        )
+    if mine["role"] == "owner":
+        raise OwnerCannotLeaveHunt("Transfer ownership to another member before leaving this hunt.")
+    deleted = (
+        client.table("hunt_members")
+        .delete()
+        .eq("hunt_id", str(hunt_id))
+        .eq("user_id", user_id)
+        .execute()
+    )
+    if not deleted.data:  # pragma: no cover - RLS refusal the checks above missed
+        raise MemberNotFound("Member not found")
 
 
 async def transfer_ownership(

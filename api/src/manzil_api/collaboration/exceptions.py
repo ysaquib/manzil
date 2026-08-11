@@ -49,3 +49,17 @@ class CannotRemoveOwner(ManzilAPIError):
 class TransferTargetNotMember(ManzilAPIError):
     status_code = status.HTTP_404_NOT_FOUND
     code = "transfer_target_not_member"
+
+
+class OwnerCannotLeaveHunt(ManzilAPIError):
+    # Not a permission problem — the Owner has every permission. The Hunt is in
+    # a state where leaving is incoherent, and transferring ownership fixes it.
+    status_code = status.HTTP_409_CONFLICT
+    code = "owner_cannot_leave_hunt"
+
+
+class LastMemberCannotLeaveHunt(ManzilAPIError):
+    # A Hunt with nobody in it is readable by no one, including the leaver.
+    # Archiving is the action that means "I am done with this Hunt".
+    status_code = status.HTTP_409_CONFLICT
+    code = "last_member_cannot_leave_hunt"
