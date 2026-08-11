@@ -88,10 +88,24 @@ router = APIRouter(prefix="/admin/ghost", tags=["admin", "ghost-view"])
 @router.get("/hunts/{hunt_id}/attention", response_model=AttentionResponse)
 async def hunt_attention(hunt_id: UUID, admin: AdminUser, pool: DbPool) -> AttentionResponse:
     await _require_ghost_hunt(pool, hunt_id, admin, writable=False)
-    count = await pool.fetchval(
-        "select count(*) from jobs where hunt_id=$1 and state='waiting_user'", hunt_id
+    counts = await pool.fetchrow(
+        """select count(*) filter (where state='failed') as failed,
+                  count(*) filter (where state='waiting_user') as waiting_user,
+                  count(*) filter (where state='running') as running
+             from jobs where hunt_id=$1""",
+        hunt_id,
     )
-    return AttentionResponse(waiting_checkpoint_count=count)
+    failed, waiting, running = (int(counts[key]) for key in ("failed", "waiting_user", "running"))
+    task_status = (
+        "failed" if failed else "waiting_user" if waiting else "running" if running else None
+    )
+    return AttentionResponse(
+        waiting_checkpoint_count=waiting,
+        failed=failed,
+        waiting_user=waiting,
+        running=running,
+        task_status=task_status,
+    )
 
 
 class GhostViewUnavailable(ManzilAPIError):

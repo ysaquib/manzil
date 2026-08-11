@@ -59,3 +59,7 @@ class HuntNotificationPreferenceUpdate(BaseModel):
 
 class AttentionResponse(BaseModel):
     waiting_checkpoint_count: int
+    failed: int = 0
+    waiting_user: int = 0
+    running: int = 0
+    task_status: Literal["failed", "waiting_user", "running"] | None = None

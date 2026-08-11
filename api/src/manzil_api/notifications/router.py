@@ -139,27 +139,24 @@ async def get_attention(
 ) -> AttentionResponse:
     if user.is_demo:
         return AttentionResponse(waiting_checkpoint_count=0)
-    membership = (
-        client.table("hunt_members")
-        .select("role")
-        .eq("hunt_id", str(hunt_id))
-        .eq("user_id", user.id)
-        .single()
-        .execute()
-        .data
+    counts = await pool.fetchrow(
+        """select count(*) filter (where state='failed') as failed,
+                  count(*) filter (where state='waiting_user') as waiting_user,
+                  count(*) filter (where state='running') as running
+             from jobs where hunt_id=$1""",
+        hunt_id,
     )
-    if membership["role"] in ("owner", "curator"):
-        count = await pool.fetchval(
-            "select count(*) from jobs where hunt_id = $1 and state = 'waiting_user'", hunt_id
-        )
-    else:
-        count = await pool.fetchval(
-            """select count(*) from jobs j join hunt_listings hl on hl.id = j.hunt_listing_id
-                 where j.hunt_id = $1 and j.state = 'waiting_user' and hl.added_by = $2""",
-            hunt_id,
-            UUID(user.id),
-        )
-    return AttentionResponse(waiting_checkpoint_count=count)
+    failed, waiting, running = (int(counts[key]) for key in ("failed", "waiting_user", "running"))
+    task_status = (
+        "failed" if failed else "waiting_user" if waiting else "running" if running else None
+    )
+    return AttentionResponse(
+        waiting_checkpoint_count=waiting,
+        failed=failed,
+        waiting_user=waiting,
+        running=running,
+        task_status=task_status,
+    )
 
 
 @router.post("/webhooks/resend", status_code=status.HTTP_204_NO_CONTENT)
