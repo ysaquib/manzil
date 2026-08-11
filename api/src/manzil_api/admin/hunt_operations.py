@@ -87,7 +87,7 @@ router = APIRouter(prefix="/admin/ghost", tags=["admin", "ghost-view"])
 
 @router.get("/hunts/{hunt_id}/attention", response_model=AttentionResponse)
 async def hunt_attention(hunt_id: UUID, admin: AdminUser, pool: DbPool) -> AttentionResponse:
-    await _require_ghost_hunt(pool, hunt_id, admin)
+    await _require_ghost_hunt(pool, hunt_id, admin, writable=False)
     count = await pool.fetchval(
         "select count(*) from jobs where hunt_id=$1 and state='waiting_user'", hunt_id
     )
@@ -104,6 +104,11 @@ class GhostTargetNotFound(ManzilAPIError):
     code = "ghost_target_not_found"
 
 
+class GhostHuntLocked(ManzilAPIError):
+    status_code = status.HTTP_423_LOCKED
+    code = "hunt_locked"
+
+
 def get_service_client(settings: SettingsDep) -> Client:
     return create_service_client(settings)
 
@@ -111,16 +116,20 @@ def get_service_client(settings: SettingsDep) -> Client:
 ServiceClient = Annotated[Client, Depends(get_service_client)]
 
 
-async def _require_ghost_hunt(pool: DbPool, hunt_id: UUID, admin: AdminUser) -> dict:
+async def _require_ghost_hunt(
+    pool: DbPool, hunt_id: UUID, admin: AdminUser, *, writable: bool = True
+) -> dict:
     row = await pool.fetchrow("select * from hunts where id = $1", hunt_id)
     if row is None:
         raise GhostTargetNotFound("Hunt not found")
+    if writable and row["locked_at"] is not None:
+        raise GhostHuntLocked("Unlock this Hunt before making any changes")
     member = await pool.fetchval(
         "select exists(select 1 from hunt_members where hunt_id = $1 and user_id = $2)",
         hunt_id,
         UUID(admin.id),
     )
-    if member:
+    if member and row["archived_at"] is None:
         raise GhostViewUnavailable(
             "Site Admins who belong to this Hunt must use their assigned Hunt role"
         )
@@ -130,11 +139,13 @@ async def _require_ghost_hunt(pool: DbPool, hunt_id: UUID, admin: AdminUser) -> 
     return hunt
 
 
-async def _require_ghost_listing(pool: DbPool, listing_id: UUID, admin: AdminUser) -> dict:
+async def _require_ghost_listing(
+    pool: DbPool, listing_id: UUID, admin: AdminUser, *, writable: bool = True
+) -> dict:
     row = await pool.fetchrow("select * from hunt_listings where id = $1", listing_id)
     if row is None:
         raise GhostTargetNotFound("Listing not found")
-    await _require_ghost_hunt(pool, row["hunt_id"], admin)
+    await _require_ghost_hunt(pool, row["hunt_id"], admin, writable=writable)
     listing = dict(row)
     for key in ("id", "hunt_id", "property_id", "added_by", "submitted_source_id"):
         if listing.get(key) is not None:
@@ -173,7 +184,28 @@ async def patch_hunt(
     audit: Audit,
 ) -> HuntResponse:
     before = await _require_ghost_hunt(pool, hunt_id, admin)
-    result = await hunt_service.patch_hunt(client, hunt_id, body)
+    updates: dict[str, object] = {}
+    if body.name is not None:
+        updates["name"] = body.name
+    if body.archived is not None:
+        updates["archived_at"] = datetime.now(UTC).isoformat() if body.archived else None
+    if updates:
+        client.table("hunts").update(updates).eq("id", str(hunt_id)).execute()
+    if body.archived:
+        await pool.execute(
+            """
+            update jobs
+            set state='cancelled', finished_at=coalesce(finished_at, now()),
+                locked_by=null, locked_at=null,
+                error=coalesce(error, 'Cancelled because the Hunt was archived')
+            where hunt_id=$1 and state in ('queued', 'running', 'waiting_user')
+            """,
+            hunt_id,
+        )
+    updated = await hunt_service.get_hunt_row(client, hunt_id)
+    if updated is None:
+        raise GhostTargetNotFound("Hunt not found after update")
+    result = HuntResponse.model_validate(updated)
     await _audit_hunt(
         audit,
         "hunt.update",
@@ -343,7 +375,7 @@ async def listing_deletion_impact(
     admin: AdminUser,
     pool: DbPool,
 ) -> ListingDeletionImpact:
-    await _require_ghost_listing(pool, listing_id, admin)
+    await _require_ghost_listing(pool, listing_id, admin, writable=False)
     async with pool.acquire() as connection:
         return await listing_service.get_deletion_impact_admin(connection, listing_id)
 
@@ -713,7 +745,7 @@ async def list_invites(
     client: ServiceClient,
     settings: SettingsDep,
 ) -> list[InviteResponse]:
-    await _require_ghost_hunt(pool, hunt_id, admin)
+    await _require_ghost_hunt(pool, hunt_id, admin, writable=False)
     return await invite_service.list_invites(client, settings.frontend_url, hunt_id, pool)
 
 
@@ -795,7 +827,7 @@ async def list_invitation_links(
     client: ServiceClient,
     settings: SettingsDep,
 ) -> list[InvitationLinkResponse]:
-    await _require_ghost_hunt(pool, hunt_id, admin)
+    await _require_ghost_hunt(pool, hunt_id, admin, writable=False)
     return await invitation_link_service.list_invitation_links(
         client, settings.frontend_url, hunt_id
     )
@@ -892,7 +924,7 @@ async def list_jobs(
     client: ServiceClient,
     states: Annotated[list[JobState] | None, Depends(parse_job_states)],
 ) -> list[JobResponse]:
-    await _require_ghost_hunt(pool, hunt_id, admin)
+    await _require_ghost_hunt(pool, hunt_id, admin, writable=False)
     return await job_service.list_jobs(client, hunt_id, states)
 
 

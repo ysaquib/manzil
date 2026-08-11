@@ -51,4 +51,19 @@ class HuntResponse(BaseModel):
     rubric_version: int
     settings: dict[str, Any]
     archived_at: datetime | None
+    locked_at: datetime | None = None
+    locked_by: UUID | None = None
     created_at: datetime | None = None
+
+
+class HuntDelete(BaseModel):
+    confirmation_name: str = Field(min_length=1, max_length=200)
+
+
+class HuntDeletionImpact(BaseModel):
+    hunt_id: UUID
+    name: str
+    members: int
+    listings: int
+    jobs: int
+    visits: int

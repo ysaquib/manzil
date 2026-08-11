@@ -16,7 +16,7 @@ import asyncpg
 import pytest
 from manzil_shared.config import MANZIL_JOB_MAX_ATTEMPTS
 from manzil_shared.models import JobState, JobType
-from manzil_worker.postgres_persistence import PostgresPersistence
+from manzil_worker.postgres_persistence import HuntExecutionFrozen, PostgresPersistence
 from manzil_worker.queue import JOB_ORPHAN_AFTER, claim_next_job, reclaim_orphans
 from manzil_worker.runner import run_job
 from manzil_worker.stages.base import StageCtx
@@ -190,6 +190,43 @@ async def test_orphaned_job_resumes_from_current_stage(pg_pool: asyncpg.Pool) ->
         assert final.status is JobState.DONE
         done = await pg_pool.fetchrow("select state from jobs where id = $1", job_id)
         assert done["state"] == "done"
+    finally:
+        await pg_pool.execute("delete from jobs where id = $1", job_id)
+        await pg_pool.execute("delete from hunts where id = $1", hunt_id)
+
+
+async def test_archived_hunt_stops_a_running_job_at_the_next_stage_boundary(
+    pg_pool: asyncpg.Pool,
+) -> None:
+    job_id, hunt_id = uuid4(), uuid4()
+    await pg_pool.execute(
+        "insert into hunts (id, name, owner_id) values ($1, 'locked', $2)", hunt_id, uuid4()
+    )
+    await pg_pool.execute(
+        "insert into jobs (id, hunt_id, type, state) values ($1, $2, 'ingest', 'running')",
+        job_id,
+        hunt_id,
+    )
+    try:
+        # Direct postgres setup models the lifecycle transaction committing
+        # while a Stage is already executing.
+        await pg_pool.execute("update hunts set archived_at=now() where id=$1", hunt_id)
+        state = RunState(job_id=job_id, job_type=JobType.INGEST, url="https://x.test/locked")
+        persistence = PostgresPersistence(pg_pool, job_id, ["only"])
+
+        with pytest.raises(HuntExecutionFrozen, match="read-only"):
+            await run_job(
+                state,
+                StageCtx(persistence=persistence),
+                [("only", _stages([], crash_at=None)[0][1])],
+            )
+
+        row = await pg_pool.fetchrow(
+            "select state, current_stage, locked_by, locked_at from jobs where id=$1", job_id
+        )
+        assert row["state"] == "cancelled"
+        assert row["current_stage"] is None
+        assert row["locked_by"] is None and row["locked_at"] is None
     finally:
         await pg_pool.execute("delete from jobs where id = $1", job_id)
         await pg_pool.execute("delete from hunts where id = $1", hunt_id)

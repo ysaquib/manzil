@@ -558,6 +558,32 @@ export function projectImageClassifications(
   };
 }
 
+type PropertyImageRow = {
+  id: string;
+  storage_path: string;
+  width: number | null;
+  height: number | null;
+  kind: "listing_photo" | "floor_plan_diagram" | "other";
+  vision_assessment: unknown;
+};
+
+export function selectPropertyImageRows(rows: PropertyImageRow[]) {
+  const projectedRows = rows.map((row) => ({
+    ...row,
+    projected: projectImageClassifications(row.vision_assessment),
+  }));
+  const diagrams = projectedRows.filter((row) => row.kind === "floor_plan_diagram");
+  const gallery = projectedRows
+    .filter(
+      (row) =>
+        row.kind === "listing_photo" &&
+        row.projected.classification !== undefined &&
+        row.projected.classification.primaryScene !== "other",
+    )
+    .slice(0, 30);
+  return [...gallery, ...diagrams];
+}
+
 export function usePropertyImages(propertyId: string) {
   return useQuery({
     queryKey: ["property_images", propertyId],
@@ -569,7 +595,7 @@ export function usePropertyImages(propertyId: string) {
         .eq("is_current", true)
         .order("created_at", { ascending: true });
       if (error) throw error;
-      const rows = data ?? [];
+      const rows = selectPropertyImageRows((data ?? []) as PropertyImageRow[]);
       if (rows.length === 0) return [];
       const { data: associations, error: associationError } = await supabase
         .from("current_floor_plan_images")
@@ -596,7 +622,7 @@ export function usePropertyImages(propertyId: string) {
               width: row.width,
               height: row.height,
               kind: row.kind,
-              ...projectImageClassifications(row.vision_assessment),
+              ...row.projected,
               floorPlanAssociations: plansByImage.get(row.id) ?? [],
             }]
           : [];

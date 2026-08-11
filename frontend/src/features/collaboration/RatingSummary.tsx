@@ -8,8 +8,8 @@
 import { Box, Group, Text, Tooltip } from "@mantine/core";
 import { IconMessageCircle, IconStarFilled } from "@tabler/icons-react";
 
-import type { HuntMember, Rating } from "./api";
-import { memberColor } from "./memberColors";
+import type { HuntContributor, HuntMember, Rating } from "./api";
+import { contributorColor, contributorDisplayName } from "./memberDisplay";
 import classes from "./RatingSummary.module.css";
 
 export function averageRating(ratings: Rating[]): number | null {
@@ -26,13 +26,15 @@ export function formatAverage(average: number): string {
 export function RatingSummary({
   ratings,
   members,
+  contributors = members,
   commentCount = 0,
 }: {
   ratings: Rating[];
   members: HuntMember[];
+  contributors?: (HuntContributor | HuntMember)[];
   commentCount?: number;
 }) {
-  const byId = new Map(members.map((member) => [member.user_id, member]));
+  const byId = new Map(contributors.map((contributor) => [contributor.user_id, contributor]));
   const average = averageRating(ratings);
 
   return (
@@ -52,18 +54,19 @@ export function RatingSummary({
         )}
         <Group gap={3} wrap="nowrap">
           {ratings.map((rating) => {
-            const member = byId.get(rating.user_id);
+            const contributor = byId.get(rating.user_id);
+            const name = contributorDisplayName(contributor);
             return (
               <Tooltip
                 key={rating.user_id}
-                label={`${member?.display_name ?? "Member"}: ${rating.rating}/5`}
+                label={`${name}: ${rating.rating}/5`}
                 openDelay={200}
               >
                 <Box
                   className={classes.dot}
-                  style={{ background: memberColor(member?.color ?? null) }}
+                  style={{ background: contributorColor(contributor) }}
                   role="img"
-                  aria-label={`${member?.display_name ?? "Member"}: ${rating.rating} of 5`}
+                  aria-label={`${name}: ${rating.rating} of 5`}
                 />
               </Tooltip>
             );

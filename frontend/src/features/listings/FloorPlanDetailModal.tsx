@@ -43,7 +43,7 @@ import classes from "./FloorPlanDetailModal.module.css";
 import { formatRange } from "./overviewRows";
 import { formatScore, scoreColor, scoreLabel } from "./scoreBands";
 import type { Extraction, FloorPlan, Override, PropertySource, Score } from "./types";
-import type { HuntMember } from "../collaboration/api";
+import type { HuntContributor, HuntMember } from "../collaboration/api";
 
 const STATE_HEADING: Record<AmenityState, { title: string; hint: string; glyph: string }> = {
   confirmed: { title: "Confirmed", hint: "stated for this plan", glyph: "✓" },
@@ -194,7 +194,8 @@ export interface FloorPlanDetailModalProps {
   pinned: boolean;
   saving?: boolean;
   isMobile: boolean;
-  members?: HuntMember[];
+  members?: (HuntMember | HuntContributor)[];
+  readOnly?: boolean;
   onClose: () => void;
   onTogglePin: () => void;
 }
@@ -216,6 +217,7 @@ export function FloorPlanDetailModal({
   saving,
   isMobile,
   members = [],
+  readOnly = false,
   onClose,
   onTogglePin,
 }: FloorPlanDetailModalProps) {
@@ -483,7 +485,7 @@ export function FloorPlanDetailModal({
               <Button
                 size="xs"
                 leftSection={<IconPinFilled size={13} />}
-                disabled={saving}
+                disabled={saving || readOnly}
                 onClick={onTogglePin}
               >
                 Pin for {unitGroupLabel}

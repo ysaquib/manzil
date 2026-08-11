@@ -2,7 +2,7 @@ import { Select } from "@mantine/core";
 
 import type { WidgetProps } from "./types";
 
-export function EnumWidget({ schema, value, onChange, label, comboboxProps }: WidgetProps) {
+export function EnumWidget({ schema, value, onChange, label, comboboxProps, size = "xs" }: WidgetProps) {
   const options = (schema.enum ?? []).map((v) => ({
     value: String(v),
     label: String(v).replaceAll("_", " "),
@@ -14,7 +14,7 @@ export function EnumWidget({ schema, value, onChange, label, comboboxProps }: Wi
       value={value === null || value === undefined ? null : String(value)}
       onChange={(next) => onChange(next)}
       allowDeselect={false}
-      size="xs"
+      size={size}
       comboboxProps={comboboxProps}
     />
   );

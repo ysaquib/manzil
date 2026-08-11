@@ -38,6 +38,40 @@ async def test_put_rubric_invalid_option_rejected(client: AsyncClient, db_pool) 
 
 
 @pytest.mark.asyncio
+async def test_put_rubric_rejects_numeric_style_availability_date_operator(
+    client: AsyncClient, db_pool
+) -> None:
+    hunt_id = uuid4()
+    await db_pool.execute(
+        "insert into hunts (id, name, owner_id, settings) values ($1, 'Dates', $2, '{}'::jsonb)",
+        hunt_id,
+        FAKE_USER.id,
+    )
+    try:
+        response = await client.put(
+            f"/v1/hunts/{hunt_id}/rubric",
+            json={
+                "criteria": [
+                    {
+                        "catalog_key": "availability_date",
+                        "options": [
+                            {
+                                "match": {"op": "lte", "value": "2026-09-01"},
+                                "delta": 1.0,
+                            }
+                        ],
+                    }
+                ]
+            },
+        )
+        assert response.status_code == 422
+        assert response.json()["code"] == "invalid_rubric_option"
+        assert "before, after, or between" in response.json()["detail"]
+    finally:
+        await db_pool.execute("delete from hunts where id = $1", hunt_id)
+
+
+@pytest.mark.asyncio
 async def test_put_rubric_bumps_version_and_enqueues_rescore(client: AsyncClient, db_pool) -> None:
     hunt_id = uuid4()
     await db_pool.execute(

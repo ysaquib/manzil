@@ -20,6 +20,10 @@ vi.mock("../src/features/rubric/api", () => ({
   }),
 }));
 
+vi.mock("../src/features/hunts/access", () => ({
+  useHuntAccess: () => ({ canMutate: true }),
+}));
+
 import { ComparePage } from "../src/features/listings/ComparePage";
 
 function makeListing(id: string, name: string, laundry: unknown): Listing {

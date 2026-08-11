@@ -8,7 +8,14 @@
 // (waiting on the user); status hues lean earthy (moss/olive/ochre) instead
 // of electric. Headings are Literata (serif), body is Source Sans 3 (sans);
 // both self-hosted via @fontsource-variable imports in main.tsx.
-import { createTheme, rem, virtualColor, type CSSVariablesResolver } from "@mantine/core";
+import {
+  createTheme,
+  rem,
+  virtualColor,
+  type ActionIconProps,
+  type CSSVariablesResolver,
+  type MantineTheme,
+} from "@mantine/core";
 import { clayColors } from "./colors";
 
 const fontStackSans =
@@ -133,12 +140,38 @@ export const theme = createTheme({
     Loader: { defaultProps: { type: "dots" } },
     Table: {
       // Numbers (rent, sqft, scores) align down a column.
-      styles: { table: { fontVariantNumeric: "tabular-nums" } },
+      styles: {
+        table: { fontVariantNumeric: "tabular-nums" },
+        scrollContainer: {
+          overscrollBehaviorInline: "contain",
+          WebkitOverflowScrolling: "touch",
+          scrollBehavior: "smooth",
+        },
+      },
     },
     Button: { styles: { root: hoverEase } },
     ActionIcon: {
       defaultProps: { variant: "subtle" },
-      styles: { root: hoverEase },
+      styles: (_theme: MantineTheme, props: ActionIconProps) => ({
+        root: {
+          ...hoverEase,
+          ...(props.color === "gray" || props.color === undefined
+            ? {
+                color: "var(--mantine-color-dimmed)",
+                "&:hover": { backgroundColor: "var(--mantine-color-default-hover)" },
+              }
+            : {}),
+        },
+      }),
+    },
+    CloseButton: {
+      styles: {
+        root: {
+          ...hoverEase,
+          color: "var(--mantine-color-dimmed)",
+          "&:hover": { backgroundColor: "var(--mantine-color-default-hover)" },
+        },
+      },
     },
     NavLink: {
       defaultProps: { variant: "subtle" },

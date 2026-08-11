@@ -6,9 +6,11 @@
 import { Group, MultiSelect, Select, Text } from "@mantine/core";
 
 import { criterionUnit } from "../../lib/criterionUnits";
+import type { ControlSizes } from "./controlSizes";
 import type { MatchOp, OptionMatch } from "../../lib/contracts";
 import { OP_LABEL_SHORT, OP_LABEL_WORD, opsForSchema } from "./matchLabels";
 import { NumberWidget } from "./widgets/NumberWidget";
+import { DateWidget } from "./widgets/DateWidget";
 import type { ValueSchema } from "./widgets/types";
 import { WidgetForSchema } from "./widgets/widgetForSchema";
 
@@ -23,20 +25,32 @@ function defaultValueForOp(op: MatchOp, previous: OptionMatch): unknown {
 
 const flexCell = { flex: 1, minWidth: 0 } as const;
 
+// The operator select is fixed-width so the value input starts at the same
+// offset down the card. Those widths are tuned for 12px type; at 16px the same
+// labels need more room, and on mobile the row is full-width so it can spare
+// it.
+function selectWidth(sizes: ControlSizes, isEnum: boolean, op: MatchOp): number {
+  if (sizes.input === "md") return isEnum ? 124 : op === "range" ? 118 : 96;
+  return isEnum ? 92 : op === "range" ? 88 : 72;
+}
+
 export function OptionMatchEditor({
   match,
   schema,
   criterionKey,
   onChange,
+  sizes,
 }: {
   match: OptionMatch;
   schema: ValueSchema;
   criterionKey?: string | null;
   onChange: (match: OptionMatch) => void;
+  sizes: ControlSizes;
 }) {
   const ops = opsForSchema(schema);
   const isEnum = Boolean(schema.enum) || schema.type === "array";
-  const range = Array.isArray(match.value) ? (match.value as (number | null)[]) : [null, null];
+  const isDate = schema.type === "string" && schema.format === "date";
+  const range = Array.isArray(match.value) ? match.value : [null, null];
   const unit = criterionUnit(criterionKey);
 
   return (
@@ -48,7 +62,9 @@ export function OptionMatchEditor({
             value: op,
             // Enum ops read as words ("is", "any of"); numeric ops as symbols
             // with a word gloss in the dropdown.
-            label: isEnum ? OP_LABEL_WORD[op] : OP_LABEL_SHORT[op],
+            label: isDate
+              ? op === "lt" ? "before" : op === "gt" ? "after" : "between"
+              : isEnum ? OP_LABEL_WORD[op] : OP_LABEL_SHORT[op],
           }))}
           renderOption={({ option }) =>
             // Symbol ops get a word gloss ("≤  at most"); word ops ("between",
@@ -74,13 +90,35 @@ export function OptionMatchEditor({
             onChange({ op: next as MatchOp, value: defaultValueForOp(next as MatchOp, match) })
           }
           allowDeselect={false}
-          w={isEnum ? 92 : match.op === "range" ? 88 : 72}
-          size="xs"
+          w={selectWidth(sizes, isEnum || isDate, match.op)}
+          size={sizes.input}
           comboboxProps={{ width: "max-content", position: "bottom-start" }}
           styles={{ input: { flexShrink: 0 } }}
         />
       )}
-      {match.op === "range" ? (
+      {match.op === "range" && isDate ? (
+        <>
+          <div style={flexCell}>
+            <DateWidget
+              schema={schema}
+              value={typeof range[0] === "string" ? range[0] : null}
+              onChange={(low) => onChange({ ...match, value: [low, range[1]] })}
+              placeholder="from"
+              size={sizes.input}
+            />
+          </div>
+          <Text size="xs" c="dimmed" span>–</Text>
+          <div style={flexCell}>
+            <DateWidget
+              schema={schema}
+              value={typeof range[1] === "string" ? range[1] : null}
+              onChange={(high) => onChange({ ...match, value: [range[0], high] })}
+              placeholder="to"
+              size={sizes.input}
+            />
+          </div>
+        </>
+      ) : match.op === "range" ? (
         <>
           <div style={flexCell}>
             <NumberWidget
@@ -89,6 +127,7 @@ export function OptionMatchEditor({
               onChange={(low) => onChange({ ...match, value: [low, range[1]] })}
               placeholder="from"
               unit={unit}
+              size={sizes.input}
               hideControls
             />
           </div>
@@ -102,6 +141,7 @@ export function OptionMatchEditor({
               onChange={(high) => onChange({ ...match, value: [range[0], high] })}
               placeholder="to"
               unit={unit}
+              size={sizes.input}
               hideControls
             />
           </div>
@@ -116,7 +156,7 @@ export function OptionMatchEditor({
             }))}
             value={Array.isArray(match.value) ? (match.value as string[]) : []}
             onChange={(next) => onChange({ ...match, value: next })}
-            size="xs"
+            size={sizes.input}
           />
         </div>
       ) : (
@@ -132,6 +172,7 @@ export function OptionMatchEditor({
             }
             onChange={(value) => onChange({ ...match, value })}
             unit={unit}
+            size={sizes.input}
             hideControls
           />
         </div>

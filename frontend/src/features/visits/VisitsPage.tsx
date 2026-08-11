@@ -21,13 +21,15 @@ import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { PageHeader } from "../../components/PageHeader";
-import { useMembers } from "../collaboration/api";
+import { useHuntContributors } from "../collaboration/api";
+import { contributorDisplayName } from "../collaboration/memberDisplay";
 import { useVisits } from "./api";
 import type { Visit, VisitState } from "./types";
 import { VisitStatePill } from "./VisitStatePill";
 import { VisitUnitChips } from "./VisitUnitChips";
 import { countByState, filterByState, visitState } from "./visitState";
 import classes from "./VisitsPage.module.css";
+import { useHuntAccess } from "../hunts/access";
 
 type Filter = VisitState | "all";
 
@@ -91,21 +93,24 @@ export function VisitsPage() {
   const { huntId = "" } = useParams();
   const [filter, setFilter] = useState<Filter>("all");
   const visitsQuery = useVisits(huntId);
-  const membersQuery = useMembers(huntId);
+  const contributorsQuery = useHuntContributors(huntId);
+  const access = useHuntAccess(huntId);
 
   const visits = visitsQuery.data ?? [];
   const counts = useMemo(() => countByState(visits), [visits]);
   const shown = useMemo(() => filterByState(visits, filter), [visits, filter]);
 
   const memberName = (userId: string) =>
-    membersQuery.data?.find((member) => member.user_id === userId)?.display_name ?? "a member";
+    contributorDisplayName(
+      contributorsQuery.data?.find((contributor) => contributor.user_id === userId),
+    );
 
   return (
     <Stack gap="lg">
       <PageHeader
         title="Visits"
         description="Every tour of this hunt's properties — planned, in progress and done."
-        rightSlot={
+        rightSlot={access.canMutate ? (
           <Button
             component={Link}
             to={`/h/${huntId}/visits/new`}
@@ -113,7 +118,7 @@ export function VisitsPage() {
           >
             New visit
           </Button>
-        }
+        ) : undefined}
       />
 
       {visitsQuery.isError && (
@@ -158,7 +163,7 @@ export function VisitsPage() {
                 Set one up before you tour, and the checklist is ready on your phone when you
                 get there — with the prep questions answered on the couch.
               </Text>
-              <Button
+              {access.canMutate && <Button
                 component={Link}
                 to={`/h/${huntId}/visits/new`}
                 variant="light"
@@ -166,7 +171,7 @@ export function VisitsPage() {
                 leftSection={<IconPlus size={16} />}
               >
                 Plan your first visit
-              </Button>
+              </Button>}
             </Stack>
           </Center>
         </Card>
@@ -200,7 +205,7 @@ export function VisitsPage() {
         </Card>
       )}
 
-      {membersQuery.isLoading && visits.length > 0 && (
+      {contributorsQuery.isLoading && visits.length > 0 && (
         <Group gap="xs">
           <Loader size="xs" />
           <Text size="xs" c="dimmed">

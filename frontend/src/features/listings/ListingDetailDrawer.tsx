@@ -28,11 +28,12 @@ import { SectionCard } from "../../components/SectionCard";
 import { ProblematicBadge } from "../../components/badges/ListingBadges";
 import { CommentsSection } from "../collaboration/CommentsSection";
 import { RatingControl } from "../collaboration/RatingControl";
-import { useCurrentMember, useMembers } from "../collaboration/api";
+import { useCurrentMember, useHuntContributors, useMembers } from "../collaboration/api";
 import { useListingFeeProposals } from "../visits/api";
 import { ListingVisits } from "../visits/ListingVisits";
 import { memberDisplayNameMap } from "../collaboration/memberDisplay";
 import { useHunt } from "../hunts/api";
+import { useHuntAccess } from "../hunts/access";
 import { useFeedbackOptional } from "../feedback/FeedbackContext";
 import { AutoResolvedCheckpointReview } from "../jobs/AutoResolvedCheckpointReview";
 import type { Job } from "../jobs/api";
@@ -243,6 +244,7 @@ function DrawerShell({
   isGhost: boolean;
 }) {
   const { draftPins, setDraftPin, isDirty, saving, saveAll, resetDraft } = useListingDetailDraft();
+  const access = useHuntAccess(huntId);
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
   const [openFloorPlanId, setOpenFloorPlanId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -280,6 +282,7 @@ function DrawerShell({
     listing?.property_id ?? "",
   );
   const { data: members = [] } = useMembers(huntId);
+  const { data: contributors = [] } = useHuntContributors(huntId);
   const { data: currentMember } = useCurrentMember(huntId);
   // Figures confirmed on a tour and offered to this Listing (VC-7).
   const { data: feeProposals } = useListingFeeProposals(listing?.id);
@@ -291,7 +294,7 @@ function DrawerShell({
     cats: Number(hunt?.settings.cats ?? 0),
     dogs: Number(hunt?.settings.dogs ?? 0),
   };
-  const memberNames = memberDisplayNameMap(members);
+  const memberNames = memberDisplayNameMap(contributors);
   const autoResolvedJob = jobs.find(
     (job) =>
       job.hunt_listing_id === listing?.id &&
@@ -412,6 +415,20 @@ function DrawerShell({
 
       <Drawer.Body>
         <Box
+          component="fieldset"
+          disabled={!access.canMutate}
+          style={{
+            border: 0,
+            padding: 0,
+            margin: 0,
+            minWidth: 0,
+            display: "flex",
+            flexDirection: "column",
+            flex: 1,
+            overflow: "hidden",
+          }}
+        >
+        <Box
           ref={scrollRef}
           component="div"
           onScroll={syncHeaderScroll}
@@ -437,10 +454,11 @@ function DrawerShell({
                 <AutoResolvedCheckpointReview
                   checkpoint={autoResolvedJob.auto_resolved_checkpoint}
                   canAnswer={
-                    isGhost === true ||
-                    currentMember?.role === "owner" ||
-                    currentMember?.role === "curator" ||
-                    currentMember?.user_id === listing.added_by
+                    access.canMutate &&
+                    (isGhost === true ||
+                      currentMember?.role === "owner" ||
+                      currentMember?.role === "curator" ||
+                      currentMember?.user_id === listing.added_by)
                   }
                   answering={answeringCheckpoint}
                   onAnswer={(choice, text) =>
@@ -479,7 +497,7 @@ function DrawerShell({
                     overrides={overrides ?? []}
                     floorPlanId={displayFloorPlanId}
                     isMobile={isMobile}
-                    members={members}
+                    members={contributors}
                   />
                 )
               ) : isUnavailable ? (
@@ -522,9 +540,10 @@ function DrawerShell({
                 // Deciding is a cost write, so it follows the Override
                 // permission (§4.2) — the same rule the API and RLS enforce.
                 canDecideProposals={
-                  currentMember?.role === "owner" ||
-                  currentMember?.role === "curator" ||
-                  currentMember?.user_id === listing.added_by
+                  access.canMutate &&
+                  (currentMember?.role === "owner" ||
+                    currentMember?.role === "curator" ||
+                    currentMember?.user_id === listing.added_by)
                 }
               />
             </SectionCard>
@@ -572,6 +591,11 @@ function DrawerShell({
             </SectionCard>
 
             <SectionCard title="Notes & ratings">
+              <Box
+                component="fieldset"
+                disabled={isGhost}
+                style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
+              >
               <Stack gap="md">
                 {group ? (
                   <RatingControl
@@ -588,11 +612,13 @@ function DrawerShell({
                 <CommentsSection
                   listingId={listing.id}
                   members={members}
+                  contributors={contributors}
                   currentUnitGroup={
                     group ? { key: group.key, label: unitLabel ?? group.key } : null
                   }
                 />
               </Stack>
+              </Box>
             </SectionCard>
 
             {/* Near the bottom by design: the map answers "where is this?"
@@ -618,9 +644,10 @@ function DrawerShell({
                 listingId={listing.id}
                 singleSourceReason={listing.single_source_reason}
                 canEdit={
-                  isGhost === true ||
-                  currentMember?.role === "owner" ||
-                  currentMember?.user_id === listing.added_by
+                  access.canMutate &&
+                  (isGhost === true ||
+                    currentMember?.role === "owner" ||
+                    currentMember?.user_id === listing.added_by)
                 }
                 jobs={jobs}
               />
@@ -648,6 +675,7 @@ function DrawerShell({
             </Group>
           </Box>
         )}
+        </Box>
       </Drawer.Body>
 
       {group && (
@@ -667,7 +695,8 @@ function DrawerShell({
           pinned={openFloorPlan ? (draftPins[group.key] ?? null) === openFloorPlan.id : false}
           saving={saving}
           isMobile={isMobile}
-          members={members}
+          members={contributors}
+          readOnly={!access.canMutate}
           onClose={() => setOpenFloorPlanId(null)}
           onTogglePin={() =>
             openFloorPlan &&

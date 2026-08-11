@@ -29,7 +29,7 @@ import drawer from "./ListingDetailDrawer.module.css";
 import type { Extraction, Override, ResolutionCandidate } from "./types";
 import type { CatalogEntry } from "../rubric/api";
 import { memberDisplayName } from "../collaboration/memberDisplay";
-import type { HuntMember } from "../collaboration/api";
+import type { HuntContributor, HuntMember } from "../collaboration/api";
 
 function isAdvertisedUnconfirmed(value: unknown): boolean {
   if (value === "advertised_unconfirmed") return true;
@@ -223,7 +223,7 @@ export interface CriterionBreakdownProps {
   overrides: Override[];
   floorPlanId: string | null;
   isMobile: boolean;
-  members?: HuntMember[];
+  members?: (HuntMember | HuntContributor)[];
 }
 
 export function CriterionBreakdown({

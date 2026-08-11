@@ -1,29 +1,37 @@
 import { Avatar, Group, Rating, Stack, Text } from "@mantine/core";
 
-import { useRatings, type HuntMember } from "./api";
-import { memberColor, starColorCss } from "./memberColors";
+import { useRatings, type HuntContributor, type HuntMember } from "./api";
+import { contributorColor, contributorDisplayName } from "./memberDisplay";
 
 export function TeamRatings({
   listingId,
   unitGroupKey,
   members,
+  contributors = members,
 }: {
   listingId: string;
   unitGroupKey: string;
   members: HuntMember[];
+  contributors?: (HuntContributor | HuntMember)[];
   currentUserId?: string;
 }) {
   const { data: ratings = [] } = useRatings(listingId);
+  const groupRatings = ratings.filter((rating) => rating.unit_group_key === unitGroupKey);
   const byUser = new Map(
-    ratings
-      .filter((r) => r.unit_group_key === unitGroupKey)
-      .map((r) => [r.user_id, r.rating] as const),
+    groupRatings.map((rating) => [rating.user_id, rating.rating] as const),
   );
-  const present = members
-    .map((m) => byUser.get(m.user_id))
-    .filter((v): v is number => v != null);
+  const present = groupRatings.map((rating) => rating.rating);
   const avg = present.length ? present.reduce((a, b) => a + b, 0) / present.length : null;
   const initials = (name: string | null) => (name ?? "?").trim().charAt(0).toUpperCase() || "?";
+  const currentIds = new Set(members.map((member) => member.user_id));
+  const formerRaters = contributors.filter(
+    (contributor) =>
+      "is_former" in contributor &&
+      contributor.is_former &&
+      !currentIds.has(contributor.user_id) &&
+      byUser.has(contributor.user_id),
+  );
+  const rows = [...members, ...formerRaters];
 
   return (
     <Stack
@@ -33,31 +41,32 @@ export function TeamRatings({
     >
       <Group justify="space-between" mb="xs">
         <Text size="xs" fw={700} tt="uppercase" c="dimmed" lts="0.06em">
-          The team
+          Hunt ratings
         </Text>
         {avg != null && (
           <Text size="xs" c="text">
-            avg {avg.toFixed(1)} · {present.length} of {members.length} rated
+            avg {avg.toFixed(1)} · {present.length} rating{present.length === 1 ? "" : "s"}
           </Text>
         )}
       </Group>
-      {members.map((m) => {
-        const r = byUser.get(m.user_id);
+      {rows.map((contributor) => {
+        const r = byUser.get(contributor.user_id);
+        const name = contributorDisplayName(contributor);
         return (
-          <Group key={m.user_id} gap="xs" py={1} wrap="nowrap">
+          <Group key={contributor.user_id} gap="xs" py={1} wrap="nowrap">
             <Avatar
               size={26}
               radius="xl"
               styles={{
                 placeholder: {
-                  backgroundColor: memberColor(m.color),
+                  backgroundColor: contributorColor(contributor),
                   color: "var(--mantine-color-white)",
                 },
               }}
             >
-              {initials(m.display_name)}
+              {initials(name)}
             </Avatar>
-            <Text size="sm">{m.display_name ?? "Member"}</Text>
+            <Text size="sm">{name}</Text>
             {r != null ? (
               <Group gap="xs" ml="auto">
                 <Text
@@ -69,7 +78,12 @@ export function TeamRatings({
                 >
                   {r.toFixed(1)}
                 </Text>
-                  <Rating value={r} color={starColorCss(m.color)} readOnly fractions={2}/>
+                <Rating
+                  value={r}
+                  color={contributorColor(contributor)}
+                  readOnly
+                  fractions={2}
+                />
               </Group>
             ) : (
               <Text size="xs" c="dimmed" fs="italic" ml="auto">

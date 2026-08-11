@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, status
 
 from manzil_api.dependencies import CurrentUser, DbPool, SettingsDep, UserClient
-from manzil_api.hunts.dependencies import OwnedHunt
+from manzil_api.hunts.dependencies import OwnedHunt, WritableOwnedHunt
 from manzil_api.invites import service
 from manzil_api.invites.schemas import InviteAccepted, InviteCreate, InviteResponse
 
@@ -16,7 +16,7 @@ router = APIRouter(tags=["invites"])
 async def create_invite(
     hunt_id: UUID,
     body: InviteCreate,
-    hunt: OwnedHunt,
+    hunt: WritableOwnedHunt,
     user: CurrentUser,
     client: UserClient,
     settings: SettingsDep,

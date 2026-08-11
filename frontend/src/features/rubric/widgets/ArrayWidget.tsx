@@ -2,7 +2,7 @@ import { MultiSelect } from "@mantine/core";
 
 import type { WidgetProps } from "./types";
 
-export function ArrayWidget({ schema, value, onChange, label, comboboxProps }: WidgetProps) {
+export function ArrayWidget({ schema, value, onChange, label, comboboxProps, size = "xs" }: WidgetProps) {
   const options = (schema.items?.enum ?? []).map((item) => ({
     value: String(item),
     label: String(item).replaceAll("_", " "),
@@ -16,7 +16,7 @@ export function ArrayWidget({ schema, value, onChange, label, comboboxProps }: W
       onChange={onChange}
       searchable
       clearable
-      size="xs"
+      size={size}
       comboboxProps={comboboxProps}
     />
   );

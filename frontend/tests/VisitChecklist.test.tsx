@@ -24,6 +24,13 @@ vi.mock("../src/features/collaboration/api", () => ({
     ],
     isLoading: false,
   }),
+  useHuntContributors: () => ({
+    data: [
+      { user_id: "me", display_name: "Yusuf", is_former: false },
+      { user_id: "you", display_name: "Sana", is_former: false },
+    ],
+    isLoading: false,
+  }),
 }));
 
 vi.mock("../src/auth/useAuth", () => ({
@@ -362,7 +369,7 @@ describe("impressions", () => {
     render();
     const user = userEvent.setup();
     await openSection(user, /Verdict — this unit/);
-    expect(screen.getByText(/Team average 3/)).toBeInTheDocument();
+    expect(screen.getByText(/Visit average 3/)).toBeInTheDocument();
   });
 });
 

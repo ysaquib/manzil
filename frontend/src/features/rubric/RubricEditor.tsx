@@ -174,9 +174,17 @@ export function RubricEditor({
               category={group.category}
               count={`${scored.length} of ${group.entries.length}`}
             />
-            {/* Two columns max: edit rows (op + value + points + actions) need
-                the width; the read-only view keeps its denser grid. */}
-            <SimpleGrid cols={{ base: 1, md: 2, lg: 3}} spacing="md" style={{ alignItems: "start" }}>
+            {/* Column count is a width budget, not a density preference: an
+                edit row needs op + value + points + actions on one line, and a
+                second column at `md` (~350px per card) is narrower than the
+                phone case the card's own mobile branch exists to fix — and a
+                media query on the card can't see it. Splitting starts at `lg`,
+                where each card still clears 500px. (2026-08-11.) */}
+            <SimpleGrid
+              cols={{ base: 1, lg: 2, xl: 3 }}
+              spacing="md"
+              style={{ alignItems: "start" }}
+            >
               {scored.map((entry) => {
                 const criterion = criterionByKey.get(entry.key);
                 return criterion ? (
@@ -207,7 +215,7 @@ export function RubricEditor({
           count={`${customCriteria.filter((criterion) => criterion.enabled).length} scored`}
         />
         <SimpleGrid
-          cols={{ base: 1, md: 2, lg: 3 }}
+          cols={{ base: 1, lg: 2, xl: 3 }}
           spacing="md"
           style={{ alignItems: "start" }}
         >

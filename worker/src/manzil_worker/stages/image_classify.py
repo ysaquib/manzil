@@ -10,6 +10,7 @@ import structlog
 from manzil_shared.config import (
     DIAGRAM_NORMALIZATION_PROFILE,
     IMAGE_CLASSIFY_ANOMALY_TOLERANCE,
+    IMAGE_CLASSIFY_BATCH_SIZE,
     IMAGE_PERCEPTUAL_HASH_DISTANCE,
     MAX_IMAGE_CLASSIFY_IMAGES,
     VISION_TARGET_QUOTAS,
@@ -656,8 +657,14 @@ def _promote_cached_onnx(
     analysis.pop("classification_shadow", None)
     image.vision_assessment = analysis
     prediction = ONNXShadowPrediction.model_validate(record["assessment"])
+    if image.kind == "floor_plan_diagram":
+        return
     if prediction.diagram_predicted:
         image.kind = "floor_plan_diagram"
+    elif prediction.predicted_scene == "other":
+        image.kind = "other"
+    else:
+        image.kind = "listing_photo"
 
 
 async def image_classify_stage(state: RunState, ctx: StageCtx) -> RunState:
@@ -699,34 +706,42 @@ async def image_classify_stage(state: RunState, ctx: StageCtx) -> RunState:
 
     classified = 0
     if pending:
-        batch = await ctx.image_classify_onnx(pending)
-        if batch.cache_key != ONNX_SHADOW_CACHE_KEY:
-            raise ValueError(f"unexpected ONNX cache key {batch.cache_key}")
-        prediction_by_hash = {
-            prediction.content_hash: prediction for prediction in batch.predictions
-        }
-        requested = {content_hash for content_hash, _ in pending}
-        if (
-            len(prediction_by_hash) != len(batch.predictions)
-            or set(prediction_by_hash) != requested
-        ):
-            raise ValueError("ONNX response hashes do not exactly match the requested images")
-        for content_hash, prediction in prediction_by_hash.items():
-            image = images_by_hash[content_hash]
-            analysis = dict(image.vision_assessment or {})
-            if _classification(image) is not None and "classification_llm_legacy" not in analysis:
-                analysis["classification_llm_legacy"] = analysis.get("classification")
-            _promote_cached_onnx(image, analysis, _canonical_onnx_record(batch, prediction))
-        classified = len(batch.predictions)
+        elapsed_seconds = 0.0
+        peak_rss: float | None = None
+        for offset in range(0, len(pending), IMAGE_CLASSIFY_BATCH_SIZE):
+            requested_batch = pending[offset : offset + IMAGE_CLASSIFY_BATCH_SIZE]
+            batch = await ctx.image_classify_onnx(requested_batch)
+            if batch.cache_key != ONNX_SHADOW_CACHE_KEY:
+                raise ValueError(f"unexpected ONNX cache key {batch.cache_key}")
+            prediction_by_hash = {
+                prediction.content_hash: prediction for prediction in batch.predictions
+            }
+            requested = {content_hash for content_hash, _ in requested_batch}
+            if (
+                len(prediction_by_hash) != len(batch.predictions)
+                or set(prediction_by_hash) != requested
+            ):
+                raise ValueError("ONNX response hashes do not exactly match the requested images")
+            for content_hash, prediction in prediction_by_hash.items():
+                image = images_by_hash[content_hash]
+                analysis = dict(image.vision_assessment or {})
+                if (
+                    _classification(image) is not None
+                    and "classification_llm_legacy" not in analysis
+                ):
+                    analysis["classification_llm_legacy"] = analysis.get("classification")
+                _promote_cached_onnx(image, analysis, _canonical_onnx_record(batch, prediction))
+            classified += len(batch.predictions)
+            elapsed_seconds += batch.elapsed_seconds
+            if batch.peak_rss_mb is not None:
+                peak_rss = max(peak_rss or 0.0, batch.peak_rss_mb)
         log.info(
             "image_classify_onnx_complete",
             classified=classified,
             cached=len(images_by_hash) - classified,
-            elapsed_seconds=batch.elapsed_seconds,
-            child_peak_rss_mb=batch.peak_rss_mb,
-            images_per_second=(classified / batch.elapsed_seconds)
-            if batch.elapsed_seconds > 0
-            else None,
+            elapsed_seconds=elapsed_seconds,
+            child_peak_rss_mb=peak_rss,
+            images_per_second=(classified / elapsed_seconds) if elapsed_seconds > 0 else None,
         )
     else:
         log.info("image_classify_onnx_cached", images=len(images_by_hash))

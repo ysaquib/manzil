@@ -616,6 +616,57 @@ export function AdminPeoplePage() {
           )}
           {people.data && people.data.length > 0 && (
             <>
+            {isCompact ? (
+              <Stack gap="xs" p="xs">
+                <Checkbox
+                  size="xs"
+                  label="Select every account on this page"
+                  checked={allOnPageChecked}
+                  indeterminate={!allOnPageChecked && pageIds.some((id) => checked.has(id))}
+                  onChange={toggleAllOnPage}
+                />
+                {paged.items.map((person) => (
+                  <Card
+                    key={person.user_id}
+                    padding="sm"
+                    radius="sm"
+                    withBorder
+                    onClick={() => setSelected(person.user_id)}
+                    bg={
+                      selected === person.user_id
+                        ? "var(--mantine-color-primary-light)"
+                        : undefined
+                    }
+                    style={{ cursor: "pointer" }}
+                  >
+                    <Group align="flex-start" wrap="nowrap">
+                      <Checkbox
+                        size="xs"
+                        mt={3}
+                        aria-label={`Select ${personLabel(person)}`}
+                        checked={checked.has(person.user_id)}
+                        onChange={() => toggleRow(person.user_id)}
+                        onClick={(event) => event.stopPropagation()}
+                      />
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <Text size="sm" fw={600} truncate>
+                          {person.display_name ?? "—"}
+                        </Text>
+                        <Text size="xs" c="dimmed" ff="monospace" truncate>
+                          {person.email}
+                        </Text>
+                        <Group justify="space-between" mt="xs" align="flex-end">
+                          <StateBadges person={person} />
+                          <Text size="xs" ff="monospace" c="dimmed">
+                            {person.hunts} Hunts · ${person.spend_usd.toFixed(2)}
+                          </Text>
+                        </Group>
+                      </div>
+                    </Group>
+                  </Card>
+                ))}
+              </Stack>
+            ) : (
             <Table.ScrollContainer minWidth={560}>
               <Table highlightOnHover verticalSpacing="xs">
                 <Table.Thead>
@@ -702,6 +753,7 @@ export function AdminPeoplePage() {
                 </Table.Tbody>
               </Table>
             </Table.ScrollContainer>
+            )}
             <TablePagination state={paged} noun="people" />
             </>
           )}

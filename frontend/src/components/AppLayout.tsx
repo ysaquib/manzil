@@ -45,6 +45,8 @@ import { FeedbackModal } from "../features/feedback/FeedbackModal";
 import { FeedbackProvider } from "../features/feedback/FeedbackContext";
 import { CreateRubricPrompt } from "../features/rubric/CreateRubricPrompt";
 import { useHunt, useHunts } from "../features/hunts/api";
+import { useHuntAccess } from "../features/hunts/access";
+import { HuntStateBanner } from "../features/hunts/HuntStateBanner";
 import { ColorSchemeToggle } from "./ColorSchemeToggle";
 import { NavbarFoot } from "./NavbarFoot";
 import { UserMenu } from "./UserMenu";
@@ -113,6 +115,7 @@ export function AppLayout() {
   // membership, so it is correct on every screen without any route state.
   const { isGhost } = useGhostMode(huntId);
   const { data: ghostHunt } = useHunt(huntId ?? "");
+  const access = useHuntAccess(huntId ?? "");
 
   return (
     <>
@@ -186,7 +189,8 @@ export function AppLayout() {
 
       <AppShell.Main className={classes.main}>
         {isGhost === true && <GhostBanner huntName={ghostHunt?.name} />}
-        {huntId && <CreateRubricPrompt huntId={huntId} />}
+        <HuntStateBanner reason={access.state} adminOverride={access.adminArchivedOverride} />
+        {huntId && access.canMutate && <CreateRubricPrompt huntId={huntId} />}
         {/* Filter state lives above the Outlet so Overview and Map filter the
             same set; keying on huntId re-seeds hunt-wide filters on switch. */}
         <OverviewFiltersProvider key={huntId ?? ""} huntId={huntId ?? ""}>

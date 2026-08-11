@@ -18,6 +18,8 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { useLocalStorage } from "@mantine/hooks";
+import { DragDropProvider } from "@dnd-kit/react";
+import { useSortable } from "@dnd-kit/react/sortable";
 import {
   IconArrowsLeftRight,
   IconExternalLink,
@@ -25,7 +27,7 @@ import {
   IconTrash,
   IconX,
 } from "@tabler/icons-react";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { PageHeader } from "../../components/PageHeader";
@@ -48,6 +50,7 @@ import {
 import { TableDensityMenu, type TableDensity } from "./OverviewTable";
 import { PropertyImageCarousel } from "./PropertyImageCarousel";
 import { ScoreCell } from "./ScoreCell";
+import { useHuntAccess } from "../hunts/access";
 
 import classes from "./ComparePage.module.css";
 
@@ -137,12 +140,96 @@ function SectionRow({ label, span }: { label: string; span: number }) {
   );
 }
 
+function SortableCompareHeader({
+  column,
+  index,
+  count,
+  readOnly,
+  onRemove,
+}: {
+  column: CompareColumn;
+  index: number;
+  count: number;
+  readOnly: boolean;
+  onRemove: () => void;
+}) {
+  const key = entryKey(column.entry);
+  const { ref, handleRef, isDragging } = useSortable({
+    id: key,
+    index,
+    group: "compare-columns",
+    disabled: readOnly || count < 2,
+  });
+  const property = column.row.listing.property;
+  const listingUrl = property.official_url ?? property.sources[0]?.url ?? null;
+
+  return (
+    <Table.Th
+      ref={ref}
+      className={classes.valueCol}
+      style={{ opacity: isDragging ? 0.55 : 1 }}
+    >
+      <Group justify="space-between" wrap="nowrap" align="flex-start">
+        <Group gap={6} wrap="nowrap" align="flex-start">
+          {count > 1 && !readOnly && (
+            <ActionIcon
+              ref={handleRef}
+              variant="subtle"
+              color="gray"
+              size="sm"
+              aria-label={`Reorder ${property.name}`}
+              style={{ cursor: "grab", flexShrink: 0 }}
+            >
+              <IconGripVertical size={14} stroke={1.5} />
+            </ActionIcon>
+          )}
+          <div>
+            <Text size="md" fw={600} ff="heading">
+              {property.name}
+            </Text>
+            <Text size="xs" c="dimmed" fw={400}>
+              {property.canonical_address}
+            </Text>
+          </div>
+        </Group>
+        <Group gap={4} wrap="nowrap">
+          {listingUrl && (
+            <Tooltip label="Open listing page" openDelay={300}>
+              <ActionIcon
+                variant="subtle"
+                color="gray"
+                aria-label="open listing page"
+                onClick={() => window.open(listingUrl, "_blank", "noopener")}
+              >
+                <IconExternalLink size={14} stroke={1.5} />
+              </ActionIcon>
+            </Tooltip>
+          )}
+          {!readOnly && (
+            <Tooltip label="Remove from compare" openDelay={300}>
+              <ActionIcon
+                variant="subtle"
+                color="gray"
+                aria-label="remove from compare"
+                onClick={onRemove}
+              >
+                <IconX size={14} stroke={1.5} />
+              </ActionIcon>
+            </Tooltip>
+          )}
+        </Group>
+      </Group>
+    </Table.Th>
+  );
+}
+
 export function ComparePage() {
   const { huntId = "" } = useParams();
   const compare = useCompareSet(huntId);
   const { data: listings, isLoading, error } = useListings(huntId);
   const { data: unitGroupStates = [] } = useUnitGroupStates(huntId);
   const { data: catalog = [] } = useResolvedCatalog(huntId);
+  const access = useHuntAccess(huntId);
   const [density, setDensity] = useLocalStorage<TableDensity>({
     key: "manzil:compare-density",
     defaultValue: "normal",
@@ -162,11 +249,11 @@ export function ComparePage() {
   // Prune entries whose listing/group vanished — but only from loaded data,
   // never while the query is still empty.
   useEffect(() => {
-    if (!listings) return;
+    if (!listings || !access.canMutate) return;
     compare.prune(new Set(rowByKey.keys()));
     // Deliberately narrow deps: rowByKey derives from exactly these inputs,
     // and compare.prune already no-ops when nothing changed.
-  }, [listings, unitGroupStates]);
+  }, [listings, unitGroupStates, access.canMutate]);
 
   const labelByKey = labelByKeyFromCatalog(catalog);
 
@@ -187,18 +274,8 @@ export function ComparePage() {
   }
 
   const span = columns.length;
-  // Column drag reordering (m12): native HTML5 drag on the header cells —
-  // three columns don't justify a dnd dependency. Indexes translate through
-  // entryKey because `columns` can lag `compare.entries` by unpruned rows.
-  const [dragKey, setDragKey] = useState<string | null>(null);
   const entryIndex = (key: string) =>
     compare.entries.findIndex((entry) => entryKey(entry) === key);
-  const dropOn = (targetKey: string) => {
-    if (dragKey !== null && dragKey !== targetKey) {
-      compare.move(entryIndex(dragKey), entryIndex(targetKey));
-    }
-    setDragKey(null);
-  };
 
   return (
     <Stack gap="lg">
@@ -220,6 +297,7 @@ export function ComparePage() {
               size="xs"
               leftSection={<IconTrash size={14} stroke={1.5} />}
               onClick={compare.clear}
+              disabled={!access.canMutate}
             >
               Clear compare
             </Button>
@@ -243,8 +321,9 @@ export function ComparePage() {
           <Stack align="center" gap="sm">
             <IconArrowsLeftRight size={32} stroke={1.5} color="var(--mantine-color-dimmed)" />
             <Text ta="center" c="dimmed">
-              Send unit groups here with “Send to Compare” in an Overview row's ⋯ menu —
-              up to 3 at a time.
+              {access.canMutate
+                ? "Send unit groups here with “Send to Compare” in an Overview row's ⋯ menu — up to 3 at a time."
+                : "This read-only Hunt has no saved comparison set in this browser."}
             </Text>
             <Button component={Link} to={`/h/${huntId}`} variant="light" size="xs">
               Back to Overview
@@ -254,6 +333,16 @@ export function ComparePage() {
       )}
 
       {columns.length > 0 && (
+        <DragDropProvider
+          onDragEnd={(event) => {
+            if (event.canceled || !access.canMutate) return;
+            const source = event.operation.source?.id;
+            const target = event.operation.target?.id;
+            if (source != null && target != null && source !== target) {
+              compare.move(entryIndex(String(source)), entryIndex(String(target)));
+            }
+          }}
+        >
         <div className={classes.scroller}>
           <Table
             verticalSpacing={DENSITY_VERTICAL[density]}
@@ -264,80 +353,16 @@ export function ComparePage() {
             <Table.Thead>
               <Table.Tr>
                 <Table.Th className={classes.labelCol} aria-label="attribute" />
-                {columns.map((column) => {
-                  const property = column.row.listing.property;
-                  const listingUrl = property.official_url ?? property.sources[0]?.url ?? null;
-                  const key = entryKey(column.entry);
-                  return (
-                    <Table.Th
-                      key={key}
-                      className={classes.valueCol}
-                      draggable={columns.length > 1}
-                      onDragStart={(e) => {
-                        e.dataTransfer.effectAllowed = "move";
-                        setDragKey(key);
-                      }}
-                      onDragOver={(e) => {
-                        if (dragKey !== null) e.preventDefault();
-                      }}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        dropOn(key);
-                      }}
-                      onDragEnd={() => setDragKey(null)}
-                      style={{
-                        cursor: columns.length > 1 ? "grab" : undefined,
-                        opacity: dragKey === key ? 0.5 : 1,
-                      }}
-                    >
-                      <Group justify="space-between" wrap="nowrap" align="flex-start">
-                        <Group gap={6} wrap="nowrap" align="flex-start">
-                          {columns.length > 1 && (
-                            <IconGripVertical
-                              size={14}
-                              stroke={1.5}
-                              color="var(--mantine-color-dimmed)"
-                              style={{ marginTop: 4, flexShrink: 0 }}
-                              aria-hidden
-                            />
-                          )}
-                          <div>
-                          <Text size="md" fw={600} ff="heading">
-                            {property.name}
-                          </Text>
-                          <Text size="xs" c="dimmed" fw={400}>
-                            {property.canonical_address}
-                          </Text>
-                          </div>
-                        </Group>
-                        <Group gap={4} wrap="nowrap">
-                          {listingUrl && (
-                            <Tooltip label="Open listing page" openDelay={300}>
-                              <ActionIcon
-                                variant="subtle"
-                                color="gray"
-                                aria-label="open listing page"
-                                onClick={() => window.open(listingUrl, "_blank", "noopener")}
-                              >
-                                <IconExternalLink size={14} stroke={1.5} />
-                              </ActionIcon>
-                            </Tooltip>
-                          )}
-                          <Tooltip label="Remove from compare" openDelay={300}>
-                            <ActionIcon
-                              variant="subtle"
-                              color="gray"
-                              aria-label="remove from compare"
-                              onClick={() => compare.remove(column.entry)}
-                            >
-                              <IconX size={14} stroke={1.5} />
-                            </ActionIcon>
-                          </Tooltip>
-                        </Group>
-                      </Group>
-                    </Table.Th>
-                  );
-                })}
+                {columns.map((column, index) => (
+                  <SortableCompareHeader
+                    key={entryKey(column.entry)}
+                    column={column}
+                    index={index}
+                    count={columns.length}
+                    readOnly={!access.canMutate}
+                    onRemove={() => compare.remove(column.entry)}
+                  />
+                ))}
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
@@ -517,6 +542,7 @@ export function ComparePage() {
             </Table.Tbody>
           </Table>
         </div>
+        </DragDropProvider>
       )}
     </Stack>
   );

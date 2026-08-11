@@ -5,7 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, status
 
 from manzil_api.dependencies import CurrentUser, SettingsDep, UserClient
-from manzil_api.hunts.dependencies import OwnedHunt
+from manzil_api.hunts.dependencies import OwnedHunt, WritableOwnedHunt
 from manzil_api.invitation_links import service
 from manzil_api.invitation_links.schemas import (
     InvitationLinkCreate,
@@ -25,7 +25,7 @@ router = APIRouter(tags=["invitation-links"])
 async def create_invitation_link(
     hunt_id: UUID,
     body: InvitationLinkCreate,
-    hunt: OwnedHunt,
+    hunt: WritableOwnedHunt,
     user: CurrentUser,
     client: UserClient,
     settings: SettingsDep,

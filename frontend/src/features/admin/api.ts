@@ -41,6 +41,8 @@ export interface HuntSummary {
   total_cost_usd: number;
   created_at: string;
   last_activity_at: string | null;
+  archived_at: string | null;
+  locked_at: string | null;
 }
 
 export type TriageState = "new" | "seen" | "actioned" | "wont_fix";
@@ -221,6 +223,33 @@ export interface HuntPage {
   total: number;
 }
 
+export interface HuntManagementMember {
+  user_id: string;
+  display_name: string;
+  role: "owner" | "curator" | "member";
+}
+
+export interface HuntManagement {
+  hunt_id: string;
+  name: string;
+  owner_id: string;
+  owner_name: string;
+  caller_is_member: boolean;
+  archived_at: string | null;
+  locked_at: string | null;
+  members: HuntManagementMember[];
+  deletion_blockers: string[];
+}
+
+export interface HuntDeleteResult {
+  hunt_id: string;
+  name: string;
+  members: number;
+  listings: number;
+  jobs: number;
+  visits: number;
+}
+
 /**
  * One page of the Hunt table (AD-4).
  *
@@ -244,6 +273,69 @@ export function useAdminHunts(
     // page step; keeping the previous page visible while the next loads is what
     // makes paging feel like paging.
     placeholderData: (previous) => previous,
+  });
+}
+
+export function useAdminHuntManagement(huntId: string | null) {
+  return useQuery({
+    queryKey: ["admin", "hunts", "management", huntId],
+    queryFn: () =>
+      apiFetch<HuntManagement>(`/v1/admin/hunts/${huntId}/management`),
+    enabled: huntId !== null,
+  });
+}
+
+export function useTransferAdminHuntOwnership(huntId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (newOwnerId: string) =>
+      apiFetch<{ status: string }>(`/v1/admin/hunts/${huntId}/transfer-ownership`, {
+        method: "POST",
+        body: { new_owner_id: newOwnerId },
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "hunts"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "people"] });
+      void queryClient.invalidateQueries({ queryKey: ["hunt_members", huntId] });
+      void queryClient.invalidateQueries({ queryKey: ["hunt_contributors", huntId] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "demo"] });
+    },
+  });
+}
+
+export function useSetAdminHuntLock(huntId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (locked: boolean) =>
+      apiFetch<HuntManagement>(`/v1/admin/hunts/${huntId}/lock`, {
+        method: "PUT",
+        body: { locked },
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "hunts"] });
+      void queryClient.invalidateQueries({ queryKey: ["hunts"] });
+      void queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "jobs"] });
+    },
+  });
+}
+
+export function useDeleteAdminHunt() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ huntId, confirmationName }: { huntId: string; confirmationName: string }) =>
+      apiFetch<HuntDeleteResult>(`/v1/admin/hunts/${huntId}`, {
+        method: "DELETE",
+        body: { confirmation_name: confirmationName },
+      }),
+    onSuccess: (_result, variables) => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "hunts"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "summary"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "people"] });
+      void queryClient.invalidateQueries({ queryKey: ["hunts"] });
+      void queryClient.removeQueries({ queryKey: ["hunts", variables.huntId] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "demo"] });
+    },
   });
 }
 
@@ -416,6 +508,9 @@ export function useRemoveMembership() {
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["admin", "people"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "hunts"] });
+      void queryClient.invalidateQueries({ queryKey: ["hunt_members"] });
+      void queryClient.invalidateQueries({ queryKey: ["hunt_contributors"] });
     },
   });
 }

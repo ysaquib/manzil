@@ -82,6 +82,20 @@ function typeMatches(value: unknown, schema: ValueSchema): boolean {
 function scalarError(value: unknown, schema: ValueSchema): string | null {
   if (value === null || value === undefined) return "value is required";
   if (!typeMatches(value, schema)) return `expected a ${schema.type}`;
+  if (schema.type === "string" && schema.format === "date") {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value as string);
+    const parsed = match
+      ? new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])))
+      : null;
+    if (
+      !match ||
+      parsed?.getUTCFullYear() !== Number(match[1]) ||
+      parsed.getUTCMonth() !== Number(match[2]) - 1 ||
+      parsed.getUTCDate() !== Number(match[3])
+    ) {
+      return "expected a valid date";
+    }
+  }
   if (typeof value === "number") {
     if (schema.minimum !== undefined && value < schema.minimum)
       return `must be ≥ ${schema.minimum}`;
@@ -116,6 +130,15 @@ export function validateMatch(match: OptionMatch, schema: ValueSchema): string |
     if (match.op !== "contains_any" && match.op !== "contains_all")
       return "array criteria use contains any or contains all";
     return arrayError(match.value, schema);
+  }
+  if (
+    schema.type === "string" &&
+    schema.format === "date" &&
+    match.op !== "lt" &&
+    match.op !== "gt" &&
+    match.op !== "range"
+  ) {
+    return "date criteria use before, after, or between";
   }
   switch (match.op) {
     case "bool":

@@ -23,7 +23,7 @@ import { RatingSummary } from "../collaboration/RatingSummary";
 import { RowMarker } from "./RowMarker";
 import { rowKey } from "./OverviewTable";
 import { ScoreCell } from "./ScoreCell";
-import { useComments, useCurrentMember, useMembers, useRatings } from "../collaboration/api";
+import { useComments, useCurrentMember, useHuntContributors, useMembers, useRatings } from "../collaboration/api";
 import { usePatchUnitGroupState } from "./api";
 import { rowEntry, useCompareSet } from "./compareSet";
 import {
@@ -47,6 +47,7 @@ import {
 } from "../../components/badges/ListingBadges";
 import type { RefreshClass } from "./types";
 import { useGhostMode } from "../admin/useGhostMode";
+import { useHuntAccess } from "../hunts/access";
 
 import classes from "./OverviewRowList.module.css";
 
@@ -73,14 +74,16 @@ function ExpandedDetail({
 }) {
   const group = row.group;
   const { data: members = [] } = useMembers(huntId);
+  const { data: contributors = [] } = useHuntContributors(huntId);
   const { data: ratings = [] } = useRatings(row.listing.id);
   const { data: comments = [] } = useComments(row.listing.id);
   const { data: currentMember } = useCurrentMember(huntId);
   const { isGhost } = useGhostMode(huntId);
   const patchState = usePatchUnitGroupState(huntId);
   const compare = useCompareSet(huntId);
+  const access = useHuntAccess(huntId);
   const entry = rowEntry(row);
-  const canCurate = isGhost === true || currentMember?.role === "owner" || currentMember?.role === "curator";
+  const canCurate = access.canMutate && (isGhost === true || currentMember?.role === "owner" || currentMember?.role === "curator");
   const visited = row.state?.visited ?? false;
   const listingUrl = row.listing.property.official_url ?? row.listing.property.sources[0]?.url ?? null;
 
@@ -140,6 +143,7 @@ function ExpandedDetail({
           <RatingSummary
             ratings={rowRatings}
             members={members}
+            contributors={contributors}
             commentCount={rowComments.length}
           />
         </Stat>
@@ -159,12 +163,12 @@ function ExpandedDetail({
           variant="default"
           size="xs"
           leftSection={<IconArrowsLeftRight size={14} stroke={1.5} />}
-          disabled={entry === null || (compare.isFull && !compare.has(entry))}
+          disabled={!access.canMutate || entry === null || (compare.isFull && !compare.has(entry))}
           onClick={() => entry && compare.toggle(entry)}
         >
           {entry && compare.has(entry) ? "Remove" : "Compare"}
         </Button>
-        {onArchive && (
+        {onArchive && access.canMutate && (
           <Button
             variant="default"
             size="xs"

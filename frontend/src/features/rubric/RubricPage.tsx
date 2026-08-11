@@ -10,15 +10,17 @@ import { useCatalog, useRubric } from "./api";
 import { hasEnabledCriterion } from "./CreateRubricPrompt";
 import { RubricEditor } from "./RubricEditor";
 import { RubricView } from "./RubricView";
+import { useHuntAccess } from "../hunts/access";
 
 export function RubricPage() {
   const { huntId = "" } = useParams();
   const { data: catalog, isLoading: catalogLoading, error: catalogError } = useCatalog();
   const { data: saved, isLoading: rubricLoading, error: rubricError } = useRubric(huntId);
+  const access = useHuntAccess(huntId);
 
   const isFirstRun = saved !== undefined && !hasEnabledCriterion(saved);
   const [mode, setMode] = useState<"view" | "edit">("view");
-  const effectiveMode = isFirstRun ? "edit" : mode;
+  const effectiveMode = access.canMutate && isFirstRun ? "edit" : mode;
 
   if (catalogLoading || rubricLoading) {
     return (
@@ -54,14 +56,14 @@ export function RubricPage() {
       <PageHeader
         title="Rubric"
         description="How listings are scored in this hunt"
-        rightSlot={
+        rightSlot={access.canMutate ? (
           <Button
             leftSection={<IconPencil size={16} stroke={1.5} />}
             onClick={() => setMode("edit")}
           >
             Edit
           </Button>
-        }
+        ) : undefined}
       />
       <RubricView saved={saved} catalog={catalog} />
     </Stack>

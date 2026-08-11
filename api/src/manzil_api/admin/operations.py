@@ -53,6 +53,11 @@ class JobNotRetryable(ManzilAPIError):
     code = "job_not_retryable"
 
 
+class AdminHuntLocked(ManzilAPIError):
+    status_code = status.HTTP_423_LOCKED
+    code = "hunt_locked"
+
+
 # ── Jobs ─────────────────────────────────────────────────────────────────────
 
 _JOB_SQL = """
@@ -137,10 +142,14 @@ async def get_job(job_id: UUID, admin: AdminUser, pool: DbPool) -> JobDetail:
 @router.post("/jobs/{job_id}/retry", response_model=ActionResult, summary="Re-queue a Job")
 async def retry_job(job_id: UUID, admin: AdminUser, pool: DbPool, audit: Audit) -> ActionResult:
     row = await pool.fetchrow(
-        "select state::text as state, hunt_id from jobs where id = $1", job_id
+        "select j.state::text as state, j.hunt_id, h.locked_at "
+        "from jobs j join hunts h on h.id=j.hunt_id where j.id = $1",
+        job_id,
     )
     if row is None:
         raise JobNotFound("No such Job")
+    if row["locked_at"] is not None:
+        raise AdminHuntLocked("Unlock this Hunt before retrying its Jobs")
     if row["state"] not in ("failed", "cancelled"):
         raise JobNotRetryable(f"A {row['state']} Job cannot be retried")
 
@@ -165,10 +174,14 @@ async def retry_job(job_id: UUID, admin: AdminUser, pool: DbPool, audit: Audit) 
 @router.post("/jobs/{job_id}/cancel", response_model=ActionResult, summary="Cancel a Job")
 async def cancel_job(job_id: UUID, admin: AdminUser, pool: DbPool, audit: Audit) -> ActionResult:
     row = await pool.fetchrow(
-        "select state::text as state, hunt_id from jobs where id = $1", job_id
+        "select j.state::text as state, j.hunt_id, h.locked_at "
+        "from jobs j join hunts h on h.id=j.hunt_id where j.id = $1",
+        job_id,
     )
     if row is None:
         raise JobNotFound("No such Job")
+    if row["locked_at"] is not None:
+        raise AdminHuntLocked("Unlock this Hunt before cancelling its Jobs")
     if row["state"] in ("done", "cancelled"):
         raise JobNotRetryable(f"A {row['state']} Job cannot be cancelled")
 
@@ -197,9 +210,12 @@ async def release_stale_locks(admin: AdminUser, pool: DbPool, audit: Audit) -> A
     than failing them, because nothing is known to be wrong with the work."""
     released = await pool.fetch(
         """
-        update jobs set state = 'queued', locked_by = null, locked_at = null
-        where state = 'running' and locked_at < now() - ($1 || ' minutes')::interval
-        returning id
+        update jobs j set state = 'queued', locked_by = null, locked_at = null
+        from hunts h
+        where h.id = j.hunt_id and h.archived_at is null and h.locked_at is null
+          and j.state = 'running'
+          and j.locked_at < now() - ($1 || ' minutes')::interval
+        returning j.id
         """,
         str(STALE_LOCK_MINUTES),
     )
