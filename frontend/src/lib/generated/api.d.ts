@@ -2214,6 +2214,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Build identity */
+        get: operations["version_v1_version_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/ready": {
         parameters: {
             query?: never;
@@ -2331,6 +2348,23 @@ export interface components {
         AttentionResponse: {
             /** Waiting Checkpoint Count */
             waiting_checkpoint_count: number;
+            /**
+             * Failed
+             * @default 0
+             */
+            failed: number;
+            /**
+             * Waiting User
+             * @default 0
+             */
+            waiting_user: number;
+            /**
+             * Running
+             * @default 0
+             */
+            running: number;
+            /** Task Status */
+            task_status?: ("failed" | "waiting_user" | "running") | null;
         };
         /** AuditEntry */
         AuditEntry: {
@@ -2382,6 +2416,22 @@ export interface components {
             corrected_at?: string | null;
             /** Correction Job Id */
             correction_job_id?: string | null;
+        };
+        /** BuildInfo */
+        BuildInfo: {
+            /**
+             * Service
+             * @default api
+             */
+            service: string;
+            /** Release Version */
+            release_version: string;
+            /** Build Sha */
+            build_sha: string;
+            /** Build Id */
+            build_id: string;
+            /** Environment */
+            environment: string;
         };
         /**
          * CheckpointAnswer
@@ -9218,6 +9268,26 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+        };
+    };
+    version_v1_version_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildInfo"];
                 };
             };
         };
