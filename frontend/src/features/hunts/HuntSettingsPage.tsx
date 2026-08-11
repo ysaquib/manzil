@@ -17,6 +17,7 @@ import {
   Center,
   Group,
   Loader,
+  Modal,
   NumberInput,
   Select,
   SimpleGrid,
@@ -58,7 +59,6 @@ import {
   usePatchHuntSettings,
   type Hunt,
 } from "./api";
-import { useHunt, usePatchHunt, usePatchHuntSettings, type Hunt } from "./api";
 import { HuntDangerZone } from "./HuntDangerZone";
 import { useGhostMode } from "../admin/useGhostMode";
 import { useHuntAccess } from "./access";
@@ -147,36 +147,6 @@ function HuntPanel({ hunt, isOwner, isGhost }: { hunt: Hunt; isOwner: boolean; i
         onError: notifyError("Couldn't save settings"),
       },
     );
-
-  const archive = () =>
-    patchHunt.mutate(
-      { archived: true },
-      {
-        onSuccess: () => navigate("/"),
-        onError: notifyError("Couldn't archive hunt"),
-      },
-    );
-
-  const restore = () =>
-    patchHunt.mutate(
-      { archived: false },
-      {
-        onSuccess: () => notifications.show({ message: "Hunt restored", color: "green" }),
-        onError: notifyError("Couldn't restore hunt"),
-      },
-    );
-
-  const transfer = () => {
-    if (!transferTarget) return;
-    transferOwnership.mutate(transferTarget, {
-      onSuccess: () => {
-        setConfirmTransfer(false);
-        setTransferTarget(null);
-        notifications.show({ message: "Ownership transferred", color: "green" });
-      },
-      onError: notifyError("Couldn't transfer ownership"),
-    });
-  };
 
   return (
     <>
@@ -343,57 +313,6 @@ function HuntPanel({ hunt, isOwner, isGhost }: { hunt: Hunt; isOwner: boolean; i
         </Stack>
       </SectionCard>
 
-      <SectionCard title="Danger zone">
-        <Stack gap="sm">
-          {isOwner && (
-            <Stack gap="xs">
-              <Text size="xs" c="dimmed">
-                Hand this hunt to another Member. You become a Curator; they take over as Owner.
-              </Text>
-              <Group align="flex-end" gap="sm">
-                <Select
-                  label="Transfer ownership to"
-                  placeholder={transferOptions.length ? "Choose a Member" : "No other Members yet"}
-                  data={transferOptions}
-                  value={transferTarget}
-                  onChange={setTransferTarget}
-                  disabled={transferOptions.length === 0}
-                  style={{ flex: 1 }}
-                />
-                <Button
-                  variant="light"
-                  color="red"
-                  disabled={!transferTarget}
-                  onClick={() => setConfirmTransfer(true)}
-                >
-                  Transfer…
-                </Button>
-              </Group>
-            </Stack>
-          )}
-          {isOwner && (
-            hunt.archived_at ? (
-              <>
-                <Text size="xs" c="dimmed">
-                  Restoring makes this Hunt writable for its members again.
-                </Text>
-                <Button variant="light" onClick={restore} loading={patchHunt.isPending}>
-                  Restore hunt
-                </Button>
-              </>
-            ) : (
-              <>
-                <Text size="xs" c="dimmed">
-                  Preserves this Hunt as read-only and moves it under Archived hunts.
-                </Text>
-                <Button variant="light" color="red" onClick={() => setConfirmArchive(true)}>
-                  Archive hunt…
-                </Button>
-              </>
-            )
-          )}
-        </Stack>
-      </SectionCard>
       <HuntDangerZone
         hunt={hunt}
         members={members}
