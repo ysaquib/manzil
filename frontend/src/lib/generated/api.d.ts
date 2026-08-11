@@ -2338,6 +2338,52 @@ export interface components {
             /** Granted At */
             granted_at?: string | null;
         };
+        /** AdminJobEvent */
+        AdminJobEvent: {
+            /** Stage */
+            stage: string;
+            /** Event */
+            event: string;
+            /** Detail */
+            detail?: {
+                [key: string]: unknown;
+            };
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+        };
+        /** AdminJobStageCost */
+        AdminJobStageCost: {
+            /** Stage */
+            stage: string;
+            /** Llm Cost Usd */
+            llm_cost_usd: number;
+            /** Fetch Cost Usd */
+            fetch_cost_usd: number;
+            /** Llm Calls */
+            llm_calls: number;
+            /** Fetch Calls */
+            fetch_calls: number;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Cache Read Tokens */
+            cache_read_tokens: number;
+            /** Cache Write Tokens */
+            cache_write_tokens: number;
+            /** Fetch Calls By Provider */
+            fetch_calls_by_provider?: {
+                [key: string]: number;
+            };
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /**
          * AdminSummary
          * @description The Overview tab's counters.
@@ -3307,14 +3353,28 @@ export interface components {
              * @default false
              */
             stale: boolean;
+            /** Plan */
+            plan?: {
+                [key: string]: unknown;
+            } | null;
+            /** Warnings */
+            warnings?: {
+                [key: string]: unknown;
+            }[];
+            /** Requested By */
+            requested_by?: string | null;
+            /** Requested By Name */
+            requested_by_name?: string | null;
+            /** Requested By Email */
+            requested_by_email?: string | null;
+            /** Started At */
+            started_at?: string | null;
+            /** Duration Seconds */
+            duration_seconds?: number | null;
             /** Events */
-            events?: {
-                [key: string]: unknown;
-            }[];
+            events?: components["schemas"]["AdminJobEvent"][];
             /** Stage Costs */
-            stage_costs?: {
-                [key: string]: unknown;
-            }[];
+            stage_costs?: components["schemas"]["AdminJobStageCost"][];
         };
         /** JobResponse */
         JobResponse: {

@@ -267,9 +267,37 @@ class JobRow(BaseModel):
     stale: bool = False
 
 
+class AdminJobEvent(BaseModel):
+    stage: str
+    event: str
+    detail: dict = Field(default_factory=dict)
+    at: datetime
+
+
+class AdminJobStageCost(BaseModel):
+    stage: str
+    llm_cost_usd: float
+    fetch_cost_usd: float
+    llm_calls: int
+    fetch_calls: int
+    input_tokens: int
+    output_tokens: int
+    cache_read_tokens: int
+    cache_write_tokens: int
+    fetch_calls_by_provider: dict[str, int] = Field(default_factory=dict)
+    updated_at: datetime
+
+
 class JobDetail(JobRow):
-    events: list[dict] = Field(default_factory=list)
-    stage_costs: list[dict] = Field(default_factory=list)
+    plan: dict | None = None
+    warnings: list[dict] = Field(default_factory=list)
+    requested_by: UUID | None = None
+    requested_by_name: str | None = None
+    requested_by_email: str | None = None
+    started_at: datetime | None = None
+    duration_seconds: float | None = None
+    events: list[AdminJobEvent] = Field(default_factory=list)
+    stage_costs: list[AdminJobStageCost] = Field(default_factory=list)
 
 
 class SpendBucket(BaseModel):

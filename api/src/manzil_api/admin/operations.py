@@ -15,6 +15,7 @@ last week has its old spend filed under the new model.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from uuid import UUID
 
@@ -65,6 +66,11 @@ _JOB_SQL = """
 select
     j.id, j.hunt_id, h.name as hunt_name, j.type::text as type, j.state::text as state,
     j.current_stage, j.attempts, j.error, j.cost_actual_usd, j.created_at, j.finished_at,
+    j.started_at, j.plan, j.warnings, j.requested_by,
+    up.default_display_name as requested_by_name, u.email as requested_by_email,
+    case when j.started_at is null then null else
+        extract(epoch from coalesce(j.finished_at, now()) - j.started_at)
+    end as duration_seconds,
     j.locked_by, j.locked_at,
     (j.state = 'running' and j.locked_at < now() - ($1 || ' minutes')::interval) as stale,
     p.name as listing_name
@@ -72,12 +78,26 @@ from jobs j
 left join hunts h on h.id = j.hunt_id
 left join hunt_listings hl on hl.id = j.hunt_listing_id
 left join properties p on p.id = hl.property_id
+left join auth.users u on u.id = j.requested_by
+left join user_profiles up on up.user_id = j.requested_by
 """
 
 
-def _job_row(row: Any) -> JobRow:
+def _job_data(row: Any) -> dict[str, Any]:
     data = dict(row)
     data["cost_actual_usd"] = float(data["cost_actual_usd"] or 0)
+    if data.get("duration_seconds") is not None:
+        data["duration_seconds"] = float(data["duration_seconds"])
+    for field, fallback in (("plan", None), ("warnings", [])):
+        if isinstance(data.get(field), str):
+            data[field] = json.loads(data[field])
+        elif data.get(field) is None:
+            data[field] = fallback
+    return data
+
+
+def _job_row(row: Any) -> JobRow:
+    data = _job_data(row)
     return JobRow(**data)
 
 
@@ -161,13 +181,28 @@ async def get_job(job_id: UUID, admin: AdminUser, pool: DbPool) -> JobDetail:
         job_id,
     )
     costs = await pool.fetch(
-        "select stage, llm_cost_usd, fetch_cost_usd, llm_calls, fetch_calls "
-        "from job_stage_costs where job_id = $1 order by llm_cost_usd + fetch_cost_usd desc",
+        """
+        select stage, llm_cost_usd, fetch_cost_usd, llm_calls, fetch_calls,
+               input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+               fetch_calls_by_provider, updated_at
+          from job_stage_costs where job_id = $1
+         order by llm_cost_usd + fetch_cost_usd desc, stage
+        """,
         job_id,
     )
     return JobDetail(
-        **_job_row(row).model_dump(),
-        events=[dict(event) for event in events],
+        **_job_data(row),
+        events=[
+            {
+                **dict(event),
+                "detail": (
+                    json.loads(event["detail"])
+                    if isinstance(event["detail"], str)
+                    else event["detail"]
+                ),
+            }
+            for event in events
+        ],
         stage_costs=[
             {
                 "stage": cost["stage"],
@@ -175,6 +210,16 @@ async def get_job(job_id: UUID, admin: AdminUser, pool: DbPool) -> JobDetail:
                 "fetch_cost_usd": float(cost["fetch_cost_usd"]),
                 "llm_calls": cost["llm_calls"],
                 "fetch_calls": cost["fetch_calls"],
+                "input_tokens": cost["input_tokens"],
+                "output_tokens": cost["output_tokens"],
+                "cache_read_tokens": cost["cache_read_tokens"],
+                "cache_write_tokens": cost["cache_write_tokens"],
+                "fetch_calls_by_provider": (
+                    json.loads(cost["fetch_calls_by_provider"])
+                    if isinstance(cost["fetch_calls_by_provider"], str)
+                    else cost["fetch_calls_by_provider"]
+                ),
+                "updated_at": cost["updated_at"],
             }
             for cost in costs
         ],

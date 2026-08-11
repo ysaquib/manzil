@@ -141,6 +141,12 @@ accounts only; neither may create one.
 | `PATCH /v1/admin/demo` | selected Hunt's admin Owner | Enable current release or immediately disable without deselecting |
 | `/v1/admin/ghost/...` | admin non-member of the target Hunt | Mirrors Owner Hunt/listing/rubric/people mutations; every write is audited with `via_ghost_view = true` |
 
+Admin Jobs is a finder plus a detail drawer. Selecting a row loads the Job's
+plan, warnings, requester, timing, timeline, and full per-Stage call/token/cache/
+provider/cost split. The API deliberately omits the private payload/RunState and
+cleaned Source text. Eligible terminal deletion is offered only inside this
+drawer and retains the Job's backend history and billed cost.
+
 ## Hunt lifecycle actions
 
 Admin → Hunts separates installation lifecycle from Ghost View stewardship. Transfer picks an existing current member and calls the same security-definer mutation as an Owner transfer, so the old Owner becomes Curator and the one-Owner invariant is never temporarily broken. The management preflight works whether the Site Admin is also a Hunt member; the mutation is always an explicitly audited Site Admin action from this panel.

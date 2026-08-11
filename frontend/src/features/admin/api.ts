@@ -589,6 +589,40 @@ export interface JobRow {
   stale: boolean;
 }
 
+export interface AdminJobDetail extends JobRow {
+  plan: Record<string, unknown> | null;
+  warnings: Array<{
+    stage: string;
+    code: string;
+    message: string;
+    detail?: Record<string, unknown>;
+  }>;
+  requested_by: string | null;
+  requested_by_name: string | null;
+  requested_by_email: string | null;
+  started_at: string | null;
+  duration_seconds: number | null;
+  events: Array<{
+    stage: string;
+    event: string;
+    detail: Record<string, unknown>;
+    at: string;
+  }>;
+  stage_costs: Array<{
+    stage: string;
+    llm_cost_usd: number;
+    fetch_cost_usd: number;
+    llm_calls: number;
+    fetch_calls: number;
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_tokens: number;
+    cache_write_tokens: number;
+    fetch_calls_by_provider: Record<string, number>;
+    updated_at: string;
+  }>;
+}
+
 export interface SpendBucket {
   label: string;
   llm_cost_usd: number;
@@ -658,6 +692,14 @@ export function useAdminJobs(state: string | null, staleOnly: boolean) {
     queryFn: () => apiFetch<JobRow[]>(`/v1/admin/jobs${query ? `?${query}` : ""}`),
     // The queue moves on its own; without this the operator is reading history.
     refetchInterval: 10_000,
+  });
+}
+
+export function useAdminJob(jobId: string | null) {
+  return useQuery({
+    queryKey: ["admin", "jobs", "detail", jobId],
+    queryFn: () => apiFetch<AdminJobDetail>(`/v1/admin/jobs/${jobId}`),
+    enabled: jobId !== null,
   });
 }
 
