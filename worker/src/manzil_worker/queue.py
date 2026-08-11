@@ -44,6 +44,7 @@ from manzil_shared.config import (
 )
 from manzil_shared.models import (
     Confidence,
+    JobState,
     JobType,
     NonNegotiable,
     RubricCriterion,
@@ -365,6 +366,11 @@ def _build_run_state(job: asyncpg.Record) -> RunState:
     snapshot = payload.get("run_state")
     if snapshot is not None:
         state = RunState.model_validate(snapshot)
+        # A retry/reclaim resumes the durable outputs and cursor, not the prior
+        # terminal outcome.  The claimed row is authoritative: it is running
+        # under a fresh lease even when payload.run_state was last saved failed.
+        state.status = JobState.RUNNING
+        state.error = None
     else:
         state = RunState(
             job_id=job["id"],
@@ -1542,7 +1548,12 @@ def make_ingest_dispatcher(
         # PostgresPersistence.on_done), so results and terminal state commit
         # atomically — no window where the job is `done` with no result rows.
         persistence = PostgresPersistence(
-            pool, job_id, stage_names, start_cursor=state.cursor, on_done=project
+            pool,
+            job_id,
+            stage_names,
+            start_cursor=state.cursor,
+            on_done=project,
+            locked_by=job["locked_by"],
         )
         registry = PostgresRegistry(dsn) if dsn else InMemoryRegistry()
         ctx = StageCtx(
@@ -2061,6 +2072,7 @@ def make_discover_refresh_dispatcher(
             ["DISCOVER"],
             start_cursor=state.cursor,
             on_done=project,
+            locked_by=job["locked_by"],
         )
         registry = PostgresRegistry(dsn) if dsn else InMemoryRegistry()
         ctx = StageCtx(
@@ -2490,7 +2502,12 @@ def make_class_refresh_dispatcher(
 
         stage_names = list(state.plan.stages) if state.plan is not None else REFRESH_STAGE_NAMES
         persistence = PostgresPersistence(
-            pool, job_id, stage_names, start_cursor=state.cursor, on_done=project
+            pool,
+            job_id,
+            stage_names,
+            start_cursor=state.cursor,
+            on_done=project,
+            locked_by=job["locked_by"],
         )
         registry = PostgresRegistry(dsn) if dsn else InMemoryRegistry()
         ctx = StageCtx(
