@@ -7,6 +7,10 @@ on:
   push:
     branches: [main, master]
   pull_request:
+  # Release PRs are opened with GITHUB_TOKEN, whose recursion guard suppresses
+  # the ordinary pull_request event. release.yml dispatches this exact same CI
+  # workflow against that branch so the PR still carries the normal checks.
+  workflow_dispatch:
 
 jobs:
   lint:
