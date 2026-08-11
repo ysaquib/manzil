@@ -17,7 +17,7 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from manzil_shared.errors import StageRetryable
+from manzil_shared.errors import FetchProviderError, StageRetryable
 from manzil_shared.models import JobType
 from manzil_worker.costs import CostTally, active_tally, cost_tally, record_fetch
 from manzil_worker.fetching.tier3 import Tier3Fetcher
@@ -91,12 +91,21 @@ def test_record_fetch_is_a_no_op_outside_a_stage() -> None:
 # ── the fetcher's recording point ────────────────────────────────────────────
 
 
-def test_tier3_bills_a_request_that_gets_a_response(monkeypatch: pytest.MonkeyPatch) -> None:
+def _brightdata_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("MANZIL_TIER3_PROVIDER", raising=False)
     monkeypatch.setenv("BRIGHTDATA_API_KEY", "bd-key")
+    monkeypatch.setenv("BRIGHTDATA_ZONE", "my_zone")
+
+
+def _envelope(status: int, body: str) -> httpx.Response:
+    return httpx.Response(200, json={"status": status, "headers": {}, "body": body})
+
+
+def test_tier3_bills_a_request_that_gets_a_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    _brightdata_env(monkeypatch)
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, text=LISTING_HTML)
+        return _envelope(200, LISTING_HTML)
 
     fetcher = Tier3Fetcher(transport=httpx.MockTransport(handler), resolver=_public_resolver)
     with cost_tally() as tally:
@@ -110,11 +119,10 @@ def test_tier3_bills_a_request_that_gets_a_response(monkeypatch: pytest.MonkeyPa
 def test_tier3_bills_a_blocked_page_too(monkeypatch: pytest.MonkeyPatch) -> None:
     """The provider ran the request and charged for it whatever the target said;
     a 403 that costs a credit must not read as free."""
-    monkeypatch.delenv("MANZIL_TIER3_PROVIDER", raising=False)
-    monkeypatch.setenv("BRIGHTDATA_API_KEY", "bd-key")
+    _brightdata_env(monkeypatch)
 
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(403, text="Access denied")
+        return _envelope(403, "Access denied")
 
     fetcher = Tier3Fetcher(transport=httpx.MockTransport(handler), resolver=_public_resolver)
     with cost_tally() as tally:
@@ -129,8 +137,7 @@ def test_tier3_does_not_bill_a_request_that_never_landed(
 ) -> None:
     """A transport failure means the provider never ran anything. Billing it
     would drain the credit meter on our own network problems."""
-    monkeypatch.delenv("MANZIL_TIER3_PROVIDER", raising=False)
-    monkeypatch.setenv("BRIGHTDATA_API_KEY", "bd-key")
+    _brightdata_env(monkeypatch)
 
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("no route to host")
@@ -140,6 +147,26 @@ def test_tier3_does_not_bill_a_request_that_never_landed(
         result = asyncio.run(fetcher.fetch("https://www.zillow.com/detroit-mi/rentals/"))
 
     assert result.error is not None
+    assert tally.fetch_calls == 0
+    assert tally.fetch_cost_usd == 0.0
+
+
+def test_tier3_does_not_bill_a_request_the_provider_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A rejected zone/key/balance never reached the target, so it is not a
+    fetch. Billing it inflates the very meter an operator reads to ask whether
+    the plan ran out — the 2026-08-11 incident charged itself 12 phantom
+    credits while diagnosing itself."""
+    _brightdata_env(monkeypatch)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, text="Unknown zone")
+
+    fetcher = Tier3Fetcher(transport=httpx.MockTransport(handler), resolver=_public_resolver)
+    with cost_tally() as tally, pytest.raises(FetchProviderError):
+        asyncio.run(fetcher.fetch("https://www.zillow.com/detroit-mi/rentals/"))
+
     assert tally.fetch_calls == 0
     assert tally.fetch_cost_usd == 0.0
 

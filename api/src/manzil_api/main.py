@@ -43,6 +43,7 @@ from manzil_api.jobs.router import router as jobs_router
 from manzil_api.listings.router import router as listings_router
 from manzil_api.notifications.router import router as notifications_router
 from manzil_api.overrides.router import router as overrides_router
+from manzil_api.probe_logging import quiet_probe_access_logs
 from manzil_api.profiles.router import router as profiles_router
 from manzil_api.rubric.router import router as rubric_router
 from manzil_api.utilities.router import router as utilities_router
@@ -157,6 +158,9 @@ def create_app() -> FastAPI:
     # os.environ, so export it here; real environment wins (override=False) and a
     # missing .env is a no-op. Same cwd-relative path as Settings' env_file.
     load_dotenv(".env")
+    # Uvicorn configures logging before it imports the app, so a filter attached
+    # here survives; the probe cadence is Render's to set, the log volume is ours.
+    quiet_probe_access_logs()
     settings = get_settings()
 
     app_configs: dict[str, Any] = {"title": "Manzil API", "version": "1.0"}

@@ -12,13 +12,14 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import structlog
-from manzil_shared.errors import StageFatal, StageRetryable
+from manzil_shared.errors import FetchProviderError, StageFatal, StageRetryable
 from manzil_shared.models import FetchOutcome
 
 from manzil_worker.enrich.images import discover_images
 from manzil_worker.fetching.ladder import fetch_with_ladder
 from manzil_worker.fetching.registry import MAX_TIER
 from manzil_worker.fetching.slug_hint import search_hint
+from manzil_worker.fetching.tier3 import missing_provider_env, tier3_provider
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.state import RunState, SourceState
 
@@ -55,7 +56,15 @@ async def _fetch_one(state: RunState, ctx: StageCtx, url: str) -> SourceState:
         return existing
     if ctx.registry is None:
         raise StageFatal("fetch: no adapter registry in StageCtx")
-    ladder = await fetch_with_ladder(url, ctx.registry, ctx.fetchers)
+    try:
+        ladder = await fetch_with_ladder(url, ctx.registry, ctx.fetchers)
+    except FetchProviderError as error:
+        # The unblocker's API refused us; the target said nothing. Report it as
+        # what it is (§20 2026-08-11) rather than as a status on the listing URL,
+        # and do not buy the same refusal three more times when it is one of the
+        # deterministic ones.
+        message = f"{error} (fetching {url})"
+        raise (StageRetryable(message) if error.retryable else StageFatal(message)) from error
     discovered_images = discover_images(ladder.result.body, ladder.result.final_url)
     discovered = next((item for item in state.discovered_sources if item.url == url), None)
     rounds = (
@@ -106,19 +115,37 @@ async def _fetch_one(state: RunState, ctx: StageCtx, url: str) -> SourceState:
     )
 
     if ladder.outcome is FetchOutcome.ERROR:
-        raise StageRetryable(f"fetch error for {url} (status {ladder.result.status_code})")
+        # Name the rung and, when one carried the request, the provider — a bare
+        # status reads as if the target returned it, which at tier 3 it may not
+        # have (§20 2026-08-11).
+        via = f" via {ladder.result.provider}" if ladder.result.provider else ""
+        detail = f": {ladder.result.error}" if ladder.result.error else ""
+        raise StageRetryable(
+            f"fetch error for {url} — the page returned status "
+            f"{ladder.result.status_code} at tier {ladder.result.tier}{via}{detail}"
+        )
     if ladder.outcome not in _PROCEED:
         message = (
             f"source unfetchable: {ladder.outcome.value} at tier {ladder.result.tier} "
             f"(attempts: {[(t, o.value) for t, o in ladder.attempts]})"
         )
-        # Say when the ladder topped out early: tier 3 off the ladder (no provider
-        # key in this process's environment, §10.7) reads very differently from
-        # tier 3 tried-and-blocked.
+        # Say when the ladder topped out early: tier 3 off the ladder (§10.7)
+        # reads very differently from tier 3 tried-and-blocked — and name the
+        # settings that are missing, because "not configured" sends an operator
+        # looking at the key when it is the zone that is absent.
         if MAX_TIER not in ctx.fetchers:
+            try:
+                provider = tier3_provider()
+                missing = missing_provider_env(provider)
+                why = (
+                    f"{provider.name} is missing {', '.join(missing)}"
+                    if missing
+                    else "no provider configured"
+                )
+            except KeyError as error:  # unknown MANZIL_TIER3_PROVIDER
+                why = str(error).strip("\"'")
             message += (
-                "; tier 3 (unblocker) was not attempted — no provider key "
-                "configured in this process's environment"
+                f"; tier 3 (unblocker) was not attempted — {why} in this process's environment"
             )
         # §20 2026-07-07 stopgap: the URL slug usually names the property —
         # hand the human the search that DISCOVER (P3-5) will one day run.

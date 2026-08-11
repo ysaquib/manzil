@@ -407,7 +407,7 @@ async def fetch_page(url: str) -> str | dict[str, str]:
     # Local import breaks the import cycle (validate_url → stages.base → client →
     # tools). By call time every module is loaded.
     from manzil_shared.config import FETCH_PAGE_MAX_CHARS
-    from manzil_shared.errors import PrivateAddressRefused
+    from manzil_shared.errors import FetchProviderError, PrivateAddressRefused
     from manzil_shared.errors import StageFatal as _StageFatal
 
     from manzil_worker.fetching.ladder import fetch_with_ladder
@@ -434,5 +434,11 @@ async def fetch_page(url: str) -> str | dict[str, str]:
         # not a crash — same shape as the literal refusal above.
         log.warning("fetch_page_refused", url=url, reason=str(exc))
         return {"error": f"refused: {exc}"}
+    except FetchProviderError as exc:
+        # The unblocker refused *us*, not this URL (§20 2026-08-11). Same posture:
+        # a misconfigured zone must not crash a tool loop, and the model is told
+        # the page is unavailable rather than that it said something it did not.
+        log.warning("fetch_page_provider_error", url=url, reason=str(exc))
+        return {"error": f"unavailable: {exc}"}
 
     return ladder.cleaned.text[:FETCH_PAGE_MAX_CHARS]

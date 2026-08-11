@@ -20,6 +20,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Query, status
 from manzil_shared.config import TIER3_FREE_MONTHLY_CREDITS, TIER3_PRICES_USD
+from manzil_worker.fetching.tier3 import provider_configured
 from manzil_worker.llm.config import MODEL_PRICES, STAGE_MODELS, model_for_stage
 
 from manzil_api.admin.dependencies import AdminUser, Audit
@@ -253,20 +254,55 @@ async def costs(
         window,
     )
 
+    # Per Hunt the total is the Job accumulator, not the sum of the Stage rows:
+    # a re-run Stage replaces its row (v3.37), so the breakdown is the latest
+    # attempt at each Stage while `cost_actual_usd` is the whole bill — the
+    # number Tasks shows. Billed and split are aggregated separately because one
+    # join carrying both multiplies each Job's total by its Stage-row count
+    # (DESIGN §20 v3.80).
     by_hunt = await pool.fetch(
         """
-        select coalesce(h.name, 'unknown') as label,
-               sum(c.llm_cost_usd) as llm, sum(c.fetch_cost_usd) as fetch,
-               sum(c.llm_calls) as llm_calls, sum(c.fetch_calls) as fetch_calls
-        from job_stage_costs c
-        join jobs j on j.id = c.job_id
-        left join hunts h on h.id = j.hunt_id
-        where c.updated_at > now() - ($1 || ' days')::interval
-        group by h.name
-        having sum(c.llm_cost_usd + c.fetch_cost_usd) > 0
-        order by sum(c.llm_cost_usd + c.fetch_cost_usd) desc
+        with scoped as (
+            select j.id, coalesce(h.name, 'unknown') as label, j.cost_actual_usd
+            from jobs j
+            left join hunts h on h.id = j.hunt_id
+            where coalesce(j.finished_at, j.started_at, j.created_at)
+                  > now() - ($1 || ' days')::interval
+        ),
+        billed as (
+            select label, sum(cost_actual_usd) as billed from scoped group by label
+        ),
+        split as (
+            select s.label,
+                   sum(c.llm_cost_usd) as llm, sum(c.fetch_cost_usd) as fetch,
+                   sum(c.llm_calls) as llm_calls, sum(c.fetch_calls) as fetch_calls
+            from scoped s join job_stage_costs c on c.job_id = s.id
+            group by s.label
+        )
+        select b.label,
+               coalesce(s.llm, 0) as llm, coalesce(s.fetch, 0) as fetch,
+               coalesce(s.llm_calls, 0) as llm_calls,
+               coalesce(s.fetch_calls, 0) as fetch_calls,
+               b.billed
+        from billed b left join split s on s.label = b.label
+        where b.billed > 0
+        order by b.billed desc
         """,
         window,
+    )
+
+    # The window's authoritative total, for the same reason: summing `by_stage`
+    # under-reports every Job that retried a Stage.
+    billed_total = float(
+        await pool.fetchval(
+            """
+            select coalesce(sum(cost_actual_usd), 0) from jobs
+            where coalesce(finished_at, started_at, created_at)
+                  > now() - ($1 || ' days')::interval
+            """,
+            window,
+        )
+        or 0
     )
 
     daily = await pool.fetch(
@@ -295,6 +331,8 @@ async def costs(
     )
 
     def bucket(row: Any) -> SpendBucket:
+        """A Stage- or model-scoped bucket: the breakdown *is* the total, because
+        there is no other source of per-Stage truth to reconcile against."""
         return SpendBucket(
             label=row["label"],
             llm_cost_usd=float(row["llm"]),
@@ -304,10 +342,25 @@ async def costs(
             fetch_calls=int(row["fetch_calls"] or 0),
         )
 
+    def hunt_bucket(row: Any) -> SpendBucket:
+        """A Hunt-scoped bucket: the total is what its Jobs billed, and whatever
+        the Stage breakdown cannot account for is named rather than dropped."""
+        llm, fetch, billed = float(row["llm"]), float(row["fetch"]), float(row["billed"])
+        return SpendBucket(
+            label=row["label"],
+            llm_cost_usd=llm,
+            fetch_cost_usd=fetch,
+            total_cost_usd=billed,
+            unattributed_cost_usd=max(billed - llm - fetch, 0.0),
+            llm_calls=int(row["llm_calls"] or 0),
+            fetch_calls=int(row["fetch_calls"] or 0),
+        )
+
     return CostsReport(
         days=days,
+        total_cost_usd=billed_total,
         by_stage=[bucket(row) for row in by_stage],
-        by_hunt=[bucket(row) for row in by_hunt],
+        by_hunt=[hunt_bucket(row) for row in by_hunt],
         by_model=sorted(
             (
                 SpendBucket(
@@ -373,9 +426,11 @@ async def system(admin: AdminUser, pool: DbPool) -> SystemReport:
             "configured": bool(os.environ.get("OPENROUTER_API_KEY")),
         },
         {
+            # Key AND zone: a Web Unlocker with a key but no zone is not a
+            # working tier 3, it is a 400 per request (§20 2026-08-11).
             "name": "Bright Data",
             "detail": f"Web Unlocker · tier 3 · ${TIER3_PRICES_USD.get('brightdata', 0):.4f}/req",
-            "configured": bool(os.environ.get("BRIGHTDATA_API_KEY")),
+            "configured": provider_configured("brightdata"),
         },
         {
             "name": "Google Maps",
@@ -390,7 +445,7 @@ async def system(admin: AdminUser, pool: DbPool) -> SystemReport:
         {
             "name": "ScrapingBee",
             "detail": "Alternate tier-3 provider",
-            "configured": bool(os.environ.get("SCRAPINGBEE_API_KEY")),
+            "configured": provider_configured("scrapingbee"),
         },
     ]
 

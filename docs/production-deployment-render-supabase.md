@@ -464,8 +464,26 @@ in Render, never committed. See [Render environment variables and secrets](https
 | `GOOGLE_MAPS_API_KEY` | server-side Maps key | **yes** | yes for ENRICH |
 | `MANZIL_TIER3_PROVIDER` | `brightdata` or `scrapingbee` | no | yes |
 | `BRIGHTDATA_API_KEY` | Bright Data API token | **yes** | if Bright Data selected |
-| `BRIGHTDATA_ZONE` | normally `web_unlocker1` | no | if Bright Data selected |
+| `BRIGHTDATA_ZONE` | the **zone**'s name, not the API key's | no | **required** if Bright Data selected |
 | `SCRAPINGBEE_API_KEY` | ScrapingBee key | **yes** | only if selected |
+
+`BRIGHTDATA_ZONE` has no default and is not the API key's name. Bright Data lists
+the zone under *Proxies & Scraping Infrastructure*; the API key shown beside it
+carries its own, usually different, name, and each environment has its own pair.
+Sending the key's name returns HTTP 400 for every request — the 2026-08-11
+production incident (DESIGN §20 v3.78). A key without a zone now takes tier 3 off
+the ladder with a `tier3_partially_configured` warning rather than joining it and
+refusing everything, and Admin → System reports the pair, not just the key. After
+changing either value, confirm with a single unhostile request before resubmitting
+a hostile URL:
+
+```bash
+curl -i -X POST https://api.brightdata.com/request \
+  -H "Authorization: Bearer $BRIGHTDATA_API_KEY" -H 'Content-Type: application/json' \
+  -d '{"zone":"'"$BRIGHTDATA_ZONE"'","url":"https://example.com","format":"json"}'
+```
+
+A 400 on `example.com` is the zone/key/account, never the target.
 
 Do not set any `MANZIL_MODEL_*` overrides in production. Model pins are code and
 DESIGN decisions. Do not add provider-vendor keys: OpenRouter is the sole LLM
@@ -920,7 +938,11 @@ returned to its queue loop within six minutes, and verifies that the product
 email dispatcher task has not exited. It returns only `ok`/`failed` labels,
 never paths or exception details. Keep Render's restart-oriented health
 check on `/v1/health` to avoid an external database incident causing restart
-loops; monitor and alert on `/v1/ready` separately. Also alert on stale Jobs,
+loops; monitor and alert on `/v1/ready` separately. Render sets the probe
+interval and does not expose it as a setting, so the log volume — not the
+cadence — is what we control: successful probe access lines are filtered out of
+`uvicorn.access`, failing ones always survive, and `MANZIL_LOG_PROBE_REQUESTS=true`
+restores every line (DESIGN §20 v3.79). Also alert on stale Jobs,
 because a legitimate long Stage may exceed the coarse process heartbeat.
 
 ## 13. Secret-placement summary

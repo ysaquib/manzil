@@ -7,6 +7,12 @@
 // first question anyone asks of a cost page. Fetch is a thin sliver at current
 // volumes and that is honest — the exact figures are in the table below the
 // chart rather than exaggerated in the plot.
+//
+// Totals come from `total_cost_usd`, never from adding the two series up
+// (DESIGN §20 v3.80). A Stage that re-runs replaces its `job_stage_costs` row,
+// so the series describe the latest attempt at each Stage while the total is
+// what the Jobs actually billed — the same number Tasks shows. Where the two
+// disagree, the remainder is shown as its own row rather than rounded away.
 import { BarChart } from "@mantine/charts";
 import {
   Alert,
@@ -48,14 +54,30 @@ function BucketTable({
       </Text>
     );
   }
+  // Only shown when some bucket actually carries a remainder, so the ordinary
+  // case keeps four columns.
+  const anyUnattributed = buckets.some((bucket) => (bucket.unattributed_cost_usd ?? 0) > 0);
   return (
-    <Table.ScrollContainer minWidth={420}>
+    <Table.ScrollContainer minWidth={anyUnattributed ? 500 : 420}>
       <Table verticalSpacing={4} highlightOnHover>
         <Table.Thead>
           <Table.Tr>
             <Table.Th />
             <Table.Th ta="end">LLM</Table.Th>
             <Table.Th ta="end">Fetch</Table.Th>
+            {anyUnattributed && (
+              <Table.Th ta="end">
+                <Tooltip
+                  multiline
+                  w={280}
+                  label="Spend from Stages that ran more than once. The per-Stage breakdown keeps only the latest attempt, so this is the rest of the bill — it is included in the total."
+                >
+                  <Text component="span" size="xs" fw={700} style={{ borderBottom: "1px dotted" }}>
+                    Re-runs
+                  </Text>
+                </Tooltip>
+              </Table.Th>
+            )}
             <Table.Th ta="end">Total</Table.Th>
             <Table.Th ta="end">Calls</Table.Th>
           </Table.Tr>
@@ -72,6 +94,13 @@ function BucketTable({
               <Table.Td ta="end" ff="monospace" fz="xs">
                 ${bucket.fetch_cost_usd.toFixed(4)}
               </Table.Td>
+              {anyUnattributed && (
+                <Table.Td ta="end" ff="monospace" fz="xs" c="dimmed">
+                  {(bucket.unattributed_cost_usd ?? 0) > 0
+                    ? `$${(bucket.unattributed_cost_usd ?? 0).toFixed(4)}`
+                    : "—"}
+                </Table.Td>
+              )}
               <Table.Td ta="end" ff="monospace" fz="xs" fw={600}>
                 ${bucket.total_cost_usd.toFixed(4)}
               </Table.Td>
@@ -102,8 +131,11 @@ export function AdminCostsPage() {
   }
 
   const c = costs.data;
+  // The channels are the Stage breakdown; the total is what was billed. They
+  // differ by re-run Stage attempts, which is stated rather than hidden.
   const llmTotal = c.by_stage.reduce((sum, b) => sum + b.llm_cost_usd, 0);
   const fetchTotal = c.by_stage.reduce((sum, b) => sum + b.fetch_cost_usd, 0);
+  const rerunTotal = Math.max((c.total_cost_usd ?? 0) - llmTotal - fetchTotal, 0);
   const creditsPct =
     c.tier3_credits_allowance && c.tier3_credits_allowance > 0
       ? (100 * c.tier3_credits_used) / c.tier3_credits_allowance
@@ -140,12 +172,26 @@ export function AdminCostsPage() {
 
       <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm">
         <Card padding="sm" radius="md" withBorder>
-          <Text size="xs" c="dimmed" fw={700} tt="uppercase">
-            Total
-          </Text>
+          <Group gap={4}>
+            <Text size="xs" c="dimmed" fw={700} tt="uppercase">
+              Total
+            </Text>
+            <Tooltip
+              multiline
+              w={280}
+              label="What the Jobs in this window billed — the same figure the Tasks tab shows. LLM and Fetch describe the latest attempt at each Stage, so they can add up to less."
+            >
+              <IconInfoCircle size={13} style={{ opacity: 0.6 }} />
+            </Tooltip>
+          </Group>
           <Text size="1.5rem" ff="monospace" fw={600}>
-            ${(llmTotal + fetchTotal).toFixed(2)}
+            ${(c.total_cost_usd ?? 0).toFixed(2)}
           </Text>
+          {rerunTotal > 0 && (
+            <Text size="xs" c="dimmed">
+              incl. ${rerunTotal.toFixed(4)} from re-run Stages
+            </Text>
+          )}
         </Card>
         <Card padding="sm" radius="md" withBorder>
           <Text size="xs" c="dimmed" fw={700} tt="uppercase">
@@ -177,6 +223,12 @@ export function AdminCostsPage() {
         <Title order={5} mb="xs">
           Daily spend, split by what was bought
         </Title>
+        {rerunTotal > 0 && (
+          <Text size="xs" c="dimmed" mb={4}>
+            The two series are the per-Stage breakdown, so they sit ${rerunTotal.toFixed(4)} below
+            the window total — re-run Stages bought no single channel.
+          </Text>
+        )}
         {daily.length === 0 ? (
           <Text size="sm" c="dimmed">
             Nothing recorded in this window.
