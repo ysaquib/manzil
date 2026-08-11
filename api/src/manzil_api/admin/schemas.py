@@ -45,9 +45,12 @@ class HuntSummary(BaseModel):
     members: int
     listings: int
     jobs: int
+    # `total_cost_usd` is `sum(jobs.cost_actual_usd)` — the same number the Tasks
+    # tab shows. See `SpendBucket` for why the two channels can fall short of it.
     llm_cost_usd: float
     fetch_cost_usd: float
     total_cost_usd: float
+    unattributed_cost_usd: float = 0.0
     created_at: datetime
     last_activity_at: datetime | None = None
     archived_at: datetime | None = None
@@ -270,10 +273,24 @@ class JobDetail(JobRow):
 
 
 class SpendBucket(BaseModel):
+    """One row of a spend breakdown.
+
+    `total_cost_usd` is the authoritative number for the bucket, and it is not
+    always `llm + fetch`. A Hunt-scoped bucket totals what its Jobs billed
+    (`jobs.cost_actual_usd`), while the two channels come from
+    `job_stage_costs`, whose row for a Stage is *replaced* when that Stage
+    re-runs (DESIGN §20 v3.37) — so a retried or resumed Job spent more than its
+    breakdown can account for. `unattributed_cost_usd` carries that remainder
+    instead of letting the displayed total shrink to the breakdown
+    (DESIGN §20 v3.80). Stage- and model-scoped buckets have no second source to
+    reconcile against, so it is always zero there.
+    """
+
     label: str
     llm_cost_usd: float
     fetch_cost_usd: float
     total_cost_usd: float
+    unattributed_cost_usd: float = 0.0
     llm_calls: int = 0
     fetch_calls: int = 0
 
@@ -286,6 +303,10 @@ class SpendPoint(BaseModel):
 
 class CostsReport(BaseModel):
     days: int
+    # What the window actually billed (`jobs.cost_actual_usd`). Summing
+    # `by_stage` under-reports it by every re-run Stage attempt — see
+    # `SpendBucket` and DESIGN §20 v3.80.
+    total_cost_usd: float = 0.0
     by_stage: list[SpendBucket] = Field(default_factory=list)
     by_hunt: list[SpendBucket] = Field(default_factory=list)
     by_model: list[SpendBucket] = Field(default_factory=list)

@@ -1134,6 +1134,15 @@ export interface paths {
          *     "most expensive first" cannot be answered without pricing the candidates.
          *     It is one grouped join rather than a lateral per row, which is the version
          *     of that cost worth paying.
+         *
+         *     **What "cost" means here** (DESIGN §20 v3.80). The Hunt's total is
+         *     `sum(jobs.cost_actual_usd)` — the same accumulator every Job card in Tasks
+         *     shows, and the whole bill including re-run Stage attempts. The llm/fetch
+         *     split comes from `job_stage_costs`, whose rows are *replaced* when a Stage
+         *     re-runs (v3.37), so the split can be smaller than the total; the remainder
+         *     is reported as `unattributed_cost_usd` rather than quietly shrinking the
+         *     number. The two are summed in separate CTEs on purpose: one join carrying
+         *     both would multiply each Job's total by its Stage-row count.
          */
         get: operations["list_hunts_v1_admin_hunts_get"];
         put?: never;
@@ -2473,6 +2482,11 @@ export interface components {
         CostsReport: {
             /** Days */
             days: number;
+            /**
+             * Total Cost Usd
+             * @default 0
+             */
+            total_cost_usd: number;
             /** By Stage */
             by_stage?: components["schemas"]["SpendBucket"][];
             /** By Hunt */
@@ -3014,6 +3028,11 @@ export interface components {
             fetch_cost_usd: number;
             /** Total Cost Usd */
             total_cost_usd: number;
+            /**
+             * Unattributed Cost Usd
+             * @default 0
+             */
+            unattributed_cost_usd: number;
             /**
              * Created At
              * Format: date-time
@@ -3845,7 +3864,20 @@ export interface components {
              */
             source_policy: "trust_link" | "tier_1" | "tiers_1_2" | "tiers_1_2_3" | "tier_1_plus_official";
         };
-        /** SpendBucket */
+        /**
+         * SpendBucket
+         * @description One row of a spend breakdown.
+         *
+         *     `total_cost_usd` is the authoritative number for the bucket, and it is not
+         *     always `llm + fetch`. A Hunt-scoped bucket totals what its Jobs billed
+         *     (`jobs.cost_actual_usd`), while the two channels come from
+         *     `job_stage_costs`, whose row for a Stage is *replaced* when that Stage
+         *     re-runs (DESIGN §20 v3.37) — so a retried or resumed Job spent more than its
+         *     breakdown can account for. `unattributed_cost_usd` carries that remainder
+         *     instead of letting the displayed total shrink to the breakdown
+         *     (DESIGN §20 v3.80). Stage- and model-scoped buckets have no second source to
+         *     reconcile against, so it is always zero there.
+         */
         SpendBucket: {
             /** Label */
             label: string;
@@ -3855,6 +3887,11 @@ export interface components {
             fetch_cost_usd: number;
             /** Total Cost Usd */
             total_cost_usd: number;
+            /**
+             * Unattributed Cost Usd
+             * @default 0
+             */
+            unattributed_cost_usd: number;
             /**
              * Llm Calls
              * @default 0

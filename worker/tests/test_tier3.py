@@ -10,13 +10,27 @@ from pathlib import Path
 
 import httpx
 import pytest
+from manzil_shared.errors import FetchProviderError
 from manzil_shared.models import FetchOutcome
 from manzil_worker.fetching.census import run_census
 from manzil_worker.fetching.ladder import fetch_with_ladder
 from manzil_worker.fetching.registry import InMemoryRegistry, next_required_tier
 from manzil_worker.fetching.slug_hint import search_hint
-from manzil_worker.fetching.tier3 import Tier3Fetcher, tier3_configured, tier3_provider
+from manzil_worker.fetching.tier3 import (
+    Tier3Fetcher,
+    missing_provider_env,
+    provider_configured,
+    tier3_configured,
+    tier3_provider,
+)
 from worker_helpers import PAGES, FakeFetcher
+
+
+def _envelope(status: int, body: str, headers: dict[str, str] | None = None) -> httpx.Response:
+    """What Bright Data's `format: "json"` returns: the TARGET's response,
+    wrapped, so its status never collides with the API's own."""
+    return httpx.Response(200, json={"status": status, "headers": headers or {}, "body": body})
+
 
 LISTING_HTML = (
     "<html><body>" + "2 bedroom apartment with rent and lease terms. " * 60 + ("</body></html>")
@@ -43,22 +57,48 @@ def test_unknown_provider_fails_loudly(monkeypatch: pytest.MonkeyPatch) -> None:
         tier3_provider()
 
 
-def test_tier3_configured_requires_the_selected_providers_key(
+def test_tier3_configured_requires_every_setting_not_just_the_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("MANZIL_TIER3_PROVIDER", raising=False)
     monkeypatch.delenv("BRIGHTDATA_API_KEY", raising=False)
+    monkeypatch.delenv("BRIGHTDATA_ZONE", raising=False)
+    monkeypatch.delenv("BRIGHTDATA_KEY_NAME", raising=False)
     # Real keys can reach os.environ before this test runs (cli.py's import-time
     # load_dotenv exports .env at collection) — isolate from them.
     monkeypatch.delenv("SCRAPINGBEE_API_KEY", raising=False)
     assert tier3_configured() is None
+    # A key with no zone is the 2026-08-11 incident: it looks enabled, joins the
+    # ladder, and 400s on every request. Treated as not configured.
     monkeypatch.setenv("BRIGHTDATA_API_KEY", "key")
+    assert tier3_configured() is None
+    monkeypatch.setenv("BRIGHTDATA_ZONE", "manzil_unlocker_prod")
     assert tier3_configured() == "brightdata"
-    # Switching provider = one env var; its own key gates availability.
+    # Switching provider = one env var; its own settings gate availability.
     monkeypatch.setenv("MANZIL_TIER3_PROVIDER", "scrapingbee")
     assert tier3_configured() is None
     monkeypatch.setenv("SCRAPINGBEE_API_KEY", "key")
     assert tier3_configured() == "scrapingbee"
+
+
+def test_the_zone_accepts_the_key_name_alias(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MANZIL_TIER3_PROVIDER", raising=False)
+    monkeypatch.setenv("BRIGHTDATA_API_KEY", "key")
+    monkeypatch.delenv("BRIGHTDATA_ZONE", raising=False)
+    monkeypatch.setenv("BRIGHTDATA_KEY_NAME", "manzil_webunlocker1")
+    assert tier3_configured() == "brightdata"
+
+
+def test_an_empty_env_var_is_unset_not_a_value(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A blank field in a deploy dashboard is a missing setting. `os.environ.get`
+    with a default returns the empty string instead, which used to be sent to the
+    provider verbatim."""
+    monkeypatch.delenv("MANZIL_TIER3_PROVIDER", raising=False)
+    monkeypatch.setenv("BRIGHTDATA_API_KEY", "key")
+    monkeypatch.setenv("BRIGHTDATA_ZONE", "   ")
+    monkeypatch.delenv("BRIGHTDATA_KEY_NAME", raising=False)
+    assert tier3_configured() is None
+    assert missing_provider_env(tier3_provider()) == ["BRIGHTDATA_ZONE"]
 
 
 # ── the fetcher itself ───────────────────────────────────────────────────────
@@ -74,7 +114,7 @@ def test_brightdata_request_shape_and_result(monkeypatch: pytest.MonkeyPatch) ->
         seen["url"] = str(request.url)
         seen["auth"] = request.headers.get("authorization")
         seen["payload"] = json.loads(request.content)
-        return httpx.Response(200, text=LISTING_HTML)
+        return _envelope(200, LISTING_HTML, {"Content-Type": "text/html"})
 
     fetcher = Tier3Fetcher(transport=httpx.MockTransport(handler), resolver=_public_resolver)
     result = asyncio.run(fetcher.fetch("https://www.zillow.com/detroit-mi/rentals/"))
@@ -84,11 +124,110 @@ def test_brightdata_request_shape_and_result(monkeypatch: pytest.MonkeyPatch) ->
     assert seen["payload"] == {
         "zone": "my_zone",
         "url": "https://www.zillow.com/detroit-mi/rentals/",
-        "format": "raw",
+        "format": "json",
     }
     assert result.tier == 3
+    assert result.provider == "brightdata"
     assert result.status_code == 200
     assert result.body == LISTING_HTML
+    # The TARGET's headers, not the provider API's — the classifier reads these.
+    assert result.headers == {"content-type": "text/html"}
+
+
+def test_the_targets_status_survives_the_envelope(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A 404 from the page is a 404 on the FetchResult, even though the API call
+    that carried it succeeded."""
+    monkeypatch.delenv("MANZIL_TIER3_PROVIDER", raising=False)
+    monkeypatch.setenv("BRIGHTDATA_API_KEY", "bd-key")
+    monkeypatch.setenv("BRIGHTDATA_ZONE", "my_zone")
+
+    fetcher = Tier3Fetcher(
+        transport=httpx.MockTransport(lambda _: _envelope(404, "Not found")),
+        resolver=_public_resolver,
+    )
+    result = asyncio.run(fetcher.fetch("https://www.zillow.com/gone/"))
+    assert result.status_code == 404
+    assert result.body == "Not found"
+
+
+def test_a_provider_rejection_is_never_reported_as_the_targets_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The 2026-08-11 production incident: the zone was set to the API key's
+    name, Bright Data 400'd every request, and the job blamed the listing URL."""
+    monkeypatch.delenv("MANZIL_TIER3_PROVIDER", raising=False)
+    monkeypatch.setenv("BRIGHTDATA_API_KEY", "bd-key")
+    monkeypatch.setenv("BRIGHTDATA_ZONE", "manzil_webunlocker1")
+
+    fetcher = Tier3Fetcher(
+        transport=httpx.MockTransport(lambda _: httpx.Response(400, text="Unknown zone")),
+        resolver=_public_resolver,
+    )
+    with pytest.raises(FetchProviderError) as raised:
+        asyncio.run(fetcher.fetch("https://www.zillow.com/apartments/x/"))
+
+    assert raised.value.provider == "brightdata"
+    assert raised.value.status == 400
+    assert raised.value.retryable is False  # deterministic: do not buy it again
+    assert "Unknown zone" in str(raised.value)
+
+
+def test_provider_congestion_stays_retryable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MANZIL_TIER3_PROVIDER", raising=False)
+    monkeypatch.setenv("BRIGHTDATA_API_KEY", "bd-key")
+    monkeypatch.setenv("BRIGHTDATA_ZONE", "my_zone")
+
+    fetcher = Tier3Fetcher(
+        transport=httpx.MockTransport(lambda _: httpx.Response(503, text="upstream busy")),
+        resolver=_public_resolver,
+    )
+    with pytest.raises(FetchProviderError) as raised:
+        asyncio.run(fetcher.fetch("https://www.zillow.com/x/"))
+    assert raised.value.retryable is True
+
+
+def test_a_missing_zone_fails_before_any_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MANZIL_TIER3_PROVIDER", raising=False)
+    monkeypatch.setenv("BRIGHTDATA_API_KEY", "bd-key")
+    monkeypatch.delenv("BRIGHTDATA_ZONE", raising=False)
+    monkeypatch.delenv("BRIGHTDATA_KEY_NAME", raising=False)
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return _envelope(200, LISTING_HTML)
+
+    fetcher = Tier3Fetcher(transport=httpx.MockTransport(handler), resolver=_public_resolver)
+    with pytest.raises(FetchProviderError, match="BRIGHTDATA_ZONE is not set"):
+        asyncio.run(fetcher.fetch("https://www.zillow.com/x/"))
+    assert calls["n"] == 0
+
+
+def test_a_non_envelope_200_still_reads_as_the_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Degrade to the pre-envelope behavior rather than calling an unexpected
+    vendor shape a rejection."""
+    monkeypatch.delenv("MANZIL_TIER3_PROVIDER", raising=False)
+    monkeypatch.setenv("BRIGHTDATA_API_KEY", "bd-key")
+    monkeypatch.setenv("BRIGHTDATA_ZONE", "my_zone")
+
+    fetcher = Tier3Fetcher(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, text=LISTING_HTML)),
+        resolver=_public_resolver,
+    )
+    result = asyncio.run(fetcher.fetch("https://www.zillow.com/x/"))
+    assert result.status_code == 200 and result.body == LISTING_HTML
+
+
+def test_provider_configured_names_the_whole_requirement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("BRIGHTDATA_API_KEY", "bd-key")
+    monkeypatch.delenv("BRIGHTDATA_ZONE", raising=False)
+    monkeypatch.delenv("BRIGHTDATA_KEY_NAME", raising=False)
+    assert provider_configured("brightdata") is False
+    monkeypatch.setenv("BRIGHTDATA_ZONE", "z")
+    assert provider_configured("brightdata") is True
+    assert provider_configured("no-such-provider") is False
 
 
 def test_scrapingbee_request_shape(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -112,6 +251,7 @@ def test_vendor_network_failure_is_a_fetch_error_not_a_crash(
 ) -> None:
     monkeypatch.delenv("MANZIL_TIER3_PROVIDER", raising=False)
     monkeypatch.setenv("BRIGHTDATA_API_KEY", "bd-key")
+    monkeypatch.setenv("BRIGHTDATA_ZONE", "my_zone")
 
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectTimeout("vendor down")

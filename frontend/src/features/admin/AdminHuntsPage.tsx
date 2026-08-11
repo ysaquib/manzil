@@ -22,6 +22,7 @@ import {
   Text,
   TextInput,
   Title,
+  Tooltip,
 } from "@mantine/core";
 import { useDebouncedValue, useMediaQuery } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
@@ -455,7 +456,9 @@ export function AdminHuntsPage() {
                   <Table.Th ta="end">Listings</Table.Th>
                   <Table.Th ta="end">Jobs</Table.Th>
                   {/* The split is the point: a blended number cannot answer
-                      "how much of this was the model?" */}
+                      "how much of this was the model?" — but Total is what the
+                      Hunt's Jobs billed, so it can exceed LLM + Fetch by
+                      whatever its re-run Stages cost (DESIGN §20 v3.80). */}
                   <Table.Th ta="end">LLM</Table.Th>
                   <Table.Th ta="end">Fetch</Table.Th>
                   <Table.Th ta="end">Total</Table.Th>
@@ -505,7 +508,12 @@ export function AdminHuntsPage() {
                       ${hunt.fetch_cost_usd.toFixed(4)}
                     </Table.Td>
                     <Table.Td ta="end" ff="monospace" fz="xs" fw={600}>
-                      ${hunt.total_cost_usd.toFixed(2)}
+                      <Tooltip
+                        disabled={!((hunt.unattributed_cost_usd ?? 0) > 0)}
+                        label={`Includes $${(hunt.unattributed_cost_usd ?? 0).toFixed(4)} from Stages that ran more than once`}
+                      >
+                        <span>${hunt.total_cost_usd.toFixed(2)}</span>
+                      </Tooltip>
                     </Table.Td>
                     <Table.Td>
                       <Anchor

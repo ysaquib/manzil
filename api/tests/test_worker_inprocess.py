@@ -102,16 +102,20 @@ def test_create_app_exports_dotenv_for_the_inprocess_worker(monkeypatch, tmp_pat
         "SUPABASE_ANON_KEY": "anon",
         "SUPABASE_SECRET_KEY": "service",
         "DATABASE_URL": DATABASE_URL,
+        # Both tier-3 settings, because either one missing takes tier 3 off the
+        # ladder (§20 2026-08-11) — the bridge has to carry the whole config.
         "BRIGHTDATA_API_KEY": "test-tier3-key",
+        "BRIGHTDATA_ZONE": "test-tier3-zone",
     }
     (tmp_path / ".env").write_text("".join(f"{k}={v}\n" for k, v in env.items()))
-    for key in (*env, "MANZIL_TIER3_PROVIDER"):
+    for key in (*env, "MANZIL_TIER3_PROVIDER", "BRIGHTDATA_KEY_NAME"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.chdir(tmp_path)
     get_settings.cache_clear()
     try:
         create_app()
         assert os.environ.get("BRIGHTDATA_API_KEY") == "test-tier3-key"
+        assert os.environ.get("BRIGHTDATA_ZONE") == "test-tier3-zone"
         assert tier3_configured() == "brightdata"
     finally:
         get_settings.cache_clear()

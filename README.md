@@ -271,8 +271,16 @@ not an env change.
 ```bash
 # .env — Bright Data Web Unlocker is the default provider
 BRIGHTDATA_API_KEY=...          # from brightdata.com → Web Unlocker zone
-BRIGHTDATA_ZONE=web_unlocker1   # your zone name (this is their default)
+BRIGHTDATA_ZONE=...             # the ZONE's name, not the API key's name
 ```
+
+Both are required — a key with no zone is not a working tier 3, it is an HTTP 400
+per request, and the ladder now treats a half-configured provider as absent rather
+than letting it join and refuse everything. `BRIGHTDATA_ZONE` is what Bright Data's
+control panel lists under *Proxies & Scraping Infrastructure*; the API key displayed
+alongside it has its own name, which is usually different and is **not** the zone.
+Sending the key's name is what broke production on 2026-08-11 (DESIGN §20).
+`BRIGHTDATA_KEY_NAME` is accepted as an alias for the same value.
 
 **Changing the provider** is one env var — the selected provider's own key gates it:
 
@@ -437,11 +445,13 @@ choice permanent and invisible — prefix them onto the one command instead.
 | `MANZIL_WORKER_INPROCESS=false` | Stops the API process from claiming jobs | **Required for API tests** when a dev API is on the same local DB — otherwise its worker claims a test Job and races the state-transition assertions |
 | `MANZIL_MODE=agents` | Selects the learning track | Not usable yet — `manzil ingest` exits 2 until L1 lands |
 | `DATABASE_URL` | Also read directly by the CLI | `ingest` uses `PostgresRegistry` when set and an in-memory one when not; `split-property` **requires** it (service-role, below RLS) |
-| `MANZIL_TIER3_PROVIDER` | `brightdata` (default) \| `scrapingbee` | Switching unblocker vendors; the selected provider's key still gates the tier |
+| `MANZIL_TIER3_PROVIDER` | `brightdata` (default) \| `scrapingbee` | Switching unblocker vendors; the selected provider's settings still gate the tier |
+| `MANZIL_LOG_PROBE_REQUESTS=true` | Keeps `GET /v1/health` and `/v1/ready` access lines | Debugging a probe Render reports failing while the service reports fine — otherwise successful probe lines are filtered out of `uvicorn.access` so real traffic stays legible |
 
-Two things that look like env vars but aren't: **`MANZIL_JOB_MAX_ATTEMPTS`** is a constant
+One thing that looks like an env var but isn't: **`MANZIL_JOB_MAX_ATTEMPTS`** is a constant
 in `shared/src/manzil_shared/config.py` (the dead-letter threshold — change it in code,
-with intent), and **`BRIGHTDATA_ZONE`** defaults to `web_unlocker1` in `tier3.py` if unset.
+with intent). And one that looks optional but isn't: **`BRIGHTDATA_ZONE`** has no default —
+it used to fall back to `web_unlocker1`, which only ever produced a confident 400.
 
 ## CI
 

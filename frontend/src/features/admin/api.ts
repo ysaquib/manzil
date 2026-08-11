@@ -36,9 +36,16 @@ export interface HuntSummary {
   members: number;
   listings: number;
   jobs: number;
+  // `total_cost_usd` is what the Hunt's Jobs billed (the Tasks-tab number).
+  // The two channels come from the per-Stage breakdown, which keeps only the
+  // latest attempt at each Stage, so `unattributed_cost_usd` carries the
+  // difference (DESIGN §20 v3.80).
   llm_cost_usd: number;
   fetch_cost_usd: number;
   total_cost_usd: number;
+  // Optional so a freshly deployed static bundle can render against an API that
+  // has not rolled out yet — the two deploy independently.
+  unattributed_cost_usd?: number;
   created_at: string;
   last_activity_at: string | null;
   archived_at: string | null;
@@ -587,12 +594,16 @@ export interface SpendBucket {
   llm_cost_usd: number;
   fetch_cost_usd: number;
   total_cost_usd: number;
+  // Non-zero only for Hunt-scoped buckets: spend from Stages that ran more
+  // than once, which the per-Stage breakdown replaced (DESIGN §20 v3.80).
+  unattributed_cost_usd?: number;
   llm_calls: number;
   fetch_calls: number;
 }
 
 export interface CostsReport {
   days: number;
+  total_cost_usd?: number;
   by_stage: SpendBucket[];
   by_hunt: SpendBucket[];
   by_model: SpendBucket[];
