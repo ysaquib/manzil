@@ -18,6 +18,7 @@ import {
   Title,
 } from "@mantine/core";
 import { IconAlertTriangle, IconLockOpen } from "@tabler/icons-react";
+import { useMediaQuery } from "@mantine/hooks";
 import { useState } from "react";
 
 import { TablePagination, usePagedRows } from "../../components/TablePagination";
@@ -87,6 +88,7 @@ export function AdminJobsPage() {
   // demo-aware (DESIGN §16 0a), so `/admin/me` answers false and AdminLayout
   // redirects before this page mounts.
   const releaseLocks = useReleaseLocks();
+  const isCompact = useMediaQuery("(max-width: 48em)") ?? false;
 
   const staleCount = (jobs.data ?? []).filter((job) => job.stale).length;
   const paged = usePagedRows(jobs.data ?? [], "admin-jobs");
@@ -163,6 +165,45 @@ export function AdminJobsPage() {
         )}
         {jobs.data && jobs.data.length > 0 && (
           <>
+          {isCompact ? (
+            <Stack gap="xs" p="xs">
+              {paged.items.map((job) => (
+                <Card key={job.id} padding="sm" radius="sm" withBorder>
+                  <Group justify="space-between" align="flex-start" wrap="nowrap">
+                    <div style={{ minWidth: 0 }}>
+                      <Text size="xs" ff="monospace">
+                        {job.id.slice(0, 8)}
+                      </Text>
+                      <Text size="sm" fw={600} truncate>
+                        {job.listing_name ?? job.hunt_name ?? "Unscoped Job"}
+                      </Text>
+                      {job.listing_name && (
+                        <Text size="xs" c="dimmed" truncate>
+                          {job.hunt_name ?? "—"}
+                        </Text>
+                      )}
+                    </div>
+                    <Group gap={4} justify="flex-end">
+                      <Badge size="sm" variant="light" color={STATE_COLOR[job.state] ?? "gray"}>
+                        {job.state.replace("_", " ")}
+                      </Badge>
+                      {job.stale && <Badge size="sm" color="yellow">stale</Badge>}
+                    </Group>
+                  </Group>
+                  <Text size="xs" mt="xs">
+                    {job.type} · <Text span ff="monospace">{job.current_stage ?? "—"}</Text>
+                  </Text>
+                  {job.error && <Text size="xs" c="red" mt={4} lineClamp={2}>{job.error}</Text>}
+                  <Group justify="space-between" align="flex-end" mt="sm">
+                    <Text size="xs" c="dimmed" ff="monospace">
+                      try {job.attempts} · ${job.cost_actual_usd.toFixed(4)} · {age(job.created_at)}
+                    </Text>
+                    <JobActions job={job} />
+                  </Group>
+                </Card>
+              ))}
+            </Stack>
+          ) : (
           <Table.ScrollContainer minWidth={760}>
             <Table highlightOnHover verticalSpacing="xs">
               <Table.Thead>
@@ -232,6 +273,7 @@ export function AdminJobsPage() {
               </Table.Tbody>
             </Table>
           </Table.ScrollContainer>
+          )}
           <TablePagination state={paged} noun="Jobs" />
           </>
         )}
