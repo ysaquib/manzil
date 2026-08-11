@@ -8,7 +8,7 @@ from svix.webhooks import Webhook, WebhookVerificationError
 
 from manzil_api.dependencies import CurrentUser, DbPool, SettingsDep, UserClient
 from manzil_api.email.dispatcher import apply_resend_webhook
-from manzil_api.hunts.dependencies import MemberHunt
+from manzil_api.hunts.dependencies import MemberHunt, WritableMemberHunt
 from manzil_api.notifications.schemas import (
     AccountNotificationPreferences,
     AttentionResponse,
@@ -118,7 +118,7 @@ async def get_hunt_preferences(
 async def put_hunt_preferences(
     hunt_id: UUID,
     body: HuntNotificationPreferenceUpdate,
-    hunt: MemberHunt,
+    hunt: WritableMemberHunt,
     user: CurrentUser,
     client: UserClient,
 ) -> HuntNotificationPreferences:

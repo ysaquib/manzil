@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Query, status
@@ -34,6 +35,7 @@ from manzil_api.admin.schemas import (
     GrantAdmin,
     HuntDelete,
     HuntDeleteResult,
+    HuntLockUpdate,
     HuntManagement,
     HuntManagementMember,
     HuntOption,
@@ -77,6 +79,11 @@ class HuntDeletionBlocked(ManzilAPIError):
 class HuntConfirmationMismatch(ManzilAPIError):
     status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
     code = "hunt_confirmation_mismatch"
+
+
+class AdminHuntLocked(ManzilAPIError):
+    status_code = status.HTTP_423_LOCKED
+    code = "hunt_locked"
 
 
 @router.get("/me", response_model=AdminIdentity, summary="Is the caller a site admin?")
@@ -149,7 +156,7 @@ async def list_hunts(
     rows = await pool.fetch(
         """
         with filtered as (
-            select h.id, h.name, h.owner_id, h.created_at,
+            select h.id, h.name, h.owner_id, h.created_at, h.archived_at, h.locked_at,
                    up.default_display_name as owner_name
             from hunts h
             left join user_profiles up on up.user_id = h.owner_id
@@ -175,6 +182,7 @@ async def list_hunts(
         )
         select
             p.id as hunt_id, p.name, p.owner_id, p.owner_name, p.created_at,
+            p.archived_at, p.locked_at,
             p.llm as llm_cost, p.fetch as fetch_cost,
             (select count(*) from hunt_members m where m.hunt_id = p.id)   as members,
             (select count(*) from hunt_listings l where l.hunt_id = p.id)  as listings,
@@ -221,6 +229,8 @@ async def list_hunts(
                 total_cost_usd=float(row["llm_cost"]) + float(row["fetch_cost"]),
                 created_at=row["created_at"],
                 last_activity_at=row["last_activity_at"],
+                archived_at=row["archived_at"],
+                locked_at=row["locked_at"],
             )
             for row in rows
         ],
@@ -269,7 +279,7 @@ async def hunt_options(
 async def hunt_management(hunt_id: UUID, admin: AdminUser, pool: DbPool) -> HuntManagement:
     hunt = await pool.fetchrow(
         """
-        select h.id, h.name, h.owner_id,
+        select h.id, h.name, h.owner_id, h.archived_at, h.locked_at, h.locked_by,
                coalesce(hm.display_name, up.default_display_name, 'Member') as owner_name,
                exists (
                    select 1 from hunt_members mine
@@ -321,6 +331,9 @@ async def hunt_management(hunt_id: UUID, admin: AdminUser, pool: DbPool) -> Hunt
         owner_id=hunt["owner_id"],
         owner_name=hunt["owner_name"],
         caller_is_member=hunt["caller_is_member"],
+        archived_at=hunt["archived_at"],
+        locked_at=hunt["locked_at"],
+        locked_by=hunt["locked_by"],
         members=[HuntManagementMember(**dict(row)) for row in rows],
         deletion_blockers=blockers,
     )
@@ -340,10 +353,12 @@ async def transfer_admin_hunt_ownership(
 ) -> TransferOwnershipResponse:
     async with pool.acquire() as connection, connection.transaction():
         hunt = await connection.fetchrow(
-            "select name, owner_id from hunts where id=$1 for update", hunt_id
+            "select name, owner_id, locked_at from hunts where id=$1 for update", hunt_id
         )
         if hunt is None:
             raise AdminHuntNotFound("Hunt not found")
+        if hunt["locked_at"] is not None:
+            raise AdminHuntLocked("Unlock this Hunt before transferring ownership")
         target = await connection.fetchrow(
             """
             select coalesce(hm.display_name, up.default_display_name, 'Member') as display_name
@@ -397,10 +412,12 @@ async def delete_admin_hunt(
 ) -> HuntDeleteResult:
     async with pool.acquire() as connection, connection.transaction():
         hunt = await connection.fetchrow(
-            "select name, owner_id from hunts where id=$1 for update", hunt_id
+            "select name, owner_id, locked_at from hunts where id=$1 for update", hunt_id
         )
         if hunt is None:
             raise AdminHuntNotFound("Hunt not found")
+        if hunt["locked_at"] is not None:
+            raise AdminHuntLocked("Unlock this Hunt before permanently deleting it")
         if body.confirmation_name != hunt["name"]:
             raise HuntConfirmationMismatch("Type the exact Hunt name to confirm deletion")
         if await connection.fetchval(
@@ -461,6 +478,58 @@ async def delete_admin_hunt(
             conn=connection,
         )
     return result
+
+
+@router.put(
+    "/hunts/{hunt_id}/lock",
+    response_model=HuntManagement,
+    summary="Lock or unlock a Hunt",
+)
+async def set_hunt_lock(
+    hunt_id: UUID,
+    body: HuntLockUpdate,
+    admin: AdminUser,
+    pool: DbPool,
+    audit: Audit,
+) -> HuntManagement:
+    async with pool.acquire() as connection, connection.transaction():
+        hunt = await connection.fetchrow(
+            "select name, locked_at, locked_by from hunts where id=$1 for update", hunt_id
+        )
+        if hunt is None:
+            raise AdminHuntNotFound("Hunt not found")
+
+        changed = body.locked is not (hunt["locked_at"] is not None)
+        if changed:
+            await connection.execute(
+                "update hunts set locked_at=$2, locked_by=$3 where id=$1",
+                hunt_id,
+                datetime.now(UTC) if body.locked else None,
+                UUID(admin.id) if body.locked else None,
+            )
+            if body.locked:
+                await connection.execute(
+                    """
+                    update jobs
+                    set state='cancelled', finished_at=coalesce(finished_at, now()),
+                        locked_by=null, locked_at=null,
+                        error=coalesce(error, 'Cancelled because the Hunt was locked')
+                    where hunt_id=$1 and state in ('queued', 'running', 'waiting_user')
+                    """,
+                    hunt_id,
+                )
+            await audit.record(
+                "hunt.lock" if body.locked else "hunt.unlock",
+                target_type="hunt",
+                target_id=hunt_id,
+                target_label=hunt["name"],
+                hunt_id=hunt_id,
+                before={"locked": not body.locked},
+                after={"locked": body.locked},
+                conn=connection,
+            )
+
+    return await hunt_management(hunt_id, admin, pool)
 
 
 @router.get(

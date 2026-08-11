@@ -12,7 +12,7 @@ from uuid import UUID
 from fastapi import APIRouter, status
 
 from manzil_api.dependencies import CurrentUser, UserClient
-from manzil_api.hunts.dependencies import MemberHunt
+from manzil_api.hunts.dependencies import WritableMemberHunt
 from manzil_api.visits import service
 from manzil_api.visits.dependencies import ValidVisit
 from manzil_api.visits.schemas import (
@@ -43,7 +43,7 @@ router = APIRouter(tags=["visits"])
     status_code=status.HTTP_201_CREATED,
 )
 async def create_visit(
-    hunt: MemberHunt,
+    hunt: WritableMemberHunt,
     body: VisitCreate,
     user: CurrentUser,
     client: UserClient,

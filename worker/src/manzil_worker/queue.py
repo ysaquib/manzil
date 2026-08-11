@@ -62,7 +62,11 @@ from manzil_worker.enrich.images import SupabaseImageStore
 from manzil_worker.fetching.registry import InMemoryRegistry, PostgresRegistry
 from manzil_worker.fetching.tiers import Fetcher, site_domain
 from manzil_worker.llm.config import model_for_stage
-from manzil_worker.postgres_persistence import PostgresPersistence, make_tool_event_sink
+from manzil_worker.postgres_persistence import (
+    HuntExecutionFrozen,
+    PostgresPersistence,
+    make_tool_event_sink,
+)
 from manzil_worker.runner import (
     INGEST_STAGE_NAMES,
     INGEST_STAGES,
@@ -195,9 +199,12 @@ async def claim_next_job(conn: asyncpg.Connection, worker_id: str) -> asyncpg.Re
     return await conn.fetchrow(
         """
         with next_job as (
-            select id from jobs
-            where state = 'queued'
-            order by created_at
+            select j.id from jobs j
+            join hunts h on h.id = j.hunt_id
+            where j.state = 'queued'
+              and h.archived_at is null
+              and h.locked_at is null
+            order by j.created_at
             for update skip locked
             limit 1
         )
@@ -233,7 +240,7 @@ async def reclaim_orphans(conn: asyncpg.Connection) -> int:
     per tick. Returns the count of rows swept (re-queued + dead-lettered)."""
     result = await conn.execute(
         """
-        update jobs set
+        update jobs j set
             state = case when attempts >= $2 then 'failed' else 'queued' end::job_state,
             error = case when attempts >= $2
                 then 'dead-lettered: orphaned after ' || attempts::text || ' attempts'
@@ -241,7 +248,12 @@ async def reclaim_orphans(conn: asyncpg.Connection) -> int:
             finished_at = case when attempts >= $2 then now() else finished_at end,
             locked_by = null,
             locked_at = null
-        where state = 'running' and locked_at < now() - $1::interval
+        from hunts h
+        where h.id = j.hunt_id
+          and h.archived_at is null
+          and h.locked_at is null
+          and j.state = 'running'
+          and j.locked_at < now() - $1::interval
         """,
         JOB_ORPHAN_AFTER,
         MANZIL_JOB_MAX_ATTEMPTS,
@@ -258,6 +270,39 @@ async def _mark_failed(pool: asyncpg.Pool, job_id: UUID, error: str) -> None:
         job_id,
         error,
     )
+
+
+async def _cancel_if_hunt_became_read_only(pool: asyncpg.Pool, job_id: UUID) -> bool:
+    """Close the race for handlers that do not use ``PostgresPersistence``.
+
+    Pipeline Jobs stop in ``save`` at their next Stage boundary. Rescore and
+    other single-boundary dispatchers may write ``done`` themselves, so check
+    the Hunt immediately after they return. A Job completed before the
+    lifecycle transition remains done; one that completed after it is
+    cancelled, matching the lock/archive transaction's unfinished-Job rule.
+    """
+    result = await pool.execute(
+        """
+        update jobs j set
+            state='cancelled', finished_at=coalesce(j.finished_at, now()),
+            locked_by=null, locked_at=null,
+            error=coalesce(j.error, 'Cancelled because the Hunt became read-only')
+        from hunts h
+        where j.id=$1 and h.id=j.hunt_id
+          and (h.archived_at is not null or h.locked_at is not null)
+          and j.state <> 'cancelled'
+          and (
+              j.state <> 'done'
+              or j.finished_at is null
+              or j.finished_at >= least(
+                  coalesce(h.archived_at, 'infinity'::timestamptz),
+                  coalesce(h.locked_at, 'infinity'::timestamptz)
+              )
+          )
+        """,
+        job_id,
+    )
+    return result != "UPDATE 0"
 
 
 # ── rubric / state loading ───────────────────────────────────────────────────
@@ -3016,6 +3061,8 @@ async def run_worker_loop(
             async with pool.acquire() as conn:
                 await heartbeat(conn, job["id"])
             await handler(pool, job)
+            if await _cancel_if_hunt_became_read_only(pool, job["id"]):
+                log.info("job_stopped_read_only", job_id=str(job["id"]), reason="post-dispatch")
             if score_notifications_ready and await pool.fetchval(
                 "select state = 'done' from jobs where id=$1", job["id"]
             ):
@@ -3028,6 +3075,8 @@ async def run_worker_loop(
                         job_id=str(job["id"]),
                         error=str(error),
                     )
+        except HuntExecutionFrozen as frozen:
+            log.info("job_stopped_read_only", job_id=str(job["id"]), reason=str(frozen))
         except asyncio.CancelledError:
             raise  # shutdown/cancellation: leave the row locked for orphan reclaim
         except Exception as error:

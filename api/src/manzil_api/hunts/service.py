@@ -9,6 +9,7 @@ from uuid import UUID
 from manzil_api.hunts.exceptions import InvalidHuntSettings
 from manzil_api.hunts.schemas import (
     HuntCreate,
+    HuntDeletionImpact,
     HuntResponse,
     HuntSettingsPatch,
     HuntUpdate,
@@ -117,13 +118,7 @@ async def create_hunt(client: Client, user_id: str, body: HuntCreate) -> HuntRes
 
 
 async def list_hunts(client: Client, user_id: str) -> list[HuntResponse]:
-    response = (
-        client.table("hunts")
-        .select("*")
-        .is_("archived_at", "null")
-        .order("created_at", desc=True)
-        .execute()
-    )
+    response = client.table("hunts").select("*").order("created_at", desc=True).execute()
     return [_to_response(row) for row in response.data or []]
 
 
@@ -131,14 +126,39 @@ async def patch_hunt(client: Client, hunt_id: UUID, body: HuntUpdate) -> HuntRes
     updates: dict[str, Any] = {}
     if body.name is not None:
         updates["name"] = body.name
-    if body.archived is not None:
-        updates["archived_at"] = datetime.now(UTC).isoformat() if body.archived else None
     if updates:
         client.table("hunts").update(updates).eq("id", str(hunt_id)).execute()
+    if body.archived is not None:
+        client.rpc(
+            "set_hunt_archived",
+            {"p_hunt_id": str(hunt_id), "p_archived": body.archived},
+        ).execute()
     row = await get_hunt_row(client, hunt_id)
     if row is None:
         raise RuntimeError("hunt missing after patch")
     return _to_response(row)
+
+
+async def get_deletion_impact(client: Client, hunt_id: UUID) -> HuntDeletionImpact:
+    response = client.rpc("get_hunt_deletion_impact", {"p_hunt_id": str(hunt_id)}).execute()
+    if not response.data:
+        raise RuntimeError("hunt deletion impact returned no row")
+    return HuntDeletionImpact.model_validate(response.data)
+
+
+async def delete_hunt_permanently(
+    client: Client, hunt_id: UUID, confirmation_name: str
+) -> HuntDeletionImpact:
+    response = client.rpc(
+        "delete_hunt_permanently",
+        {
+            "p_hunt_id": str(hunt_id),
+            "p_confirmation_name": confirmation_name,
+        },
+    ).execute()
+    if not response.data:
+        raise RuntimeError("hunt permanent deletion returned no impact")
+    return HuntDeletionImpact.model_validate(response.data)
 
 
 async def put_shared_filters(
