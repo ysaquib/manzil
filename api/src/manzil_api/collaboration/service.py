@@ -222,7 +222,7 @@ async def leave_hunt(client: Client, hunt_id: UUID, user_id: str) -> None:
     """End the caller's own membership.
 
     Mirrors `hunt_members_self_leave_delete` (migration
-    `20260901000016_hunt_member_self_leave.sql`), which is the boundary; this
+    `20260901000018_hunt_member_self_leave.sql`), which is the boundary; this
     exists to turn the policy's silent no-op into an answer that says which of
     the two rules was hit and what to do instead.
     """
