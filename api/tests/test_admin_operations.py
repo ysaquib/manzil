@@ -181,7 +181,10 @@ async def test_costs_report_splits_the_two_channels_three_ways(
 
     before = (await as_admin.get("/v1/admin/costs?days=30")).json()
 
-    job_id = await _job(db_pool, collab_hunt, "done")
+    # The Job billed more than its Stage rows account for — the ordinary shape
+    # of a Job that retried a Stage, since `job_stage_costs` keeps only the
+    # latest attempt while `cost_actual_usd` accumulates (DESIGN §20 v3.80).
+    job_id = await _job(db_pool, collab_hunt, "done", cost=0.0500)
     await db_pool.execute(
         "insert into job_stage_costs (job_id, stage, llm_cost_usd, llm_calls, "
         "fetch_cost_usd, fetch_calls, fetch_calls_by_provider) "
@@ -197,8 +200,15 @@ async def test_costs_report_splits_the_two_channels_three_ways(
 
         stage_delta = find(after, "by_stage", "EXTRACT") - find(before, "by_stage", "EXTRACT")
         hunt_delta = find(after, "by_hunt", "Collab Hunt") - find(before, "by_hunt", "Collab Hunt")
-        assert stage_delta == pytest.approx(0.043)
-        assert hunt_delta == pytest.approx(0.043)
+        assert stage_delta == pytest.approx(0.043)  # per Stage: the latest attempt
+        assert hunt_delta == pytest.approx(0.050)  # per Hunt: what the Job billed
+
+        # The window total is the billed one too, and the shortfall is named
+        # rather than dropped — the Hunt's bucket still carries the split.
+        assert after["total_cost_usd"] - before["total_cost_usd"] == pytest.approx(0.050)
+        hunt_bucket = next(b for b in after["by_hunt"] if b["label"] == "Collab Hunt")
+        assert hunt_bucket["unattributed_cost_usd"] >= pytest.approx(0.007)
+        assert hunt_bucket["llm_cost_usd"] > 0 and hunt_bucket["fetch_cost_usd"] > 0
 
         # By model is derived from the current pin, and the response says so
         # rather than letting a reader mistake it for history.
@@ -210,6 +220,70 @@ async def test_costs_report_splits_the_two_channels_three_ways(
         assert any(point["fetch_cost_usd"] > 0 for point in after["daily"])
     finally:
         await db_pool.execute("delete from job_stage_costs where job_id = $1", job_id)
+        await db_pool.execute("delete from jobs where id = $1", job_id)
+
+
+async def test_a_hunts_admin_total_matches_what_its_jobs_billed(
+    as_admin: AsyncClient, db_pool, collab_hunt
+) -> None:
+    """The reported bug: Admin priced a Hunt from `job_stage_costs` while the
+    Tasks tab summed `jobs.cost_actual_usd`, so every Job that retried a Stage
+    made the two screens disagree. Both now read the same accumulator."""
+
+    def hunt_row(page: dict) -> dict:
+        return next(row for row in page["items"] if row["name"] == "Collab Hunt")
+
+    before = hunt_row((await as_admin.get("/v1/admin/hunts?search=Collab Hunt")).json())
+
+    job_id = await _job(db_pool, collab_hunt, "done", cost=0.0500)
+    await db_pool.execute(
+        "insert into job_stage_costs (job_id, stage, llm_cost_usd, llm_calls, "
+        "fetch_cost_usd, fetch_calls, fetch_calls_by_provider) "
+        "values ($1, 'EXTRACT', 0.0400, 2, 0.0030, 2, '{\"brightdata\": 2}'::jsonb)",
+        job_id,
+    )
+    try:
+        after = hunt_row((await as_admin.get("/v1/admin/hunts?search=Collab Hunt")).json())
+
+        assert after["total_cost_usd"] - before["total_cost_usd"] == pytest.approx(0.050)
+        # The split is still the Stage breakdown, and the gap is stated.
+        assert after["llm_cost_usd"] - before["llm_cost_usd"] == pytest.approx(0.040)
+        assert after["fetch_cost_usd"] - before["fetch_cost_usd"] == pytest.approx(0.003)
+        assert after["unattributed_cost_usd"] >= pytest.approx(0.007)
+
+        # A second Job must add its whole bill once, not once per Stage row —
+        # the fan-out the two-CTE shape exists to prevent.
+        second = await _job(db_pool, collab_hunt, "done", cost=0.0100)
+        await db_pool.execute(
+            "insert into job_stage_costs (job_id, stage, llm_cost_usd, llm_calls, "
+            "fetch_cost_usd, fetch_calls, fetch_calls_by_provider) values "
+            "($1, 'VERIFY', 0.0020, 1, 0, 0, '{}'::jsonb), "
+            "($1, 'SCORE', 0.0010, 1, 0, 0, '{}'::jsonb)",
+            second,
+        )
+        try:
+            both = hunt_row((await as_admin.get("/v1/admin/hunts?search=Collab Hunt")).json())
+            assert both["total_cost_usd"] - before["total_cost_usd"] == pytest.approx(0.060)
+        finally:
+            await db_pool.execute("delete from job_stage_costs where job_id = $1", second)
+            await db_pool.execute("delete from jobs where id = $1", second)
+    finally:
+        await db_pool.execute("delete from job_stage_costs where job_id = $1", job_id)
+        await db_pool.execute("delete from jobs where id = $1", job_id)
+
+
+async def test_the_overview_counts_spend_a_running_job_has_already_made(
+    as_admin: AsyncClient, db_pool, collab_hunt
+) -> None:
+    """`spend_usd_30d` dated Jobs by `finished_at`, so a Job still running — or
+    parked at a checkpoint — contributed nothing however much it had spent."""
+    before = (await as_admin.get("/v1/admin/summary")).json()["spend_usd_30d"]
+
+    job_id = await _job(db_pool, collab_hunt, "running", cost=0.0250)
+    try:
+        after = (await as_admin.get("/v1/admin/summary")).json()["spend_usd_30d"]
+        assert after - before == pytest.approx(0.025)
+    finally:
         await db_pool.execute("delete from jobs where id = $1", job_id)
 
 

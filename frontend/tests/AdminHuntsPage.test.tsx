@@ -30,7 +30,10 @@ function hunt(id: string, name: string) {
     jobs: 9,
     llm_cost_usd: 1.5,
     fetch_cost_usd: 0.25,
-    total_cost_usd: 1.75,
+    // Deliberately more than llm + fetch: the Hunt's Jobs billed $2.00, and the
+    // $0.25 the per-Stage breakdown cannot account for is a re-run Stage.
+    total_cost_usd: 2.0,
+    unattributed_cost_usd: 0.25,
     created_at: "2026-07-01T00:00:00Z",
     last_activity_at: null,
     archived_at: null,
