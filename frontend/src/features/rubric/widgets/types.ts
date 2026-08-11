@@ -6,6 +6,7 @@ import type { UnitFormat } from "../../../lib/criterionUnits";
 
 export interface ValueSchema {
   type: "integer" | "number" | "boolean" | "string" | "array";
+  format?: "date";
   minimum?: number;
   maximum?: number;
   enum?: (string | number)[];

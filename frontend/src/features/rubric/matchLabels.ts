@@ -59,6 +59,7 @@ export const OP_LABEL_WORD: Record<MatchOp, string> = {
 export function opsForSchema(schema: ValueSchema): MatchOp[] {
   if (schema.type === "array") return ["contains_any", "contains_all"];
   if (schema.type === "boolean") return ["bool"];
+  if (schema.type === "string" && schema.format === "date") return ["lt", "gt", "range"];
   if (schema.enum) return ["eq", "in"];
   return ["lt", "lte", "eq", "gte", "gt", "range"];
 }
@@ -74,6 +75,13 @@ function formatScalar(value: unknown, unit?: UnitFormat): string {
 /** Human-readable match label for rubric view cards. See file-header conventions. */
 export function formatMatchLabel(match: OptionMatch, criterionKey?: string | null): string {
   const unit = criterionUnit(criterionKey);
+  if (criterionKey === "availability_date") {
+    if (match.op === "lt") return `before ${formatScalar(match.value)}`;
+    if (match.op === "gt") return `after ${formatScalar(match.value)}`;
+    if (match.op === "range" && Array.isArray(match.value)) {
+      return `between ${formatScalar(match.value[0])} and ${formatScalar(match.value[1])}`;
+    }
+  }
   switch (match.op) {
     case "eq":
       return formatScalar(match.value, unit);
