@@ -47,6 +47,7 @@ import {
 } from "../../components/badges/ListingBadges";
 import type { RefreshClass } from "./types";
 import { useGhostMode } from "../admin/useGhostMode";
+import { useHuntAccess } from "../hunts/access";
 
 import classes from "./OverviewRowList.module.css";
 
@@ -80,8 +81,9 @@ function ExpandedDetail({
   const { isGhost } = useGhostMode(huntId);
   const patchState = usePatchUnitGroupState(huntId);
   const compare = useCompareSet(huntId);
+  const access = useHuntAccess(huntId);
   const entry = rowEntry(row);
-  const canCurate = isGhost === true || currentMember?.role === "owner" || currentMember?.role === "curator";
+  const canCurate = access.canMutate && (isGhost === true || currentMember?.role === "owner" || currentMember?.role === "curator");
   const visited = row.state?.visited ?? false;
   const listingUrl = row.listing.property.official_url ?? row.listing.property.sources[0]?.url ?? null;
 
@@ -161,12 +163,12 @@ function ExpandedDetail({
           variant="default"
           size="xs"
           leftSection={<IconArrowsLeftRight size={14} stroke={1.5} />}
-          disabled={entry === null || (compare.isFull && !compare.has(entry))}
+          disabled={!access.canMutate || entry === null || (compare.isFull && !compare.has(entry))}
           onClick={() => entry && compare.toggle(entry)}
         >
           {entry && compare.has(entry) ? "Remove" : "Compare"}
         </Button>
-        {onArchive && (
+        {onArchive && access.canMutate && (
           <Button
             variant="default"
             size="xs"

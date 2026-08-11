@@ -48,6 +48,7 @@ import {
 import { TableDensityMenu, type TableDensity } from "./OverviewTable";
 import { PropertyImageCarousel } from "./PropertyImageCarousel";
 import { ScoreCell } from "./ScoreCell";
+import { useHuntAccess } from "../hunts/access";
 
 import classes from "./ComparePage.module.css";
 
@@ -143,6 +144,7 @@ export function ComparePage() {
   const { data: listings, isLoading, error } = useListings(huntId);
   const { data: unitGroupStates = [] } = useUnitGroupStates(huntId);
   const { data: catalog = [] } = useResolvedCatalog(huntId);
+  const access = useHuntAccess(huntId);
   const [density, setDensity] = useLocalStorage<TableDensity>({
     key: "manzil:compare-density",
     defaultValue: "normal",
@@ -162,11 +164,11 @@ export function ComparePage() {
   // Prune entries whose listing/group vanished — but only from loaded data,
   // never while the query is still empty.
   useEffect(() => {
-    if (!listings) return;
+    if (!listings || !access.canMutate) return;
     compare.prune(new Set(rowByKey.keys()));
     // Deliberately narrow deps: rowByKey derives from exactly these inputs,
     // and compare.prune already no-ops when nothing changed.
-  }, [listings, unitGroupStates]);
+  }, [listings, unitGroupStates, access.canMutate]);
 
   const labelByKey = labelByKeyFromCatalog(catalog);
 
@@ -220,6 +222,7 @@ export function ComparePage() {
               size="xs"
               leftSection={<IconTrash size={14} stroke={1.5} />}
               onClick={compare.clear}
+              disabled={!access.canMutate}
             >
               Clear compare
             </Button>
@@ -243,8 +246,9 @@ export function ComparePage() {
           <Stack align="center" gap="sm">
             <IconArrowsLeftRight size={32} stroke={1.5} color="var(--mantine-color-dimmed)" />
             <Text ta="center" c="dimmed">
-              Send unit groups here with “Send to Compare” in an Overview row's ⋯ menu —
-              up to 3 at a time.
+              {access.canMutate
+                ? "Send unit groups here with “Send to Compare” in an Overview row's ⋯ menu — up to 3 at a time."
+                : "This read-only Hunt has no saved comparison set in this browser."}
             </Text>
             <Button component={Link} to={`/h/${huntId}`} variant="light" size="xs">
               Back to Overview

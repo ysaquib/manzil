@@ -32,6 +32,7 @@ import { OverviewRowList } from "./OverviewRowList";
 import { resolveSettings } from "../../lib/contracts";
 import { sentenceCase } from "../../lib/text";
 import { useHunt } from "../hunts/api";
+import { useHuntAccess } from "../hunts/access";
 import { isDemo } from "../../lib/demo";
 import { useGhostMode } from "../admin/useGhostMode";
 import { useCurrentMember } from "../collaboration/api";
@@ -87,7 +88,8 @@ export function OverviewPage() {
   const compare = useCompareSet(huntId);
   const { isGhost } = useGhostMode(huntId);
   const { data: currentMember } = useCurrentMember(huntId);
-  const canManageListings = isGhost === true || currentMember?.role === "owner";
+  const access = useHuntAccess(huntId);
+  const canManageListings = access.canMutate && (isGhost === true || currentMember?.role === "owner");
 
   const [sort, setSort] = useState<SortState>({ key: "score", dir: "desc" });
   const [view, setView] = useState<"active" | "archived">("active");
@@ -103,7 +105,7 @@ export function OverviewPage() {
     publish: onPublish,
     publishPending,
   } = useOverviewFilters();
-  const canCurate = canPublish;
+  const canCurate = access.canMutate && canPublish;
   // View preferences, not hunt data — persist per browser.
   const [density, setDensity] = useLocalStorage<TableDensity>({
     key: "manzil:overview-density",
@@ -271,7 +273,7 @@ export function OverviewPage() {
     <Stack gap="lg">
       <PageHeader title="Overview" description="All unit groups in this hunt" />
 
-      {hunt && (
+      {hunt && access.canMutate && (
         <SubmitUrlControl
           huntId={huntId}
           defaultPolicy={resolveSettings(hunt.settings).default_source_policy}
@@ -292,7 +294,7 @@ export function OverviewPage() {
               totalCount={allRows.length}
               manualPinAlternateMatchCount={filterResult.manualPinAlternateMatchCount}
               sharedFilters={sharedFilters}
-              canPublish={canPublish}
+              canPublish={access.canMutate && canPublish}
               onPublish={onPublish}
               publishPending={publishPending}
             />
@@ -391,6 +393,7 @@ export function OverviewPage() {
               size="xs"
               leftSection={<IconArrowsLeftRight size={14} stroke={1.5} />}
               onClick={bulkSendToCompare}
+              disabled={!access.canMutate}
             >
               Send to Compare
             </Button>

@@ -41,6 +41,7 @@ import { useCurrentMember, useHuntContributors } from "../collaboration/api";
 import { contributorDisplayName } from "../collaboration/memberDisplay";
 import { useDeleteVisit, usePatchVisit, useVisit, useVisitTemplate } from "./api";
 import { useGhostMode } from "../admin/useGhostMode";
+import { useHuntAccess } from "../hunts/access";
 import { VisitChecklist } from "./VisitChecklist";
 import { VisitConfirmDialog } from "./VisitConfirmDialog";
 import { VisitDefects } from "./VisitDefects";
@@ -68,6 +69,7 @@ export function VisitDetailPage() {
   // authoritative for this page, and calling it only once a Visit arrives
   // changes this component's hook order when the query resolves.
   const { isGhost } = useGhostMode(huntId);
+  const access = useHuntAccess(huntId);
 
   if (visitQuery.isLoading) {
     return (
@@ -108,14 +110,15 @@ export function VisitDetailPage() {
   // identically was telling you the opposite of the truth about both.
   const mode: VisitEditMode =
     state === "cancelled" ? "void" : state === "completed" ? "record" : "live";
-  const readOnly = mode !== "live" || isGhost === true;
+  const readOnly = mode !== "live" || isGhost === true || !access.canMutate;
   const sections = groupIntoSections(templateQuery.data ?? []);
   const lockedSections = sections.filter((section) => section.key !== "prep");
 
   // Cancel and delete narrow to the creator or the Owner (DESIGN §4.2); the API
   // and a database trigger both enforce it, so this only shapes the UI.
   const mayCancel =
-    visit.created_by === session?.user.id || currentMember.data?.role === "owner";
+    access.canMutate &&
+    (visit.created_by === session?.user.id || currentMember.data?.role === "owner");
 
   const creatorName = contributorDisplayName(
     contributorsQuery.data?.find(
@@ -235,6 +238,7 @@ export function VisitDetailPage() {
         visit={visit}
         mode={mode}
         restrictTo={hasStarted ? undefined : ["prep"]}
+        readOnly={readOnly}
       />
 
       {hasStarted && (
@@ -287,7 +291,7 @@ export function VisitDetailPage() {
       )}
 
       {/* Lifecycle action. Any member may start or end (DESIGN §4.2). */}
-      {state === "planned" && (
+      {state === "planned" && access.canMutate && (
         <Card
           withBorder
           style={{ borderColor: "var(--mantine-color-primary-outline)" }}
@@ -325,7 +329,7 @@ export function VisitDetailPage() {
         </Card>
       )}
 
-      {state === "in_progress" && (
+      {state === "in_progress" && access.canMutate && (
         <Card>
           <Group justify="space-between" wrap="wrap" gap="sm">
             <Text size="sm" c="dimmed">
@@ -343,7 +347,7 @@ export function VisitDetailPage() {
         </Card>
       )}
 
-      {state === "completed" && (
+      {state === "completed" && access.canMutate && (
         <Card>
           <Group justify="space-between" wrap="wrap" gap="sm">
             <Text size="sm" c="dimmed">

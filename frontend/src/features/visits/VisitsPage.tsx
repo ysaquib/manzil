@@ -29,6 +29,7 @@ import { VisitStatePill } from "./VisitStatePill";
 import { VisitUnitChips } from "./VisitUnitChips";
 import { countByState, filterByState, visitState } from "./visitState";
 import classes from "./VisitsPage.module.css";
+import { useHuntAccess } from "../hunts/access";
 
 type Filter = VisitState | "all";
 
@@ -93,6 +94,7 @@ export function VisitsPage() {
   const [filter, setFilter] = useState<Filter>("all");
   const visitsQuery = useVisits(huntId);
   const contributorsQuery = useHuntContributors(huntId);
+  const access = useHuntAccess(huntId);
 
   const visits = visitsQuery.data ?? [];
   const counts = useMemo(() => countByState(visits), [visits]);
@@ -108,7 +110,7 @@ export function VisitsPage() {
       <PageHeader
         title="Visits"
         description="Every tour of this hunt's properties — planned, in progress and done."
-        rightSlot={
+        rightSlot={access.canMutate ? (
           <Button
             component={Link}
             to={`/h/${huntId}/visits/new`}
@@ -116,7 +118,7 @@ export function VisitsPage() {
           >
             New visit
           </Button>
-        }
+        ) : undefined}
       />
 
       {visitsQuery.isError && (
@@ -161,7 +163,7 @@ export function VisitsPage() {
                 Set one up before you tour, and the checklist is ready on your phone when you
                 get there — with the prep questions answered on the couch.
               </Text>
-              <Button
+              {access.canMutate && <Button
                 component={Link}
                 to={`/h/${huntId}/visits/new`}
                 variant="light"
@@ -169,7 +171,7 @@ export function VisitsPage() {
                 leftSection={<IconPlus size={16} />}
               >
                 Plan your first visit
-              </Button>
+              </Button>}
             </Stack>
           </Center>
         </Card>

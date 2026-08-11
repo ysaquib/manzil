@@ -1,4 +1,5 @@
 import { screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -20,6 +21,8 @@ const HUNTS = [
     name: "Detroit apartments",
     rubric_version: 3,
     created_at: "2026-07-08T00:00:00Z",
+    archived_at: null,
+    locked_at: null,
   },
 ];
 
@@ -58,5 +61,34 @@ describe("HuntSwitcherPage", () => {
     expect(hunt).toBeInTheDocument();
     expect(hunt).toHaveTextContent("Created Wednesday, 08 July, 2026");
     expect(hunt).not.toHaveTextContent(/rubric v/i);
+  });
+
+  it("keeps archived Hunts behind one subtle reveal", async () => {
+    const user = userEvent.setup();
+    useHunts.mockReturnValue({
+      data: [
+        ...HUNTS,
+        {
+          ...HUNTS[0],
+          id: "archived-1",
+          name: "Last year's search",
+          archived_at: "2026-08-01T00:00:00Z",
+        },
+      ],
+      isLoading: false,
+      error: null,
+    });
+    renderPage();
+
+    expect(screen.queryByRole("link", { name: /last year's search/i })).not.toBeInTheDocument();
+    const reveal = screen.getByRole("button", { name: /show archived \(1\)/i });
+    expect(reveal).toHaveAttribute("aria-expanded", "false");
+    await user.click(reveal);
+
+    expect(screen.getByRole("link", { name: /last year's search/i })).toHaveAttribute(
+      "href",
+      "/h/archived-1",
+    );
+    expect(reveal).toHaveAttribute("aria-expanded", "true");
   });
 });

@@ -20,6 +20,10 @@ vi.mock("../src/features/rubric/RubricView", () => ({
   RubricView: () => <div>Rubric view</div>,
 }));
 
+vi.mock("../src/features/hunts/access", () => ({
+  useHuntAccess: () => ({ canMutate: true }),
+}));
+
 import { RubricPage } from "../src/features/rubric/RubricPage";
 
 let mockSaved: { enabled: boolean }[] = [];

@@ -8,8 +8,9 @@ import {
   Stack,
   Text,
   TextInput,
+  UnstyledButton,
 } from "@mantine/core";
-import { IconChevronRight, IconShieldLock } from "@tabler/icons-react";
+import { IconArchive, IconChevronDown, IconChevronRight, IconLock, IconShieldLock } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import { useState } from "react";
 import { Link } from "react-router-dom";
@@ -38,6 +39,9 @@ export function HuntSwitcherPage() {
   const admin = useAdminIdentity();
   const createHunt = useCreateHunt();
   const [name, setName] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
+  const activeHunts = (hunts ?? []).filter((hunt) => !hunt.archived_at);
+  const archivedHunts = (hunts ?? []).filter((hunt) => Boolean(hunt.archived_at));
 
   const create = () =>
     createHunt.mutate(
@@ -53,7 +57,7 @@ export function HuntSwitcherPage() {
       },
     );
 
-  const empty = !isLoading && !error && (hunts ?? []).length === 0;
+  const empty = !isLoading && !error && activeHunts.length === 0 && archivedHunts.length === 0;
 
   return (
     <PublicPageShell rightSlot={<UserMenu />}>
@@ -96,13 +100,18 @@ export function HuntSwitcherPage() {
             />
           )}
 
-          {(hunts ?? []).map((hunt) => (
+          {activeHunts.map((hunt) => (
             <NavLink
               key={hunt.id}
               component={Link}
               to={`/h/${hunt.id}`}
               label={hunt.name}
-              description={`Created ${huntCreatedDate(hunt.created_at)}`}
+              description={
+                hunt.locked_at
+                  ? `Locked · Created ${huntCreatedDate(hunt.created_at)}`
+                  : `Created ${huntCreatedDate(hunt.created_at)}`
+              }
+              leftSection={hunt.locked_at ? <IconLock size={17} stroke={1.5} /> : undefined}
               p="sm"
               style={{
                 border: "1px solid var(--mantine-color-default-border)",
@@ -111,6 +120,48 @@ export function HuntSwitcherPage() {
               rightSection={<IconChevronRight size={16} stroke={1.5} color="var(--mantine-color-dimmed)" />}
             />
           ))}
+
+          {archivedHunts.length > 0 && (
+            <UnstyledButton
+              onClick={() => setShowArchived((value) => !value)}
+              aria-expanded={showArchived}
+              c="dimmed"
+              px="xs"
+              py={6}
+              style={{ alignSelf: "flex-start", borderRadius: "var(--mantine-radius-sm)" }}
+            >
+              <Group gap={6} wrap="nowrap">
+                <IconArchive size={15} stroke={1.5} />
+                <Text size="xs" fw={500}>
+                  {showArchived ? "Hide" : "Show"} archived ({archivedHunts.length})
+                </Text>
+                <IconChevronDown
+                  size={13}
+                  stroke={1.5}
+                  style={{ transform: showArchived ? "rotate(180deg)" : undefined }}
+                />
+              </Group>
+            </UnstyledButton>
+          )}
+
+          {showArchived &&
+            archivedHunts.map((hunt) => (
+              <NavLink
+                key={hunt.id}
+                component={Link}
+                to={`/h/${hunt.id}`}
+                label={hunt.name}
+                description={`Archived · Created ${huntCreatedDate(hunt.created_at)}`}
+                leftSection={<IconArchive size={17} stroke={1.5} />}
+                p="sm"
+                style={{
+                  border: "1px solid var(--mantine-color-default-border)",
+                  borderRadius: "var(--mantine-radius-md)",
+                  opacity: 0.82,
+                }}
+                rightSection={<IconChevronRight size={16} stroke={1.5} color="var(--mantine-color-dimmed)" />}
+              />
+            ))}
         </Stack>
 
         <Group align="flex-end" gap="sm">

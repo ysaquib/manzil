@@ -21,6 +21,8 @@ export interface Hunt {
   rubric_version: number;
   settings: Record<string, unknown>;
   archived_at: string | null;
+  locked_at: string | null;
+  locked_by: string | null;
   created_at: string;
 }
 
@@ -40,12 +42,43 @@ export function useHunts() {
         .from("hunts")
         .select("*, hunt_members!inner(user_id)")
         .eq("hunt_members.user_id", userId)
-        .is("archived_at", null)
         .order("created_at", { ascending: false });
       if (error) throw error;
       return (data ?? []) as Hunt[];
     },
     enabled: Boolean(userId),
+  });
+}
+
+export interface HuntDeletionImpact {
+  hunt_id: string;
+  name: string;
+  members: number;
+  listings: number;
+  jobs: number;
+  visits: number;
+}
+
+export function useHuntDeletionImpact(huntId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["hunts", huntId, "deletion-impact"],
+    queryFn: () => apiFetch<HuntDeletionImpact>(`/v1/hunts/${huntId}/deletion-impact`),
+    enabled,
+  });
+}
+
+export function useDeleteHuntPermanently(huntId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (confirmationName: string) =>
+      apiFetch<HuntDeletionImpact>(`/v1/hunts/${huntId}`, {
+        method: "DELETE",
+        body: { confirmation_name: confirmationName },
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["hunts"] });
+      void qc.removeQueries({ queryKey: ["hunts", huntId] });
+    },
   });
 }
 
@@ -57,6 +90,7 @@ export function useHunt(huntId: string) {
       if (error) throw error;
       return data as Hunt;
     },
+    enabled: Boolean(huntId),
   });
 }
 

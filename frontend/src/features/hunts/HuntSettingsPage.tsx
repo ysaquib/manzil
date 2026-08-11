@@ -26,7 +26,7 @@ import {
   TextInput,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconHome, IconUserCircle } from "@tabler/icons-react";
+import { IconArchive, IconHome, IconLock, IconTrash, IconUserCircle } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -52,8 +52,16 @@ import { InvitesSection } from "../invites/InvitesSection";
 import { InvitationLinksSection } from "../invites/InvitationLinksSection";
 import { ApiError } from "../../lib/apiClient";
 import { resolveSettings, SOURCE_POLICIES, type HuntSettings } from "../../lib/contracts";
-import { useHunt, usePatchHunt, usePatchHuntSettings, type Hunt } from "./api";
+import {
+  useDeleteHuntPermanently,
+  useHunt,
+  useHuntDeletionImpact,
+  usePatchHunt,
+  usePatchHuntSettings,
+  type Hunt,
+} from "./api";
 import { useGhostMode } from "../admin/useGhostMode";
+import { useHuntAccess } from "./access";
 import {
   NOTIFICATION_EVENTS,
   NOTIFICATION_LABELS,
@@ -157,6 +165,15 @@ function HuntPanel({ hunt, isOwner, isGhost }: { hunt: Hunt; isOwner: boolean; i
       {
         onSuccess: () => navigate("/"),
         onError: notifyError("Couldn't archive hunt"),
+      },
+    );
+
+  const restore = () =>
+    patchHunt.mutate(
+      { archived: false },
+      {
+        onSuccess: () => notifications.show({ message: "Hunt restored", color: "green" }),
+        onError: notifyError("Couldn't restore hunt"),
       },
     );
 
@@ -365,12 +382,27 @@ function HuntPanel({ hunt, isOwner, isGhost }: { hunt: Hunt; isOwner: boolean; i
               </Group>
             </Stack>
           )}
-          <Text size="xs" c="dimmed">
-            Hides this hunt from the switcher; nothing is deleted.
-          </Text>
-          <Button variant="light" color="red" onClick={() => setConfirmArchive(true)}>
-            Archive hunt…
-          </Button>
+          {isOwner && (
+            hunt.archived_at ? (
+              <>
+                <Text size="xs" c="dimmed">
+                  Restoring makes this Hunt writable for its members again.
+                </Text>
+                <Button variant="light" onClick={restore} loading={patchHunt.isPending}>
+                  Restore hunt
+                </Button>
+              </>
+            ) : (
+              <>
+                <Text size="xs" c="dimmed">
+                  Preserves this Hunt as read-only and moves it under Archived hunts.
+                </Text>
+                <Button variant="light" color="red" onClick={() => setConfirmArchive(true)}>
+                  Archive hunt…
+                </Button>
+              </>
+            )
+          )}
         </Stack>
       </SectionCard>
 
@@ -431,6 +463,98 @@ function HuntPanel({ hunt, isOwner, isGhost }: { hunt: Hunt; isOwner: boolean; i
         </Stack>
       </Modal>
     </>
+  );
+}
+
+function ArchivedOwnerPanel({ hunt }: { hunt: Hunt }) {
+  const navigate = useNavigate();
+  const patchHunt = usePatchHunt(hunt.id);
+  const [deleteOpened, setDeleteOpened] = useState(false);
+  const [confirmation, setConfirmation] = useState("");
+  const impact = useHuntDeletionImpact(hunt.id, deleteOpened);
+  const deleteHunt = useDeleteHuntPermanently(hunt.id);
+
+  const restore = () =>
+    patchHunt.mutate(
+      { archived: false },
+      {
+        onSuccess: () => notifications.show({ message: "Hunt restored", color: "green" }),
+        onError: notifyError("Couldn't restore hunt"),
+      },
+    );
+
+  const permanentlyDelete = () =>
+    deleteHunt.mutate(confirmation, {
+      onSuccess: () => navigate("/"),
+      onError: notifyError("Couldn't delete hunt"),
+    });
+
+  return (
+    <Stack gap="lg">
+      <Alert icon={<IconArchive size={18} />} color="gray" title="Archived and read-only">
+        Listings, Rubric, Visits, Tasks, profiles, and Compare are preserved but cannot be changed.
+      </Alert>
+      <SectionCard title="Restore Hunt">
+        <Stack align="flex-start" gap="sm">
+          <Text size="sm" c="dimmed">
+            Restore this Hunt to let its members submit Listings and make changes again.
+          </Text>
+          <Button onClick={restore} loading={patchHunt.isPending}>
+            Restore hunt
+          </Button>
+        </Stack>
+      </SectionCard>
+      <SectionCard title="Permanently delete" hint="Cannot be undone">
+        <Stack align="flex-start" gap="sm">
+          <Text size="sm" c="dimmed">
+            Deletes this Hunt and all of its Hunt-scoped Listings, Jobs, Visits, comments, and scores.
+          </Text>
+          <Button
+            color="red"
+            variant="light"
+            leftSection={<IconTrash size={16} />}
+            onClick={() => setDeleteOpened(true)}
+          >
+            Delete permanently…
+          </Button>
+        </Stack>
+      </SectionCard>
+
+      <Modal
+        opened={deleteOpened}
+        onClose={() => setDeleteOpened(false)}
+        title="Permanently delete Hunt?"
+      >
+        <Stack>
+          <Alert color="red" title="This cannot be undone">
+            {impact.data
+              ? `This removes ${impact.data.listings} Listings, ${impact.data.jobs} Jobs, ${impact.data.visits} Visits, and access for ${impact.data.members} members.`
+              : impact.isLoading
+                ? "Calculating what will be removed…"
+                : "All Hunt-scoped data will be removed."}
+          </Alert>
+          <TextInput
+            label={`Type “${hunt.name}” to confirm`}
+            value={confirmation}
+            onChange={(event) => setConfirmation(event.currentTarget.value)}
+            autoComplete="off"
+          />
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setDeleteOpened(false)}>
+              Cancel
+            </Button>
+            <Button
+              color="red"
+              disabled={confirmation !== hunt.name || impact.isLoading}
+              loading={deleteHunt.isPending}
+              onClick={permanentlyDelete}
+            >
+              Delete permanently
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+    </Stack>
   );
 }
 
@@ -632,8 +756,12 @@ export function HuntSettingsPage() {
   const { data: hunt, isLoading, error } = useHunt(huntId);
   const { data: members = [] } = useMembers(huntId);
   const { isGhost } = useGhostMode(huntId);
+  const access = useHuntAccess(huntId);
 
-  const visibleTabs = isGhost === true ? TABS.filter((candidate) => candidate.value !== "profile") : TABS;
+  const visibleTabs =
+    isGhost === true || access.readOnlyReason
+      ? TABS.filter((candidate) => candidate.value !== "profile")
+      : TABS;
   const active = visibleTabs.some((candidate) => candidate.value === tab) ? tab! : "hunt";
   const isOwner = isGhost === true || hunt?.owner_id === (session?.user.id ?? "");
 
@@ -658,17 +786,32 @@ export function HuntSettingsPage() {
         </Alert>
       )}
       {hunt && (
-        <SettingsShell
-          tabs={visibleTabs}
-          active={active}
-          onSelect={(value) => navigate(`/h/${huntId}/settings/${value}`)}
-        >
-          {active === "hunt" ? (
-            <HuntPanel hunt={hunt} isOwner={isOwner} isGhost={isGhost === true} />
+        access.locked ? (
+          <Alert icon={<IconLock size={18} />} color="orange" title="This Hunt is locked">
+            Settings are view-only. A Site Admin must unlock the Hunt before anyone can change,
+            archive, restore, transfer, or delete it.
+          </Alert>
+        ) : access.archived && !access.adminArchivedOverride ? (
+          access.isOwner ? (
+            <ArchivedOwnerPanel hunt={hunt} />
           ) : (
-            <YourProfilePanel hunt={hunt} />
-          )}
-        </SettingsShell>
+            <Alert icon={<IconArchive size={18} />} color="gray" title="Archived Hunt">
+              This Hunt is read-only. Only its Owner can restore or permanently delete it.
+            </Alert>
+          )
+        ) : (
+          <SettingsShell
+            tabs={visibleTabs}
+            active={active}
+            onSelect={(value) => navigate(`/h/${huntId}/settings/${value}`)}
+          >
+            {active === "hunt" ? (
+              <HuntPanel hunt={hunt} isOwner={isOwner} isGhost={isGhost === true} />
+            ) : (
+              <YourProfilePanel hunt={hunt} />
+            )}
+          </SettingsShell>
+        )
       )}
     </Stack>
   );

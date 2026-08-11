@@ -118,11 +118,29 @@ export interface paths {
         get: operations["get_hunt_v1_hunts__hunt_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete Hunt Permanently */
+        delete: operations["delete_hunt_permanently_v1_hunts__hunt_id__delete"];
         options?: never;
         head?: never;
         /** Patch Hunt */
         patch: operations["patch_hunt_v1_hunts__hunt_id__patch"];
+        trace?: never;
+    };
+    "/v1/hunts/{hunt_id}/deletion-impact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Hunt Deletion Impact */
+        get: operations["get_hunt_deletion_impact_v1_hunts__hunt_id__deletion_impact_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/hunts/{hunt_id}/shared-filters": {
@@ -1176,6 +1194,23 @@ export interface paths {
         post?: never;
         /** Permanently delete a Hunt and its Hunt-scoped data */
         delete: operations["delete_admin_hunt_v1_admin_hunts__hunt_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/hunts/{hunt_id}/lock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Lock or unlock a Hunt */
+        put: operations["set_hunt_lock_v1_admin_hunts__hunt_id__lock_put"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2770,6 +2805,29 @@ export interface components {
             /** Visits */
             visits: number;
         };
+        /** HuntDeletionImpact */
+        HuntDeletionImpact: {
+            /**
+             * Hunt Id
+             * Format: uuid
+             */
+            hunt_id: string;
+            /** Name */
+            name: string;
+            /** Members */
+            members: number;
+            /** Listings */
+            listings: number;
+            /** Jobs */
+            jobs: number;
+            /** Visits */
+            visits: number;
+        };
+        /** HuntLockUpdate */
+        HuntLockUpdate: {
+            /** Locked */
+            locked: boolean;
+        };
         /** HuntManagement */
         HuntManagement: {
             /**
@@ -2788,6 +2846,12 @@ export interface components {
             owner_name: string;
             /** Caller Is Member */
             caller_is_member: boolean;
+            /** Archived At */
+            archived_at?: string | null;
+            /** Locked At */
+            locked_at?: string | null;
+            /** Locked By */
+            locked_by?: string | null;
             /** Members */
             members: components["schemas"]["HuntManagementMember"][];
             /** Deletion Blockers */
@@ -2886,6 +2950,10 @@ export interface components {
             };
             /** Archived At */
             archived_at: string | null;
+            /** Locked At */
+            locked_at?: string | null;
+            /** Locked By */
+            locked_by?: string | null;
             /** Created At */
             created_at?: string | null;
         };
@@ -2932,6 +3000,10 @@ export interface components {
             created_at: string;
             /** Last Activity At */
             last_activity_at?: string | null;
+            /** Archived At */
+            archived_at?: string | null;
+            /** Locked At */
+            locked_at?: string | null;
         };
         /** HuntUpdate */
         HuntUpdate: {
@@ -4589,6 +4661,41 @@ export interface operations {
             };
         };
     };
+    delete_hunt_permanently_v1_hunts__hunt_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HuntDelete"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HuntDeletionImpact"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     patch_hunt_v1_hunts__hunt_id__patch: {
         parameters: {
             query?: never;
@@ -4611,6 +4718,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HuntResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_hunt_deletion_impact_v1_hunts__hunt_id__deletion_impact_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HuntDeletionImpact"];
                 };
             };
             /** @description Validation Error */
@@ -6922,6 +7060,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HuntDeleteResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_hunt_lock_v1_admin_hunts__hunt_id__lock_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HuntLockUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HuntManagement"];
                 };
             };
             /** @description Validation Error */
