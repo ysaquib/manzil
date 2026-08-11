@@ -8,6 +8,7 @@ these stored objects; it never fetches arbitrary model-supplied URLs.
 from __future__ import annotations
 
 import hashlib
+import html as html_lib
 import io
 import json
 import os
@@ -88,8 +89,23 @@ DownloadImage = Callable[[str], Awaitable[bytes]]
 def _absolute_http_url(value: str | None, base_url: str) -> str | None:
     if not value or value.startswith("data:"):
         return None
-    url = urljoin(base_url, value.strip())
-    if not url.startswith(("http://", "https://")):
+    candidate = html_lib.unescape(value).strip()
+    # Some pages place a complete JSON/JavaScript string literal in an HTML
+    # attribute. Unwrap only a balanced quote pair and its standard escapes;
+    # stray quotes are rejected below instead of becoming page-relative URLs.
+    if len(candidate) >= 2 and candidate[0] == candidate[-1] and candidate[0] in {'"', "'"}:
+        try:
+            candidate = json.loads(candidate) if candidate[0] == '"' else candidate[1:-1]
+        except json.JSONDecodeError:
+            return None
+    candidate = candidate.replace(r'\"', '"').replace(r"\'", "'")
+    if candidate.startswith('"') and candidate.endswith('"'):
+        candidate = candidate[1:-1]
+    if any(ord(char) < 32 or char in {'"', "'"} for char in candidate):
+        return None
+    url = urljoin(base_url, candidate)
+    parsed = urlsplit(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         return None
     return url
 

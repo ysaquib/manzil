@@ -235,5 +235,6 @@ async def run_job(
             await ctx.persistence.save(state)
             index += 1
     state.status = JobState.DONE
+    state.error = None
     await ctx.persistence.save(state)
     return state
