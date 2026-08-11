@@ -44,19 +44,19 @@ jobs:
       - uses: astral-sh/setup-uv@v7
       - uses: supabase/setup-cli@v3
         with:
-          version: 2.98.2
+          version: 2.113.0
       - run: uv sync --all-packages
-      - run: supabase start
-      - run: supabase db reset --yes
-      - name: Export local Supabase environment
-        shell: bash
-        run: |
-          supabase status -o json | jq -er '
-            "SUPABASE_URL=\(.API_URL)",
-            "SUPABASE_ANON_KEY=\(.ANON_KEY)",
-            "SUPABASE_SERVICE_ROLE_KEY=\(.SERVICE_ROLE_KEY)",
-            "DATABASE_URL=\(.DB_URL)"
-          ' >> "$GITHUB_ENV"
+      - name: Reset and verify local Supabase
+        env:
+          MANZIL_SUPABASE_DIAGNOSTICS: ${{ runner.temp }}/supabase-ci-diagnostics
+        run: bash .github/scripts/setup-supabase-ci.sh
+      - name: Upload Supabase setup diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: supabase-setup-test
+          path: ${{ runner.temp }}/supabase-ci-diagnostics
+          if-no-files-found: ignore
       - run: uv run --package manzil-shared pytest shared/tests
       - run: uv run --package manzil-api pytest api/tests --ignore=api/tests/test_rls_matrix.py
       - run: uv run --package manzil-worker pytest worker/tests
@@ -71,19 +71,19 @@ jobs:
       - uses: astral-sh/setup-uv@v7
       - uses: supabase/setup-cli@v3
         with:
-          version: 2.98.2
+          version: 2.113.0
       - run: uv sync --all-packages
-      - run: supabase start
-      - run: supabase db reset --yes
-      - name: Export local Supabase environment
-        shell: bash
-        run: |
-          supabase status -o json | jq -er '
-            "SUPABASE_URL=\(.API_URL)",
-            "SUPABASE_ANON_KEY=\(.ANON_KEY)",
-            "SUPABASE_SERVICE_ROLE_KEY=\(.SERVICE_ROLE_KEY)",
-            "DATABASE_URL=\(.DB_URL)"
-          ' >> "$GITHUB_ENV"
+      - name: Reset and verify local Supabase
+        env:
+          MANZIL_SUPABASE_DIAGNOSTICS: ${{ runner.temp }}/supabase-ci-diagnostics
+        run: bash .github/scripts/setup-supabase-ci.sh
+      - name: Upload Supabase setup diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: supabase-setup-collaboration-security
+          path: ${{ runner.temp }}/supabase-ci-diagnostics
+          if-no-files-found: ignore
       - run: uv run --package manzil-api pytest api/tests/test_rls_matrix.py
 
   frontend:
@@ -195,7 +195,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: supabase/setup-cli@v3
         with:
-          version: 2.98.2
+          version: 2.113.0
       - run: supabase link --project-ref "$SUPABASE_PROJECT_ID"
       - run: supabase db push --dry-run
       - run: supabase db push

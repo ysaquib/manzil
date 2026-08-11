@@ -699,7 +699,7 @@ workflow that cannot run before CI succeeds:
       - uses: actions/checkout@v7
       - uses: supabase/setup-cli@v3
         with:
-          version: 2.98.2
+          version: 2.113.0
       - run: supabase link --project-ref "$SUPABASE_PROJECT_ID"
       - run: supabase db push --dry-run
       - run: supabase db push

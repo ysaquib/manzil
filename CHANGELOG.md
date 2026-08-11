@@ -16,6 +16,9 @@ repo itself.
 - A manually dispatched major/minor/patch workflow now opens the isolated
   VERSION/changelog PR, dispatches ordinary CI for that bot-created branch, and
   publishes the matching tag and GitHub Release only after merge.
+- Supabase-backed CI now shares one reset/readiness wrapper, retries only the
+  observed post-seed Storage/Kong health race once, uploads redacted bounded
+  diagnostics on terminal setup failure, and pins stable CLI 2.113.0.
 - Job retry leases, malformed image handling, soft deletion, Hunt-wide Tasks
   severity, worker heartbeats, Admin Job inspection, and timezone-correct Hunt
   and Admin analytics landed as one coordinated reliability release.
