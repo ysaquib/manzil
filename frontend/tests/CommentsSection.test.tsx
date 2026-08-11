@@ -45,12 +45,24 @@ const members = [
   },
 ];
 
-function renderSection() {
+function renderSection({
+  currentMembers = members,
+  contributors,
+}: {
+  currentMembers?: typeof members;
+  contributors?: Array<{
+    user_id: string;
+    display_name: string;
+    color: string | null;
+    is_former: boolean;
+  }>;
+} = {}) {
   return render(
     <MantineProvider>
       <CommentsSection
         listingId="l1"
-        members={members}
+        members={currentMembers}
+        contributors={contributors}
         currentUnitGroup={{ key: "2-1", label: "2 bd / 1 ba" }}
       />
     </MantineProvider>,
@@ -64,6 +76,17 @@ describe("CommentsSection", () => {
     expect(screen.getByText("Worth touring")).toBeInTheDocument();
     expect(screen.getByText("2 bd / 1 ba")).toBeInTheDocument();
     expect(screen.getByText(/edited/)).toBeInTheDocument();
+  });
+
+  it("keeps a removed person's comment with explicit former attribution", () => {
+    renderSection({
+      currentMembers: [],
+      contributors: [
+        { user_id: "u1", display_name: "Yusuf", color: null, is_former: true },
+      ],
+    });
+    expect(screen.getByText("Former User (Yusuf)")).toBeInTheDocument();
+    expect(screen.getByText("Worth touring")).toBeInTheDocument();
   });
 
   it("lets the author edit a comment", async () => {

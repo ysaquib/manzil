@@ -33,6 +33,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { ApiError } from "../../lib/apiClient";
 import { isDemo } from "../../lib/demo";
+import { useHuntAccess } from "../hunts/access";
 import { useListings } from "../listings/api";
 import type { FloorPlan, Listing } from "../listings/types";
 import { unitGroupKey, unitGroupLabel } from "../listings/unitGroups";
@@ -76,6 +77,7 @@ export function VisitCreatePage() {
   const isCompact = useMediaQuery("(max-width: 48em)") ?? false;
   const listingsQuery = useListings(huntId);
   const createVisit = useCreateVisit(huntId);
+  const access = useHuntAccess(huntId);
 
   // demo-guarded: useCreateVisit — `submit()` awaits the response and navigates
   // to `visit.id`. A demo write resolves with nothing, so that read throws from
@@ -208,6 +210,26 @@ export function VisitCreatePage() {
   const duplicateLabel =
     newLabel.trim().length > 0 &&
     units.some((unit) => unit.label.trim().toLowerCase() === newLabel.trim().toLowerCase());
+
+  if (!access.canMutate) {
+    return (
+      <Stack gap="lg" maw={720}>
+        <Button
+          component={Link}
+          to={`/h/${huntId}/visits`}
+          variant="subtle"
+          size="compact-sm"
+          leftSection={<IconArrowLeft size={14} />}
+          w="fit-content"
+        >
+          Visits
+        </Button>
+        <Alert color="gray" title="This Hunt is read-only">
+          {access.reason} You can still open and review its existing Visits.
+        </Alert>
+      </Stack>
+    );
+  }
 
   return (
     <Stack gap="lg" maw={720}>

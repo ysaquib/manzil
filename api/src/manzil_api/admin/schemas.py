@@ -50,6 +50,8 @@ class HuntSummary(BaseModel):
     total_cost_usd: float
     created_at: datetime
     last_activity_at: datetime | None = None
+    archived_at: datetime | None = None
+    locked_at: datetime | None = None
 
 
 class HuntPage(BaseModel):
@@ -74,6 +76,42 @@ class HuntOption(BaseModel):
     hunt_id: UUID
     name: str
     owner_name: str | None = None
+
+
+class HuntManagementMember(BaseModel):
+    user_id: UUID
+    display_name: str
+    role: Literal["owner", "curator", "member"]
+
+
+class HuntManagement(BaseModel):
+    hunt_id: UUID
+    name: str
+    owner_id: UUID
+    owner_name: str
+    caller_is_member: bool
+    archived_at: datetime | None = None
+    locked_at: datetime | None = None
+    locked_by: UUID | None = None
+    members: list[HuntManagementMember]
+    deletion_blockers: list[str] = Field(default_factory=list)
+
+
+class HuntDelete(BaseModel):
+    confirmation_name: str = Field(min_length=1, max_length=200)
+
+
+class HuntLockUpdate(BaseModel):
+    locked: bool
+
+
+class HuntDeleteResult(BaseModel):
+    hunt_id: UUID
+    name: str
+    members: int
+    listings: int
+    jobs: int
+    visits: int
 
 
 class AuditEntry(BaseModel):

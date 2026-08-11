@@ -118,11 +118,29 @@ export interface paths {
         get: operations["get_hunt_v1_hunts__hunt_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete Hunt Permanently */
+        delete: operations["delete_hunt_permanently_v1_hunts__hunt_id__delete"];
         options?: never;
         head?: never;
         /** Patch Hunt */
         patch: operations["patch_hunt_v1_hunts__hunt_id__patch"];
+        trace?: never;
+    };
+    "/v1/hunts/{hunt_id}/deletion-impact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Hunt Deletion Impact */
+        get: operations["get_hunt_deletion_impact_v1_hunts__hunt_id__deletion_impact_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/hunts/{hunt_id}/shared-filters": {
@@ -1144,6 +1162,74 @@ export interface paths {
          */
         get: operations["hunt_options_v1_admin_hunts_options_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/hunts/{hunt_id}/management": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Members and safety state for Hunt administration */
+        get: operations["hunt_management_v1_admin_hunts__hunt_id__management_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/hunts/{hunt_id}/transfer-ownership": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Transfer a Hunt to an existing member */
+        post: operations["transfer_admin_hunt_ownership_v1_admin_hunts__hunt_id__transfer_ownership_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/hunts/{hunt_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Permanently delete a Hunt and its Hunt-scoped data */
+        delete: operations["delete_admin_hunt_v1_admin_hunts__hunt_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/hunts/{hunt_id}/lock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Lock or unlock a Hunt */
+        put: operations["set_hunt_lock_v1_admin_hunts__hunt_id__lock_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -2717,6 +2803,96 @@ export interface components {
              */
             domain: "rent" | "buy";
         };
+        /** HuntDelete */
+        HuntDelete: {
+            /** Confirmation Name */
+            confirmation_name: string;
+        };
+        /** HuntDeleteResult */
+        HuntDeleteResult: {
+            /**
+             * Hunt Id
+             * Format: uuid
+             */
+            hunt_id: string;
+            /** Name */
+            name: string;
+            /** Members */
+            members: number;
+            /** Listings */
+            listings: number;
+            /** Jobs */
+            jobs: number;
+            /** Visits */
+            visits: number;
+        };
+        /** HuntDeletionImpact */
+        HuntDeletionImpact: {
+            /**
+             * Hunt Id
+             * Format: uuid
+             */
+            hunt_id: string;
+            /** Name */
+            name: string;
+            /** Members */
+            members: number;
+            /** Listings */
+            listings: number;
+            /** Jobs */
+            jobs: number;
+            /** Visits */
+            visits: number;
+        };
+        /** HuntLockUpdate */
+        HuntLockUpdate: {
+            /** Locked */
+            locked: boolean;
+        };
+        /** HuntManagement */
+        HuntManagement: {
+            /**
+             * Hunt Id
+             * Format: uuid
+             */
+            hunt_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Owner Id
+             * Format: uuid
+             */
+            owner_id: string;
+            /** Owner Name */
+            owner_name: string;
+            /** Caller Is Member */
+            caller_is_member: boolean;
+            /** Archived At */
+            archived_at?: string | null;
+            /** Locked At */
+            locked_at?: string | null;
+            /** Locked By */
+            locked_by?: string | null;
+            /** Members */
+            members: components["schemas"]["HuntManagementMember"][];
+            /** Deletion Blockers */
+            deletion_blockers?: string[];
+        };
+        /** HuntManagementMember */
+        HuntManagementMember: {
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            /** Display Name */
+            display_name: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "owner" | "curator" | "member";
+        };
         /** HuntNotificationPreferenceUpdate */
         HuntNotificationPreferenceUpdate: {
             /** Email Overrides */
@@ -2795,6 +2971,10 @@ export interface components {
             };
             /** Archived At */
             archived_at: string | null;
+            /** Locked At */
+            locked_at?: string | null;
+            /** Locked By */
+            locked_by?: string | null;
             /** Created At */
             created_at?: string | null;
         };
@@ -2841,6 +3021,10 @@ export interface components {
             created_at: string;
             /** Last Activity At */
             last_activity_at?: string | null;
+            /** Archived At */
+            archived_at?: string | null;
+            /** Locked At */
+            locked_at?: string | null;
         };
         /** HuntUpdate */
         HuntUpdate: {
@@ -4498,6 +4682,41 @@ export interface operations {
             };
         };
     };
+    delete_hunt_permanently_v1_hunts__hunt_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HuntDelete"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HuntDeletionImpact"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     patch_hunt_v1_hunts__hunt_id__patch: {
         parameters: {
             query?: never;
@@ -4520,6 +4739,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HuntResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_hunt_deletion_impact_v1_hunts__hunt_id__deletion_impact_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HuntDeletionImpact"];
                 };
             };
             /** @description Validation Error */
@@ -6759,6 +7009,142 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HuntOption"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hunt_management_v1_admin_hunts__hunt_id__management_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HuntManagement"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    transfer_admin_hunt_ownership_v1_admin_hunts__hunt_id__transfer_ownership_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TransferOwnershipRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransferOwnershipResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_admin_hunt_v1_admin_hunts__hunt_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HuntDelete"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HuntDeleteResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_hunt_lock_v1_admin_hunts__hunt_id__lock_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HuntLockUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HuntManagement"];
                 };
             };
             /** @description Validation Error */

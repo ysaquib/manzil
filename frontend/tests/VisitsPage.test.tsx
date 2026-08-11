@@ -17,6 +17,13 @@ vi.mock("../src/features/collaboration/api", () => ({
     ],
     isLoading: false,
   }),
+  useHuntContributors: () => ({
+    data: [
+      { user_id: "u1", display_name: "Yusuf", is_former: false },
+      { user_id: "u2", display_name: "Sana", is_former: false },
+    ],
+    isLoading: false,
+  }),
 }));
 
 import { VisitsPage } from "../src/features/visits/VisitsPage";

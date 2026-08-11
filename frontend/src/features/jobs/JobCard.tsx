@@ -34,6 +34,7 @@ export function JobCard({
   onRetry,
   onAnswer,
   busy,
+  readOnly = false,
 }: {
   job: Job;
   listingName: string | null;
@@ -41,11 +42,12 @@ export function JobCard({
   onRetry: () => void;
   onAnswer: (choice: string, text?: string) => void;
   busy: boolean;
+  readOnly?: boolean;
 }) {
   const since = job.started_at ?? job.created_at;
   // Right-hand controls in the caption row: live loader + timer (running only),
   // and a small round stop button whenever the job can be cancelled.
-  const trailing = isCancellable(job.state) ? (
+  const trailing = isCancellable(job.state) && !readOnly ? (
     <Group gap={8} wrap="nowrap">
       {job.state === "running" && <Loader size="xs" />}
       {job.state === "running" && since && <ElapsedTimer since={since} />}
@@ -76,7 +78,7 @@ export function JobCard({
           </Text>
         )}
         <JobWarnings warnings={job.warnings} />
-        {job.state === "waiting_user" && job.checkpoint && (
+        {job.state === "waiting_user" && job.checkpoint && !readOnly && (
           <Paper withBorder p="sm" style={{ backgroundColor: "var(--mantine-color-yellow-light)" }}>
             <CheckpointPromptCard
               prompt={job.checkpoint}
@@ -86,7 +88,7 @@ export function JobCard({
             />
           </Paper>
         )}
-        {job.state === "failed" && (
+        {job.state === "failed" && !readOnly && (
           <Group gap="xs" justify="flex-end">
             <Button size="xs" variant="default" onClick={onRetry} disabled={busy}>
               Retry

@@ -157,8 +157,12 @@ UTILITY_BASELINE_RETRY_SECONDS = 3600.0
 # cheap ≤384 px in-memory thumbnails; quality VISION sees only deterministic
 # profile-selected 1024 px targets. The quotas deliberately sum to no more than
 # MAX_VISION_TARGET_IMAGES.
-MAX_STORED_IMAGES = 30
-MAX_IMAGE_CLASSIFY_IMAGES = 30
+MAX_GALLERY_PHOTOS = 30
+# Keep a wider, source-balanced candidate pool so diagrams, maps, unrelated
+# images, and unclassified rows do not consume the 30-photo product gallery.
+MAX_STORED_IMAGES = 120
+MAX_IMAGE_CLASSIFY_IMAGES = 120
+IMAGE_CLASSIFY_BATCH_SIZE = 30
 MAX_VISION_TARGET_IMAGES = 8
 VISION_TARGET_QUOTAS = {"kitchen_quality": 3}
 IMAGE_CLASSIFY_MAX_DIM = 384

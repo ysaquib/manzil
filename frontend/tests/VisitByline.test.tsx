@@ -45,11 +45,11 @@ describe("VisitByline", () => {
     expect(screen.queryByText(/Yusuf/)).not.toBeInTheDocument();
   });
 
-  it("degrades gracefully for an author who has left the hunt", () => {
+  it("never presents an unknown retained author as a current Member", () => {
     renderWithProviders(
       <VisitByline entry={entry({ author_user_id: "gone" })} members={members} viewerId="me" />,
     );
-    expect(screen.getByText(/A member/)).toBeInTheDocument();
+    expect(screen.getByText(/Former User/)).toBeInTheDocument();
   });
 
   it("shows when, relatively — 'a minute ago' beats a timestamp mid-tour", () => {

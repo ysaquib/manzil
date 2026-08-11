@@ -72,6 +72,19 @@ class AccountStillReferenced(ManzilAPIError):
     code = "account_still_referenced"
 
 
+class LockedHuntMembership(ManzilAPIError):
+    status_code = status.HTTP_423_LOCKED
+    code = "hunt_locked"
+
+
+async def _require_unlocked_hunt(pool: asyncpg.Pool, hunt_id: UUID) -> None:
+    row = await pool.fetchrow("select name, locked_at from hunts where id=$1", hunt_id)
+    if row is not None and row["locked_at"] is not None:
+        raise LockedHuntMembership(
+            f"{row['name']} is locked; unlock it before changing its memberships"
+        )
+
+
 class AuthOperationFailed(ManzilAPIError):
     status_code = status.HTTP_502_BAD_GATEWAY
     code = "auth_operation_failed"
@@ -369,6 +382,7 @@ async def set_membership(
     """Owner changes route through `transfer_hunt_ownership` rather than writing
     the role directly: a Hunt has exactly one owner, and setting a second one
     here would leave the old one in place."""
+    await _require_unlocked_hunt(pool, body.hunt_id)
     previous = await pool.fetchval(
         "select role::text from hunt_members where hunt_id = $1 and user_id = $2",
         body.hunt_id,
@@ -414,6 +428,7 @@ async def set_membership(
 async def remove_membership(
     user_id: UUID, hunt_id: UUID, admin: AdminUser, pool: DbPool, audit: Audit
 ) -> PersonDetail:
+    await _require_unlocked_hunt(pool, hunt_id)
     role = await pool.fetchval(
         "select role::text from hunt_members where hunt_id = $1 and user_id = $2",
         hunt_id,
@@ -439,6 +454,17 @@ async def remove_membership(
 async def delete_person(user_id: UUID, admin: AdminUser, pool: DbPool, audit: Audit) -> None:
     if str(user_id) == admin.id:
         raise CannotDeleteSelf("An admin cannot delete their own account")
+
+    locked_hunts = await pool.fetch(
+        "select h.name from hunt_members hm join hunts h on h.id=hm.hunt_id "
+        "where hm.user_id=$1 and h.locked_at is not null order by h.name",
+        user_id,
+    )
+    if locked_hunts:
+        names = ", ".join(row["name"] for row in locked_hunts)
+        raise LockedHuntMembership(
+            f"They belong to locked Hunt(s): {names}. Unlock them before deleting the account"
+        )
 
     owned = await pool.fetch(
         "select id, name from hunts where owner_id = $1 order by name", user_id

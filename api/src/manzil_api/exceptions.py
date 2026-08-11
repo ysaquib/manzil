@@ -14,6 +14,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from postgrest.exceptions import APIError
 from pydantic import ValidationError
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
@@ -84,6 +85,41 @@ class CatchAllMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         try:
             return await call_next(request)
+        except APIError as exc:
+            message = str(getattr(exc, "message", "") or "")
+            details = str(getattr(exc, "details", "") or "")
+            combined = f"{message} {details}"
+            lifecycle_errors = {
+                "hunt_locked": (
+                    status.HTTP_423_LOCKED,
+                    "This Hunt is locked by a Site Admin and is read-only",
+                ),
+                "hunt_archived_read_only": (
+                    status.HTTP_409_CONFLICT,
+                    "This Hunt is archived and is read-only",
+                ),
+                "hunt_not_archived": (
+                    status.HTTP_409_CONFLICT,
+                    "Only an archived Hunt can be permanently deleted",
+                ),
+                "hunt_deletion_blocked": (
+                    status.HTTP_409_CONFLICT,
+                    details or "This Hunt cannot be deleted yet",
+                ),
+                "hunt_confirmation_mismatch": (
+                    status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    "Type the exact Hunt name to confirm deletion",
+                ),
+            }
+            for code, (status_code, detail) in lifecycle_errors.items():
+                if code in combined:
+                    return _envelope(status_code, detail, code)
+            logger.exception("Unhandled database error on %s %s", request.method, request.url.path)
+            return _envelope(
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+                "Internal server error",
+                "internal_error",
+            )
         except Exception:
             logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
             return _envelope(

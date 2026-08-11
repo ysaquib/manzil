@@ -17,7 +17,11 @@ from manzil_api.collaboration.schemas import (
     TransferOwnershipResponse,
 )
 from manzil_api.dependencies import CurrentUser, SettingsDep, UserClient
-from manzil_api.hunts.dependencies import MemberHunt, OwnedHunt
+from manzil_api.hunts.dependencies import (
+    MemberHunt,
+    WritableMemberHunt,
+    WritableOwnedHunt,
+)
 from manzil_api.listings.dependencies import ValidListing
 
 router = APIRouter(tags=["collaboration"])
@@ -85,7 +89,7 @@ async def patch_member(
     hunt_id: UUID,
     target_user_id: UUID,
     body: MemberPatch,
-    hunt: MemberHunt,
+    hunt: WritableMemberHunt,
     user: CurrentUser,
     client: UserClient,
 ) -> MemberResponse:
@@ -94,7 +98,7 @@ async def patch_member(
 
 @router.delete("/hunts/{hunt_id}/members/{target_user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_member(
-    hunt_id: UUID, target_user_id: UUID, hunt: OwnedHunt, client: UserClient
+    hunt_id: UUID, target_user_id: UUID, hunt: WritableOwnedHunt, client: UserClient
 ) -> None:
     await service.remove_member(client, hunt_id, target_user_id)
 
@@ -112,7 +116,7 @@ async def leave_hunt(
 async def transfer_ownership(
     hunt_id: UUID,
     body: TransferOwnershipRequest,
-    hunt: OwnedHunt,
+    hunt: WritableOwnedHunt,
     settings: SettingsDep,
 ) -> TransferOwnershipResponse:
     return await service.transfer_ownership(settings, hunt_id, body.new_owner_id)

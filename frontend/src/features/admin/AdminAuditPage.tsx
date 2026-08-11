@@ -4,6 +4,7 @@
 // UPDATE and DELETE by trigger, including for `service_role`, which is what the
 // router runs as. There is nothing to offer here but reading.
 import { Badge, Card, Group, Loader, Stack, Table, Text, Title } from "@mantine/core";
+import { useMediaQuery } from "@mantine/hooks";
 
 import { TablePagination, usePagedRows } from "../../components/TablePagination";
 import { useAuditLog } from "./api";
@@ -13,6 +14,7 @@ const DESTRUCTIVE = ["user.delete", "user.suspend", "admin.revoke", "job.cancel"
 export function AdminAuditPage() {
   const audit = useAuditLog();
   const paged = usePagedRows(audit.data ?? [], "admin-audit");
+  const isCompact = useMediaQuery("(max-width: 48em)") ?? false;
 
   return (
     <Stack gap="md">
@@ -31,6 +33,35 @@ export function AdminAuditPage() {
         )}
         {audit.data && audit.data.length > 0 && (
           <>
+          {isCompact ? (
+            <Stack gap="xs" p="xs">
+              {paged.items.map((entry) => (
+                <Card key={entry.id} padding="sm" radius="sm" withBorder>
+                  <Group justify="space-between" align="flex-start" wrap="nowrap">
+                    <Badge
+                      size="sm"
+                      variant="light"
+                      color={DESTRUCTIVE.includes(entry.action) ? "red" : "gray"}
+                    >
+                      {entry.action}
+                    </Badge>
+                    <Text size="xs" ff="monospace" c="dimmed" ta="end">
+                      {new Date(entry.occurred_at).toLocaleString()}
+                    </Text>
+                  </Group>
+                  <Group justify="space-between" mt="sm" align="flex-end">
+                    <div>
+                      <Text size="sm">
+                        {entry.target_label ?? entry.target_id?.slice(0, 8) ?? "—"}
+                      </Text>
+                      {entry.target_type && <Text size="xs" c="dimmed">{entry.target_type}</Text>}
+                    </div>
+                    {entry.via_ghost_view && <Badge size="xs" color="accent">ghost view</Badge>}
+                  </Group>
+                </Card>
+              ))}
+            </Stack>
+          ) : (
           <Table.ScrollContainer minWidth={640}>
             <Table highlightOnHover verticalSpacing="xs">
               <Table.Thead>
@@ -83,6 +114,7 @@ export function AdminAuditPage() {
               </Table.Tbody>
             </Table>
           </Table.ScrollContainer>
+          )}
           <TablePagination state={paged} noun="entries" />
           </>
         )}

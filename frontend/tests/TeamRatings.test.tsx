@@ -2,7 +2,7 @@ import { MantineProvider } from "@mantine/core";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { HuntMember } from "../src/features/collaboration/api";
+import type { HuntContributor, HuntMember } from "../src/features/collaboration/api";
 
 vi.mock("../src/features/collaboration/api", async (orig) => ({
   ...(await orig<typeof import("../src/features/collaboration/api")>()),
@@ -16,10 +16,21 @@ vi.mock("../src/features/collaboration/api", async (orig) => ({
 
 import { TeamRatings } from "../src/features/collaboration/TeamRatings";
 
-function renderTeam({ members }: { members: HuntMember[] }) {
+function renderTeam({
+  members,
+  contributors,
+}: {
+  members: HuntMember[];
+  contributors?: HuntContributor[];
+}) {
   return render(
     <MantineProvider>
-      <TeamRatings listingId="l" unitGroupKey="g" members={members} />
+      <TeamRatings
+        listingId="l"
+        unitGroupKey="g"
+        members={members}
+        contributors={contributors}
+      />
     </MantineProvider>,
   );
 }
@@ -43,5 +54,16 @@ describe("TeamRatings", () => {
     expect(screen.getByText("Amara")).toBeInTheDocument();
     expect(screen.getByText("Not rated yet")).toBeInTheDocument(); // Dev
     expect(screen.getByText(/avg 4\.3/)).toBeInTheDocument(); // (4 + 4.5)/2 = 4.25 → 4.3
+  });
+
+  it("keeps a departed rater without listing them as a current member", () => {
+    renderTeam({
+      members: [member({ user_id: "u1", display_name: "Amara" })],
+      contributors: [
+        { user_id: "u2", display_name: "Maya", color: "plum", is_former: true },
+      ],
+    });
+    expect(screen.getByText("Former User (Maya)")).toBeInTheDocument();
+    expect(screen.queryByText("Maya", { exact: true })).not.toBeInTheDocument();
   });
 });

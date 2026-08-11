@@ -5,7 +5,11 @@ import io
 from uuid import uuid4
 
 import pytest
-from manzil_shared.config import DIAGRAM_MAX_DIM, DIAGRAM_NORMALIZATION_PROFILE
+from manzil_shared.config import (
+    DIAGRAM_MAX_DIM,
+    DIAGRAM_NORMALIZATION_PROFILE,
+    IMAGE_CLASSIFY_BATCH_SIZE,
+)
 from manzil_shared.models import JobState, JobType
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.image_classify import (
@@ -802,3 +806,53 @@ def test_canonical_onnx_failure_fails_closed_without_llm_fallback() -> None:
                 StageCtx(image_store=Store(), call_vision=llm, image_classify_onnx=onnx),
             )
         )
+
+
+def test_canonical_onnx_classifies_a_wider_gallery_in_bounded_batches() -> None:
+    count = IMAGE_CLASSIFY_BATCH_SIZE * 2 + 1
+    images = [
+        _image(f"{index:064x}", phash=f"{index:016x}", order=index) for index in range(1, count + 1)
+    ]
+    for image in images:
+        image.vision_assessment = None
+    raw = _thumb()
+    batch_sizes: list[int] = []
+
+    class Store:
+        async def get(self, path: str) -> bytes:
+            return raw
+
+        async def put(self, path: str, content: bytes) -> None:
+            raise AssertionError("classifier never writes derivatives")
+
+    async def onnx(requested):  # type: ignore[no-untyped-def]
+        batch_sizes.append(len(requested))
+        return ONNXShadowBatch(
+            cache_key=ONNX_SHADOW_CACHE_KEY,
+            backend=ONNX_SHADOW_BACKEND,
+            artifact_sha256=ONNX_SHADOW_ARTIFACT_SHA256,
+            kitchen_threshold=ONNX_SHADOW_KITCHEN_THRESHOLD,
+            diagram_threshold=ONNX_SHADOW_DIAGRAM_THRESHOLD,
+            elapsed_seconds=0.1,
+            predictions=[
+                ONNXShadowPrediction(
+                    content_hash=content_hash,
+                    predicted_scene="living",
+                    kitchen_score=0.1,
+                    kitchen_predicted=False,
+                    diagram_score=0.01,
+                    diagram_predicted=False,
+                )
+                for content_hash, _content in requested
+            ],
+        )
+
+    out = asyncio.run(
+        image_classify_stage(
+            _stage_state(images),
+            StageCtx(image_store=Store(), image_classify_onnx=onnx),
+        )
+    )
+
+    assert batch_sizes == [IMAGE_CLASSIFY_BATCH_SIZE, IMAGE_CLASSIFY_BATCH_SIZE, 1]
+    assert all(image.vision_assessment.get("classification") for image in out.property_images)

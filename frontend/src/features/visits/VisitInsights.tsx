@@ -12,8 +12,8 @@
 import { Box, Group, Progress, Stack, Table, Text, Tooltip } from "@mantine/core";
 import dayjs from "dayjs";
 
-import { memberColor } from "../collaboration/memberColors";
-import type { HuntMember } from "../collaboration/api";
+import type { HuntContributor } from "../collaboration/api";
+import { contributorColor, contributorDisplayName } from "../collaboration/memberDisplay";
 import { isFlag, meanRating, teamAnswers } from "./entries";
 import { toneFor } from "./statusColors";
 import type { Visit, VisitEntry, VisitItem } from "./types";
@@ -35,13 +35,13 @@ function ImpressionCompare({
   items,
   entries,
   activeUnitId,
-  members,
+  contributors,
   viewerId,
 }: {
   items: VisitItem[];
   entries: VisitEntry[];
   activeUnitId: string | null;
-  members: HuntMember[];
+  contributors: HuntContributor[];
   viewerId: string | null;
 }) {
   // Only rated Impressions compare — a flag is a yes/no tally and free text is
@@ -66,7 +66,7 @@ function ImpressionCompare({
   ];
   const raters = raterIds.map((id) => ({
     id,
-    member: members.find((candidate) => candidate.user_id === id) ?? null,
+    contributor: contributors.find((candidate) => candidate.user_id === id) ?? null,
   }));
 
   const widest = Math.max(
@@ -84,12 +84,12 @@ function ImpressionCompare({
             <Table.Th>Impression</Table.Th>
             {raters.map((rater) => (
               <Table.Th key={rater.id} className={classes.numeric}>
-                <Tooltip label={rater.member?.display_name ?? "A member"}>
+                <Tooltip label={contributorDisplayName(rater.contributor)}>
                   <span
                     className={classes.raterDot}
-                    style={{ backgroundColor: memberColor(rater.member?.color ?? null) }}
+                    style={{ backgroundColor: contributorColor(rater.contributor) }}
                   >
-                    {(rater.member?.display_name ?? "?").slice(0, 1).toUpperCase()}
+                    {contributorDisplayName(rater.contributor).slice(0, 1).toUpperCase()}
                   </span>
                 </Tooltip>
               </Table.Th>
@@ -145,7 +145,7 @@ export function VisitInsights({
   items,
   entries,
   activeUnitId,
-  members,
+  contributors,
   viewerId,
   answered,
   total,
@@ -157,7 +157,7 @@ export function VisitInsights({
   items: VisitItem[];
   entries: VisitEntry[];
   activeUnitId: string | null;
-  members: HuntMember[];
+  contributors: HuntContributor[];
   viewerId: string | null;
   answered: number;
   total: number;
@@ -209,7 +209,7 @@ export function VisitInsights({
           items={items}
           entries={entries}
           activeUnitId={activeUnitId}
-          members={members}
+          contributors={contributors}
           viewerId={viewerId}
         />
       </Stack>

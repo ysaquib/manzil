@@ -16,7 +16,13 @@ from manzil_shared.models import HuntRole
 
 from manzil_api.dependencies import CurrentUser, get_user_client
 from manzil_api.hunts import service
-from manzil_api.hunts.exceptions import HuntNotFound, InsufficientRole, NotHuntMember
+from manzil_api.hunts.exceptions import (
+    HuntArchivedReadOnly,
+    HuntLocked,
+    HuntNotFound,
+    InsufficientRole,
+    NotHuntMember,
+)
 from supabase import Client
 
 Hunt = dict[str, Any]
@@ -63,6 +69,24 @@ def require_role(minimum: HuntRole):  # type: ignore[no-untyped-def]
     return dependency
 
 
+def require_writable_role(minimum: HuntRole):  # type: ignore[no-untyped-def]
+    role_dependency = require_role(minimum)
+
+    async def dependency(
+        hunt: ValidHunt,
+        user: CurrentUser,
+        client: Annotated[Client, Depends(get_user_client)],
+    ) -> Hunt:
+        authorized = await role_dependency(hunt, user, client)
+        if authorized.get("locked_at") is not None:
+            raise HuntLocked("This Hunt is locked by a Site Admin and is read-only")
+        if authorized.get("archived_at") is not None:
+            raise HuntArchivedReadOnly("This Hunt is archived and is read-only")
+        return authorized
+
+    return dependency
+
+
 require_member = require_role(HuntRole.MEMBER)
 require_curator = require_role(HuntRole.CURATOR)
 require_owner = require_role(HuntRole.OWNER)
@@ -71,3 +95,6 @@ require_owner = require_role(HuntRole.OWNER)
 OwnedHunt = Annotated[Hunt, Depends(require_owner)]
 MemberHunt = Annotated[Hunt, Depends(require_member)]
 CuratedHunt = Annotated[Hunt, Depends(require_curator)]
+WritableOwnedHunt = Annotated[Hunt, Depends(require_writable_role(HuntRole.OWNER))]
+WritableMemberHunt = Annotated[Hunt, Depends(require_writable_role(HuntRole.MEMBER))]
+WritableCuratedHunt = Annotated[Hunt, Depends(require_writable_role(HuntRole.CURATOR))]

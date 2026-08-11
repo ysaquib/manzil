@@ -52,6 +52,19 @@ def _validate_option_schema(label: str, schema: dict[str, Any], option: RubricOp
             raise InvalidRubricOption(
                 f"Option operator for {label} invalid: {op.value} requires an array criterion"
             )
+        if (
+            schema_type == "string"
+            and schema.get("format") == "date"
+            and op
+            not in (
+                MatchOp.LT,
+                MatchOp.GT,
+                MatchOp.RANGE,
+            )
+        ):
+            raise InvalidRubricOption(
+                f"Option operator for {label} invalid: date criteria use before, after, or between"
+            )
         if op is MatchOp.IN:
             values = option.match.value
             if not isinstance(values, list) or not values:
@@ -66,12 +79,29 @@ def _validate_option_schema(label: str, schema: dict[str, Any], option: RubricOp
                     f"Option value for {label} invalid: {error.message}"
                 ) from error
             return
-        # Threshold/range ops carry composite match values and are validated by
-        # their operator-specific frontend/backend shape. Scalar equality/bool
-        # values validate directly against Catalog truth.
-        if op not in (MatchOp.EQ, MatchOp.BOOL):
-            return
-        instance = option.match.value
+        if op is MatchOp.RANGE:
+            values = option.match.value
+            if not isinstance(values, list) or len(values) != 2:
+                raise InvalidRubricOption(
+                    f"Option value for {label} invalid: range requires exactly two values"
+                )
+            instances = values
+        else:
+            instances = [option.match.value]
+        try:
+            for value in instances:
+                jsonschema.validate(
+                    instance=value,
+                    schema=schema,
+                    format_checker=jsonschema.FormatChecker(),
+                )
+        except jsonschema.ValidationError as error:
+            raise InvalidRubricOption(
+                f"Option value for {label} invalid: {error.message}"
+            ) from error
+        if op is MatchOp.RANGE and instances[0] > instances[1]:
+            raise InvalidRubricOption(f"Option value for {label} invalid: range start exceeds end")
+        return
     try:
         jsonschema.validate(instance=instance, schema=schema)
     except jsonschema.ValidationError as error:

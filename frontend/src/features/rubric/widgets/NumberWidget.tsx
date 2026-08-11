@@ -10,6 +10,7 @@ export function NumberWidget({
   placeholder,
   unit,
   hideControls,
+  size = "xs",
 }: WidgetProps) {
   return (
     <NumberInput
@@ -23,7 +24,7 @@ export function NumberWidget({
       hideControls={hideControls}
       value={typeof value === "number" ? value : ""}
       onChange={(next) => onChange(typeof next === "number" ? next : null)}
-      size="xs"
+      size={size}
     />
   );
 }

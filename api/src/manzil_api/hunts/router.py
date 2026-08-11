@@ -8,9 +8,16 @@ from fastapi import APIRouter, status
 
 from manzil_api.dependencies import CurrentUser, UserClient
 from manzil_api.hunts import service
-from manzil_api.hunts.dependencies import CuratedHunt, MemberHunt, OwnedHunt
+from manzil_api.hunts.dependencies import (
+    MemberHunt,
+    OwnedHunt,
+    WritableCuratedHunt,
+    WritableOwnedHunt,
+)
 from manzil_api.hunts.schemas import (
     HuntCreate,
+    HuntDelete,
+    HuntDeletionImpact,
     HuntResponse,
     HuntSettingsPatch,
     HuntUpdate,
@@ -43,15 +50,33 @@ async def patch_hunt(
     return await service.patch_hunt(client, hunt_id, body)
 
 
+@router.get("/hunts/{hunt_id}/deletion-impact", response_model=HuntDeletionImpact)
+async def get_hunt_deletion_impact(
+    hunt_id: UUID, hunt: OwnedHunt, client: UserClient
+) -> HuntDeletionImpact:
+    return await service.get_deletion_impact(client, hunt_id)
+
+
+@router.delete("/hunts/{hunt_id}", response_model=HuntDeletionImpact)
+async def delete_hunt_permanently(
+    hunt_id: UUID, body: HuntDelete, hunt: OwnedHunt, client: UserClient
+) -> HuntDeletionImpact:
+    return await service.delete_hunt_permanently(client, hunt_id, body.confirmation_name)
+
+
 @router.put("/hunts/{hunt_id}/shared-filters", response_model=SharedFiltersResponse)
 async def put_shared_filters(
-    hunt_id: UUID, body: SharedFiltersPut, hunt: CuratedHunt, user: CurrentUser, client: UserClient
+    hunt_id: UUID,
+    body: SharedFiltersPut,
+    hunt: WritableCuratedHunt,
+    user: CurrentUser,
+    client: UserClient,
 ) -> SharedFiltersResponse:
     return await service.put_shared_filters(client, hunt_id, user.id, body)
 
 
 @router.patch("/hunts/{hunt_id}/settings", response_model=HuntResponse)
 async def patch_hunt_settings(
-    hunt_id: UUID, body: HuntSettingsPatch, hunt: OwnedHunt, client: UserClient
+    hunt_id: UUID, body: HuntSettingsPatch, hunt: WritableOwnedHunt, client: UserClient
 ) -> HuntResponse:
     return await service.patch_settings(client, hunt_id, body)

@@ -101,10 +101,14 @@ async def image_fetch_stage(state: RunState, ctx: StageCtx) -> RunState:
         candidates_by_source.append((source, list(candidates)))
     ordered: list[tuple[object, object]] = []
     index = 0
-    # Admit enough candidates to fill both budgets. Capping this at the photo
-    # limit alone would starve diagrams that appear late in a long gallery —
-    # the exact eviction the separate diagram budget exists to prevent.
-    while len(ordered) < MAX_STORED_IMAGES + MAX_FLOOR_PLAN_DIAGRAMS_PER_PROPERTY:
+    # Admit replacement headroom as well as both storage budgets. A page often
+    # mixes dead thumbnails and tracking assets through its real gallery; with
+    # only exactly one slot per desired photo, an early failed candidate would
+    # prevent a later valid one from filling the retained pool. Two photo-pool
+    # widths bounds network work while tolerating a 50% unusable prefix, and
+    # the independent diagram allowance still prevents late plans being evicted.
+    candidate_limit = 2 * MAX_STORED_IMAGES + MAX_FLOOR_PLAN_DIAGRAMS_PER_PROPERTY
+    while len(ordered) < candidate_limit:
         added = False
         for source, candidates in candidates_by_source:
             if index < len(candidates):

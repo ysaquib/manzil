@@ -21,6 +21,19 @@ export interface HuntMember {
   color_override?: string | null;
 }
 
+/**
+ * Hunt-visible attribution for retained collaboration records.
+ *
+ * This is deliberately not a HuntMember: a former contributor has no
+ * membership row, no access, no Presence, and no place in the current roster.
+ */
+export interface HuntContributor {
+  user_id: string;
+  display_name: string | null;
+  color: string | null;
+  is_former: boolean;
+}
+
 export interface Comment {
   id: string;
   hunt_listing_id: string;
@@ -71,6 +84,21 @@ export function useMembers(huntId: string) {
         color: row.color ?? defaults.get(row.user_id)?.default_color ?? null,
       }));
     },
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useHuntContributors(huntId: string) {
+  return useQuery({
+    queryKey: ["hunt_contributors", huntId],
+    queryFn: async (): Promise<HuntContributor[]> => {
+      const { data, error } = await supabase.rpc("get_hunt_contributor_identities", {
+        p_hunt_id: huntId,
+      });
+      if (error) throw error;
+      return (data ?? []) as HuntContributor[];
+    },
+    enabled: Boolean(huntId),
     refetchOnWindowFocus: true,
   });
 }
@@ -233,7 +261,10 @@ export function useSetMemberColor(huntId: string, userId: string) {
         method: "PATCH",
         body: { color } satisfies MemberPatch,
       }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["hunt_members", huntId] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["hunt_members", huntId] });
+      void qc.invalidateQueries({ queryKey: ["hunt_contributors", huntId] });
+    },
   });
 }
 
@@ -246,7 +277,10 @@ export function useSetMemberDisplayName(huntId: string, userId: string) {
         method: "PATCH",
         body: { display_name } satisfies MemberPatch,
       }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["hunt_members", huntId] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["hunt_members", huntId] });
+      void qc.invalidateQueries({ queryKey: ["hunt_contributors", huntId] });
+    },
   });
 }
 
@@ -271,7 +305,10 @@ export function useRemoveMember(huntId: string, isGhost = false) {
   return useMutation({
     mutationFn: (userId: string) =>
       apiFetch<void>(mutationPath(`/v1/hunts/${huntId}/members/${userId}`), { method: "DELETE" }),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["hunt_members", huntId] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["hunt_members", huntId] });
+      void qc.invalidateQueries({ queryKey: ["hunt_contributors", huntId] });
+    },
   });
 }
 
@@ -305,6 +342,7 @@ export function useTransferOwnership(huntId: string, isGhost = false) {
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["hunt_members", huntId] });
+      void qc.invalidateQueries({ queryKey: ["hunt_contributors", huntId] });
       void qc.invalidateQueries({ queryKey: ["hunts"] });
       void qc.invalidateQueries({ queryKey: ["hunts", huntId] });
     },

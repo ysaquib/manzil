@@ -24,8 +24,7 @@ describe("useHunts", () => {
 
   it("explicitly limits the switcher to the signed-in user's Hunt memberships", async () => {
     const order = vi.fn().mockResolvedValue({ data: [], error: null });
-    const is = vi.fn(() => ({ order }));
-    const eq = vi.fn(() => ({ is }));
+    const eq = vi.fn(() => ({ order }));
     const select = vi.fn(() => ({ eq }));
     from.mockReturnValue({ select });
 

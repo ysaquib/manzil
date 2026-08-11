@@ -171,6 +171,15 @@ describe("validateMatch (mirrors the API's value_schema check)", () => {
     expect(validateMatch({ op: "contains_any", value: ["castle"] }, setSchema)).toMatch(/one of/);
     expect(validateMatch({ op: "eq", value: ["townhome"] }, setSchema)).toMatch(/array criteria/);
   });
+
+  it("validates ISO availability dates and ordered date ranges", () => {
+    const dateSchema = { type: "string" as const, format: "date" as const };
+    expect(validateMatch({ op: "lt", value: "2026-09-01" }, dateSchema)).toBeNull();
+    expect(validateMatch({ op: "range", value: ["2026-09-01", "2026-10-01"] }, dateSchema)).toBeNull();
+    expect(validateMatch({ op: "range", value: ["2026-10-01", "2026-09-01"] }, dateSchema)).toMatch(/exceeds/);
+    expect(validateMatch({ op: "lt", value: "2026-02-31" }, dateSchema)).toMatch(/valid date/);
+    expect(validateMatch({ op: "lte", value: "2026-09-01" }, dateSchema)).toMatch(/before, after, or between/);
+  });
 });
 
 describe("overlapWarnings", () => {

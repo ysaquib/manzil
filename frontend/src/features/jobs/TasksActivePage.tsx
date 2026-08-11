@@ -8,6 +8,7 @@ import { useListings } from "../listings/api";
 import { JobCard } from "./JobCard";
 import { useActiveJobs, useAnswerCheckpoint, useCancelJob, useRetryJob } from "./api";
 import { useEffect, useState } from "react";
+import { useHuntAccess } from "../hunts/access";
 
 export function TasksActivePage() {
   const { huntId = "" } = useParams();
@@ -16,6 +17,7 @@ export function TasksActivePage() {
   const cancelJob = useCancelJob(huntId);
   const retryJob = useRetryJob(huntId);
   const answerCheckpoint = useAnswerCheckpoint(huntId);
+  const access = useHuntAccess(huntId);
 
   const nameByListing = new Map(
     (listings ?? []).map((listing) => [listing.id, listing.property.name]),
@@ -49,11 +51,11 @@ export function TasksActivePage() {
       >
         <Button 
           size="compact-xs" 
-          variant="outline" 
+          variant="default"
           onClick={() => refetch()} 
           disabled={isRefreshing || isRefetching || isFetching}
           leftSection={isRefreshing || isRefetching || isFetching 
-              ? <Loader size="xs" color="gray" /> 
+              ? <Loader size="xs" color="currentColor" />
               : <IconRefresh size={12} />}
         >
           {isRefreshing || isRefetching || isFetching ? "Refreshing..." : "Refresh"}
@@ -101,6 +103,7 @@ export function TasksActivePage() {
               onRetry={() => retryJob.mutate(job.id)}
               onAnswer={(choice, text) => answerCheckpoint.mutate({ jobId: job.id, choice, text })}
               busy={busy}
+              readOnly={!access.canMutate}
             />
           ))}
         </SimpleGrid>
