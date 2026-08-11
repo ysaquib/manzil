@@ -40,6 +40,7 @@ vi.mock("../src/features/collaboration/api", () => {
   const mut = () => ({ mutate: vi.fn(), mutateAsync: vi.fn().mockResolvedValue({}), isPending: false });
   return {
     useMembers: () => ({ data: [] }),
+    useHuntContributors: () => ({ data: [], isLoading: false }),
     useCurrentMember: () => ({ data: { user_id: "u1", role: "owner", color: "moss" } }),
     useComments: () => ({ data: [] }),
     useRatings: () => ({ data: [] }),

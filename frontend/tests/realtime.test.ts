@@ -6,6 +6,7 @@ describe("Realtime invalidation map", () => {
   const huntId = "hunt-1";
 
   it.each([
+    ["hunt_members", [["hunt_members", huntId], ["hunt_contributors", huntId], ["hunts"]]],
     ["hunt_listings", [["hunt_listings", huntId]]],
     ["scores", [["hunt_listings", huntId]]],
     ["comments", [["comments"], ["hunt_listings", huntId]]],

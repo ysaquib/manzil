@@ -50,6 +50,21 @@ describe("RatingSummary", () => {
     expect(screen.getByLabelText("Sam: 5 of 5")).toBeInTheDocument();
   });
 
+  it("keeps a former user's rating but labels and colors it neutrally", () => {
+    wrap(
+      <RatingSummary
+        ratings={[rating("former", 4)]}
+        members={members}
+        contributors={[
+          { user_id: "former", display_name: "Sam", color: "plum", is_former: true },
+        ]}
+      />,
+    );
+    const dot = screen.getByLabelText("Former User (Sam): 4 of 5");
+    expect(dot).toBeInTheDocument();
+    expect(dot).toHaveStyle({ background: "var(--mantine-color-gray-5)" });
+  });
+
   it("says nothing rather than zero when nobody has rated", () => {
     wrap(<RatingSummary ratings={[]} members={members} />);
     expect(screen.getByLabelText("no ratings yet")).toBeInTheDocument();

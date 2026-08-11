@@ -3,7 +3,8 @@ import { useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { sentenceCase } from "../../lib/text";
-import { useMembers } from "../collaboration/api";
+import { useHuntContributors } from "../collaboration/api";
+import { contributorDisplayName } from "../collaboration/memberDisplay";
 import { useListings } from "../listings/api";
 import classes from "./HistoryCard.module.css";
 import { JobCardHeader } from "./JobCardHeader";
@@ -143,16 +144,25 @@ export function TasksHistoryTab() {
   const { huntId = "" } = useParams();
   const { data: jobs = [], error } = useHistoryJobs(huntId);
   const { data: listings = [] } = useListings(huntId);
-  const { data: members = [] } = useMembers(huntId);
+  const { data: contributors = [] } = useHuntContributors(huntId);
   const retryJob = useRetryJob(huntId);
   const [listingFilter, setListingFilter] = useState<string | null>(null);
   const [memberFilter, setMemberFilter] = useState<string | null>(null);
   const [outcomeFilter, setOutcomeFilter] = useState<string | null>(null);
 
   const listingById = new Map(listings.map((listing) => [listing.id, listing]));
-  const memberById = new Map(members.map((member) => [member.user_id, member]));
+  const contributorById = new Map(
+    contributors.map((contributor) => [contributor.user_id, contributor]),
+  );
   const filters = { listingId: listingFilter, memberId: memberFilter, outcome: outcomeFilter };
   const addedByByListing = new Map(listings.map((listing) => [listing.id, listing.added_by]));
+  const submitterIds = new Set(addedByByListing.values());
+  const submitterOptions = contributors
+    .filter((contributor) => submitterIds.has(contributor.user_id))
+    .map((contributor) => ({
+      value: contributor.user_id,
+      label: contributorDisplayName(contributor),
+    }));
   const filtered = filterHistoryJobs(jobs, filters, addedByByListing);
   const filtersActive = listingFilter !== null || memberFilter !== null || outcomeFilter !== null;
 
@@ -162,8 +172,8 @@ export function TasksHistoryTab() {
       <SimpleGrid cols={{ base: 1, sm: 3 }}>
         <Select clearable label="Listing" value={listingFilter} onChange={setListingFilter}
           data={listings.map((listing) => ({ value: listing.id, label: listing.property.name }))} />
-        <Select clearable label="Member" value={memberFilter} onChange={setMemberFilter}
-          data={members.map((member) => ({ value: member.user_id, label: member.display_name ?? "Member" }))} />
+        <Select clearable label="Submitted by" value={memberFilter} onChange={setMemberFilter}
+          data={submitterOptions} />
         <Select clearable label="Outcome" value={outcomeFilter} onChange={setOutcomeFilter}
           data={["done", "failed", "cancelled"].map((outcome) => ({
             value: outcome,
@@ -179,10 +189,10 @@ export function TasksHistoryTab() {
       <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
         {filtered.map((job) => {
           const listing = job.hunt_listing_id ? listingById.get(job.hunt_listing_id) : null;
-          const member = listing ? memberById.get(listing.added_by) : null;
+          const contributor = listing ? contributorById.get(listing.added_by) : null;
           return (
             <HistoryCard key={job.id} job={job} listingName={listing?.property.name ?? null}
-              memberName={listing ? (member?.display_name ?? "Member") : "system"}
+              memberName={listing ? contributorDisplayName(contributor) : "system"}
               onRetry={() => retryJob.mutate(job.id)}
               retrying={retryJob.isPending && retryJob.variables === job.id} />
           );

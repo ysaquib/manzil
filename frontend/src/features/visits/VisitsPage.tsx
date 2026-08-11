@@ -21,7 +21,8 @@ import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { PageHeader } from "../../components/PageHeader";
-import { useMembers } from "../collaboration/api";
+import { useHuntContributors } from "../collaboration/api";
+import { contributorDisplayName } from "../collaboration/memberDisplay";
 import { useVisits } from "./api";
 import type { Visit, VisitState } from "./types";
 import { VisitStatePill } from "./VisitStatePill";
@@ -91,14 +92,16 @@ export function VisitsPage() {
   const { huntId = "" } = useParams();
   const [filter, setFilter] = useState<Filter>("all");
   const visitsQuery = useVisits(huntId);
-  const membersQuery = useMembers(huntId);
+  const contributorsQuery = useHuntContributors(huntId);
 
   const visits = visitsQuery.data ?? [];
   const counts = useMemo(() => countByState(visits), [visits]);
   const shown = useMemo(() => filterByState(visits, filter), [visits, filter]);
 
   const memberName = (userId: string) =>
-    membersQuery.data?.find((member) => member.user_id === userId)?.display_name ?? "a member";
+    contributorDisplayName(
+      contributorsQuery.data?.find((contributor) => contributor.user_id === userId),
+    );
 
   return (
     <Stack gap="lg">
@@ -200,7 +203,7 @@ export function VisitsPage() {
         </Card>
       )}
 
-      {membersQuery.isLoading && visits.length > 0 && (
+      {contributorsQuery.isLoading && visits.length > 0 && (
         <Group gap="xs">
           <Loader size="xs" />
           <Text size="xs" c="dimmed">

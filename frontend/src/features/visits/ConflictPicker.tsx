@@ -16,8 +16,8 @@ import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import { useState } from "react";
 
-import type { HuntMember } from "../collaboration/api";
-import { memberColor } from "../collaboration/memberColors";
+import type { HuntContributor, HuntMember } from "../collaboration/api";
+import { contributorColor, contributorDisplayName } from "../collaboration/memberDisplay";
 import type { VisitEntryConflict, VisitItem, VisitUnit } from "./types";
 
 dayjs.extend(relativeTime);
@@ -65,16 +65,22 @@ export function branchValueLabel(branch: VisitEntryConflict): string {
   return JSON.stringify(value);
 }
 
-function authorName(members: HuntMember[], userId: string, viewerId: string | null): string {
+function authorName(
+  contributors: (HuntContributor | HuntMember)[],
+  userId: string,
+  viewerId: string | null,
+): string {
   if (userId === viewerId) return "You";
-  return members.find((member) => member.user_id === userId)?.display_name ?? "A member";
+  return contributorDisplayName(
+    contributors.find((contributor) => contributor.user_id === userId),
+  );
 }
 
 function ForkCard({
   fork,
   items,
   units,
-  members,
+  contributors,
   viewerId,
   onResolve,
   busy,
@@ -82,7 +88,7 @@ function ForkCard({
   fork: Fork;
   items: VisitItem[];
   units: VisitUnit[];
-  members: HuntMember[];
+  contributors: (HuntContributor | HuntMember)[];
   viewerId: string | null;
   onResolve: (branch: VisitEntryConflict) => void;
   busy: boolean;
@@ -126,14 +132,15 @@ function ForkCard({
                           height: 7,
                           borderRadius: "50%",
                           display: "inline-block",
-                          backgroundColor: memberColor(
-                            members.find((member) => member.user_id === branch.author_user_id)
-                              ?.color ?? null,
+                          backgroundColor: contributorColor(
+                            contributors.find(
+                              (contributor) => contributor.user_id === branch.author_user_id,
+                            ),
                           ),
                         }}
                       />
                       <Text size="xs" c="dimmed">
-                        {authorName(members, branch.author_user_id, viewerId)} ·{" "}
+                        {authorName(contributors, branch.author_user_id, viewerId)} ·{" "}
                         {dayjs(branch.created_at).fromNow()}
                       </Text>
                     </Group>
@@ -169,6 +176,7 @@ export function ConflictPicker({
   conflicts,
   items,
   units,
+  contributors,
   members,
   viewerId,
   onResolve,
@@ -177,11 +185,14 @@ export function ConflictPicker({
   conflicts: VisitEntryConflict[];
   items: VisitItem[];
   units: VisitUnit[];
-  members: HuntMember[];
+  contributors?: (HuntContributor | HuntMember)[];
+  /** @deprecated Pass contributors so retained work can include former members. */
+  members?: HuntMember[];
   viewerId: string | null;
   onResolve: (branch: VisitEntryConflict) => void;
   busy?: boolean;
 }) {
+  const identities = contributors ?? members ?? [];
   const forks = groupForks(conflicts);
   if (forks.length === 0) return null;
 
@@ -205,7 +216,7 @@ export function ConflictPicker({
             fork={fork}
             items={items}
             units={units}
-            members={members}
+            contributors={identities}
             viewerId={viewerId}
             onResolve={onResolve}
             busy={busy}

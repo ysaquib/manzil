@@ -23,7 +23,7 @@ import { RatingSummary } from "../collaboration/RatingSummary";
 import { RowMarker } from "./RowMarker";
 import { rowKey } from "./OverviewTable";
 import { ScoreCell } from "./ScoreCell";
-import { useComments, useCurrentMember, useMembers, useRatings } from "../collaboration/api";
+import { useComments, useCurrentMember, useHuntContributors, useMembers, useRatings } from "../collaboration/api";
 import { usePatchUnitGroupState } from "./api";
 import { rowEntry, useCompareSet } from "./compareSet";
 import {
@@ -73,6 +73,7 @@ function ExpandedDetail({
 }) {
   const group = row.group;
   const { data: members = [] } = useMembers(huntId);
+  const { data: contributors = [] } = useHuntContributors(huntId);
   const { data: ratings = [] } = useRatings(row.listing.id);
   const { data: comments = [] } = useComments(row.listing.id);
   const { data: currentMember } = useCurrentMember(huntId);
@@ -140,6 +141,7 @@ function ExpandedDetail({
           <RatingSummary
             ratings={rowRatings}
             members={members}
+            contributors={contributors}
             commentCount={rowComments.length}
           />
         </Stat>

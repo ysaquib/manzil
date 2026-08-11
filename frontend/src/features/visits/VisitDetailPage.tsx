@@ -37,7 +37,8 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../../auth/useAuth";
 import type { VisitEditMode } from "./types";
 import { ApiError } from "../../lib/apiClient";
-import { useCurrentMember, useMembers } from "../collaboration/api";
+import { useCurrentMember, useHuntContributors } from "../collaboration/api";
+import { contributorDisplayName } from "../collaboration/memberDisplay";
 import { useDeleteVisit, usePatchVisit, useVisit, useVisitTemplate } from "./api";
 import { useGhostMode } from "../admin/useGhostMode";
 import { VisitChecklist } from "./VisitChecklist";
@@ -53,7 +54,7 @@ export function VisitDetailPage() {
   const navigate = useNavigate();
   const { session } = useAuth();
   const visitQuery = useVisit(visitId);
-  const membersQuery = useMembers(huntId);
+  const contributorsQuery = useHuntContributors(huntId);
   const currentMember = useCurrentMember(huntId);
   const patchVisit = usePatchVisit(huntId);
   const deleteVisit = useDeleteVisit(huntId);
@@ -116,9 +117,11 @@ export function VisitDetailPage() {
   const mayCancel =
     visit.created_by === session?.user.id || currentMember.data?.role === "owner";
 
-  const creatorName =
-    membersQuery.data?.find((member) => member.user_id === visit.created_by)?.display_name ??
-    "a member";
+  const creatorName = contributorDisplayName(
+    contributorsQuery.data?.find(
+      (contributor) => contributor.user_id === visit.created_by,
+    ),
+  );
 
   const act = (action: "start" | "end" | "reopen" | "cancel" | "reinstate", reason?: string) =>
     patchVisit.mutate({
