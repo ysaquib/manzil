@@ -132,7 +132,7 @@ def test_partial_download_set_keeps_good_images_without_authoritative_replace() 
     assert not state.image_fetch_strict_complete
 
 
-def test_cap_saturated_partial_is_freshness_complete_but_not_strict() -> None:
+def test_cap_saturated_partial_is_complete_without_a_user_warning() -> None:
     interleaved: list[str] = []
     for i in range(MAX_STORED_IMAGES):
         interleaved.append(f"https://img.test/good{i}")
@@ -155,12 +155,7 @@ def test_cap_saturated_partial_is_freshness_complete_but_not_strict() -> None:
     assert len(photos) == MAX_STORED_IMAGES
     assert state.image_fetch_completed
     assert not state.image_fetch_strict_complete
-    assert len(state.warnings) == 1
-    assert state.warnings[0].code == "image_fetch_partial"
-    assert state.warnings[0].detail["cap_saturated"] is True
-    assert state.warnings[0].detail["prepared_images"] == MAX_STORED_IMAGES
-    assert state.warnings[0].detail["failed_candidates"] >= 1
-    assert "at capacity" in state.warnings[0].message
+    assert state.warnings == []
 
 
 def test_all_candidates_failing_stores_nothing_and_skips_vision() -> None:
