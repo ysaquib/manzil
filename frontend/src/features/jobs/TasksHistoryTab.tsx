@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { sentenceCase } from "../../lib/text";
+import { ConfirmDeleteModal } from "../../components/ConfirmDeleteModal";
 import { useHuntContributors } from "../collaboration/api";
 import { contributorDisplayName } from "../collaboration/memberDisplay";
 import { useListings } from "../listings/api";
@@ -11,7 +12,14 @@ import { JobCardHeader } from "./JobCardHeader";
 import { JobWarnings } from "./JobWarnings";
 import { PipelineTrack } from "./PipelineTrack";
 import { phasesForJob } from "./pipelinePhases";
-import { useHistoryJobs, useJobEvents, useRetryJob, type JobEvent, type Job } from "./api";
+import {
+  useDeleteJob,
+  useHistoryJobs,
+  useJobEvents,
+  useRetryJob,
+  type JobEvent,
+  type Job,
+} from "./api";
 import { filterHistoryJobs, formatJobCostUsd, historySpendLabel, jobDuration } from "./history";
 import { useHuntAccess } from "../hunts/access";
 
@@ -80,16 +88,19 @@ function escalationSummary(plan: unknown): string | null {
   return `Cross-check escalated ${rounds.length} time${rounds.length === 1 ? "" : "s"} · ${sourceCount} additional Source${sourceCount === 1 ? "" : "s"} · ${targetCount} unresolved field${targetCount === 1 ? "" : "s"}`;
 }
 
-function HistoryCard({ job, listingName, memberName, onRetry, retrying, readOnly = false }: {
+function HistoryCard({ job, listingName, memberName, onRetry, onDelete, retrying, deleting, readOnly = false }: {
   job: Job;
   listingName: string | null;
   memberName: string;
   onRetry: () => void;
+  onDelete: () => void;
   retrying: boolean;
+  deleting: boolean;
   readOnly?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [planExpanded, setPlanExpanded] = useState(false);
+  const [deleteOpened, setDeleteOpened] = useState(false);
   const canRetry = !readOnly && (job.state === "failed" || job.state === "cancelled");
   const togglePlan = () => setPlanExpanded((value) => !value);
   const escalation = escalationSummary(job.plan);
@@ -136,8 +147,22 @@ function HistoryCard({ job, listingName, memberName, onRetry, retrying, readOnly
               Retry
             </Button>
           )}
+          {!readOnly && job.state === "failed" && (
+            <Button size="xs" variant="subtle" color="red" onClick={() => setDeleteOpened(true)}>
+              Delete
+            </Button>
+          )}
         </div>
       </div>
+      <ConfirmDeleteModal
+        opened={deleteOpened}
+        onClose={() => setDeleteOpened(false)}
+        targets={[{ id: job.id, label: `${listingName ?? "Hunt-wide run"} · ${job.id.slice(0, 8)}` }]}
+        noun={{ singular: "Job", plural: "Jobs" }}
+        warning="This removes the failed Job from Tasks. Its cost and backend timeline are retained."
+        loading={deleting}
+        onConfirm={() => onDelete()}
+      />
     </Card>
   );
 }
@@ -148,6 +173,7 @@ export function TasksHistoryTab() {
   const { data: listings = [] } = useListings(huntId);
   const { data: contributors = [] } = useHuntContributors(huntId);
   const retryJob = useRetryJob(huntId);
+  const deleteJob = useDeleteJob(huntId);
   const access = useHuntAccess(huntId);
   const [listingFilter, setListingFilter] = useState<string | null>(null);
   const [memberFilter, setMemberFilter] = useState<string | null>(null);
@@ -197,8 +223,10 @@ export function TasksHistoryTab() {
             <HistoryCard key={job.id} job={job} listingName={listing?.property.name ?? null}
               memberName={listing ? contributorDisplayName(contributor) : "system"}
               onRetry={() => retryJob.mutate(job.id)}
+              onDelete={() => deleteJob.mutate(job.id)}
               readOnly={!access.canMutate}
-              retrying={retryJob.isPending && retryJob.variables === job.id} />
+              retrying={retryJob.isPending && retryJob.variables === job.id}
+              deleting={deleteJob.isPending && deleteJob.variables === job.id} />
           );
         })}
       </SimpleGrid>

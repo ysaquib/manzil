@@ -673,6 +673,21 @@ export function useJobAction() {
   });
 }
 
+export function useAdminDeleteJob() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (jobId: string) =>
+      apiFetch<{ status: string; detail: string | null }>(`/v1/admin/jobs/${jobId}`, {
+        method: "DELETE",
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "jobs"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "summary"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "costs"] });
+    },
+  });
+}
+
 export function useReleaseLocks() {
   const queryClient = useQueryClient();
   return useMutation({

@@ -13,6 +13,7 @@ export const STATE_LABEL: Record<JobState, string> = {
   done: "Done",
   failed: "Failed",
   cancelled: "Cancelled",
+  deleted: "Deleted",
 };
 
 export function StatusDot({ state }: { state: JobState }) {

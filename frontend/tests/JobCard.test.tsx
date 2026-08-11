@@ -40,7 +40,7 @@ function renderCard(j: Job) {
 describe("job state mapping", () => {
   it("covers every job state with a color", () => {
     expect(Object.keys(STATE_COLOR).sort()).toEqual(
-      ["cancelled", "done", "failed", "queued", "running", "waiting_user"].sort(),
+      ["cancelled", "deleted", "done", "failed", "queued", "running", "waiting_user"].sort(),
     );
   });
 

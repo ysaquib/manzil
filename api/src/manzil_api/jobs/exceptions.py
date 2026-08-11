@@ -35,3 +35,13 @@ class InvalidCheckpointAnswer(ManzilAPIError):
 class InvalidJobState(ManzilAPIError):
     status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
     code = "invalid_job_state"
+
+
+class JobNotDeletable(ManzilAPIError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "job_not_deletable"
+
+
+class JobAlreadyDeleted(ManzilAPIError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "job_already_deleted"

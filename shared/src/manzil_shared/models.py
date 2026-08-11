@@ -38,6 +38,7 @@ class JobState(StrEnum):
     DONE = "done"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    DELETED = "deleted"
 
 
 class Confidence(StrEnum):
