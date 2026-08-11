@@ -109,8 +109,14 @@ async def summary(admin: AdminUser, pool: DbPool) -> AdminSummary:
             (select count(*) from hunt_listings)                         as listings,
             (select count(*) from jobs where state = 'failed')           as jobs_failed,
             (select count(*) from jobs)                                  as jobs_total,
+            -- Same accumulator as the Tasks tab and the Hunt table's total.
+            -- Dated by `coalesce(finished_at, started_at, created_at)` because
+            -- a Job that is still running, or parked at a checkpoint, has
+            -- already spent money and has no `finished_at` to be counted by
+            -- (DESIGN §20 v3.80).
             (select coalesce(sum(cost_actual_usd), 0) from jobs
-              where finished_at > now() - interval '30 days')            as spend_30d,
+              where coalesce(finished_at, started_at, created_at)
+                    > now() - interval '30 days')                        as spend_30d,
             (select coalesce(sum(credits), 0) from tier3_credit_usage
               where month = date_trunc('month', now()))                  as credits_used,
             (select count(*) from feedback where triage = 'new')          as feedback_new
@@ -152,6 +158,15 @@ async def list_hunts(
     "most expensive first" cannot be answered without pricing the candidates.
     It is one grouped join rather than a lateral per row, which is the version
     of that cost worth paying.
+
+    **What "cost" means here** (DESIGN §20 v3.80). The Hunt's total is
+    `sum(jobs.cost_actual_usd)` — the same accumulator every Job card in Tasks
+    shows, and the whole bill including re-run Stage attempts. The llm/fetch
+    split comes from `job_stage_costs`, whose rows are *replaced* when a Stage
+    re-runs (v3.37), so the split can be smaller than the total; the remainder
+    is reported as `unattributed_cost_usd` rather than quietly shrinking the
+    number. The two are summed in separate CTEs on purpose: one join carrying
+    both would multiply each Job's total by its Stage-row count.
     """
     rows = await pool.fetch(
         """
@@ -164,33 +179,42 @@ async def list_hunts(
                or h.name ilike '%' || $1 || '%'
                or up.default_display_name ilike '%' || $1 || '%'
         ),
-        costs as (
-            select f.id,
+        billed as (
+            select j.hunt_id as id, coalesce(sum(j.cost_actual_usd), 0) as billed
+            from jobs j join filtered f on f.id = j.hunt_id
+            group by j.hunt_id
+        ),
+        split as (
+            select j.hunt_id as id,
                    coalesce(sum(sc.llm_cost_usd), 0)   as llm,
                    coalesce(sum(sc.fetch_cost_usd), 0) as fetch
-            from filtered f
-            left join jobs j on j.hunt_id = f.id
-            left join job_stage_costs sc on sc.job_id = j.id
-            group by f.id
+            from jobs j
+            join filtered f on f.id = j.hunt_id
+            join job_stage_costs sc on sc.job_id = j.id
+            group by j.hunt_id
         ),
         page as (
-            select f.*, c.llm, c.fetch
+            select f.*,
+                   coalesce(b.billed, 0) as billed,
+                   coalesce(s.llm, 0)    as llm,
+                   coalesce(s.fetch, 0)  as fetch
             from filtered f
-            join costs c on c.id = f.id
-            order by (c.llm + c.fetch) desc, f.created_at desc
+            left join billed b on b.id = f.id
+            left join split s on s.id = f.id
+            order by coalesce(b.billed, 0) desc, f.created_at desc
             limit $2 offset $3
         )
         select
             p.id as hunt_id, p.name, p.owner_id, p.owner_name, p.created_at,
             p.archived_at, p.locked_at,
-            p.llm as llm_cost, p.fetch as fetch_cost,
+            p.billed as billed_cost, p.llm as llm_cost, p.fetch as fetch_cost,
             (select count(*) from hunt_members m where m.hunt_id = p.id)   as members,
             (select count(*) from hunt_listings l where l.hunt_id = p.id)  as listings,
             (select count(*) from jobs j where j.hunt_id = p.id)           as jobs,
             (select max(j.finished_at) from jobs j where j.hunt_id = p.id) as last_activity_at,
             (select count(*) from filtered)                                as total
         from page p
-        order by (p.llm + p.fetch) desc, p.created_at desc
+        order by p.billed desc, p.created_at desc
         """,
         search,
         limit,
@@ -226,7 +250,11 @@ async def list_hunts(
                 jobs=row["jobs"],
                 llm_cost_usd=float(row["llm_cost"]),
                 fetch_cost_usd=float(row["fetch_cost"]),
-                total_cost_usd=float(row["llm_cost"]) + float(row["fetch_cost"]),
+                total_cost_usd=float(row["billed_cost"]),
+                unattributed_cost_usd=max(
+                    float(row["billed_cost"]) - float(row["llm_cost"]) - float(row["fetch_cost"]),
+                    0.0,
+                ),
                 created_at=row["created_at"],
                 last_activity_at=row["last_activity_at"],
                 archived_at=row["archived_at"],

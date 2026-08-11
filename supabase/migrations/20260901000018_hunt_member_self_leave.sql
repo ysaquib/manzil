@@ -48,6 +48,15 @@ comment on function private.hunt_member_count(uuid) is
   'read it without re-entering policy evaluation. Used by '
   'hunt_members_self_leave_delete to keep the last member from leaving.';
 
+-- Dropped first so the file is re-runnable. This migration was renamed
+-- (20260901000016 → ...018) to repair an ordering collision *after* the
+-- original had already been applied to production, so `supabase db push` saw a
+-- new version and replayed DDL the database already had: the deploy failed on
+-- `policy ... already exists (42710)`. A rename is a normal way to resolve a
+-- collision between branches, and every statement here is `create or replace`
+-- except this one — which is the only reason the replay was not a no-op.
+drop policy if exists hunt_members_self_leave_delete on hunt_members;
+
 create policy hunt_members_self_leave_delete
     on hunt_members for delete to authenticated
     using (
