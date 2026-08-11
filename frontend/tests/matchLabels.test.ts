@@ -7,6 +7,7 @@ import type { ValueSchema } from "../src/features/rubric/widgets/types";
 const numberSchema: ValueSchema = { type: "number", minimum: 0 };
 const boolSchema: ValueSchema = { type: "boolean" };
 const enumSchema: ValueSchema = { type: "string", enum: ["2_br", "3_br"] };
+const dateSchema: ValueSchema = { type: "string", format: "date" };
 
 describe("formatMatchLabel", () => {
   it("formats scalar ops with view-label conventions", () => {
@@ -49,5 +50,6 @@ describe("opsForSchema", () => {
     expect(opsForSchema(boolSchema)).toEqual(["bool"]);
     expect(opsForSchema(enumSchema)).toEqual(["eq", "in"]);
     expect(opsForSchema(numberSchema)).toEqual(["lt", "lte", "eq", "gte", "gt", "range"]);
+    expect(opsForSchema(dateSchema)).toEqual(["lt", "gt", "range"]);
   });
 });

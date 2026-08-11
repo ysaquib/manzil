@@ -10,6 +10,7 @@ import type { ControlSizes } from "./controlSizes";
 import type { MatchOp, OptionMatch } from "../../lib/contracts";
 import { OP_LABEL_SHORT, OP_LABEL_WORD, opsForSchema } from "./matchLabels";
 import { NumberWidget } from "./widgets/NumberWidget";
+import { DateWidget } from "./widgets/DateWidget";
 import type { ValueSchema } from "./widgets/types";
 import { WidgetForSchema } from "./widgets/widgetForSchema";
 
@@ -48,7 +49,8 @@ export function OptionMatchEditor({
 }) {
   const ops = opsForSchema(schema);
   const isEnum = Boolean(schema.enum) || schema.type === "array";
-  const range = Array.isArray(match.value) ? (match.value as (number | null)[]) : [null, null];
+  const isDate = schema.type === "string" && schema.format === "date";
+  const range = Array.isArray(match.value) ? match.value : [null, null];
   const unit = criterionUnit(criterionKey);
 
   return (
@@ -60,7 +62,9 @@ export function OptionMatchEditor({
             value: op,
             // Enum ops read as words ("is", "any of"); numeric ops as symbols
             // with a word gloss in the dropdown.
-            label: isEnum ? OP_LABEL_WORD[op] : OP_LABEL_SHORT[op],
+            label: isDate
+              ? op === "lt" ? "before" : op === "gt" ? "after" : "between"
+              : isEnum ? OP_LABEL_WORD[op] : OP_LABEL_SHORT[op],
           }))}
           renderOption={({ option }) =>
             // Symbol ops get a word gloss ("≤  at most"); word ops ("between",
@@ -86,13 +90,35 @@ export function OptionMatchEditor({
             onChange({ op: next as MatchOp, value: defaultValueForOp(next as MatchOp, match) })
           }
           allowDeselect={false}
-          w={selectWidth(sizes, isEnum, match.op)}
+          w={selectWidth(sizes, isEnum || isDate, match.op)}
           size={sizes.input}
           comboboxProps={{ width: "max-content", position: "bottom-start" }}
           styles={{ input: { flexShrink: 0 } }}
         />
       )}
-      {match.op === "range" ? (
+      {match.op === "range" && isDate ? (
+        <>
+          <div style={flexCell}>
+            <DateWidget
+              schema={schema}
+              value={typeof range[0] === "string" ? range[0] : null}
+              onChange={(low) => onChange({ ...match, value: [low, range[1]] })}
+              placeholder="from"
+              size={sizes.input}
+            />
+          </div>
+          <Text size="xs" c="dimmed" span>–</Text>
+          <div style={flexCell}>
+            <DateWidget
+              schema={schema}
+              value={typeof range[1] === "string" ? range[1] : null}
+              onChange={(high) => onChange({ ...match, value: [range[0], high] })}
+              placeholder="to"
+              size={sizes.input}
+            />
+          </div>
+        </>
+      ) : match.op === "range" ? (
         <>
           <div style={flexCell}>
             <NumberWidget
