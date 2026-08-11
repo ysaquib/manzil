@@ -16,7 +16,7 @@ declared at all · `implemented` = working · `no table` = table not yet in a mi
 | `POST /v1/hunts` | `useCreateHunt` (`features/hunts/api.ts`) | generated `HuntCreate`/`HuntResponse` | P1-5 | implemented |
 | `PATCH /v1/hunts/{id}` | `usePatchHunt` (`features/hunts/api.ts`) | generated `HuntUpdate` | P1-5 | implemented |
 | `PATCH /v1/hunts/{id}/settings` | `usePatchHuntSettings` (`features/hunts/api.ts`) | generated `HuntSettingsPatch`; resolved client contract includes independent `min_confidence` (medium default) and `min_vision_confidence` (low default) | P1-5 / DESIGN v3.20 | implemented |
-| `PUT /v1/hunts/{id}/rubric` | `usePutRubric` (`features/rubric/api.ts`) | generated (shared §8.2 shape) | P1-5 | implemented |
+| `PUT /v1/hunts/{id}/rubric` | `usePutRubric` (`features/rubric/api.ts`) | generated criterion-list body (shared §8.2 shape) plus CORS-exposed `X-Manzil-Backfill-Count` response header | P1-5 / P3-10 | implemented |
 | `POST /v1/hunts/{id}/rubric/custom-routing` | `useClassifyCustomRouting` (`features/rubric/api.ts`) | generated `CustomRoutingRequest`/`CustomRoutingResponse`; Owner-only, one traced classification; response includes an opaque key, suggested route, reason, and whether v1 supports the route | P3-10 | implemented |
 | `POST /v1/hunts/{id}/listings` | `useCreateListing` (`features/listings/api.ts`) | generated `ListingCreate`/`ListingResponse` | P1-7 | implemented |
 | `GET /v1/listings/{id}/deletion-impact` | `useListingDeletionImpact` (`features/listings/api.ts`) | generated `ListingDeletionImpact`; Owner-only preflight with grouped Hunt-local counts and active-Job count | DESIGN v3.68 | implemented |
