@@ -82,6 +82,7 @@ import {
 } from "./overviewRows";
 import { sentenceCase } from "../../lib/text";
 import { useGhostMode } from "../admin/useGhostMode";
+import { useHuntAccess } from "../hunts/access";
 
 import classes from "./OverviewTable.module.css";
 
@@ -284,7 +285,8 @@ function CurationCells({ row, huntId }: { row: OverviewRow; huntId: string }) {
   const { data: currentMember } = useCurrentMember(huntId);
   const { isGhost } = useGhostMode(huntId);
   const patchState = usePatchUnitGroupState(huntId);
-  const canCurate = isGhost === true || currentMember?.role === "owner" || currentMember?.role === "curator";
+  const access = useHuntAccess(huntId);
+  const canCurate = access.canMutate && (isGhost === true || currentMember?.role === "owner" || currentMember?.role === "curator");
   const group = row.group;
   const visited = row.state?.visited ?? false;
   const save = (interest_status: InterestStatus | null, nextVisited: boolean) => {
@@ -331,10 +333,12 @@ function RowActionsMenu({
   const { data: currentMember } = useCurrentMember(huntId);
   const { isGhost } = useGhostMode(huntId);
   const refresh = useRefreshListing(huntId);
+  const access = useHuntAccess(huntId);
   const canRefresh =
     isGhost === true ||
     currentMember?.role === "owner" ||
     currentMember?.user_id === row.listing.added_by;
+  const mayMutate = access.canMutate;
 
   const copy = async (label: string, value: string) => {
     await navigator.clipboard.writeText(value);
@@ -369,7 +373,7 @@ function RowActionsMenu({
         >
           <Menu.Item
             leftSection={<IconArrowsLeftRight size={14} stroke={1.5} />}
-            disabled={compareBlocked}
+            disabled={compareBlocked || !mayMutate}
             onClick={() => entry && compare.toggle(entry)}
           >
             {inCompare ? "Remove from Compare" : "Send to Compare"}
@@ -385,7 +389,7 @@ function RowActionsMenu({
         )}
         <Menu.Item
           leftSection={<IconRefresh size={14} stroke={1.5} />}
-          disabled={!canRefresh || refresh.isPending}
+          disabled={!mayMutate || !canRefresh || refresh.isPending}
           onClick={() =>
             refresh.mutate(
               { listingId: row.listing.id },
@@ -415,7 +419,7 @@ function RowActionsMenu({
             Copy listing link
           </Menu.Item>
         )}
-        {onArchive && (
+        {onArchive && mayMutate && (
           <>
             <Menu.Divider />
             <Menu.Item

@@ -195,6 +195,7 @@ export interface FloorPlanDetailModalProps {
   saving?: boolean;
   isMobile: boolean;
   members?: (HuntMember | HuntContributor)[];
+  readOnly?: boolean;
   onClose: () => void;
   onTogglePin: () => void;
 }
@@ -216,6 +217,7 @@ export function FloorPlanDetailModal({
   saving,
   isMobile,
   members = [],
+  readOnly = false,
   onClose,
   onTogglePin,
 }: FloorPlanDetailModalProps) {
@@ -483,7 +485,7 @@ export function FloorPlanDetailModal({
               <Button
                 size="xs"
                 leftSection={<IconPinFilled size={13} />}
-                disabled={saving}
+                disabled={saving || readOnly}
                 onClick={onTogglePin}
               >
                 Pin for {unitGroupLabel}

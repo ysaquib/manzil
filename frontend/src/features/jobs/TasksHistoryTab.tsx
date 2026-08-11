@@ -13,6 +13,7 @@ import { PipelineTrack } from "./PipelineTrack";
 import { phasesForJob } from "./pipelinePhases";
 import { useHistoryJobs, useJobEvents, useRetryJob, type JobEvent, type Job } from "./api";
 import { filterHistoryJobs, formatJobCostUsd, historySpendLabel, jobDuration } from "./history";
+import { useHuntAccess } from "../hunts/access";
 
 // A stage event reads as a failure when its name mentions failing or erroring.
 function isFailureEvent(event: JobEvent): boolean {
@@ -79,16 +80,17 @@ function escalationSummary(plan: unknown): string | null {
   return `Cross-check escalated ${rounds.length} time${rounds.length === 1 ? "" : "s"} · ${sourceCount} additional Source${sourceCount === 1 ? "" : "s"} · ${targetCount} unresolved field${targetCount === 1 ? "" : "s"}`;
 }
 
-function HistoryCard({ job, listingName, memberName, onRetry, retrying }: {
+function HistoryCard({ job, listingName, memberName, onRetry, retrying, readOnly = false }: {
   job: Job;
   listingName: string | null;
   memberName: string;
   onRetry: () => void;
   retrying: boolean;
+  readOnly?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [planExpanded, setPlanExpanded] = useState(false);
-  const canRetry = job.state === "failed" || job.state === "cancelled";
+  const canRetry = !readOnly && (job.state === "failed" || job.state === "cancelled");
   const togglePlan = () => setPlanExpanded((value) => !value);
   const escalation = escalationSummary(job.plan);
 
@@ -146,6 +148,7 @@ export function TasksHistoryTab() {
   const { data: listings = [] } = useListings(huntId);
   const { data: contributors = [] } = useHuntContributors(huntId);
   const retryJob = useRetryJob(huntId);
+  const access = useHuntAccess(huntId);
   const [listingFilter, setListingFilter] = useState<string | null>(null);
   const [memberFilter, setMemberFilter] = useState<string | null>(null);
   const [outcomeFilter, setOutcomeFilter] = useState<string | null>(null);
@@ -194,6 +197,7 @@ export function TasksHistoryTab() {
             <HistoryCard key={job.id} job={job} listingName={listing?.property.name ?? null}
               memberName={listing ? contributorDisplayName(contributor) : "system"}
               onRetry={() => retryJob.mutate(job.id)}
+              readOnly={!access.canMutate}
               retrying={retryJob.isPending && retryJob.variables === job.id} />
           );
         })}

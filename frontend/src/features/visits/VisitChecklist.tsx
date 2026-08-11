@@ -116,13 +116,17 @@ export function VisitChecklist({
   visit,
   mode = "live",
   restrictTo,
+  readOnly = false,
 }: {
   visit: Visit;
   /** `record` for a finished tour, `void` for a cancelled one (VC-12). */
   mode?: VisitEditMode;
   /** Section keys to show. Used before a tour starts, when only prep is open. */
   restrictTo?: string[];
+  /** Hunt lifecycle and Ghost View can make an otherwise-live tour observational. */
+  readOnly?: boolean;
 }) {
+  const effectiveMode: VisitEditMode = readOnly && mode !== "void" ? "record" : mode;
   const { session } = useAuth();
   const userId = session?.user.id ?? null;
   const membersQuery = useMembers(visit.hunt_id);
@@ -190,7 +194,7 @@ export function VisitChecklist({
     visit.id,
     userId ?? undefined,
     currentSectionKey,
-    isGhost !== false,
+    readOnly || isGhost !== false,
   );
   const section = sections.find((candidate) => candidate.key === currentSectionKey);
   const unitScoped = section?.hasUnitScoped ?? false;
@@ -534,7 +538,7 @@ export function VisitChecklist({
                       <VisitItemNote
                         entry={entry}
                         label={item.label}
-                        mode={mode}
+                        mode={effectiveMode}
                         onSave={(note) => save(item, { note })}
                       />
                     </Box>
@@ -543,7 +547,7 @@ export function VisitChecklist({
                         item={item}
                         entry={entry}
                         disabled={blocked}
-                        mode={mode}
+                        mode={effectiveMode}
                         onSave={(patch) => save(item, patch)}
                       />
                     </Box>
@@ -564,7 +568,7 @@ export function VisitChecklist({
           listing={listing}
           proposals={proposalsQuery.data ?? []}
           activeUnit={activeUnit}
-          readOnly={mode !== "live"}
+          readOnly={effectiveMode !== "live"}
         />
       )}
 

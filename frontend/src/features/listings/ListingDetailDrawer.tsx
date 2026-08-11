@@ -33,6 +33,7 @@ import { useListingFeeProposals } from "../visits/api";
 import { ListingVisits } from "../visits/ListingVisits";
 import { memberDisplayNameMap } from "../collaboration/memberDisplay";
 import { useHunt } from "../hunts/api";
+import { useHuntAccess } from "../hunts/access";
 import { useFeedbackOptional } from "../feedback/FeedbackContext";
 import { AutoResolvedCheckpointReview } from "../jobs/AutoResolvedCheckpointReview";
 import type { Job } from "../jobs/api";
@@ -243,6 +244,7 @@ function DrawerShell({
   isGhost: boolean;
 }) {
   const { draftPins, setDraftPin, isDirty, saving, saveAll, resetDraft } = useListingDetailDraft();
+  const access = useHuntAccess(huntId);
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
   const [openFloorPlanId, setOpenFloorPlanId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -413,6 +415,20 @@ function DrawerShell({
 
       <Drawer.Body>
         <Box
+          component="fieldset"
+          disabled={!access.canMutate}
+          style={{
+            border: 0,
+            padding: 0,
+            margin: 0,
+            minWidth: 0,
+            display: "flex",
+            flexDirection: "column",
+            flex: 1,
+            overflow: "hidden",
+          }}
+        >
+        <Box
           ref={scrollRef}
           component="div"
           onScroll={syncHeaderScroll}
@@ -438,10 +454,11 @@ function DrawerShell({
                 <AutoResolvedCheckpointReview
                   checkpoint={autoResolvedJob.auto_resolved_checkpoint}
                   canAnswer={
-                    isGhost === true ||
-                    currentMember?.role === "owner" ||
-                    currentMember?.role === "curator" ||
-                    currentMember?.user_id === listing.added_by
+                    access.canMutate &&
+                    (isGhost === true ||
+                      currentMember?.role === "owner" ||
+                      currentMember?.role === "curator" ||
+                      currentMember?.user_id === listing.added_by)
                   }
                   answering={answeringCheckpoint}
                   onAnswer={(choice, text) =>
@@ -523,9 +540,10 @@ function DrawerShell({
                 // Deciding is a cost write, so it follows the Override
                 // permission (§4.2) — the same rule the API and RLS enforce.
                 canDecideProposals={
-                  currentMember?.role === "owner" ||
-                  currentMember?.role === "curator" ||
-                  currentMember?.user_id === listing.added_by
+                  access.canMutate &&
+                  (currentMember?.role === "owner" ||
+                    currentMember?.role === "curator" ||
+                    currentMember?.user_id === listing.added_by)
                 }
               />
             </SectionCard>
@@ -573,6 +591,11 @@ function DrawerShell({
             </SectionCard>
 
             <SectionCard title="Notes & ratings">
+              <Box
+                component="fieldset"
+                disabled={isGhost}
+                style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
+              >
               <Stack gap="md">
                 {group ? (
                   <RatingControl
@@ -595,6 +618,7 @@ function DrawerShell({
                   }
                 />
               </Stack>
+              </Box>
             </SectionCard>
 
             {/* Near the bottom by design: the map answers "where is this?"
@@ -620,9 +644,10 @@ function DrawerShell({
                 listingId={listing.id}
                 singleSourceReason={listing.single_source_reason}
                 canEdit={
-                  isGhost === true ||
-                  currentMember?.role === "owner" ||
-                  currentMember?.user_id === listing.added_by
+                  access.canMutate &&
+                  (isGhost === true ||
+                    currentMember?.role === "owner" ||
+                    currentMember?.user_id === listing.added_by)
                 }
                 jobs={jobs}
               />
@@ -650,6 +675,7 @@ function DrawerShell({
             </Group>
           </Box>
         )}
+        </Box>
       </Drawer.Body>
 
       {group && (
@@ -670,6 +696,7 @@ function DrawerShell({
           saving={saving}
           isMobile={isMobile}
           members={contributors}
+          readOnly={!access.canMutate}
           onClose={() => setOpenFloorPlanId(null)}
           onTogglePin={() =>
             openFloorPlan &&

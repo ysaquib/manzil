@@ -25,7 +25,13 @@ import {
 } from "@mantine/core";
 import { useDebouncedValue, useMediaQuery } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
-import { IconExternalLink, IconSearch, IconTrash } from "@tabler/icons-react";
+import {
+  IconExternalLink,
+  IconLock,
+  IconLockOpen,
+  IconSearch,
+  IconTrash,
+} from "@tabler/icons-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -44,6 +50,7 @@ import {
   useAdminHunts,
   useDeleteAdminHunt,
   useHuntActivity,
+  useSetAdminHuntLock,
   useTransferAdminHuntOwnership,
   type ActivityEntry,
   type HuntSummary,
@@ -102,6 +109,7 @@ function HuntDetail({ hunt, onDeleted }: { hunt: HuntSummary; onDeleted: () => v
   const management = useAdminHuntManagement(huntId);
   const transfer = useTransferAdminHuntOwnership(huntId);
   const deleteHunt = useDeleteAdminHunt();
+  const setLock = useSetAdminHuntLock(huntId);
   const [transferTarget, setTransferTarget] = useState<string | null>(null);
   const [transferOpen, setTransferOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -112,6 +120,7 @@ function HuntDetail({ hunt, onDeleted }: { hunt: HuntSummary; onDeleted: () => v
   const transferName =
     transferOptions.find((option) => option.value === transferTarget)?.label ?? "this member";
   const blockedReason = (management.data?.deletion_blockers ?? []).join(" · ") || undefined;
+  const locked = management.data?.locked_at !== null && management.data?.locked_at !== undefined;
   const deleteTarget: DeletionTarget = {
     id: huntId,
     label: name,
@@ -152,6 +161,42 @@ function HuntDetail({ hunt, onDeleted }: { hunt: HuntSummary; onDeleted: () => v
         Hunt management
       </Title>
       <Stack gap="xs" mb="md">
+        {locked && (
+          <Alert color="yellow" icon={<IconLock size={16} />} title="This Hunt is locked">
+            Every Hunt member has read-only access. Unlock it before transferring ownership,
+            archiving, restoring, deleting, or changing Hunt data.
+          </Alert>
+        )}
+        <Group justify="space-between" align="center" wrap="wrap">
+          <Text size="sm" c="dimmed" maw={520}>
+            Locking cancels unfinished Jobs and makes the whole Hunt read-only until a Site Admin
+            unlocks it.
+          </Text>
+          <Button
+            variant="default"
+            color={locked ? undefined : "yellow"}
+            leftSection={locked ? <IconLockOpen size={14} /> : <IconLock size={14} />}
+            loading={setLock.isPending}
+            disabled={management.isPending || management.isError}
+            onClick={() =>
+              setLock.mutate(!locked, {
+                onSuccess: () =>
+                  notifications.show({
+                    message: locked ? `${name} unlocked.` : `${name} locked.`,
+                    color: locked ? "green" : "yellow",
+                  }),
+                onError: (error) =>
+                  notifications.show({
+                    title: `Couldn't ${locked ? "unlock" : "lock"} the Hunt`,
+                    message: errorMessage(error),
+                    color: "red",
+                  }),
+              })
+            }
+          >
+            {locked ? "Unlock Hunt" : "Lock Hunt"}
+          </Button>
+        </Group>
         <Group align="flex-end" wrap="wrap">
           <Select
             label="New Owner"
@@ -160,13 +205,13 @@ function HuntDetail({ hunt, onDeleted }: { hunt: HuntSummary; onDeleted: () => v
             value={transferTarget}
             onChange={setTransferTarget}
             searchable
-            disabled={management.isPending || management.isError}
+            disabled={management.isPending || management.isError || locked}
             flex={1}
             miw={220}
           />
           <Button
             variant="default"
-            disabled={!transferTarget}
+            disabled={!transferTarget || locked}
             onClick={() => setTransferOpen(true)}
           >
             Transfer ownership
@@ -180,13 +225,13 @@ function HuntDetail({ hunt, onDeleted }: { hunt: HuntSummary; onDeleted: () => v
             color="red"
             variant="light"
             leftSection={<IconTrash size={14} />}
-            disabled={management.isPending || management.isError}
+            disabled={management.isPending || management.isError || locked}
             onClick={() => setDeleteOpen(true)}
           >
             Delete Hunt permanently
           </Button>
         </Group>
-        {blockedReason && (
+        {blockedReason && !locked && (
           <Alert color="yellow" title="Deletion is currently blocked">
             {blockedReason}
           </Alert>
@@ -350,6 +395,56 @@ export function AdminHuntsPage() {
         )}
         {rows.length > 0 && (
           <>
+          {isCompact ? (
+            <Stack gap="xs" p="xs">
+              {rows.map((hunt) => (
+                <Card
+                  key={hunt.hunt_id}
+                  padding="sm"
+                  radius="sm"
+                  withBorder
+                  onClick={() => setSelected(hunt.hunt_id)}
+                  bg={
+                    selected === hunt.hunt_id
+                      ? "var(--mantine-color-primary-light)"
+                      : undefined
+                  }
+                  style={{ cursor: "pointer" }}
+                >
+                  <Group justify="space-between" align="flex-start" wrap="nowrap">
+                    <div>
+                      <Group gap={4} mb={2}>
+                        <Text size="sm" fw={600}>
+                          {hunt.name}
+                        </Text>
+                        {hunt.locked_at && <Badge size="xs" color="yellow">Locked</Badge>}
+                        {hunt.archived_at && <Badge size="xs" color="gray">Archived</Badge>}
+                      </Group>
+                      <Text size="xs" c="dimmed">
+                        {hunt.owner_name ?? "No owner"} · active {relative(hunt.last_activity_at)}
+                      </Text>
+                    </div>
+                    <Anchor
+                      component={Link}
+                      to={`/h/${hunt.hunt_id}`}
+                      size="xs"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      Open
+                    </Anchor>
+                  </Group>
+                  <Group justify="space-between" mt="sm" gap="xs">
+                    <Text size="xs" c="dimmed">
+                      {hunt.members} members · {hunt.listings} Listings · {hunt.jobs} Jobs
+                    </Text>
+                    <Text size="xs" ff="monospace" fw={600}>
+                      ${hunt.total_cost_usd.toFixed(2)}
+                    </Text>
+                  </Group>
+                </Card>
+              ))}
+            </Stack>
+          ) : (
           <Table.ScrollContainer minWidth={720}>
             <Table highlightOnHover verticalSpacing="xs">
               <Table.Thead>
@@ -383,6 +478,10 @@ export function AdminHuntsPage() {
                       <Text size="sm" fw={600}>
                         {hunt.name}
                       </Text>
+                      <Group gap={4} mt={2}>
+                        {hunt.locked_at && <Badge size="xs" color="yellow">Locked</Badge>}
+                        {hunt.archived_at && <Badge size="xs" color="gray">Archived</Badge>}
+                      </Group>
                       <Text size="xs" c="dimmed">
                         active {relative(hunt.last_activity_at)}
                       </Text>
@@ -423,6 +522,7 @@ export function AdminHuntsPage() {
               </Table.Tbody>
             </Table>
           </Table.ScrollContainer>
+          )}
           <TablePagination state={paged} noun="Hunts" />
           </>
         )}

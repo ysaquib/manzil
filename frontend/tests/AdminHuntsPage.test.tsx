@@ -33,6 +33,8 @@ function hunt(id: string, name: string) {
     total_cost_usd: 1.75,
     created_at: "2026-07-01T00:00:00Z",
     last_activity_at: null,
+    archived_at: null,
+    locked_at: null,
   };
 }
 
@@ -48,6 +50,9 @@ function management(huntId: string) {
     owner_id: "u1",
     owner_name: "N. Rahman",
     caller_is_member: false,
+    archived_at: null,
+    locked_at: null,
+    locked_by: null,
     members: [
       { user_id: "u1", display_name: "N. Rahman", role: "owner" },
       { user_id: "u2", display_name: "Sam Lee", role: "member" },
@@ -159,6 +164,21 @@ describe("AdminHuntsPage", () => {
       expect(apiFetch).toHaveBeenCalledWith("/v1/admin/hunts/h1/transfer-ownership", {
         method: "POST",
         body: { new_owner_id: "u2" },
+      }),
+    );
+  });
+
+  it("locks a Hunt through the audited lifecycle route", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByText("Hunt 1"));
+    await user.click(await screen.findByRole("button", { name: "Lock Hunt" }));
+
+    await waitFor(() =>
+      expect(apiFetch).toHaveBeenCalledWith("/v1/admin/hunts/h1/lock", {
+        method: "PUT",
+        body: { locked: true },
       }),
     );
   });

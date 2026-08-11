@@ -10,6 +10,7 @@
 // policies were deliberately left untouched by AD-4's read predicate.
 import { useAuth } from "../../auth/useAuth";
 import { useMembers } from "../collaboration/api";
+import { useHunt } from "../hunts/api";
 import { useAdminIdentity } from "./api";
 
 export interface GhostMode {
@@ -23,8 +24,9 @@ export function useGhostMode(huntId: string | undefined): GhostMode {
   const { session } = useAuth();
   const admin = useAdminIdentity();
   const members = useMembers(huntId ?? "");
+  const hunt = useHunt(huntId ?? "");
 
-  if (!huntId || admin.isPending || members.isPending) {
+  if (!huntId || admin.isPending || members.isPending || hunt.isPending) {
     return { isGhost: undefined, resolved: false };
   }
 
@@ -35,6 +37,13 @@ export function useGhostMode(huntId: string | undefined): GhostMode {
 
   const userId = session?.user.id;
   const isMember = (members.data ?? []).some((member) => member.user_id === userId);
+
+  // Archived Hunts are the one intentional exception to the membership rule:
+  // every Site Admin override must use the audited admin path, even when the
+  // admin also happens to be a member of this Hunt.
+  if (hunt.data?.archived_at) {
+    return { isGhost: true, resolved: true };
+  }
 
   // An admin who genuinely belongs to this Hunt is an ordinary member here —
   // §4.2's column does not apply to them at all.

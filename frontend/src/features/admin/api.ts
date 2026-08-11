@@ -41,6 +41,8 @@ export interface HuntSummary {
   total_cost_usd: number;
   created_at: string;
   last_activity_at: string | null;
+  archived_at: string | null;
+  locked_at: string | null;
 }
 
 export type TriageState = "new" | "seen" | "actioned" | "wont_fix";
@@ -233,6 +235,8 @@ export interface HuntManagement {
   owner_id: string;
   owner_name: string;
   caller_is_member: boolean;
+  archived_at: string | null;
+  locked_at: string | null;
   members: HuntManagementMember[];
   deletion_blockers: string[];
 }
@@ -295,6 +299,23 @@ export function useTransferAdminHuntOwnership(huntId: string) {
       void queryClient.invalidateQueries({ queryKey: ["hunt_members", huntId] });
       void queryClient.invalidateQueries({ queryKey: ["hunt_contributors", huntId] });
       void queryClient.invalidateQueries({ queryKey: ["admin", "demo"] });
+    },
+  });
+}
+
+export function useSetAdminHuntLock(huntId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (locked: boolean) =>
+      apiFetch<HuntManagement>(`/v1/admin/hunts/${huntId}/lock`, {
+        method: "PUT",
+        body: { locked },
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "hunts"] });
+      void queryClient.invalidateQueries({ queryKey: ["hunts"] });
+      void queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "jobs"] });
     },
   });
 }

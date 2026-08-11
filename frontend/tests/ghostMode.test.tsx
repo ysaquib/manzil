@@ -11,10 +11,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const useAuth = vi.hoisted(() => vi.fn());
 const useMembers = vi.hoisted(() => vi.fn());
 const useAdminIdentity = vi.hoisted(() => vi.fn());
+const useHunt = vi.hoisted(() => vi.fn());
 
 vi.mock("../src/auth/useAuth", () => ({ useAuth }));
 vi.mock("../src/features/collaboration/api", () => ({ useMembers }));
 vi.mock("../src/features/admin/api", () => ({ useAdminIdentity }));
+vi.mock("../src/features/hunts/api", () => ({ useHunt }));
 
 import { useGhostMode } from "../src/features/admin/useGhostMode";
 
@@ -38,6 +40,7 @@ function setup({
     isPending: pending,
     data: pending ? undefined : members.map((user_id) => ({ user_id })),
   });
+  useHunt.mockReturnValue({ isPending: false, data: { archived_at: null } });
 }
 
 describe("useGhostMode", () => {
@@ -45,6 +48,7 @@ describe("useGhostMode", () => {
     useAuth.mockReset();
     useMembers.mockReset();
     useAdminIdentity.mockReset();
+    useHunt.mockReset();
   });
 
   it("is undefined while membership is still unknown", () => {
@@ -73,6 +77,18 @@ describe("useGhostMode", () => {
 
     await waitFor(() => expect(result.current.resolved).toBe(true));
     expect(result.current.isGhost).toBe(false);
+  });
+
+  it("uses audited ghost mode for an archived Hunt even when the admin is a member", async () => {
+    setup({ isAdmin: true, members: [ME] });
+    useHunt.mockReturnValue({
+      isPending: false,
+      data: { archived_at: "2026-08-11T00:00:00Z" },
+    });
+    const { result } = renderHook(() => useGhostMode("h1"));
+
+    await waitFor(() => expect(result.current.resolved).toBe(true));
+    expect(result.current.isGhost).toBe(true);
   });
 
   it("is never a ghost for an ordinary user, member or not", async () => {
