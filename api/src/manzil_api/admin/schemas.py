@@ -76,6 +76,35 @@ class HuntOption(BaseModel):
     owner_name: str | None = None
 
 
+class HuntManagementMember(BaseModel):
+    user_id: UUID
+    display_name: str
+    role: Literal["owner", "curator", "member"]
+
+
+class HuntManagement(BaseModel):
+    hunt_id: UUID
+    name: str
+    owner_id: UUID
+    owner_name: str
+    caller_is_member: bool
+    members: list[HuntManagementMember]
+    deletion_blockers: list[str] = Field(default_factory=list)
+
+
+class HuntDelete(BaseModel):
+    confirmation_name: str = Field(min_length=1, max_length=200)
+
+
+class HuntDeleteResult(BaseModel):
+    hunt_id: UUID
+    name: str
+    members: int
+    listings: int
+    jobs: int
+    visits: int
+
+
 class AuditEntry(BaseModel):
     id: UUID
     admin_user_id: UUID

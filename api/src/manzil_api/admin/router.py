@@ -32,10 +32,16 @@ from manzil_api.admin.schemas import (
     FeedbackReport,
     FeedbackTriageUpdate,
     GrantAdmin,
+    HuntDelete,
+    HuntDeleteResult,
+    HuntManagement,
+    HuntManagementMember,
     HuntOption,
     HuntPage,
     HuntSummary,
 )
+from manzil_api.collaboration.exceptions import TransferTargetNotMember
+from manzil_api.collaboration.schemas import TransferOwnershipRequest, TransferOwnershipResponse
 from manzil_api.dependencies import CurrentUser, DbPool
 from manzil_api.exceptions import ManzilAPIError
 
@@ -56,6 +62,21 @@ class CannotRevokeSelf(ManzilAPIError):
 class FeedbackNotFound(ManzilAPIError):
     status_code = status.HTTP_404_NOT_FOUND
     code = "feedback_not_found"
+
+
+class AdminHuntNotFound(ManzilAPIError):
+    status_code = status.HTTP_404_NOT_FOUND
+    code = "admin_hunt_not_found"
+
+
+class HuntDeletionBlocked(ManzilAPIError):
+    status_code = status.HTTP_409_CONFLICT
+    code = "hunt_deletion_blocked"
+
+
+class HuntConfirmationMismatch(ManzilAPIError):
+    status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+    code = "hunt_confirmation_mismatch"
 
 
 @router.get("/me", response_model=AdminIdentity, summary="Is the caller a site admin?")
@@ -238,6 +259,208 @@ async def hunt_options(
         limit,
     )
     return [HuntOption(**dict(row)) for row in rows]
+
+
+@router.get(
+    "/hunts/{hunt_id}/management",
+    response_model=HuntManagement,
+    summary="Members and safety state for Hunt administration",
+)
+async def hunt_management(hunt_id: UUID, admin: AdminUser, pool: DbPool) -> HuntManagement:
+    hunt = await pool.fetchrow(
+        """
+        select h.id, h.name, h.owner_id,
+               coalesce(hm.display_name, up.default_display_name, 'Member') as owner_name,
+               exists (
+                   select 1 from hunt_members mine
+                   where mine.hunt_id = h.id and mine.user_id = $2
+               ) as caller_is_member
+        from hunts h
+        join hunt_members hm
+          on hm.hunt_id = h.id and hm.user_id = h.owner_id and hm.role = 'owner'
+        left join user_profiles up on up.user_id = h.owner_id
+        where h.id = $1
+        """,
+        hunt_id,
+        UUID(admin.id),
+    )
+    if hunt is None:
+        raise AdminHuntNotFound("Hunt not found")
+
+    rows = await pool.fetch(
+        """
+        select hm.user_id,
+               coalesce(hm.display_name, up.default_display_name, 'Member') as display_name,
+               hm.role::text as role
+        from hunt_members hm
+        left join user_profiles up on up.user_id = hm.user_id
+        where hm.hunt_id = $1
+        order by case hm.role when 'owner' then 0 when 'curator' then 1 else 2 end,
+                 coalesce(hm.display_name, up.default_display_name, 'Member')
+        """,
+        hunt_id,
+    )
+    active_jobs = await pool.fetchval(
+        "select count(*) from jobs where hunt_id=$1 "
+        "and state in ('queued', 'running', 'waiting_user')",
+        hunt_id,
+    )
+    selected_demo = await pool.fetchval(
+        "select exists(select 1 from site_settings where demo_hunt_id=$1)", hunt_id
+    )
+    blockers: list[str] = []
+    if selected_demo:
+        blockers.append("Selected Demo Hunt — select another Hunt in Demo Mode first")
+    if active_jobs:
+        job_word = "Jobs" if active_jobs != 1 else "Job"
+        blockers.append(f"{active_jobs} active {job_word} must finish or be cancelled first")
+
+    return HuntManagement(
+        hunt_id=hunt["id"],
+        name=hunt["name"],
+        owner_id=hunt["owner_id"],
+        owner_name=hunt["owner_name"],
+        caller_is_member=hunt["caller_is_member"],
+        members=[HuntManagementMember(**dict(row)) for row in rows],
+        deletion_blockers=blockers,
+    )
+
+
+@router.post(
+    "/hunts/{hunt_id}/transfer-ownership",
+    response_model=TransferOwnershipResponse,
+    summary="Transfer a Hunt to an existing member",
+)
+async def transfer_admin_hunt_ownership(
+    hunt_id: UUID,
+    body: TransferOwnershipRequest,
+    admin: AdminUser,
+    pool: DbPool,
+    audit: Audit,
+) -> TransferOwnershipResponse:
+    async with pool.acquire() as connection, connection.transaction():
+        hunt = await connection.fetchrow(
+            "select name, owner_id from hunts where id=$1 for update", hunt_id
+        )
+        if hunt is None:
+            raise AdminHuntNotFound("Hunt not found")
+        target = await connection.fetchrow(
+            """
+            select coalesce(hm.display_name, up.default_display_name, 'Member') as display_name
+            from hunt_members hm
+            left join user_profiles up on up.user_id = hm.user_id
+            where hm.hunt_id=$1 and hm.user_id=$2
+            """,
+            hunt_id,
+            body.new_owner_id,
+        )
+        if target is None:
+            raise TransferTargetNotMember("The new Owner must already be a member of the Hunt")
+
+        await connection.execute("select set_config('request.jwt.claim.sub', $1, true)", admin.id)
+        result = await connection.fetchval(
+            "select transfer_hunt_ownership($1::uuid, $2::uuid)",
+            hunt_id,
+            body.new_owner_id,
+        )
+        if isinstance(result, str):
+            result = json.loads(result)
+        if result.get("status") != "ok":
+            raise TransferTargetNotMember("The new Owner must already be a member of the Hunt")
+        await audit.record(
+            "hunt.ownership.transfer",
+            target_type="hunt",
+            target_id=hunt_id,
+            target_label=hunt["name"],
+            hunt_id=hunt_id,
+            before={"owner_id": str(hunt["owner_id"])},
+            after={
+                "owner_id": str(body.new_owner_id),
+                "owner_name": target["display_name"],
+            },
+            conn=connection,
+        )
+    return TransferOwnershipResponse(status="ok")
+
+
+@router.delete(
+    "/hunts/{hunt_id}",
+    response_model=HuntDeleteResult,
+    summary="Permanently delete a Hunt and its Hunt-scoped data",
+)
+async def delete_admin_hunt(
+    hunt_id: UUID,
+    body: HuntDelete,
+    admin: AdminUser,
+    pool: DbPool,
+    audit: Audit,
+) -> HuntDeleteResult:
+    async with pool.acquire() as connection, connection.transaction():
+        hunt = await connection.fetchrow(
+            "select name, owner_id from hunts where id=$1 for update", hunt_id
+        )
+        if hunt is None:
+            raise AdminHuntNotFound("Hunt not found")
+        if body.confirmation_name != hunt["name"]:
+            raise HuntConfirmationMismatch("Type the exact Hunt name to confirm deletion")
+        if await connection.fetchval(
+            "select exists(select 1 from site_settings where demo_hunt_id=$1)", hunt_id
+        ):
+            raise HuntDeletionBlocked(
+                "The selected Demo Hunt cannot be deleted; select another Hunt in Demo Mode first"
+            )
+
+        active_jobs = await connection.fetch(
+            "select id from jobs where hunt_id=$1 "
+            "and state in ('queued', 'running', 'waiting_user') for update",
+            hunt_id,
+        )
+        if active_jobs:
+            raise HuntDeletionBlocked(
+                f"{len(active_jobs)} active Job{'s' if len(active_jobs) != 1 else ''} "
+                "must finish or be cancelled first"
+            )
+
+        impact = await connection.fetchrow(
+            """
+            select
+                (select count(*) from hunt_members where hunt_id=$1) as members,
+                (select count(*) from hunt_listings where hunt_id=$1) as listings,
+                (select count(*) from jobs where hunt_id=$1) as jobs,
+                (select count(*) from visits where hunt_id=$1) as visits
+            """,
+            hunt_id,
+        )
+        result = HuntDeleteResult(
+            hunt_id=hunt_id,
+            name=hunt["name"],
+            members=impact["members"],
+            listings=impact["listings"],
+            jobs=impact["jobs"],
+            visits=impact["visits"],
+        )
+
+        await connection.execute("select set_config('request.jwt.claim.sub', $1, true)", admin.id)
+        await connection.execute("delete from hunts where id=$1", hunt_id)
+        await audit.record(
+            "hunt.permanent_delete",
+            target_type="hunt",
+            target_id=hunt_id,
+            target_label=hunt["name"],
+            hunt_id=hunt_id,
+            before={
+                "owner_id": str(hunt["owner_id"]),
+                "counts": {
+                    "members": result.members,
+                    "listings": result.listings,
+                    "jobs": result.jobs,
+                    "visits": result.visits,
+                },
+            },
+            after={"deleted": True},
+            conn=connection,
+        )
+    return result
 
 
 @router.get(
