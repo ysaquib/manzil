@@ -17,7 +17,6 @@ import {
   Center,
   Group,
   Loader,
-  Modal,
   NumberInput,
   Select,
   SimpleGrid,
@@ -43,7 +42,6 @@ import {
   useMembers,
   useSetMemberColor,
   useSetMemberDisplayName,
-  useTransferOwnership,
 } from "../collaboration/api";
 import { MemberColorControl } from "../collaboration/MemberColorControl";
 import { MembersSection } from "../collaboration/MembersSection";
@@ -60,6 +58,8 @@ import {
   usePatchHuntSettings,
   type Hunt,
 } from "./api";
+import { useHunt, usePatchHunt, usePatchHuntSettings, type Hunt } from "./api";
+import { HuntDangerZone } from "./HuntDangerZone";
 import { useGhostMode } from "../admin/useGhostMode";
 import { useHuntAccess } from "./access";
 import {
@@ -112,23 +112,12 @@ function HuntPanel({ hunt, isOwner, isGhost }: { hunt: Hunt; isOwner: boolean; i
   const { session } = useAuth();
   const currentUserId = session?.user.id ?? "";
   const { data: members = [] } = useMembers(hunt.id);
-  const transferOwnership = useTransferOwnership(hunt.id, isGhost);
   const patchHunt = usePatchHunt(hunt.id);
   const patchSettings = usePatchHuntSettings(hunt.id);
-  const navigate = useNavigate();
 
   const saved = resolveSettings(hunt.settings);
   const [name, setName] = useState(hunt.name);
   const [settings, setSettings] = useState<HuntSettings>(saved);
-  const [confirmArchive, setConfirmArchive] = useState(false);
-  const [transferTarget, setTransferTarget] = useState<string | null>(null);
-  const [confirmTransfer, setConfirmTransfer] = useState(false);
-
-  const transferOptions = members
-    .filter((member) => member.user_id !== currentUserId && member.role !== "owner")
-    .map((member) => ({ value: member.user_id, label: member.display_name ?? "Member" }));
-  const transferTargetName =
-    members.find((member) => member.user_id === transferTarget)?.display_name ?? "this Member";
 
   const set = <K extends keyof HuntSettings>(key: K, value: HuntSettings[K]) =>
     setSettings((prev) => ({ ...prev, [key]: value }));
@@ -405,6 +394,13 @@ function HuntPanel({ hunt, isOwner, isGhost }: { hunt: Hunt; isOwner: boolean; i
           )}
         </Stack>
       </SectionCard>
+      <HuntDangerZone
+        hunt={hunt}
+        members={members}
+        currentUserId={currentUserId}
+        isOwner={isOwner}
+        isGhost={isGhost}
+      />
 
       <SettingsSaveBar
         dirtyLabels={dirtyLabels}
@@ -412,56 +408,6 @@ function HuntPanel({ hunt, isOwner, isGhost }: { hunt: Hunt; isOwner: boolean; i
         onSave={saveSettings}
         onDiscard={() => setSettings(saved)}
       />
-
-      <Modal opened={confirmArchive} onClose={() => setConfirmArchive(false)} title="Archive hunt?">
-        <Stack>
-          <Text size="sm">
-            <Text span fw={600}>
-              {hunt.name}
-            </Text>{" "}
-            disappears from your hunts. Listings, scores, and history are kept.
-          </Text>
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setConfirmArchive(false)}>
-              Cancel
-            </Button>
-            <Button color="red" onClick={archive} loading={patchHunt.isPending}>
-              Archive
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
-
-      <Modal
-        opened={confirmTransfer}
-        onClose={() => setConfirmTransfer(false)}
-        title="Transfer ownership?"
-      >
-        <Stack>
-          <Text size="sm">
-            <Text span fw={600}>
-              {transferTargetName}
-            </Text>{" "}
-            becomes the Owner of{" "}
-            <Text span fw={600}>
-              {hunt.name}
-            </Text>
-            . You become a{" "}
-            <Text span fw={600}>
-              Curator
-            </Text>{" "}
-            and lose owner-only controls. This can only be undone by the new Owner.
-          </Text>
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setConfirmTransfer(false)}>
-              Cancel
-            </Button>
-            <Button color="red" onClick={transfer} loading={transferOwnership.isPending}>
-              Transfer ownership
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
     </>
   );
 }
