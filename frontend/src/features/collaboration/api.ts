@@ -312,6 +312,24 @@ export function useRemoveMember(huntId: string, isGhost = false) {
   });
 }
 
+// Self-service: end your own membership. The server refuses the Owner (transfer
+// ownership first) and a hunt's last member (archive it instead), so the caller
+// only has to surface the error. Never ghosted — a Site Admin in Ghost View has
+// no membership to leave.
+export function useLeaveHunt(huntId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch<void>(`/v1/hunts/${huntId}/leave`, { method: "POST" }),
+    onSuccess: () => {
+      // The hunt drops out of the switcher and its rows stop being readable, so
+      // drop the caches outright rather than refetching what RLS now hides.
+      qc.removeQueries({ queryKey: ["hunt_members", huntId] });
+      qc.removeQueries({ queryKey: ["hunts", huntId] });
+      void qc.invalidateQueries({ queryKey: ["hunts"] });
+    },
+  });
+}
+
 // Owner-only: hand ownership to an existing member; the old owner becomes Curator.
 export function useTransferOwnership(huntId: string, isGhost = false) {
   const qc = useQueryClient();

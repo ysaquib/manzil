@@ -170,7 +170,13 @@ jobs:
           fi
 
   deploy-production-db:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Must name both branches, because `on: push` above triggers on both and this
+    # repository's default branch is `master` — gating on `refs/heads/main` alone
+    # meant every merge to master ran the checks and then silently skipped the
+    # deploy. Keep this expression identical to the `Require ONNX build secret`
+    # step's: they answer the same question ("is this a release push?") and the
+    # bug was the two of them disagreeing.
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     needs: [lint, typecheck, test, collaboration-security, frontend, docker-api-image]
     runs-on: ubuntu-latest
     environment: production
