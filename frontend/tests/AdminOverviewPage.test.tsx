@@ -20,6 +20,10 @@ const SUMMARY = {
   tier3_credits_used: 4,
   tier3_credits_allowance: 5000,
   feedback_new: 0,
+  listing_submissions_daily: [
+    { day: "2026-08-10", count: 1 },
+    { day: "2026-08-11", count: 0 },
+  ],
 };
 
 describe("AdminOverviewPage", () => {
@@ -43,5 +47,16 @@ describe("AdminOverviewPage", () => {
       screen.getByRole("link", { name: /open the cross-hunt jobs queue/i }),
     ).toHaveAttribute("href", "/admin/jobs");
     expect(screen.queryByText(/arrives with AD-5/i)).not.toBeInTheDocument();
+  });
+
+  it("renders the zero-filled 30-day submission series as calendar labels", () => {
+    renderWithProviders(
+      <MemoryRouter>
+        <AdminOverviewPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("Listings submitted · 30 days")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: /Aug 10: 1; Aug 11: 0/ })).toBeInTheDocument();
   });
 });

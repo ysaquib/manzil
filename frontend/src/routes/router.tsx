@@ -29,6 +29,7 @@ import { ComparePage } from "../features/listings/ComparePage";
 import { OverviewPage } from "../features/listings/OverviewPage";
 import { HuntMapPage } from "../features/map/HuntMapPage";
 import { TasksPage } from "../features/jobs/TasksPage";
+import { HuntStatisticsPage } from "../features/statistics/HuntStatisticsPage";
 import { RubricPage } from "../features/rubric/RubricPage";
 import { VisitCreatePage } from "../features/visits/VisitCreatePage";
 import { VisitDetailPage } from "../features/visits/VisitDetailPage";
@@ -90,6 +91,7 @@ export const router = createBrowserRouter([
       { path: "visits/:visitId", element: <VisitDetailPage /> },
       { path: "rubric", element: <RubricPage /> },
       { path: "tasks", element: <TasksPage /> },
+      { path: "statistics", element: <HuntStatisticsPage /> },
       { path: "settings", element: <HuntSettingsPage /> },
       { path: "settings/:tab", element: <HuntSettingsPage /> },
     ],

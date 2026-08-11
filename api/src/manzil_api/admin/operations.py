@@ -34,6 +34,7 @@ from manzil_api.admin.schemas import (
     SpendPoint,
     SystemReport,
 )
+from manzil_api.analytics import calendar_window
 from manzil_api.dependencies import DbPool
 from manzil_api.exceptions import ManzilAPIError
 
@@ -322,9 +323,9 @@ async def costs(
     admin: AdminUser,
     pool: DbPool,
     days: int = Query(14, ge=1, le=365),
+    timezone: str = Query("UTC", min_length=1, max_length=100),
 ) -> CostsReport:
-    # asyncpg binds a text parameter; the cast happens in SQL.
-    window = str(days)
+    start, end, labels = calendar_window(days, timezone)
 
     by_stage = await pool.fetch(
         """
@@ -332,12 +333,13 @@ async def costs(
                sum(c.llm_cost_usd) as llm, sum(c.fetch_cost_usd) as fetch,
                sum(c.llm_calls) as llm_calls, sum(c.fetch_calls) as fetch_calls
         from job_stage_costs c
-        where c.updated_at > now() - ($1 || ' days')::interval
+        where c.updated_at >= $1 and c.updated_at < $2
         group by c.stage
         having sum(c.llm_cost_usd + c.fetch_cost_usd) > 0
         order by sum(c.llm_cost_usd + c.fetch_cost_usd) desc
         """,
-        window,
+        start,
+        end,
     )
 
     # Per Hunt the total is the Job accumulator, not the sum of the Stage rows:
@@ -352,8 +354,8 @@ async def costs(
             select j.id, coalesce(h.name, 'unknown') as label, j.cost_actual_usd
             from jobs j
             left join hunts h on h.id = j.hunt_id
-            where coalesce(j.finished_at, j.started_at, j.created_at)
-                  > now() - ($1 || ' days')::interval
+            where coalesce(j.finished_at, j.started_at, j.created_at) >= $1
+              and coalesce(j.finished_at, j.started_at, j.created_at) < $2
         ),
         billed as (
             select label, sum(cost_actual_usd) as billed from scoped group by label
@@ -374,7 +376,8 @@ async def costs(
         where b.billed > 0
         order by b.billed desc
         """,
-        window,
+        start,
+        end,
     )
 
     # The window's authoritative total, for the same reason: summing `by_stage`
@@ -383,24 +386,28 @@ async def costs(
         await pool.fetchval(
             """
             select coalesce(sum(cost_actual_usd), 0) from jobs
-            where coalesce(finished_at, started_at, created_at)
-                  > now() - ($1 || ' days')::interval
+            where coalesce(finished_at, started_at, created_at) >= $1
+              and coalesce(finished_at, started_at, created_at) < $2
             """,
-            window,
+            start,
+            end,
         )
         or 0
     )
 
     daily = await pool.fetch(
         """
-        select date_trunc('day', c.updated_at)::date as day,
+        select (c.updated_at at time zone $3)::date as day,
                sum(c.llm_cost_usd) as llm, sum(c.fetch_cost_usd) as fetch
         from job_stage_costs c
-        where c.updated_at > now() - ($1 || ' days')::interval
+        where c.updated_at >= $1 and c.updated_at < $2
         group by 1 order by 1
         """,
-        window,
+        start,
+        end,
+        timezone,
     )
+    daily_by_day = {row["day"]: row for row in daily}
 
     # Stage spend folded under each stage's *current* pin. See the module
     # docstring: useful, and explicitly not history.
@@ -444,6 +451,7 @@ async def costs(
 
     return CostsReport(
         days=days,
+        timezone=timezone,
         total_cost_usd=billed_total,
         by_stage=[bucket(row) for row in by_stage],
         by_hunt=[hunt_bucket(row) for row in by_hunt],
@@ -465,11 +473,15 @@ async def costs(
         grouped_by_current_pin=True,
         daily=[
             SpendPoint(
-                day=row["day"],
-                llm_cost_usd=float(row["llm"]),
-                fetch_cost_usd=float(row["fetch"]),
+                day=label,
+                llm_cost_usd=float(daily_by_day[label]["llm"] or 0)
+                if label in daily_by_day
+                else 0.0,
+                fetch_cost_usd=float(daily_by_day[label]["fetch"] or 0)
+                if label in daily_by_day
+                else 0.0,
             )
-            for row in daily
+            for label in labels
         ],
         tier3_credits_used=sum(int(row["credits"]) for row in credits),
         tier3_credits_allowance=TIER3_FREE_MONTHLY_CREDITS.get("brightdata"),
