@@ -183,4 +183,46 @@ describe("CustomCriterionModal", () => {
     expect(emitted.custom_def?.key).toMatch(/^custom:[0-9a-f-]{36}$/);
     vi.doUnmock("../src/features/rubric/api");
   });
+
+  it("keeps the Maps route preference checkbox stable and emits the modifier", async () => {
+    vi.resetModules();
+    vi.doMock("../src/features/rubric/api", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("../src/features/rubric/api")>();
+      return {
+        ...actual,
+        useClassifyCustomRouting: () => ({
+          mutate: (_input: unknown, callbacks: { onSuccess: (result: unknown) => void }) =>
+            callbacks.onSuccess({
+              key: "custom:12345678-1234-1234-1234-123456789abc",
+              suggested_requires_tool: "maps",
+              reason: "Requires driving directions.",
+              supported: true,
+            }),
+          isPending: false,
+          isError: false,
+        }),
+      };
+    });
+    const { CustomCriterionModal } = await import(
+      "../src/features/rubric/CustomCriterionModal"
+    );
+    const onAdd = vi.fn();
+    renderWithProviders(
+      <CustomCriterionModal huntId="hunt-1" opened onClose={() => {}} onAdd={onAdd} />,
+    );
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Name"), "Commute");
+    await user.type(screen.getByLabelText("What should Manzil determine?"), "Drive to work.");
+    await user.click(screen.getByRole("button", { name: "Suggest routing" }));
+    await user.click(screen.getByRole("checkbox", { name: "Avoid highways" }));
+    await user.click(screen.getByRole("button", { name: "Confirm and add" }));
+
+    await waitFor(() => expect(onAdd).toHaveBeenCalledTimes(1));
+    expect((onAdd.mock.calls[0][0] as RubricCriterion).custom_def?.route_modifiers).toEqual({
+      avoid_highways: true,
+      avoid_tolls: false,
+      avoid_ferries: false,
+    });
+    vi.doUnmock("../src/features/rubric/api");
+  });
 });

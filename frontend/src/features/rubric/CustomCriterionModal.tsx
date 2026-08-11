@@ -248,32 +248,35 @@ export function CustomCriterionModal({
                 <Checkbox
                   label="Avoid highways"
                   checked={routeModifiers.avoid_highways ?? false}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const checked = event.currentTarget.checked;
                     setRouteModifiers((current) => ({
                       ...current,
-                      avoid_highways: event.currentTarget.checked,
-                    }))
-                  }
+                      avoid_highways: checked,
+                    }));
+                  }}
                 />
                 <Checkbox
                   label="Avoid tolls"
                   checked={routeModifiers.avoid_tolls ?? false}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const checked = event.currentTarget.checked;
                     setRouteModifiers((current) => ({
                       ...current,
-                      avoid_tolls: event.currentTarget.checked,
-                    }))
-                  }
+                      avoid_tolls: checked,
+                    }));
+                  }}
                 />
                 <Checkbox
                   label="Avoid ferries"
                   checked={routeModifiers.avoid_ferries ?? false}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const checked = event.currentTarget.checked;
                     setRouteModifiers((current) => ({
                       ...current,
-                      avoid_ferries: event.currentTarget.checked,
-                    }))
-                  }
+                      avoid_ferries: checked,
+                    }));
+                  }}
                 />
               </Stack>
             )}
