@@ -275,3 +275,113 @@ async def test_transfer_ownership_edge_cases(
     )
     assert idempotent.status_code == 200
     assert idempotent.json()["status"] == "ok"
+
+
+# --- Leaving a Hunt (DESIGN §20 v3.76) ---
+
+
+@pytest.mark.asyncio
+async def test_member_leaves_hunt_and_loses_access(
+    collab_hunt, as_member: AsyncClient, db_pool, seeded_users
+) -> None:
+    hunt_id = collab_hunt["hunt_id"]
+    member_id = seeded_users["member"].user_id
+
+    left = await as_member.post(f"/v1/hunts/{hunt_id}/leave")
+    assert left.status_code == 204
+    assert (
+        await db_pool.fetchval(
+            "select count(*) from hunt_members where hunt_id = $1 and user_id = $2",
+            UUID(hunt_id),
+            UUID(member_id),
+        )
+        == 0
+    )
+    # Same done-when as owner-initiated removal: the hunt is gone at the RLS layer.
+    rows = (
+        seeded_users["member"].supabase.table("hunts").select("id").eq("id", hunt_id).execute().data
+        or []
+    )
+    assert rows == []
+    # AD-G's trigger records the departure, attributed to the leaver themselves.
+    history = await db_pool.fetchrow(
+        """
+        select action, actor_id::text
+        from hunt_member_history
+        where hunt_id = $1 and user_id = $2
+        order by recorded_at desc
+        limit 1
+        """,
+        UUID(hunt_id),
+        UUID(member_id),
+    )
+    assert history["action"] == "left"
+    assert history["actor_id"] == member_id
+
+
+@pytest.mark.asyncio
+async def test_owner_must_transfer_ownership_before_leaving(
+    collab_hunt, as_owner: AsyncClient, as_member: AsyncClient, db_pool, seeded_users
+) -> None:
+    hunt_id = collab_hunt["hunt_id"]
+    owner_id = seeded_users["owner"].user_id
+
+    refused = await as_owner.post(f"/v1/hunts/{hunt_id}/leave")
+    assert refused.status_code == 409
+    assert refused.json()["code"] == "owner_cannot_leave_hunt"
+    assert (
+        await db_pool.fetchval(
+            "select count(*) from hunt_members where hunt_id = $1 and user_id = $2",
+            UUID(hunt_id),
+            UUID(owner_id),
+        )
+        == 1
+    )
+
+    transferred = await as_owner.post(
+        f"/v1/hunts/{hunt_id}/transfer-ownership",
+        json={"new_owner_id": seeded_users["member"].user_id},
+    )
+    assert transferred.status_code == 200
+
+    # Now a Curator, the ex-Owner walks out through the ordinary path.
+    left = await as_owner.post(f"/v1/hunts/{hunt_id}/leave")
+    assert left.status_code == 204
+    remaining = {
+        row["user_id"]
+        for row in await db_pool.fetch(
+            "select user_id::text from hunt_members where hunt_id = $1", UUID(hunt_id)
+        )
+    }
+    assert owner_id not in remaining
+    assert seeded_users["member"].user_id in remaining
+    assert await as_member.get(f"/v1/hunts/{hunt_id}/members")
+
+
+@pytest.mark.asyncio
+async def test_sole_member_is_told_to_archive_rather_than_leave(
+    as_outsider: AsyncClient, db_pool
+) -> None:
+    created = await as_outsider.post("/v1/hunts", json={"name": "Solo Hunt"})
+    assert created.status_code == 201
+    hunt_id = created.json()["id"]
+    try:
+        refused = await as_outsider.post(f"/v1/hunts/{hunt_id}/leave")
+        assert refused.status_code == 409
+        assert refused.json()["code"] == "last_member_cannot_leave_hunt"
+        assert "archive" in refused.json()["detail"].lower()
+        # Archiving is the action they were sent to, and it stays open to them.
+        archived = await as_outsider.patch(f"/v1/hunts/{hunt_id}", json={"archived": True})
+        assert archived.status_code == 200
+        assert archived.json()["archived_at"] is not None
+    finally:
+        await db_pool.execute("delete from hunts where id = $1", UUID(hunt_id))
+
+
+@pytest.mark.asyncio
+async def test_outsider_cannot_leave_a_hunt_they_are_not_in(
+    collab_hunt, as_outsider: AsyncClient
+) -> None:
+    response = await as_outsider.post(f"/v1/hunts/{collab_hunt['hunt_id']}/leave")
+    assert response.status_code == 404
+    assert response.json()["code"] == "hunt_not_found"
