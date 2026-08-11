@@ -28,9 +28,13 @@ async def get_rubric(
 
 @router.put("/hunts/{hunt_id}/rubric", response_model=list[RubricCriterionOut])
 async def put_rubric(
-    hunt_id: UUID, body: RubricPut, hunt: WritableOwnedHunt, client: UserClient
+    hunt_id: UUID,
+    body: RubricPut,
+    hunt: WritableOwnedHunt,
+    user: CurrentUser,
+    client: UserClient,
 ) -> list[RubricCriterionOut]:
-    return await service.put_rubric(client, hunt_id, body)
+    return await service.put_rubric(client, hunt_id, user.id, body)
 
 
 @router.post(

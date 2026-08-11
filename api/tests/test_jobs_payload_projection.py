@@ -523,12 +523,17 @@ async def test_correct_auto_resolved_checkpoint_returns_no_page_text(db_pool, bo
             returned = " ".join(
                 str(value) for row in rows for value in row.values() if value is not None
             )
+            requesters = await conn.fetch(
+                "select requested_by from jobs where id = any($1::uuid[])",
+                [row["id"] for row in rows],
+            )
         finally:
             await tr.rollback()
     assert rows, "the correction returned no Job"
     assert SENTINEL not in returned
     # Positive control: this really is the correction Job.
     assert str(bodies_hunt["done_job_id"]) not in [str(r["id"]) for r in rows]
+    assert {str(row["requested_by"]) for row in requesters} == {bodies_hunt["owner"].user_id}
 
 
 async def test_answer_job_checkpoint_returns_no_page_text(db_pool, bodies_hunt) -> None:

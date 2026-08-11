@@ -77,6 +77,10 @@ async def put_shared_filters(
 
 @router.patch("/hunts/{hunt_id}/settings", response_model=HuntResponse)
 async def patch_hunt_settings(
-    hunt_id: UUID, body: HuntSettingsPatch, hunt: WritableOwnedHunt, client: UserClient
+    hunt_id: UUID,
+    body: HuntSettingsPatch,
+    hunt: WritableOwnedHunt,
+    user: CurrentUser,
+    client: UserClient,
 ) -> HuntResponse:
-    return await service.patch_settings(client, hunt_id, body)
+    return await service.patch_settings(client, hunt_id, user.id, body)
