@@ -22,6 +22,7 @@ import { useAuth } from "../auth/useAuth";
 import { useProfile } from "../auth/profile";
 import { useAdminIdentity } from "../features/admin/api";
 import { memberColor } from "../features/collaboration/memberColors";
+import { BuildVersionPopover } from "./BuildVersionPopover";
 import classes from "./NavbarFoot.module.css";
 
 export function NavbarFoot({ onOpenFeedback }: { onOpenFeedback: () => void }) {
@@ -103,10 +104,7 @@ export function NavbarFoot({ onOpenFeedback }: { onOpenFeedback: () => void }) {
           </UnstyledButton>
         </Stack>
       </Collapse>
-      <Text size="xs" c="dimmed" ta="center" mt={4} ff="monospace">
-        v{import.meta.env.VITE_RELEASE_VERSION as string} ·{` `}
-        {(import.meta.env.VITE_BUILD_SHA as string).slice(0, 7)}
-      </Text>
+      <BuildVersionPopover />
     </Box>
   );
 }

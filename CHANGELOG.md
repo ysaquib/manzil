@@ -7,6 +7,16 @@ repo itself.
 
 ## Unreleased — Phase 3
 
+### 2026-08-11 — Reliability, observability, and release identity
+
+- Frontend and API now identify separate deploy artifacts from the manual root
+  release version plus their exact Git SHAs. The navbar build popover and Admin
+  System show both, call out a mismatch at the appropriate severity, and attach
+  both build IDs to submitted feedback.
+- Job retry leases, malformed image handling, soft deletion, Hunt-wide Tasks
+  severity, worker heartbeats, Admin Job inspection, and timezone-correct Hunt
+  and Admin analytics landed as one coordinated reliability release.
+
 ### 2026-07-27 — Scoped unit claims (P3-SC4 ◐)
 
 - Six existing unit-feature Criteria plus heating now extract sparse

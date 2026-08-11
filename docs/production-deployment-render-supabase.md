@@ -626,7 +626,7 @@ Every `VITE_*` value is public and recoverable from the built JavaScript.
 | `VITE_SUPABASE_ANON_KEY` | Supabase publishable key | no |
 | `VITE_API_BASE_URL` | `https://api.example.com` | no |
 | `VITE_GOOGLE_MAPS_API_KEY` | referrer/API-restricted browser key | public by design |
-| `VITE_APP_VERSION` | optional commit/release identifier | no |
+| Build identity | generated from root `VERSION` + deploy Git SHA; do not set manually | no |
 
 Never place `DATABASE_URL`, the Supabase server key, OpenRouter, Langfuse
 secret, Bright Data, SMTP, model archive credential, or server Maps key on the
@@ -634,6 +634,12 @@ Static Site.
 
 Vite values are compiled at build time. Changing one requires **Save, rebuild,
 and deploy**, not only a runtime restart.
+
+`vite.config.ts` populates `VITE_APP_VERSION`, `VITE_RELEASE_VERSION`, and
+`VITE_BUILD_SHA` automatically. Render's `RENDER_GIT_COMMIT` is the build SHA;
+`GITHUB_SHA` is the CI fallback and `dev` is local-only. The API exposes the
+same bounded identity at `/v1/version`; no Render service or instance metadata
+is public.
 
 ## 8. GitHub Actions and deployment ordering
 
