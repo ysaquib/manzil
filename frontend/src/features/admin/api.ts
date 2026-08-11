@@ -26,6 +26,7 @@ export interface AdminSummary {
   tier3_credits_used: number;
   tier3_credits_allowance: number | null;
   feedback_new: number;
+  listing_submissions_daily: Array<{ day: string; count: number }>;
 }
 
 export interface HuntSummary {
@@ -217,10 +218,16 @@ export function useToggleDemo() {
   });
 }
 
+function analyticsTimezone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+
 export function useAdminSummary(enabled = true) {
+  const timezone = analyticsTimezone();
   return useQuery({
-    queryKey: ["admin", "summary"],
-    queryFn: () => apiFetch<AdminSummary>("/v1/admin/summary"),
+    queryKey: ["admin", "summary", timezone],
+    queryFn: () =>
+      apiFetch<AdminSummary>(`/v1/admin/summary?timezone=${encodeURIComponent(timezone)}`),
     enabled,
   });
 }
@@ -637,6 +644,7 @@ export interface SpendBucket {
 
 export interface CostsReport {
   days: number;
+  timezone: string;
   total_cost_usd?: number;
   by_stage: SpendBucket[];
   by_hunt: SpendBucket[];
@@ -748,9 +756,13 @@ export function useReleaseLocks() {
 }
 
 export function useCosts(days: number) {
+  const timezone = analyticsTimezone();
   return useQuery({
-    queryKey: ["admin", "costs", days],
-    queryFn: () => apiFetch<CostsReport>(`/v1/admin/costs?days=${days}`),
+    queryKey: ["admin", "costs", days, timezone],
+    queryFn: () =>
+      apiFetch<CostsReport>(
+        `/v1/admin/costs?days=${days}&timezone=${encodeURIComponent(timezone)}`,
+      ),
   });
 }
 

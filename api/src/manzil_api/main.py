@@ -47,6 +47,7 @@ from manzil_api.overrides.router import router as overrides_router
 from manzil_api.probe_logging import quiet_probe_access_logs
 from manzil_api.profiles.router import router as profiles_router
 from manzil_api.rubric.router import router as rubric_router
+from manzil_api.statistics import router as statistics_router
 from manzil_api.utilities.router import router as utilities_router
 from manzil_api.visits.router import router as visits_router
 from manzil_api.worker_loop import run_inprocess_worker
@@ -208,6 +209,7 @@ def create_app() -> FastAPI:
         feedback_router,
         visits_router,
         notifications_router,
+        statistics_router,
         admin_router,
         admin_demo_router,
         admin_people_router,

@@ -23,6 +23,11 @@ class AdminIdentity(BaseModel):
     granted_at: datetime | None = None
 
 
+class DailyCount(BaseModel):
+    day: date
+    count: int
+
+
 class AdminSummary(BaseModel):
     """The Overview tab's counters."""
 
@@ -35,6 +40,7 @@ class AdminSummary(BaseModel):
     tier3_credits_used: int
     tier3_credits_allowance: int | None = None
     feedback_new: int
+    listing_submissions_daily: list[DailyCount] = Field(default_factory=list)
 
 
 class HuntSummary(BaseModel):
@@ -331,6 +337,7 @@ class SpendPoint(BaseModel):
 
 class CostsReport(BaseModel):
     days: int
+    timezone: str = "UTC"
     # What the window actually billed (`jobs.cost_actual_usd`). Summing
     # `by_stage` under-reports it by every re-run Stage attempt — see
     # `SpendBucket` and DESIGN §20 v3.80.

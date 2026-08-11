@@ -1094,6 +1094,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/hunts/{hunt_id}/statistics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Hunt spend and operational usage */
+        get: operations["hunt_statistics_v1_hunts__hunt_id__statistics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/me": {
         parameters: {
             query?: never;
@@ -2407,6 +2424,8 @@ export interface components {
             tier3_credits_allowance?: number | null;
             /** Feedback New */
             feedback_new: number;
+            /** Listing Submissions Daily */
+            listing_submissions_daily?: components["schemas"]["DailyCount"][];
         };
         /** AttentionResponse */
         AttentionResponse: {
@@ -2597,6 +2616,11 @@ export interface components {
             /** Days */
             days: number;
             /**
+             * Timezone
+             * @default UTC
+             */
+            timezone: string;
+            /**
              * Total Cost Usd
              * @default 0
              */
@@ -2697,6 +2721,16 @@ export interface components {
             reason: string;
             /** Supported */
             supported: boolean;
+        };
+        /** DailyCount */
+        DailyCount: {
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /** Count */
+            count: number;
         };
         /** DemoConfigResponse */
         DemoConfigResponse: {
@@ -3116,6 +3150,76 @@ export interface components {
             settings: {
                 [key: string]: unknown;
             };
+        };
+        /** HuntStatisticsPoint */
+        HuntStatisticsPoint: {
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /**
+             * Billed Cost Usd
+             * @default 0
+             */
+            billed_cost_usd: number;
+            /**
+             * Deleted Cost Usd
+             * @default 0
+             */
+            deleted_cost_usd: number;
+            /**
+             * Listing Submissions
+             * @default 0
+             */
+            listing_submissions: number;
+            /**
+             * Jobs Completed
+             * @default 0
+             */
+            jobs_completed: number;
+            /**
+             * Jobs Failed
+             * @default 0
+             */
+            jobs_failed: number;
+            /**
+             * Llm Calls
+             * @default 0
+             */
+            llm_calls: number;
+            /**
+             * Fetch Calls
+             * @default 0
+             */
+            fetch_calls: number;
+        };
+        /** HuntStatisticsReport */
+        HuntStatisticsReport: {
+            /** Days */
+            days: number;
+            /** Timezone */
+            timezone: string;
+            summary: components["schemas"]["HuntStatisticsSummary"];
+            /** Daily */
+            daily?: components["schemas"]["HuntStatisticsPoint"][];
+        };
+        /** HuntStatisticsSummary */
+        HuntStatisticsSummary: {
+            /** Billed Cost Usd */
+            billed_cost_usd: number;
+            /** Deleted Cost Usd */
+            deleted_cost_usd: number;
+            /** Listing Submissions */
+            listing_submissions: number;
+            /** Jobs Completed */
+            jobs_completed: number;
+            /** Jobs Failed */
+            jobs_failed: number;
+            /** Llm Calls */
+            llm_calls: number;
+            /** Fetch Calls */
+            fetch_calls: number;
         };
         /** HuntSummary */
         HuntSummary: {
@@ -7142,6 +7246,40 @@ export interface operations {
             };
         };
     };
+    hunt_statistics_v1_hunts__hunt_id__statistics_get: {
+        parameters: {
+            query?: {
+                days?: number;
+                timezone?: string;
+            };
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HuntStatisticsReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     whoami_v1_admin_me_get: {
         parameters: {
             query?: never;
@@ -7164,7 +7302,9 @@ export interface operations {
     };
     summary_v1_admin_summary_get: {
         parameters: {
-            query?: never;
+            query?: {
+                timezone?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -7178,6 +7318,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -8260,6 +8409,7 @@ export interface operations {
         parameters: {
             query?: {
                 days?: number;
+                timezone?: string;
             };
             header?: never;
             path?: never;

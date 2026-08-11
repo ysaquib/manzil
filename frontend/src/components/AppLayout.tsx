@@ -33,6 +33,7 @@ import {
   IconListCheck,
   IconMap2,
   IconScale,
+  IconChartBar,
   IconSettings,
 } from "@tabler/icons-react";
 import { Link, NavLink as RouterNavLink, Outlet, useLocation, useParams } from "react-router-dom";
@@ -61,6 +62,7 @@ const NAV = [
   { label: "Visits", to: "visits", icon: IconFlag },
   { label: "Rubric", to: "rubric", icon: IconScale },
   { label: "Tasks", to: "tasks", icon: IconListCheck },
+  { label: "Statistics", to: "statistics", icon: IconChartBar },
   { label: "Settings", to: "settings", icon: IconSettings },
 ] as const;
 
