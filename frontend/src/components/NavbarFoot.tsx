@@ -103,6 +103,10 @@ export function NavbarFoot({ onOpenFeedback }: { onOpenFeedback: () => void }) {
           </UnstyledButton>
         </Stack>
       </Collapse>
+      <Text size="xs" c="dimmed" ta="center" mt={4} ff="monospace">
+        v{import.meta.env.VITE_RELEASE_VERSION as string} ·{` `}
+        {(import.meta.env.VITE_BUILD_SHA as string).slice(0, 7)}
+      </Text>
     </Box>
   );
 }

@@ -27,6 +27,7 @@ from manzil_api.admin.hunt_operations import router as admin_hunt_operations_rou
 from manzil_api.admin.operations import router as admin_operations_router
 from manzil_api.admin.people import router as admin_people_router
 from manzil_api.admin.router import router as admin_router
+from manzil_api.build_info import BuildInfo, api_build_info
 from manzil_api.collaboration.router import router as collaboration_router
 from manzil_api.config import Settings, get_settings
 from manzil_api.database import create_db_pool
@@ -77,6 +78,8 @@ def _validate_supabase_keys(settings: Settings) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
+    build = api_build_info(settings.environment)
+    logger.info("Starting Manzil API build %s", build.build_id)
     _validate_supabase_keys(settings)
     settings.validate_email_delivery()
     pool = await create_db_pool(settings)
@@ -162,6 +165,7 @@ def create_app() -> FastAPI:
     # here survives; the probe cadence is Render's to set, the log volume is ours.
     quiet_probe_access_logs()
     settings = get_settings()
+    build = api_build_info(settings.environment)
 
     app_configs: dict[str, Any] = {"title": "Manzil API", "version": "1.0"}
     if not settings.docs_enabled:
@@ -215,6 +219,10 @@ def create_app() -> FastAPI:
     @app.get("/v1/health", tags=["health"], summary="Liveness probe")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/v1/version", response_model=BuildInfo, tags=["health"], summary="Build identity")
+    async def version() -> BuildInfo:
+        return build
 
     @app.get("/v1/ready", tags=["health"], summary="Readiness probe")
     async def ready() -> JSONResponse:
