@@ -51,12 +51,25 @@ comma-separated value (`state=queued,running,waiting_user`) — the form the Tas
 | `GET /v1/hunts/{id}/attention` | `useAttention` (`features/notifications/api.ts`) | generated `AttentionResponse`; Owner/Curator count every waiting Checkpoint in the Hunt, Member counts only submitted Listings, Demo is zero; `jobs`/`job_events` Realtime invalidates it | P3-22 | implemented |
 | `POST /v1/feedback` | `useSubmitFeedback` (`features/feedback/api.ts`) | generated `FeedbackCreate`/`FeedbackResponse`. Identity is server-side (`user_id` from the bearer token, `user_agent` from the request); `route` must be a site-relative path; a `hunt_id` the caller cannot read is a 403; the per-hour cap returns 429 `feedback_rate_limited`. **No read hook exists or can exist** — `feedback` has no `SELECT` policy for anyone, so the response confirms receipt rather than echoing the row | P3-16 | implemented |
 
-### Admin Hunt lifecycle (DESIGN v3.76)
+### Hunt lifecycle (DESIGN v3.77)
+
+| Method & path | Hook (file) | Shape | Status |
+|---|---|---|---|
+| `GET /v1/hunts` | `useHunts` (`features/hunts/api.ts`) | membership-scoped `HuntResponse[]`, including archived and locked state; the switcher hides archived rows until requested | implemented |
+| `PATCH /v1/hunts/{id}` | `usePatchHunt` (`features/hunts/api.ts`) | optional `{name, archived}` → `HuntResponse`; Owner-only, archive/restore refused while locked and cancels unfinished Jobs | implemented |
+| `GET /v1/hunts/{id}/deletion-impact` | `useHuntDeletionImpact` (`features/hunts/api.ts`) | Hunt-local impact and blockers; Owner-only, archived-only | implemented |
+| `DELETE /v1/hunts/{id}` | `useDeleteHunt` (`features/hunts/api.ts`) | `{confirmation_name}` → impact receipt; Owner-only, archived-only, exact-name-confirmed | implemented |
+
+Archived/locked enforcement is database-backed for every Hunt-scoped write. The
+frontend's central `useHuntAccess` capability projection is UX, not authority.
+
+### Admin Hunt lifecycle (DESIGN v3.77)
 
 | Method & path | Hook (file) | Shape | Status |
 |---|---|---|---|
 | `GET /v1/admin/hunts/{id}/management` | `useAdminHuntManagement` (`features/admin/api.ts`) | hand-typed current member roster, Owner identity, caller-membership flag, and named deletion blockers; Site Admin only | implemented |
 | `POST /v1/admin/hunts/{id}/transfer-ownership` | `useTransferAdminHuntOwnership` (`features/admin/api.ts`) | `{new_owner_id}` → `{status:"ok"}`; target must already be a current member; reuses the atomic one-Owner mutation and writes the Admin Audit Log in the transaction | implemented |
+| `PUT /v1/admin/hunts/{id}/lock` | `useSetAdminHuntLock` (`features/admin/api.ts`) | `{locked}` → refreshed `HuntManagement`; audited; locking cancels unfinished Jobs, and every mutation except unlock is refused while locked | implemented |
 | `DELETE /v1/admin/hunts/{id}` | `useDeleteAdminHunt` (`features/admin/api.ts`) | `{confirmation_name}` → Hunt-local impact counts; exact-name confirmation, selected-Demo and active-Job refusal, transactional tombstone + Admin Audit write | implemented |
 
 ### Demo publication and protected release (DESIGN v3.72)
