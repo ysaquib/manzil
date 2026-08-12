@@ -75,6 +75,9 @@ async def test_the_queue_is_visible_across_hunts_the_admin_is_not_in(
         assert row["hunt_name"] == "Collab Hunt"
         assert row["cost_actual_usd"] == 0.0123
         assert row["stale"] is False
+
+        by_id = await as_admin.get(f"/v1/admin/jobs?search={job_id}&search_mode=id")
+        assert [job["id"] for job in by_id.json()] == [str(job_id)]
     finally:
         await db_pool.execute("delete from jobs where id = $1", job_id)
 

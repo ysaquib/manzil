@@ -20,7 +20,7 @@ of thing that drifts, and the ban is what Supabase actually enforces.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 import asyncpg
@@ -186,18 +186,23 @@ async def list_people(
     admin: AdminUser,
     pool: DbPool,
     search: str | None = Query(None, max_length=200),
+    search_mode: Literal["text", "id"] = Query("text"),
     limit: int = Query(200, ge=1, le=500),
 ) -> list[PersonRow]:
     rows = await pool.fetch(
         _ROSTER_SQL
         + """
         where ($1::text is null
-               or u.email ilike '%' || $1 || '%'
-               or up.default_display_name ilike '%' || $1 || '%')
+               or ($2 = 'id' and u.id::text = $1)
+               or ($2 = 'text' and (
+                   u.email ilike '%' || $1 || '%'
+                   or up.default_display_name ilike '%' || $1 || '%'
+               )))
         order by u.created_at desc
-        limit $2
+        limit $3
         """,
         search,
+        search_mode,
         limit,
     )
     return [PersonRow(**_row_to_person(row)) for row in rows]
