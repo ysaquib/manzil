@@ -9,6 +9,7 @@
 import {
   ActionIcon,
   Alert,
+  Anchor,
   Badge,
   Button,
   Card,
@@ -28,7 +29,8 @@ import {
 import { useDisclosure, useMediaQuery } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { IconAlertTriangle, IconDots, IconSearch, IconTrash, IconUserPlus } from "@tabler/icons-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 
 import {
   ConfirmDeleteModal,
@@ -48,6 +50,11 @@ import {
   type PersonDetail,
   type PersonRow,
 } from "./api";
+import {
+  ADMIN_SEARCH_MODE_OPTIONS,
+  adminDirectoryLink,
+  adminSearchMode,
+} from "./navigation";
 
 /** Accounts are the noun everywhere in this panel — never "user" in copy. */
 const ACCOUNT_NOUN = { singular: "account", plural: "accounts" };
@@ -219,51 +226,75 @@ function PersonDetailPanel({
           </Text>
         )}
         {p.memberships.length > 0 && (
-          <Table striped={false} withRowBorders={false} verticalSpacing={6}>
-            <Table.Tbody>
-              {p.memberships.map((m) => (
-                <Table.Tr key={m.hunt_id}>
-                  <Table.Td>{m.hunt_name}</Table.Td>
-                  <Table.Td w={140}>
-                    <Select
-                      size="xs"
-                      data={ROLE_OPTIONS}
-                      value={m.role}
-                      allowDeselect={false}
-                      onChange={(role) =>
-                        role &&
-                        setMembership.mutate({
-                          userId,
-                          huntId: m.hunt_id,
-                          role: role as "owner" | "curator" | "member",
-                        })
-                      }
-                    />
-                  </Table.Td>
-                  <Table.Td w={40}>
-                    <Tooltip
-                      label={
-                        m.role === "owner"
-                          ? "Transfer ownership before removing the Owner"
-                          : "Remove from this Hunt"
-                      }
-                    >
-                      <ActionIcon
-                        size="sm"
-                        variant="subtle"
-                        color="red"
-                        aria-label={`Remove from ${m.hunt_name}`}
-                        disabled={m.role === "owner"}
-                        onClick={() => setConfirmRemoval(m)}
+          <Stack gap="xs">
+            {p.memberships.map((m) => (
+              <Card
+                key={m.hunt_id}
+                component="article"
+                aria-label={`${m.hunt_name} membership`}
+                padding="xs"
+                radius="sm"
+                withBorder
+              >
+                <Group justify="space-between" align="flex-start" wrap="nowrap">
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <Anchor component={Link} to={adminDirectoryLink("hunts", m.hunt_id)} fw={600}>
+                      {m.hunt_name}
+                    </Anchor>
+                    <Text size="xs" c="dimmed" ff="monospace" truncate>
+                      {m.hunt_id}
+                    </Text>
+                    {m.joined_at && (
+                      <Text size="xs" c="dimmed">
+                        Joined {new Date(m.joined_at).toLocaleDateString()}
+                      </Text>
+                    )}
+                  </div>
+                  <Stack gap={4} align="flex-end">
+                    <Badge size="sm" variant="light" color={m.role === "owner" ? "primary" : "gray"}>
+                      {m.role}
+                    </Badge>
+                    <Group gap={4} wrap="nowrap">
+                      <Select
+                        size="xs"
+                        w={112}
+                        aria-label={`Role in ${m.hunt_name}`}
+                        data={ROLE_OPTIONS}
+                        value={m.role}
+                        allowDeselect={false}
+                        onChange={(role) =>
+                          role &&
+                          setMembership.mutate({
+                            userId,
+                            huntId: m.hunt_id,
+                            role: role as "owner" | "curator" | "member",
+                          })
+                        }
+                      />
+                      <Tooltip
+                        label={
+                          m.role === "owner"
+                            ? "Transfer ownership before removing the Owner"
+                            : "Remove from this Hunt"
+                        }
                       >
-                        ×
-                      </ActionIcon>
-                    </Tooltip>
-                  </Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
+                        <ActionIcon
+                          size="sm"
+                          variant="subtle"
+                          color="red"
+                          aria-label={`Remove from ${m.hunt_name}`}
+                          disabled={m.role === "owner"}
+                          onClick={() => setConfirmRemoval(m)}
+                        >
+                          ×
+                        </ActionIcon>
+                      </Tooltip>
+                    </Group>
+                  </Stack>
+                </Group>
+              </Card>
+            ))}
+          </Stack>
         )}
 
         <Group gap="xs" mt="sm" align="flex-end" wrap="wrap">
@@ -463,10 +494,15 @@ function ProvisionModal({ opened, onClose }: { opened: boolean; onClose: () => v
 }
 
 export function AdminPeoplePage() {
-  const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const requestedSearch = searchParams.get("search") ?? "";
+  const requestedMode = adminSearchMode(searchParams.get("search_mode"));
+  const requestedSelected = searchParams.get("selected");
+  const [search, setSearch] = useState(requestedSearch);
+  const [searchMode, setSearchMode] = useState(requestedMode);
+  const [selected, setSelected] = useState<string | null>(requestedSelected);
   const [provisionOpen, { open: openProvision, close: closeProvision }] = useDisclosure(false);
-  const people = useAdminPeople(search);
+  const people = useAdminPeople(search, searchMode);
   // Phone width: the roster and the detail panel cannot sit side by side in
   // 24rem, so the panel moves under the list and only appears once someone is
   // picked. The placeholder card ("select someone") is desktop-only furniture.
@@ -480,6 +516,12 @@ export function AdminPeoplePage() {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const deletePerson = useDeletePerson();
+
+  useEffect(() => {
+    setSearch(requestedSearch);
+    setSearchMode(requestedMode);
+    setSelected(requestedSelected);
+  }, [requestedMode, requestedSearch, requestedSelected]);
 
   const rows = people.data ?? [];
   const checkedRows = rows.filter((person) => checked.has(person.user_id));
@@ -549,9 +591,18 @@ export function AdminPeoplePage() {
           wrap="nowrap"
           style={isCompact ? { flex: "1 1 100%" } : undefined}
         >
+          <Select
+            size="xs"
+            aria-label="People search mode"
+            data={ADMIN_SEARCH_MODE_OPTIONS}
+            value={searchMode}
+            allowDeselect={false}
+            onChange={(value) => value && setSearchMode(value as typeof searchMode)}
+            w={isCompact ? 132 : 140}
+          />
           <TextInput
             size="xs"
-            placeholder="Search name or email…"
+            placeholder={searchMode === "id" ? "Account ID…" : "Search name or email…"}
             leftSection={<IconSearch size={14} />}
             value={search}
             onChange={(e) => setSearch(e.currentTarget.value)}

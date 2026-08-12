@@ -237,6 +237,8 @@ export interface HuntPage {
   total: number;
 }
 
+export type AdminSearchMode = "text" | "id";
+
 export interface HuntManagementMember {
   user_id: string;
   display_name: string;
@@ -273,14 +275,20 @@ export interface HuntDeleteResult {
  * with the page because a pager cannot render "of N" without it.
  */
 export function useAdminHunts(
-  { search, limit, offset }: { search: string; limit: number; offset: number },
+  {
+    search,
+    searchMode,
+    limit,
+    offset,
+  }: { search: string; searchMode: AdminSearchMode; limit: number; offset: number },
   enabled = true,
 ) {
   const term = search.trim();
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
   if (term) params.set("search", term);
+  if (searchMode === "id") params.set("search_mode", "id");
   return useQuery({
-    queryKey: ["admin", "hunts", "list", term, limit, offset],
+    queryKey: ["admin", "hunts", "list", term, searchMode, limit, offset],
     queryFn: () => apiFetch<HuntPage>(`/v1/admin/hunts?${params.toString()}`),
     enabled,
     // Without this the table blanks to a spinner on every keystroke and every
@@ -468,13 +476,14 @@ export interface PersonDetail extends PersonRow {
   blocking_owned_hunts: PersonMembership[];
 }
 
-export function useAdminPeople(search: string) {
+export function useAdminPeople(search: string, searchMode: AdminSearchMode) {
+  const params = new URLSearchParams();
+  if (search) params.set("search", search);
+  if (searchMode === "id") params.set("search_mode", "id");
+  const query = params.toString();
   return useQuery({
-    queryKey: ["admin", "people", search],
-    queryFn: () =>
-      apiFetch<PersonRow[]>(
-        `/v1/admin/people${search ? `?search=${encodeURIComponent(search)}` : ""}`,
-      ),
+    queryKey: ["admin", "people", search, searchMode],
+    queryFn: () => apiFetch<PersonRow[]>(`/v1/admin/people${query ? `?${query}` : ""}`),
   });
 }
 
@@ -610,6 +619,9 @@ export interface JobRow {
   finished_at: string | null;
   locked_by: string | null;
   locked_at: string | null;
+  requested_by: string | null;
+  requested_by_name: string | null;
+  requested_by_email: string | null;
   stale: boolean;
 }
 
@@ -707,13 +719,25 @@ export interface AuditEntry {
   occurred_at: string;
 }
 
-export function useAdminJobs(state: string | null, staleOnly: boolean) {
+export function useAdminJobs({
+  state,
+  staleOnly,
+  search,
+  searchMode,
+}: {
+  state: string | null;
+  staleOnly: boolean;
+  search: string;
+  searchMode: AdminSearchMode;
+}) {
   const params = new URLSearchParams();
   if (state) params.set("state", state);
   if (staleOnly) params.set("stale_only", "true");
+  if (search) params.set("search", search);
+  if (searchMode === "id") params.set("search_mode", "id");
   const query = params.toString();
   return useQuery({
-    queryKey: ["admin", "jobs", state, staleOnly],
+    queryKey: ["admin", "jobs", state, staleOnly, search, searchMode],
     queryFn: () => apiFetch<JobRow[]>(`/v1/admin/jobs${query ? `?${query}` : ""}`),
     // The queue moves on its own; without this the operator is reading history.
     refetchInterval: 10_000,
