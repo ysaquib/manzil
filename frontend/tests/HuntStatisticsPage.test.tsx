@@ -43,7 +43,14 @@ describe("HuntStatisticsPage", () => {
 
     renderWithProviders(<MemoryRouter><HuntStatisticsPage /></MemoryRouter>);
 
+    expect(screen.getByText("Deleted Job spend")).toBeInTheDocument();
     expect(screen.getByText("$0.02")).toBeInTheDocument();
+    expect(screen.getByText("Completion rate")).toBeInTheDocument();
+    expect(screen.getByText("50%")).toBeInTheDocument();
+    expect(screen.getByText("completed")).toBeInTheDocument();
+    expect(screen.getByText("failed")).toBeInTheDocument();
+    expect(screen.getByText("Billed / completed Job")).toBeInTheDocument();
+    expect(screen.getAllByText("$0.03")).toHaveLength(2);
     expect(screen.getAllByText("Listings submitted")).toHaveLength(2);
     expect(screen.getByText("Jobs by outcome")).toBeInTheDocument();
     expect(screen.getByText("Recorded calls")).toBeInTheDocument();

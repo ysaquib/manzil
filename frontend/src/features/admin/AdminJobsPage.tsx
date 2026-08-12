@@ -201,7 +201,10 @@ function AdminJobDrawer({ jobId, onClose }: { jobId: string | null; onClose: () 
             onClose={() => setDeleteOpened(false)}
             targets={[{ id: job.id, label: `${job.listing_name ?? job.hunt_name ?? "Unscoped Job"} · ${job.id.slice(0, 8)}` }]}
             noun={{ singular: "Job", plural: "Jobs" }}
+            title="Delete Job?"
             warning="This removes the Job from admin product views. Its billed cost, Stage costs, timeline, and audit record remain in Postgres."
+            confirmLabel="Delete Job"
+            requireTypedConfirmation={false}
             loading={deleteJob.isPending}
             onConfirm={() => deleteJob.mutate(job.id, { onSuccess: onClose })}
           />
