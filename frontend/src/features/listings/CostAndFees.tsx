@@ -220,7 +220,7 @@ function CostRow({
         {icons}
         {chips}
         {subline ? (
-          <Text component="span" size="xs" c="dimmed" className={drawer.ledgerSubline}>
+          <Text component="span" className={drawer.ledgerSubline}>
             {subline}
           </Text>
         ) : null}

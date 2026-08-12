@@ -122,7 +122,10 @@
 .ledgerSubline {
   flex-basis: 100%;
   padding-left: 1rem;
-  line-height: 1.25;
+  font-size: var(--mantine-font-size-xs);
+  font-weight: 400;
+  color: var(--mantine-color-dimmed);
+  line-height: 1.15;
 }
 
 /* --- Ledger state dots (All-in + Fees) --- */
