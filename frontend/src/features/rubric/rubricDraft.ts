@@ -80,6 +80,14 @@ function typeMatches(value: unknown, schema: ValueSchema): boolean {
 }
 
 function scalarError(value: unknown, schema: ValueSchema): string | null {
+  if (schema.type === "object") {
+    // Mirrors the API's `_validate_option_schema` and the scoring engine's
+    // `_comparable()` (§9.3): ordered ops against an object-typed fact (e.g.
+    // management_reviews) compare on its numeric "rating" field, not the
+    // object itself.
+    const ratingSchema = schema.properties?.rating;
+    return ratingSchema ? scalarError(value, ratingSchema) : "unsupported object criterion";
+  }
   if (value === null || value === undefined) return "value is required";
   if (!typeMatches(value, schema)) return `expected a ${schema.type}`;
   if (schema.type === "string" && schema.format === "date") {
@@ -318,4 +326,15 @@ export function draftToPayload(draft: RubricCriterion[]): RubricCriterion[] {
     is_bonus: deriveIsBonus(criterion.options, criterion.unknown_delta),
     position: index,
   }));
+}
+
+// Per-criterion dirty check backing the card's "Modified" indicator and the
+// sticky save bar's dirty-labels list. `position` is excluded: it reflects
+// this criterion's slot in the draft array, not an edit the user made to it.
+export function isCriterionDirty(criterion: RubricCriterion, baseline: RubricCriterion): boolean {
+  const strip = (c: RubricCriterion) => {
+    const { position: _position, ...rest } = c;
+    return { ...rest, is_bonus: deriveIsBonus(c.options, c.unknown_delta) };
+  };
+  return JSON.stringify(strip(criterion)) !== JSON.stringify(strip(baseline));
 }

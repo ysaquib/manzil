@@ -161,3 +161,67 @@ describe("CriterionCard — consequences readable without hover", () => {
     ).toBeInTheDocument();
   });
 });
+
+describe("CriterionCard — modified indicator, revert, and inline issues", () => {
+  it("shows no Modified indicator when not dirty, and one with a working revert when dirty", async () => {
+    const onRevert = vi.fn();
+    const { rerender } = render(
+      <MantineProvider>
+        <CriterionCard
+          criterion={criterion()}
+          entry={numericEntry}
+          onChange={vi.fn()}
+          onRevert={onRevert}
+          dirty={false}
+        />
+      </MantineProvider>,
+    );
+    expect(screen.queryByText("Modified")).not.toBeInTheDocument();
+
+    rerender(
+      <MantineProvider>
+        <CriterionCard
+          criterion={criterion()}
+          entry={numericEntry}
+          onChange={vi.fn()}
+          onRevert={onRevert}
+          dirty={true}
+        />
+      </MantineProvider>,
+    );
+    expect(screen.getByText("Modified")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByLabelText("revert to saved"));
+    expect(onRevert).toHaveBeenCalledWith("rent");
+  });
+
+  it("renders save-time issues scoped to this criterion", () => {
+    render(
+      <MantineProvider>
+        <CriterionCard
+          criterion={criterion()}
+          entry={numericEntry}
+          onChange={vi.fn()}
+          issues={[{ catalogKey: "rent", message: "option 1: expected a number" }]}
+        />
+      </MantineProvider>,
+    );
+    expect(screen.getByText("option 1: expected a number")).toBeInTheDocument();
+  });
+
+  it("calls onRemove with the entry's key, not a bare event handler", async () => {
+    const onRemove = vi.fn();
+    render(
+      <MantineProvider>
+        <CriterionCard
+          criterion={criterion()}
+          entry={numericEntry}
+          onChange={vi.fn()}
+          onRemove={onRemove}
+        />
+      </MantineProvider>,
+    );
+    await userEvent.click(screen.getByLabelText("remove Base rent"));
+    expect(onRemove).toHaveBeenCalledWith("rent");
+  });
+});
