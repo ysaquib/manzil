@@ -25,8 +25,8 @@ EVENTS = (
     "rating_changed",
 )
 DEFAULTS = {
-    "checkpoint_waiting": True,
-    "run_failed": True,
+    "checkpoint_waiting": False,
+    "run_failed": False,
     "listing_score_changed": False,
     "comment_added": False,
     "rating_changed": False,

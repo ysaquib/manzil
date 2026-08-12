@@ -15,8 +15,8 @@ from postgrest.exceptions import APIError
 from svix.webhooks import Webhook
 
 EVENTS = {
-    "checkpoint_waiting": True,
-    "run_failed": True,
+    "checkpoint_waiting": False,
+    "run_failed": False,
     "listing_score_changed": False,
     "comment_added": False,
     "rating_changed": False,
@@ -110,11 +110,16 @@ def test_product_templates_render_html_and_text(
 
 @pytest.mark.asyncio
 async def test_account_defaults_and_hunt_override_inheritance(
-    collab_hunt, as_member: AsyncClient
+    collab_hunt, as_member: AsyncClient, db_pool
 ) -> None:
     account = await as_member.get("/v1/notification-preferences")
     assert account.status_code == 200
     assert account.json() == {"email": EVENTS}
+    assert await db_pool.fetchval(
+        """select bool_and(not private.notification_default_enabled(event_type))
+             from unnest($1::text[]) as events(event_type)""",
+        list(EVENTS),
+    )
 
     changed = dict(EVENTS)
     changed["comment_added"] = True
@@ -237,12 +242,18 @@ async def test_comment_and_job_triggers_apply_recipient_rules(
     hunt_id = UUID(collab_hunt["hunt_id"])
     listing_id = UUID(collab_hunt["member_listing_id"])
 
-    # Collaboration mail is opt-in. Only the Owner opts in, and the actor is
-    # excluded, so this comment yields exactly one delivery.
-    await db_pool.execute(
+    # Every product event is opt-in. The actor is excluded from collaboration
+    # fan-out, so this grants exactly the recipients asserted below.
+    await db_pool.executemany(
         """insert into user_notification_prefs(user_id,event_type,channel,enabled)
-           values ($1,'comment_added','email',true)""",
-        UUID(owner.user_id),
+           values ($1,$2,'email',true)
+           on conflict(user_id,event_type,channel) do update set enabled=true""",
+        [
+            (UUID(owner.user_id), "comment_added"),
+            (UUID(member.user_id), "checkpoint_waiting"),
+            (UUID(member.user_id), "run_failed"),
+            (UUID(owner.user_id), "run_failed"),
+        ],
     )
     comment_id = await db_pool.fetchval(
         "insert into comments(hunt_listing_id,user_id,body) values($1,$2,'hello') returning id",
@@ -466,6 +477,13 @@ async def test_dispatcher_cancels_checkpoint_after_answer_or_opt_out(
     hunt_id = UUID(collab_hunt["hunt_id"])
     listing_id = UUID(collab_hunt["member_listing_id"])
 
+    await db_pool.execute(
+        """insert into user_notification_prefs(user_id,event_type,channel,enabled)
+           values($1,'checkpoint_waiting','email',true)
+           on conflict(user_id,event_type,channel) do update set enabled=true""",
+        member_id,
+    )
+
     async def queue_checkpoint() -> UUID:
         job_id = await db_pool.fetchval(
             """insert into jobs(hunt_id,hunt_listing_id,type,state)
@@ -686,6 +704,12 @@ async def test_revoke_race_preserves_cancelled_delivery(
 async def test_malformed_event_is_failed_instead_of_poisoning_dispatcher(
     collab_hunt, seeded_users, db_pool
 ) -> None:
+    await db_pool.execute(
+        """insert into user_notification_prefs(user_id,event_type,channel,enabled)
+           values($1,'run_failed','email',true)
+           on conflict(user_id,event_type,channel) do update set enabled=true""",
+        UUID(seeded_users["owner"].user_id),
+    )
     job_id = await db_pool.fetchval(
         """insert into jobs(hunt_id,hunt_listing_id,type,state)
            values($1,$2,'ingest','failed') returning id""",
