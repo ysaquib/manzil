@@ -32,6 +32,7 @@ import { IconInfoCircle } from "@tabler/icons-react";
 import { useState } from "react";
 
 import { useCosts, type SpendBucket } from "./api";
+import { formatCalendarDay, localCalendarDay } from "../../lib/calendarDays";
 
 // Two categorical series, checked for colourblind separation against both
 // themes rather than picked by eye. `accent` is the app's clay.
@@ -39,6 +40,19 @@ const SERIES = [
   { name: "llm", label: "LLM", color: "primary.6" },
   { name: "fetch", label: "Fetch (tier 3)", color: "accent.7" },
 ];
+
+interface BarShapeProps {
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  fill?: string;
+  payload?: { isToday?: boolean };
+}
+
+function TodayTextureBar({ x = 0, y = 0, width = 0, height = 0, fill, payload }: BarShapeProps) {
+  return <rect x={x} y={y} width={width} height={height} fill={payload?.isToday ? "url(#today-cost-pattern)" : fill} />;
+}
 
 function BucketTable({
   buckets,
@@ -142,7 +156,8 @@ export function AdminCostsPage() {
       : null;
 
   const daily = c.daily.map((point) => ({
-    day: new Date(point.day).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+    day: formatCalendarDay(point.day),
+    isToday: point.day === localCalendarDay(),
     llm: Number(point.llm_cost_usd.toFixed(4)),
     fetch: Number(point.fetch_cost_usd.toFixed(4)),
   }));
@@ -242,8 +257,24 @@ export function AdminCostsPage() {
             withLegend
             series={SERIES}
             valueFormatter={(value) => `$${value.toFixed(4)}`}
-          />
+            barProps={{ shape: TodayTextureBar }}
+          >
+            <defs>
+              <pattern id="today-cost-pattern" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                <rect width="7" height="7" fill="var(--mantine-primary-color-filled)" />
+                <line x1="0" y1="0" x2="0" y2="7" stroke="var(--mantine-color-body)" strokeWidth="2" opacity="0.55" />
+              </pattern>
+            </defs>
+          </BarChart>
         )}
+        <Group gap={6} mt="xs">
+          <span
+            aria-hidden
+            data-testid="today-cost-texture"
+            style={{ width: 14, height: 10, borderRadius: 2, background: "repeating-linear-gradient(45deg, var(--mantine-primary-color-filled), var(--mantine-primary-color-filled) 3px, var(--mantine-color-body) 3px, var(--mantine-color-body) 5px)" }}
+          />
+          <Text size="xs" c="dimmed">Today · in progress</Text>
+        </Group>
       </Card>
 
       <Card padding="md" radius="md" withBorder>

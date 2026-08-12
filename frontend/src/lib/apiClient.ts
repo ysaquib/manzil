@@ -50,7 +50,15 @@ export interface ApiRequest<T = unknown> {
   demoResult?: () => T;
 }
 
-export async function apiFetch<T>(path: string, req: ApiRequest<T> = {}): Promise<T> {
+export interface ApiResult<T> {
+  data: T;
+  headers: Headers;
+}
+
+export async function apiFetchResult<T>(
+  path: string,
+  req: ApiRequest<T> = {},
+): Promise<ApiResult<T>> {
   const method = req.method ?? "GET";
 
   // Demo mode: a write never leaves the tab.
@@ -62,7 +70,10 @@ export async function apiFetch<T>(path: string, req: ApiRequest<T> = {}): Promis
   // rather than throwing is what lets each mutation's optimistic `onMutate`
   // stand as the demo's write.
   if (isDemo() && !SAFE_METHODS.has(method)) {
-    return (req.demoResult?.() ?? undefined) as T;
+    return {
+      data: (req.demoResult?.() ?? undefined) as T,
+      headers: new Headers(),
+    };
   }
 
   const headers: Record<string, string> = {
@@ -96,8 +107,12 @@ export async function apiFetch<T>(path: string, req: ApiRequest<T> = {}): Promis
     throw new ApiError(response.status, code, detail);
   }
 
-  if (response.status === 204) return undefined as T;
-  return (await response.json()) as T;
+  if (response.status === 204) return { data: undefined as T, headers: response.headers };
+  return { data: (await response.json()) as T, headers: response.headers };
+}
+
+export async function apiFetch<T>(path: string, req: ApiRequest<T> = {}): Promise<T> {
+  return (await apiFetchResult(path, req)).data;
 }
 
 /** Authenticated binary read, used for private Demo map stills. */

@@ -1,5 +1,5 @@
 // Route table (DESIGN §13.1 subset — /compare landed with P3-13's compare half).
-import { createBrowserRouter, Navigate } from "react-router-dom";
+import { createBrowserRouter, Navigate, useParams } from "react-router-dom";
 
 import { LoginPage } from "../auth/LoginPage";
 import { AuthCallbackPage } from "../auth/AuthCallbackPage";
@@ -10,6 +10,7 @@ import { RequireProfile } from "../auth/RequireProfile";
 import { ResetPasswordPage } from "../auth/ResetPasswordPage";
 import { SignOutPage } from "../auth/SignOutPage";
 import { AppLayout } from "../components/AppLayout";
+import { GhostModeProvider } from "../features/admin/useGhostMode";
 import { ColorsPage } from "../dev/ColorsPage";
 import { AdminFeedbackPage } from "../features/admin/AdminFeedbackPage";
 import { AdminDemoPage } from "../features/admin/AdminDemoPage";
@@ -29,6 +30,7 @@ import { ComparePage } from "../features/listings/ComparePage";
 import { OverviewPage } from "../features/listings/OverviewPage";
 import { HuntMapPage } from "../features/map/HuntMapPage";
 import { TasksPage } from "../features/jobs/TasksPage";
+import { HuntStatisticsPage } from "../features/statistics/HuntStatisticsPage";
 import { RubricPage } from "../features/rubric/RubricPage";
 import { VisitCreatePage } from "../features/visits/VisitCreatePage";
 import { VisitDetailPage } from "../features/visits/VisitDetailPage";
@@ -41,6 +43,15 @@ const protectedRoute = (element: React.ReactNode) => authenticatedRoute(<Require
 const developmentRoutes = import.meta.env.DEV
   ? [{ path: "/colors", element: <ColorsPage /> }]
   : [];
+
+function HuntAppRoute() {
+  const { huntId } = useParams();
+  return (
+    <GhostModeProvider key={huntId}>
+      <AppLayout />
+    </GhostModeProvider>
+  );
+}
 
 export const router = createBrowserRouter([
   ...developmentRoutes,
@@ -79,7 +90,7 @@ export const router = createBrowserRouter([
   },
   {
     path: "/h/:huntId",
-    element: protectedRoute(<AppLayout />),
+    element: protectedRoute(<HuntAppRoute />),
     children: [
       { index: true, element: <OverviewPage /> },
       { path: "map", element: <HuntMapPage /> },
@@ -90,6 +101,7 @@ export const router = createBrowserRouter([
       { path: "visits/:visitId", element: <VisitDetailPage /> },
       { path: "rubric", element: <RubricPage /> },
       { path: "tasks", element: <TasksPage /> },
+      { path: "statistics", element: <HuntStatisticsPage /> },
       { path: "settings", element: <HuntSettingsPage /> },
       { path: "settings/:tab", element: <HuntSettingsPage /> },
     ],

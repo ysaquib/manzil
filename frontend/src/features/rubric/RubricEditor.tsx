@@ -78,11 +78,14 @@ export function RubricEditor({
 
   const save = () =>
     putRubric.mutate(draftToPayload(draft), {
-      onSuccess: () => {
+      onSuccess: ({ backfillCount }) => {
         notifications.show({
-          title: "Rubric saved",
-          message: "Every listing re-scores in the background.",
-          color: "green",
+          title: backfillCount > 0 ? `Backfilling ${backfillCount} Listings` : "Rubric saved",
+          message:
+            backfillCount > 0
+              ? "Cached evidence is updating their scores. Follow progress in Tasks."
+              : "Every listing re-scores in the background.",
+          color: backfillCount > 0 ? "violet" : "green",
         });
         onDone();
       },

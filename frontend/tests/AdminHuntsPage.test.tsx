@@ -36,7 +36,7 @@ function hunt(id: string, name: string) {
     unattributed_cost_usd: 0.25,
     created_at: "2026-07-01T00:00:00Z",
     last_activity_at: null,
-    archived_at: null,
+    archived_at: null as string | null,
     locked_at: null,
   };
 }
@@ -81,6 +81,7 @@ describe("AdminHuntsPage", () => {
   beforeEach(() => {
     apiFetch.mockReset();
     deletionBlockers = [];
+    ALL[0]!.archived_at = null;
     apiFetch.mockImplementation((path: string) => {
       if (path.startsWith("/v1/admin/hunts?")) {
         const params = new URLSearchParams(path.split("?")[1]);
@@ -182,6 +183,22 @@ describe("AdminHuntsPage", () => {
       expect(apiFetch).toHaveBeenCalledWith("/v1/admin/hunts/h1/lock", {
         method: "PUT",
         body: { locked: true },
+      }),
+    );
+  });
+
+  it("restores an archived Hunt through the audited lifecycle route", async () => {
+    ALL[0]!.archived_at = "2026-08-11T00:00:00Z";
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByText("Hunt 1"));
+    await user.click(await screen.findByRole("button", { name: "Restore Hunt" }));
+
+    await waitFor(() =>
+      expect(apiFetch).toHaveBeenCalledWith("/v1/admin/hunts/h1/archive", {
+        method: "PUT",
+        body: { archived: false },
       }),
     );
   });

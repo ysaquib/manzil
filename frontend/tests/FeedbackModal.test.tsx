@@ -22,6 +22,24 @@ vi.mock("../src/features/feedback/api", async () => {
   };
 });
 
+vi.mock("../src/lib/buildInfo", async () => {
+  const actual = await vi.importActual<typeof import("../src/lib/buildInfo")>(
+    "../src/lib/buildInfo",
+  );
+  return {
+    ...actual,
+    useApiBuildInfo: () => ({
+      data: {
+        service: "api",
+        release_version: "0.1.0",
+        build_sha: "def5678999999",
+        build_id: "0.1.0+def5678",
+        environment: "production",
+      },
+    }),
+  };
+});
+
 vi.mock("../src/auth/useAuth", () => ({
   useAuth: () => ({ session: { user: { id: "u1", email: "yusuf@example.com" } } }),
 }));
@@ -50,7 +68,7 @@ describe("FeedbackModal", () => {
 
     // The strip shows exactly what will be sent.
     expect(screen.getByText("/h/hunt-1?listing=lst_8f21")).toBeInTheDocument();
-    expect(screen.getByText("· v3.27")).toBeInTheDocument();
+    expect(screen.getByText("· frontend v3.27 · api 0.1.0+def5678")).toBeInTheDocument();
     expect(screen.getByText("· yusuf@example.com")).toBeInTheDocument();
 
     await user.click(screen.getByText("Feature request"));
@@ -66,7 +84,7 @@ describe("FeedbackModal", () => {
         body: "Sort by commute time",
         route: "/h/hunt-1?listing=lst_8f21",
         hunt_id: "hunt-1",
-        app_version: "v3.27",
+        app_version: "frontend v3.27 · api 0.1.0+def5678",
       },
       expect.anything(),
     );

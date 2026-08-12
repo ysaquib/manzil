@@ -62,6 +62,7 @@ class PostgresPersistence:
         *,
         start_cursor: int | None = None,
         on_done: OnDone | None = None,
+        locked_by: str | None = None,
     ) -> None:
         self._pool = pool
         self.job_id = job_id
@@ -70,6 +71,7 @@ class PostgresPersistence:
         self._terminal_emitted = False
         self._on_done = on_done
         self._projected = False
+        self._locked_by = locked_by
 
     def _current_stage(self, cursor: int) -> str | None:
         # The stage the job is at / resumes from; None once every stage is done.
@@ -106,15 +108,18 @@ class PostgresPersistence:
         async with self._pool.acquire() as conn, conn.transaction():
             lifecycle = await conn.fetchrow(
                 """
-                select j.state::text as job_state, h.archived_at, h.locked_at
+                select j.state::text as job_state, j.locked_by,
+                       h.archived_at, h.locked_at
                 from jobs j join hunts h on h.id = j.hunt_id
                 where j.id = $1
                 for update of j for key share of h
                 """,
                 self.job_id,
             )
-            if lifecycle is None or lifecycle["job_state"] == JobState.CANCELLED.value:
-                frozen_reason = "Job was cancelled while its Stage was running"
+            if lifecycle is None or lifecycle["job_state"] != JobState.RUNNING.value:
+                frozen_reason = "Job lease ended while its Stage was running"
+            elif self._locked_by is not None and lifecycle["locked_by"] != self._locked_by:
+                frozen_reason = "Job lease moved to another worker while its Stage was running"
             elif lifecycle["archived_at"] is not None or lifecycle["locked_at"] is not None:
                 await conn.execute(
                     """
@@ -151,6 +156,8 @@ class PostgresPersistence:
                         locked_at = now(),
                         finished_at = case when $8 then now() else finished_at end
                     where id = $1
+                      and state = 'running'
+                      and ($10::text is null or locked_by = $10)
                     """,
                     self.job_id,
                     state.status.value,
@@ -161,6 +168,7 @@ class PostgresPersistence:
                     plan,
                     finished,
                     warnings,
+                    self._locked_by,
                 )
                 await self._save_stage_costs(conn, state)
                 # A stage completes when the cursor advances past it (persist-before-

@@ -70,11 +70,73 @@ async def test_the_queue_is_visible_across_hunts_the_admin_is_not_in(
     job_id = await _job(db_pool, collab_hunt, "failed", cost=0.0123)
     try:
         response = await as_admin.get("/v1/admin/jobs?state=failed")
-        assert response.status_code == 200
+        assert response.status_code == 200, response.text
         row = next(job for job in response.json() if job["id"] == str(job_id))
         assert row["hunt_name"] == "Collab Hunt"
         assert row["cost_actual_usd"] == 0.0123
         assert row["stale"] is False
+    finally:
+        await db_pool.execute("delete from jobs where id = $1", job_id)
+
+
+async def test_job_detail_is_complete_but_excludes_private_run_state(
+    as_admin: AsyncClient, db_pool, collab_hunt, seeded_users
+) -> None:
+    job_id = await _job(db_pool, collab_hunt, "failed", cost=0.0123)
+    requester = seeded_users["owner"]
+    await db_pool.execute(
+        """
+        update jobs set requested_by=$2, started_at=now() - interval '90 seconds',
+               finished_at=now(), plan=$3::jsonb, warnings=$4::jsonb,
+               payload=$5::jsonb
+         where id=$1
+        """,
+        job_id,
+        requester.user_id,
+        json.dumps({"stages": ["FETCH", "EXTRACT"]}),
+        json.dumps([{"stage": "FETCH", "code": "partial", "message": "One Source failed"}]),
+        json.dumps({"run_state": {"cleaned_text": "private sentinel"}}),
+    )
+    await db_pool.execute(
+        "insert into job_events (job_id, stage, event, detail) "
+        "values ($1, 'FETCH', 'completed', '{\"tier\": 3}'::jsonb)",
+        job_id,
+    )
+    await db_pool.execute(
+        """
+        insert into job_stage_costs (
+            job_id, stage, llm_cost_usd, fetch_cost_usd, llm_calls, fetch_calls,
+            input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+            fetch_calls_by_provider
+        ) values ($1, 'FETCH', 0.002, 0.0015, 2, 1, 101, 22, 11, 3,
+                  '{"brightdata": 1}'::jsonb)
+        """,
+        job_id,
+    )
+    try:
+        response = await as_admin.get(f"/v1/admin/jobs/{job_id}")
+        assert response.status_code == 200, response.text
+        detail = response.json()
+
+        assert detail["plan"] == {"stages": ["FETCH", "EXTRACT"]}
+        assert detail["warnings"][0]["code"] == "partial"
+        assert detail["requested_by"] == str(requester.user_id)
+        assert detail["requested_by_email"] == requester.email
+        assert detail["started_at"] is not None
+        assert detail["duration_seconds"] == pytest.approx(90, abs=2)
+        assert detail["events"][0]["detail"] == {"tier": 3}
+        expected_cost_detail = {
+            "input_tokens": 101,
+            "output_tokens": 22,
+            "cache_read_tokens": 11,
+            "cache_write_tokens": 3,
+            "fetch_calls_by_provider": {"brightdata": 1},
+        }
+        assert {
+            key: detail["stage_costs"][0][key] for key in expected_cost_detail
+        } == expected_cost_detail
+        assert "payload" not in detail
+        assert "cleaned_text" not in response.text
     finally:
         await db_pool.execute("delete from jobs where id = $1", job_id)
 
@@ -126,6 +188,27 @@ async def test_retry_requeues_and_resets_the_backoff_ladder(
         assert row["error"] is None
     finally:
         await db_pool.execute("delete from jobs where id = $1", job_id)
+
+
+async def test_admin_soft_delete_retains_cost_and_audits(
+    as_admin: AsyncClient, db_pool, collab_hunt
+) -> None:
+    job_id = await _job(db_pool, collab_hunt, "done", cost=0.0456)
+    response = await as_admin.delete(f"/v1/admin/jobs/{job_id}")
+    assert response.status_code == 200
+    row = await db_pool.fetchrow(
+        "select state::text, deleted_from_state::text, cost_actual_usd from jobs where id=$1",
+        job_id,
+    )
+    assert row["state"] == "deleted"
+    assert row["deleted_from_state"] == "done"
+    assert float(row["cost_actual_usd"]) == 0.0456
+    assert await db_pool.fetchval(
+        "select exists(select 1 from admin_audit_log where action='job.delete' and target_id=$1)",
+        job_id,
+    )
+    listed = await as_admin.get("/v1/admin/jobs")
+    assert str(job_id) not in {job["id"] for job in listed.json()}
 
 
 async def test_a_done_job_cannot_be_retried_or_cancelled(
@@ -304,21 +387,68 @@ async def test_the_overview_counts_spend_a_running_job_has_already_made(
 
 
 async def test_system_reports_pins_and_key_presence_but_never_a_value(
-    as_admin: AsyncClient,
+    as_admin: AsyncClient, db_pool
 ) -> None:
-    response = await as_admin.get("/v1/admin/system")
-    assert response.status_code == 200
-    report = response.json()
+    await db_pool.execute(
+        """
+        insert into worker_heartbeats (worker_id, mode, started_at, last_seen_at)
+        values ('admin-system-test', 'workflow', now(), now())
+        on conflict (worker_id) do update set last_seen_at = now()
+        """
+    )
+    try:
+        response = await as_admin.get("/v1/admin/system")
+        assert response.status_code == 200
+        report = response.json()
 
-    assert report["priced_models"] > 0
-    assert any(pin["stage"] == "extract" for pin in report["model_pins"])
+        assert report["worker_status"] == "live_idle"
+        assert report["live_workers"] >= 1
+        assert report["busy_workers"] == 0
+        assert report["last_heartbeat"] is not None
+        assert report["priced_models"] > 0
+        assert any(pin["stage"] == "extract" for pin in report["model_pins"])
 
-    names = {service["name"] for service in report["services"]}
-    assert {"OpenRouter", "Bright Data", "Langfuse"} <= names
-    # Presence only — a value here would be a credential in an HTTP response.
-    for service in report["services"]:
-        assert set(service) == {"name", "detail", "configured"}
-        assert isinstance(service["configured"], bool)
+        names = {service["name"] for service in report["services"]}
+        assert {"OpenRouter", "Bright Data", "Langfuse"} <= names
+        # Presence only — a value here would be a credential in an HTTP response.
+        for service in report["services"]:
+            assert set(service) == {"name", "detail", "configured"}
+            assert isinstance(service["configured"], bool)
+    finally:
+        await db_pool.execute("delete from worker_heartbeats where worker_id = 'admin-system-test'")
+
+
+async def test_system_distinguishes_busy_and_unavailable_workers(
+    as_admin: AsyncClient, db_pool, collab_hunt
+) -> None:
+    await db_pool.execute("delete from worker_heartbeats")
+    job_id = await _job(db_pool, collab_hunt, "running")
+    try:
+        await db_pool.execute(
+            "update jobs set locked_by = 'busy-system-test' where id = $1", job_id
+        )
+        await db_pool.execute(
+            """
+            insert into worker_heartbeats (worker_id, mode, started_at, last_seen_at)
+            values ('busy-system-test', 'workflow', now(), now())
+            """
+        )
+        busy = (await as_admin.get("/v1/admin/system")).json()
+        assert busy["worker_status"] == "live_busy"
+        assert busy["busy_workers"] >= 1
+
+        await db_pool.execute(
+            "update worker_heartbeats set last_seen_at = now() - interval '2 minutes' "
+            "where worker_id = 'busy-system-test'"
+        )
+        unavailable = (await as_admin.get("/v1/admin/system")).json()
+        assert unavailable["worker_status"] == "unavailable"
+        assert unavailable["live_workers"] == 0
+        # Queue state is separate from worker liveness.
+        assert unavailable["running"] >= 1
+    finally:
+        await db_pool.execute("delete from jobs where id = $1", job_id)
+        await db_pool.execute("delete from worker_heartbeats where worker_id = 'busy-system-test'")
 
 
 # ── the gate ─────────────────────────────────────────────────────────────────

@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from manzil_shared.models import CheckpointPrompt, JobState
 
 from manzil_api import privileged
@@ -88,10 +88,24 @@ router = APIRouter(prefix="/admin/ghost", tags=["admin", "ghost-view"])
 @router.get("/hunts/{hunt_id}/attention", response_model=AttentionResponse)
 async def hunt_attention(hunt_id: UUID, admin: AdminUser, pool: DbPool) -> AttentionResponse:
     await _require_ghost_hunt(pool, hunt_id, admin, writable=False)
-    count = await pool.fetchval(
-        "select count(*) from jobs where hunt_id=$1 and state='waiting_user'", hunt_id
+    counts = await pool.fetchrow(
+        """select count(*) filter (where state='failed') as failed,
+                  count(*) filter (where state='waiting_user') as waiting_user,
+                  count(*) filter (where state='running') as running
+             from jobs where hunt_id=$1""",
+        hunt_id,
     )
-    return AttentionResponse(waiting_checkpoint_count=count)
+    failed, waiting, running = (int(counts[key]) for key in ("failed", "waiting_user", "running"))
+    task_status = (
+        "failed" if failed else "waiting_user" if waiting else "running" if running else None
+    )
+    return AttentionResponse(
+        waiting_checkpoint_count=waiting,
+        failed=failed,
+        waiting_user=waiting,
+        running=running,
+        task_status=task_status,
+    )
 
 
 class GhostViewUnavailable(ManzilAPIError):
@@ -124,15 +138,6 @@ async def _require_ghost_hunt(
         raise GhostTargetNotFound("Hunt not found")
     if writable and row["locked_at"] is not None:
         raise GhostHuntLocked("Unlock this Hunt before making any changes")
-    member = await pool.fetchval(
-        "select exists(select 1 from hunt_members where hunt_id = $1 and user_id = $2)",
-        hunt_id,
-        UUID(admin.id),
-    )
-    if member and row["archived_at"] is None:
-        raise GhostViewUnavailable(
-            "Site Admins who belong to this Hunt must use their assigned Hunt role"
-        )
     hunt = dict(row)
     if isinstance(hunt.get("settings"), str):
         hunt["settings"] = json.loads(hunt["settings"])
@@ -229,7 +234,7 @@ async def patch_hunt_settings(
     audit: Audit,
 ) -> HuntResponse:
     before = await _require_ghost_hunt(pool, hunt_id, admin)
-    result = await hunt_service.patch_settings(client, hunt_id, body)
+    result = await hunt_service.patch_settings(client, hunt_id, admin.id, body)
     await _audit_hunt(
         audit,
         "hunt.settings.update",
@@ -255,7 +260,20 @@ async def put_shared_filters(
     return result
 
 
-@router.put("/hunts/{hunt_id}/rubric", response_model=list[RubricCriterionOut])
+@router.put(
+    "/hunts/{hunt_id}/rubric",
+    response_model=list[RubricCriterionOut],
+    responses={
+        200: {
+            "headers": {
+                "X-Manzil-Backfill-Count": {
+                    "description": "Active Listings queued for cached-evidence backfill.",
+                    "schema": {"type": "integer", "minimum": 0},
+                }
+            }
+        }
+    },
+)
 async def put_rubric(
     hunt_id: UUID,
     body: RubricPut,
@@ -263,19 +281,21 @@ async def put_rubric(
     pool: DbPool,
     client: ServiceClient,
     audit: Audit,
+    response: Response,
 ) -> list[RubricCriterionOut]:
     await _require_ghost_hunt(pool, hunt_id, admin)
     before = await rubric_service.get_rubric(client, hunt_id)
-    result = await rubric_service.put_rubric(client, hunt_id, body)
+    result = await rubric_service.put_rubric(client, hunt_id, admin.id, body)
+    response.headers["X-Manzil-Backfill-Count"] = str(result.backfill_count)
     await _audit_hunt(
         audit,
         "hunt.rubric.update",
         hunt_id,
         target_type="rubric",
         before={"criteria": [row.model_dump(mode="json") for row in before]},
-        after={"criteria": [row.model_dump(mode="json") for row in result]},
+        after={"criteria": [row.model_dump(mode="json") for row in result.criteria]},
     )
-    return result
+    return result.criteria
 
 
 @router.post("/hunts/{hunt_id}/rubric/custom-routing", response_model=CustomRoutingResponse)
@@ -322,11 +342,12 @@ async def create_listing(
         )
         await connection.execute(
             """
-            insert into jobs(hunt_id, hunt_listing_id, type, state, payload)
-            values($1, $2, 'ingest', 'queued', $3::jsonb)
+            insert into jobs(hunt_id, hunt_listing_id, type, state, requested_by, payload)
+            values($1, $2, 'ingest', 'queued', $3, $4::jsonb)
             """,
             hunt_id,
             row["id"],
+            UUID(admin.id),
             json.dumps({"url": body.url, "source_policy": source_policy}),
         )
     listing_row = dict(row)
@@ -470,10 +491,11 @@ async def patch_listing_source_policy(
             if not url:
                 raise GhostTargetNotFound("Listing has no submitted Source URL")
             await connection.execute(
-                """insert into jobs(hunt_id,hunt_listing_id,type,state,payload)
-                values($1,$2,'refresh','queued',$3::jsonb)""",
+                """insert into jobs(hunt_id,hunt_listing_id,type,state,requested_by,payload)
+                values($1,$2,'refresh','queued',$3,$4::jsonb)""",
                 listing["hunt_id"],
                 listing_id,
+                UUID(admin.id),
                 json.dumps(
                     {
                         "hunt_id": str(listing["hunt_id"]),
@@ -1067,12 +1089,14 @@ async def answer_checkpoint(
         plan = job_service._parse_payload(row.get("plan")) if row.get("plan") else None
         async with pool.acquire() as connection, connection.transaction():
             await connection.execute(
-                """insert into jobs(id,hunt_id,hunt_listing_id,type,state,plan,payload)
-                values($1,$2,$3,$4,'queued',$5::jsonb,$6::jsonb)""",
+                """insert into jobs(
+                    id,hunt_id,hunt_listing_id,type,state,requested_by,plan,payload
+                ) values($1,$2,$3,$4,'queued',$5,$6::jsonb,$7::jsonb)""",
                 result_id,
                 UUID(str(row["hunt_id"])),
                 row.get("hunt_listing_id"),
                 row["type"],
+                UUID(admin.id),
                 json.dumps(plan) if plan is not None else None,
                 json.dumps(corrected_payload),
             )

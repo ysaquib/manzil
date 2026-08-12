@@ -14,10 +14,10 @@ export function useHuntAccess(huntId: string) {
   const locked = Boolean(hunt.data?.locked_at);
   const isSiteAdmin = Boolean(admin.data?.is_site_admin);
   const isOwner = hunt.data?.owner_id === session?.user.id;
-  const adminArchivedOverride = archived && isSiteAdmin && !locked;
+  const adminArchivedOverride = archived && isSiteAdmin && ghost.isGhost === true && !locked;
   const reason = locked
     ? "A Site Admin locked this Hunt."
-    : archived && !isSiteAdmin
+    : archived && !adminArchivedOverride
       ? "Archived Hunts cannot be changed."
       : null;
 
@@ -29,10 +29,10 @@ export function useHuntAccess(huntId: string) {
     isSiteAdmin,
     isGhost: ghost.isGhost,
     adminArchivedOverride,
-    canMutate: !locked && (!archived || isSiteAdmin),
+    canMutate: !locked && (!archived || adminArchivedOverride),
     canManageLifecycle: !locked && (Boolean(isOwner) || isSiteAdmin),
     state: (locked ? "locked" : archived ? "archived" : null) as HuntReadOnlyReason,
-    readOnlyReason: (locked ? "locked" : archived && !isSiteAdmin ? "archived" : null) as HuntReadOnlyReason,
+    readOnlyReason: (locked ? "locked" : archived && !adminArchivedOverride ? "archived" : null) as HuntReadOnlyReason,
     reason,
     isLoading: hunt.isLoading || admin.isPending || !ghost.resolved,
   };

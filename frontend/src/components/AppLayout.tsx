@@ -11,12 +11,14 @@ import {
   Anchor,
   AppShell,
   Badge,
+  Box,
   Burger,
   Group,
   Menu,
   NavLink,
   Text,
   Title,
+  Tooltip,
   UnstyledButton,
 } from "@mantine/core";
 import { useDisclosure, useMediaQuery } from "@mantine/hooks";
@@ -31,6 +33,7 @@ import {
   IconListCheck,
   IconMap2,
   IconScale,
+  IconChartBar,
   IconSettings,
 } from "@tabler/icons-react";
 import { Link, NavLink as RouterNavLink, Outlet, useLocation, useParams } from "react-router-dom";
@@ -59,6 +62,7 @@ const NAV = [
   { label: "Visits", to: "visits", icon: IconFlag },
   { label: "Rubric", to: "rubric", icon: IconScale },
   { label: "Tasks", to: "tasks", icon: IconListCheck },
+  { label: "Statistics", to: "statistics", icon: IconChartBar },
   { label: "Settings", to: "settings", icon: IconSettings },
 ] as const;
 
@@ -72,7 +76,7 @@ function isNavActive(pathname: string, huntId: string, itemTo: string): boolean 
 function HuntSwitcher({ huntId }: { huntId: string }) {
   const { data: hunt } = useHunt(huntId);
   const { data: hunts = [] } = useHunts();
-  const others = hunts.filter((candidate) => candidate.id !== huntId);
+  const others = hunts.filter((candidate) => candidate.id !== huntId && !candidate.archived_at);
 
   if (!hunt) return null;
 
@@ -121,11 +125,12 @@ export function AppLayout() {
     <>
       {isDemo() && <DemoBanner />}
     <AppShell
-      header={{ height: 56 }}
+      header={{ height: isGhost === true ? 90 : 56 }}
       navbar={{ width: 224, breakpoint: "sm", collapsed: { mobile: !navOpened } }}
       padding="md"
     >
       <AppShell.Header>
+        {isGhost === true && <GhostBanner huntName={ghostHunt?.name} />}
         <div className={classes.header}>
           <Group gap="sm" wrap="nowrap">
             <Burger opened={navOpened} onClick={toggle} hiddenFrom="sm" size="sm" />
@@ -163,10 +168,27 @@ export function AppLayout() {
                     <Badge size="sm" variant="light" circle>
                       {compare.entries.length}
                     </Badge>
-                  ) : item.to === "tasks" && (attention?.waiting_checkpoint_count ?? 0) > 0 ? (
-                    <Badge size="sm" variant="light" color="orange" circle>
-                      {attention?.waiting_checkpoint_count}
-                    </Badge>
+                  ) : item.to === "tasks" && attention?.task_status ? (
+                    <Tooltip
+                      label={`${attention[attention.task_status]} ${attention.task_status.replace("_", " ")} Jobs`}
+                    >
+                      <Box
+                        component="span"
+                        role="img"
+                        aria-label={`${attention[attention.task_status]} ${attention.task_status.replace("_", " ")} Jobs`}
+                        w={9}
+                        h={9}
+                        style={{
+                          borderRadius: "50%",
+                          background:
+                            attention.task_status === "failed"
+                              ? "var(--mantine-color-red-6)"
+                              : attention.task_status === "waiting_user"
+                                ? "var(--mantine-color-yellow-6)"
+                                : "var(--mantine-color-violet-6)",
+                        }}
+                      />
+                    </Tooltip>
                   ) : undefined
                 }
                 onClick={close}
@@ -188,7 +210,6 @@ export function AppLayout() {
       </AppShell.Navbar>
 
       <AppShell.Main className={classes.main}>
-        {isGhost === true && <GhostBanner huntName={ghostHunt?.name} />}
         <HuntStateBanner reason={access.state} adminOverride={access.adminArchivedOverride} />
         {huntId && access.canMutate && <CreateRubricPrompt huntId={huntId} />}
         {/* Filter state lives above the Outlet so Overview and Map filter the

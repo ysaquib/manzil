@@ -5,8 +5,8 @@ Status tracker and orientation for the Manzil operator surface.
 owns the task table and acceptance evidence. **This file is the map** — where the
 pieces are and why they are shaped that way.
 
-Last updated 2026-08-11 (DESIGN v3.77 — Hunt lock/read-only lifecycle and mobile
-table layouts added after the AD workstream completed).
+Last updated 2026-08-11 (DESIGN v3.86 — timezone-correct cost buckets and
+operational usage charts added after the AD workstream completed).
 
 ---
 
@@ -116,7 +116,7 @@ accounts only; neither may create one.
 | Route | Who | Notes |
 |---|---|---|
 | `GET /v1/admin/me` | anyone signed in | Answers `is_site_admin: false` rather than 403 — the frontend calls it on every load, and a 403 there is console noise for every ordinary user |
-| `GET /v1/admin/summary` | admin | Overview counters |
+| `GET /v1/admin/summary?timezone=` | admin | Overview counters plus a zero-filled 30-day Listing-submission series |
 | `GET /v1/admin/hunts` | admin | Roll-ups incl. LLM/fetch cost split |
 | `GET /v1/admin/hunts/{id}/management` | admin | Current roster plus transfer choices and named deletion blockers |
 | `POST /v1/admin/hunts/{id}/transfer-ownership` | admin | Existing-member target; atomic one-Owner mutation; audited in the same transaction |
@@ -134,12 +134,24 @@ accounts only; neither may create one.
 | `/h/{huntId}` (ordinary Hunt URLs) | admin | The ghost view — no special route, see below |
 | `GET /v1/admin/jobs` · `/{id}` | admin | Cross-Hunt queue; `stale_only=true` for dead workers' locks |
 | `POST .../jobs/{id}/retry` · `/cancel` · `/jobs/release-locks` | admin | Queue control, all audited |
-| `GET /v1/admin/costs?days=` | admin | Spend by stage, Hunt and model + daily series |
-| `GET /v1/admin/system` | admin | Queue health, model pins, key **presence** |
+| `GET /v1/admin/costs?days=&timezone=` | admin | Spend by stage, Hunt and model + zero-filled local-calendar daily series |
+| `GET /v1/admin/system` | admin | Worker liveness, queue health, model pins, key **presence** |
 | `GET /v1/admin/demo` · `/demo/hunts` | admin | Current release/freshness and only the caller's owned Hunt candidates |
 | `POST /v1/admin/demo/preflight` · `/demo/publications` | admin | Exposure inventory, exact-name-confirmed durable publication |
 | `PATCH /v1/admin/demo` | selected Hunt's admin Owner | Enable current release or immediately disable without deselecting |
 | `/v1/admin/ghost/...` | admin non-member of the target Hunt | Mirrors Owner Hunt/listing/rubric/people mutations; every write is audited with `via_ghost_view = true` |
+
+Admin Jobs is a finder plus a detail drawer. Selecting a row loads the Job's
+plan, warnings, requester, timing, timeline, and full per-Stage call/token/cache/
+provider/cost split. The API deliberately omits the private payload/RunState and
+cleaned Source text. Eligible terminal deletion is offered only inside this
+drawer and retains the Job's backend history and billed cost.
+
+Admin analytics use the browser's validated IANA timezone. Calendar windows
+include today, return explicit zero buckets, and never parse a date label as a
+UTC instant in the browser. Costs textures today's bar and labels it in progress;
+Overview carries the last 30 calendar days of Listing submissions. Deleted Jobs
+continue to contribute to aggregate operational usage and billed totals.
 
 ## Hunt lifecycle actions
 

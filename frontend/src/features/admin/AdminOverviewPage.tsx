@@ -1,11 +1,12 @@
-// Admin Overview (AD-2): the counters, and the short list of things that are
-// actually wrong. Charts arrive with AD-5 (`@mantine/charts`), so this page
-// deliberately shows numbers and states rather than a chart-shaped placeholder.
+// Admin Overview (AD-2): counters, operational trend, and the short list of
+// things that are actually wrong.
+import { BarChart } from "@mantine/charts";
 import { Alert, Card, Group, Loader, Progress, SimpleGrid, Stack, Text, Title } from "@mantine/core";
 import { IconAlertTriangle } from "@tabler/icons-react";
 import { Link } from "react-router-dom";
 
 import { useAdminSummary } from "./api";
+import { formatCalendarDay } from "../../lib/calendarDays";
 
 function Stat({
   label,
@@ -58,6 +59,9 @@ export function AdminOverviewPage() {
     s.tier3_credits_allowance && s.tier3_credits_allowance > 0
       ? (100 * s.tier3_credits_used) / s.tier3_credits_allowance
       : null;
+  const submissionChartLabel = `Listings submitted over the last 30 days. ${s.listing_submissions_daily
+    .map((point) => `${formatCalendarDay(point.day)}: ${point.count}`)
+    .join("; ")}`;
 
   return (
     <Stack gap="lg">
@@ -106,6 +110,21 @@ export function AdminOverviewPage() {
         <Text size="xs" c="dimmed" mt="xs">
           One tier-3 fetch is one credit. The allowance resets on the 1st.
         </Text>
+      </Card>
+
+      <Card padding="md" radius="md" withBorder>
+        <Title order={4} mb="xs">Listings submitted · 30 days</Title>
+        <div role="img" aria-label={submissionChartLabel}>
+          <BarChart
+            h={220}
+            data={s.listing_submissions_daily.map((point) => ({
+              day: formatCalendarDay(point.day),
+              listings: point.count,
+            }))}
+            dataKey="day"
+            series={[{ name: "listings", label: "Listings", color: "primary.6" }]}
+          />
+        </div>
       </Card>
 
       {(s.jobs_failed > 0 || s.feedback_new > 0) && (

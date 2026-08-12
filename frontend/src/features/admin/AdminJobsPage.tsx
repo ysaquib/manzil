@@ -9,8 +9,11 @@ import {
   Badge,
   Button,
   Card,
+  Divider,
+  Drawer,
   Group,
   Loader,
+  SimpleGrid,
   Stack,
   Switch,
   Table,
@@ -22,7 +25,16 @@ import { useMediaQuery } from "@mantine/hooks";
 import { useState } from "react";
 
 import { TablePagination, usePagedRows } from "../../components/TablePagination";
-import { useAdminJobs, useJobAction, useReleaseLocks, type JobRow } from "./api";
+import { ConfirmDeleteModal } from "../../components/ConfirmDeleteModal";
+import {
+  useAdminDeleteJob,
+  useAdminJob,
+  useAdminJobs,
+  useJobAction,
+  useReleaseLocks,
+  type JobRow,
+} from "./api";
+import { JobWarnings } from "../jobs/JobWarnings";
 
 const STATES = ["failed", "running", "queued", "waiting_user", "done", "cancelled"];
 
@@ -55,7 +67,10 @@ function JobActions({ job }: { job: JobRow }) {
           size="compact-xs"
           variant="default"
           loading={action.isPending}
-          onClick={() => action.mutate({ jobId: job.id, action: "retry" })}
+          onClick={(event) => {
+            event.stopPropagation();
+            action.mutate({ jobId: job.id, action: "retry" });
+          }}
         >
           Retry
         </Button>
@@ -66,7 +81,10 @@ function JobActions({ job }: { job: JobRow }) {
           variant="subtle"
           color="red"
           loading={action.isPending}
-          onClick={() => action.mutate({ jobId: job.id, action: "cancel" })}
+          onClick={(event) => {
+            event.stopPropagation();
+            action.mutate({ jobId: job.id, action: "cancel" });
+          }}
         >
           Cancel
         </Button>
@@ -75,9 +93,128 @@ function JobActions({ job }: { job: JobRow }) {
   );
 }
 
+function formatDuration(seconds: number | null): string {
+  if (seconds === null) return "—";
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+  return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+}
+
+function AdminJobDrawer({ jobId, onClose }: { jobId: string | null; onClose: () => void }) {
+  const detail = useAdminJob(jobId);
+  const action = useJobAction();
+  const deleteJob = useAdminDeleteJob();
+  const [deleteOpened, setDeleteOpened] = useState(false);
+  const job = detail.data;
+
+  return (
+    <Drawer opened={jobId !== null} onClose={onClose} position="right" size="xl" title="Job detail">
+      {detail.isPending && <Loader size="sm" />}
+      {detail.error && <Alert color="red">Could not load this Job.</Alert>}
+      {job && (
+        <Stack gap="md">
+          <Group justify="space-between" align="flex-start">
+            <div>
+              <Text fw={700}>{job.listing_name ?? job.hunt_name ?? "Hunt-wide Job"}</Text>
+              <Text size="xs" ff="monospace" c="dimmed">{job.id}</Text>
+            </div>
+            <Badge variant="light" color={STATE_COLOR[job.state] ?? "gray"}>
+              {job.state.replace("_", " ")}
+            </Badge>
+          </Group>
+
+          {job.error && <Alert color="red" title="Terminal error">{job.error}</Alert>}
+          <JobWarnings warnings={job.warnings} />
+
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
+            <Text size="sm"><Text span c="dimmed">Hunt: </Text>{job.hunt_name ?? "—"}</Text>
+            <Text size="sm"><Text span c="dimmed">Type: </Text>{job.type}</Text>
+            <Text size="sm"><Text span c="dimmed">Stage: </Text>{job.current_stage ?? "—"}</Text>
+            <Text size="sm"><Text span c="dimmed">Attempts: </Text>{job.attempts}</Text>
+            <Text size="sm">
+              <Text span c="dimmed">Requested by: </Text>
+              {job.requested_by_name ?? job.requested_by_email ?? (job.requested_by ? job.requested_by.slice(0, 8) : "Scheduler")}
+            </Text>
+            <Text size="sm"><Text span c="dimmed">Duration: </Text>{formatDuration(job.duration_seconds)}</Text>
+            <Text size="sm"><Text span c="dimmed">Started: </Text>{job.started_at ? new Date(job.started_at).toLocaleString() : "—"}</Text>
+            <Text size="sm"><Text span c="dimmed">Finished: </Text>{job.finished_at ? new Date(job.finished_at).toLocaleString() : "—"}</Text>
+          </SimpleGrid>
+
+          <Divider />
+          <Title order={4}>Plan</Title>
+          {job.plan ? (
+            <pre style={{ margin: 0, overflowX: "auto", fontSize: 12 }}>{JSON.stringify(job.plan, null, 2)}</pre>
+          ) : <Text size="sm" c="dimmed">No plan manifest was recorded.</Text>}
+
+          <Divider />
+          <Title order={4}>Timeline</Title>
+          {job.events.length === 0 ? <Text size="sm" c="dimmed">No events recorded.</Text> : (
+            <Stack gap="xs">
+              {job.events.map((event, index) => (
+                <Card key={`${event.at}-${event.stage}-${index}`} padding="xs" withBorder>
+                  <Group justify="space-between" gap="xs">
+                    <Text size="sm" fw={600}>{event.stage} · {event.event.replaceAll("_", " ")}</Text>
+                    <Text size="xs" c="dimmed">{new Date(event.at).toLocaleString()}</Text>
+                  </Group>
+                  {Object.keys(event.detail).length > 0 && (
+                    <pre style={{ marginBottom: 0, overflowX: "auto", fontSize: 11 }}>{JSON.stringify(event.detail, null, 2)}</pre>
+                  )}
+                </Card>
+              ))}
+            </Stack>
+          )}
+
+          <Divider />
+          <Group justify="space-between"><Title order={4}>Stage costs</Title><Text fw={700}>${job.cost_actual_usd.toFixed(4)} billed</Text></Group>
+          {job.stage_costs.length === 0 ? <Text size="sm" c="dimmed">No Stage costs recorded.</Text> : (
+            <Table.ScrollContainer minWidth={920}>
+              <Table verticalSpacing="xs">
+                <Table.Thead><Table.Tr><Table.Th>Stage</Table.Th><Table.Th ta="end">LLM</Table.Th><Table.Th ta="end">Fetch</Table.Th><Table.Th ta="end">Calls</Table.Th><Table.Th ta="end">Tokens in/out</Table.Th><Table.Th ta="end">Cache read/write</Table.Th><Table.Th>Providers</Table.Th></Table.Tr></Table.Thead>
+                <Table.Tbody>{job.stage_costs.map((cost) => (
+                  <Table.Tr key={cost.stage}>
+                    <Table.Td ff="monospace" fz="xs">{cost.stage}</Table.Td>
+                    <Table.Td ta="end" ff="monospace" fz="xs">${cost.llm_cost_usd.toFixed(6)}</Table.Td>
+                    <Table.Td ta="end" ff="monospace" fz="xs">${cost.fetch_cost_usd.toFixed(6)}</Table.Td>
+                    <Table.Td ta="end" ff="monospace" fz="xs">{cost.llm_calls} / {cost.fetch_calls}</Table.Td>
+                    <Table.Td ta="end" ff="monospace" fz="xs">{cost.input_tokens} / {cost.output_tokens}</Table.Td>
+                    <Table.Td ta="end" ff="monospace" fz="xs">{cost.cache_read_tokens} / {cost.cache_write_tokens}</Table.Td>
+                    <Table.Td fz="xs">{Object.entries(cost.fetch_calls_by_provider).map(([name, calls]) => `${name}: ${calls}`).join(" · ") || "—"}</Table.Td>
+                  </Table.Tr>
+                ))}</Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
+          )}
+
+          <Group justify="flex-end">
+            {(job.state === "failed" || job.state === "cancelled") && (
+              <Button variant="default" loading={action.isPending} onClick={() => action.mutate({ jobId: job.id, action: "retry" })}>Retry</Button>
+            )}
+            {job.state !== "done" && job.state !== "cancelled" && (
+              <Button variant="subtle" color="red" loading={action.isPending} onClick={() => action.mutate({ jobId: job.id, action: "cancel" })}>Cancel</Button>
+            )}
+            {["failed", "cancelled", "done"].includes(job.state) && (
+              <Button color="red" variant="light" onClick={() => setDeleteOpened(true)}>Delete Job</Button>
+            )}
+          </Group>
+          <ConfirmDeleteModal
+            opened={deleteOpened}
+            onClose={() => setDeleteOpened(false)}
+            targets={[{ id: job.id, label: `${job.listing_name ?? job.hunt_name ?? "Unscoped Job"} · ${job.id.slice(0, 8)}` }]}
+            noun={{ singular: "Job", plural: "Jobs" }}
+            warning="This removes the Job from admin product views. Its billed cost, Stage costs, timeline, and audit record remain in Postgres."
+            loading={deleteJob.isPending}
+            onConfirm={() => deleteJob.mutate(job.id, { onSuccess: onClose })}
+          />
+        </Stack>
+      )}
+    </Drawer>
+  );
+}
+
 export function AdminJobsPage() {
   const [state, setState] = useState<string | null>("failed");
   const [staleOnly, setStaleOnly] = useState(false);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const jobs = useAdminJobs(staleOnly ? null : state, staleOnly);
   // demo-guarded: useReleaseLocks — `releaseLocks.data?.detail` is read below,
   // and an intercepted demo write would leave `isSuccess` true with nothing to
@@ -200,6 +337,14 @@ export function AdminJobsPage() {
                     </Text>
                     <JobActions job={job} />
                   </Group>
+                  <Button
+                    size="compact-xs"
+                    variant="subtle"
+                    mt="xs"
+                    onClick={() => setSelectedJobId(job.id)}
+                  >
+                    Inspect details
+                  </Button>
                 </Card>
               ))}
             </Stack>
@@ -220,7 +365,17 @@ export function AdminJobsPage() {
               </Table.Thead>
               <Table.Tbody>
                 {paged.items.map((job) => (
-                  <Table.Tr key={job.id}>
+                  <Table.Tr
+                    key={job.id}
+                    onClick={() => setSelectedJobId(job.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") setSelectedJobId(job.id);
+                    }}
+                    tabIndex={0}
+                    role="button"
+                    aria-label={`Inspect ${job.listing_name ?? job.hunt_name ?? "Job"}`}
+                    style={{ cursor: "pointer" }}
+                  >
                     <Table.Td>
                       <Text size="xs" ff="monospace">
                         {job.id.slice(0, 8)}
@@ -278,6 +433,7 @@ export function AdminJobsPage() {
           </>
         )}
       </Card>
+      <AdminJobDrawer jobId={selectedJobId} onClose={() => setSelectedJobId(null)} />
     </Stack>
   );
 }

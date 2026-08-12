@@ -1,12 +1,9 @@
 // Hunts (AD-4). Every Hunt with the roll-ups only visible from above, and the
 // door into the ghost view.
 //
-// "Open as owner" is a plain link to the Hunt's ordinary URL, not a special
-// mode. That is the point of the SELECT-side read predicate: the existing Hunt
-// screens already serve a Site Admin, so there is no parallel implementation to
-// keep in step. What the admin sees differently — the banner, no Presence,
-// read-only Visits — is derived from not being a member, not from how they got
-// there.
+// Opening from this installation-level surface explicitly enters Ghost View.
+// Ordinary Hunt links never carry that state, so an admin who owns an archived
+// Hunt still opens it as its Owner from the Hunt switcher.
 import {
   Alert,
   Anchor,
@@ -28,6 +25,7 @@ import { useDebouncedValue, useMediaQuery } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
   IconExternalLink,
+  IconArchive,
   IconLock,
   IconLockOpen,
   IconSearch,
@@ -52,6 +50,7 @@ import {
   useDeleteAdminHunt,
   useHuntActivity,
   useSetAdminHuntLock,
+  useSetAdminHuntArchived,
   useTransferAdminHuntOwnership,
   type ActivityEntry,
   type HuntSummary,
@@ -111,6 +110,7 @@ function HuntDetail({ hunt, onDeleted }: { hunt: HuntSummary; onDeleted: () => v
   const transfer = useTransferAdminHuntOwnership(huntId);
   const deleteHunt = useDeleteAdminHunt();
   const setLock = useSetAdminHuntLock(huntId);
+  const setArchived = useSetAdminHuntArchived(huntId);
   const [transferTarget, setTransferTarget] = useState<string | null>(null);
   const [transferOpen, setTransferOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -136,25 +136,20 @@ function HuntDetail({ hunt, onDeleted }: { hunt: HuntSummary; onDeleted: () => v
         <Button
           component={Link}
           to={`/h/${huntId}`}
+          state={{ adminGhost: true }}
           size="xs"
           leftSection={<IconExternalLink size={14} />}
         >
-          {management.data?.caller_is_member ? "Open Hunt" : "Open as owner"}
+          Open in Ghost View
         </Button>
       </Group>
 
       {management.isPending ? (
         <Loader size="xs" mb="sm" />
-      ) : management.data?.caller_is_member ? (
-        <Alert color="gray" mb="sm">
-          You belong to this Hunt. Opening it uses your assigned Hunt role; Site Admin powers
-          remain here in the audited panel.
-        </Alert>
       ) : (
         <Alert color="accent" mb="sm">
-          You are not a member of this Hunt. Opening it shows the Owner&apos;s screens with a
-          persistent banner; you stay out of the member list and out of Presence, and Visits are
-          read-only.
+          Opening from this dashboard uses audited Ghost View, including for Hunts you belong to.
+          You stay out of Presence and Visits are read-only.
         </Alert>
       )}
 
@@ -196,6 +191,36 @@ function HuntDetail({ hunt, onDeleted }: { hunt: HuntSummary; onDeleted: () => v
             }
           >
             {locked ? "Unlock Hunt" : "Lock Hunt"}
+          </Button>
+        </Group>
+        <Group justify="space-between" align="center" wrap="wrap">
+          <Text size="sm" c="dimmed" maw={520}>
+            {hunt.archived_at
+              ? "Restoring lets Hunt members make changes again."
+              : "Archiving preserves the Hunt while freezing member changes."}
+          </Text>
+          <Button
+            variant="default"
+            leftSection={<IconArchive size={14} />}
+            loading={setArchived.isPending}
+            disabled={management.isPending || management.isError || locked}
+            onClick={() =>
+              setArchived.mutate(!hunt.archived_at, {
+                onSuccess: () =>
+                  notifications.show({
+                    message: hunt.archived_at ? `${name} restored.` : `${name} archived.`,
+                    color: hunt.archived_at ? "green" : "gray",
+                  }),
+                onError: (error) =>
+                  notifications.show({
+                    title: `Couldn't ${hunt.archived_at ? "restore" : "archive"} the Hunt`,
+                    message: errorMessage(error),
+                    color: "red",
+                  }),
+              })
+            }
+          >
+            {hunt.archived_at ? "Restore Hunt" : "Archive Hunt"}
           </Button>
         </Group>
         <Group align="flex-end" wrap="wrap">
@@ -428,6 +453,7 @@ export function AdminHuntsPage() {
                     <Anchor
                       component={Link}
                       to={`/h/${hunt.hunt_id}`}
+                      state={{ adminGhost: true }}
                       size="xs"
                       onClick={(event) => event.stopPropagation()}
                     >
@@ -519,6 +545,7 @@ export function AdminHuntsPage() {
                       <Anchor
                         component={Link}
                         to={`/h/${hunt.hunt_id}`}
+                        state={{ adminGhost: true }}
                         size="xs"
                         onClick={(event) => event.stopPropagation()}
                       >

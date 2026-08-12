@@ -26,6 +26,7 @@ export interface AdminSummary {
   tier3_credits_used: number;
   tier3_credits_allowance: number | null;
   feedback_new: number;
+  listing_submissions_daily: Array<{ day: string; count: number }>;
 }
 
 export interface HuntSummary {
@@ -217,10 +218,16 @@ export function useToggleDemo() {
   });
 }
 
+function analyticsTimezone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+
 export function useAdminSummary(enabled = true) {
+  const timezone = analyticsTimezone();
   return useQuery({
-    queryKey: ["admin", "summary"],
-    queryFn: () => apiFetch<AdminSummary>("/v1/admin/summary"),
+    queryKey: ["admin", "summary", timezone],
+    queryFn: () =>
+      apiFetch<AdminSummary>(`/v1/admin/summary?timezone=${encodeURIComponent(timezone)}`),
     enabled,
   });
 }
@@ -317,6 +324,23 @@ export function useSetAdminHuntLock(huntId: string) {
       apiFetch<HuntManagement>(`/v1/admin/hunts/${huntId}/lock`, {
         method: "PUT",
         body: { locked },
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "hunts"] });
+      void queryClient.invalidateQueries({ queryKey: ["hunts"] });
+      void queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "jobs"] });
+    },
+  });
+}
+
+export function useSetAdminHuntArchived(huntId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (archived: boolean) =>
+      apiFetch<HuntManagement>(`/v1/admin/hunts/${huntId}/archive`, {
+        method: "PUT",
+        body: { archived },
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["admin", "hunts"] });
@@ -589,6 +613,40 @@ export interface JobRow {
   stale: boolean;
 }
 
+export interface AdminJobDetail extends JobRow {
+  plan: Record<string, unknown> | null;
+  warnings: Array<{
+    stage: string;
+    code: string;
+    message: string;
+    detail?: Record<string, unknown>;
+  }>;
+  requested_by: string | null;
+  requested_by_name: string | null;
+  requested_by_email: string | null;
+  started_at: string | null;
+  duration_seconds: number | null;
+  events: Array<{
+    stage: string;
+    event: string;
+    detail: Record<string, unknown>;
+    at: string;
+  }>;
+  stage_costs: Array<{
+    stage: string;
+    llm_cost_usd: number;
+    fetch_cost_usd: number;
+    llm_calls: number;
+    fetch_calls: number;
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_tokens: number;
+    cache_write_tokens: number;
+    fetch_calls_by_provider: Record<string, number>;
+    updated_at: string;
+  }>;
+}
+
 export interface SpendBucket {
   label: string;
   llm_cost_usd: number;
@@ -603,6 +661,7 @@ export interface SpendBucket {
 
 export interface CostsReport {
   days: number;
+  timezone: string;
   total_cost_usd?: number;
   by_stage: SpendBucket[];
   by_hunt: SpendBucket[];
@@ -618,6 +677,9 @@ export interface SystemReport {
   running: number;
   stale_locks: number;
   oldest_queued_seconds: number;
+  worker_status: "live_idle" | "live_busy" | "unavailable";
+  live_workers: number;
+  busy_workers: number;
   last_heartbeat: string | null;
   finished_24h: number;
   failed_24h: number;
@@ -658,6 +720,14 @@ export function useAdminJobs(state: string | null, staleOnly: boolean) {
   });
 }
 
+export function useAdminJob(jobId: string | null) {
+  return useQuery({
+    queryKey: ["admin", "jobs", "detail", jobId],
+    queryFn: () => apiFetch<AdminJobDetail>(`/v1/admin/jobs/${jobId}`),
+    enabled: jobId !== null,
+  });
+}
+
 export function useJobAction() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -669,6 +739,21 @@ export function useJobAction() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["admin", "jobs"] });
       void queryClient.invalidateQueries({ queryKey: ["admin", "summary"] });
+    },
+  });
+}
+
+export function useAdminDeleteJob() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (jobId: string) =>
+      apiFetch<{ status: string; detail: string | null }>(`/v1/admin/jobs/${jobId}`, {
+        method: "DELETE",
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "jobs"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "summary"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "costs"] });
     },
   });
 }
@@ -688,9 +773,13 @@ export function useReleaseLocks() {
 }
 
 export function useCosts(days: number) {
+  const timezone = analyticsTimezone();
   return useQuery({
-    queryKey: ["admin", "costs", days],
-    queryFn: () => apiFetch<CostsReport>(`/v1/admin/costs?days=${days}`),
+    queryKey: ["admin", "costs", days, timezone],
+    queryFn: () =>
+      apiFetch<CostsReport>(
+        `/v1/admin/costs?days=${days}&timezone=${encodeURIComponent(timezone)}`,
+      ),
   });
 }
 

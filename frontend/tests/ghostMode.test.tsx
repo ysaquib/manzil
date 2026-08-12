@@ -6,6 +6,7 @@
 // hook reports `undefined` until it knows, and every consumer treats
 // "not yet known" as "not a member".
 import { renderHook, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const useAuth = vi.hoisted(() => vi.fn());
@@ -18,7 +19,7 @@ vi.mock("../src/features/collaboration/api", () => ({ useMembers }));
 vi.mock("../src/features/admin/api", () => ({ useAdminIdentity }));
 vi.mock("../src/features/hunts/api", () => ({ useHunt }));
 
-import { useGhostMode } from "../src/features/admin/useGhostMode";
+import { GhostModeProvider, useGhostMode } from "../src/features/admin/useGhostMode";
 
 const ME = "me-1";
 
@@ -79,13 +80,26 @@ describe("useGhostMode", () => {
     expect(result.current.isGhost).toBe(false);
   });
 
-  it("uses audited ghost mode for an archived Hunt even when the admin is a member", async () => {
+  it("keeps an archived Hunt in ordinary mode when the admin is a member", async () => {
     setup({ isAdmin: true, members: [ME] });
     useHunt.mockReturnValue({
       isPending: false,
       data: { archived_at: "2026-08-11T00:00:00Z" },
     });
     const { result } = renderHook(() => useGhostMode("h1"));
+
+    await waitFor(() => expect(result.current.resolved).toBe(true));
+    expect(result.current.isGhost).toBe(false);
+  });
+
+  it("uses Ghost View for a member after explicit Admin-dashboard entry", async () => {
+    setup({ isAdmin: true, members: [ME] });
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <MemoryRouter initialEntries={[{ pathname: "/h/h1", state: { adminGhost: true } }]}>
+        <GhostModeProvider>{children}</GhostModeProvider>
+      </MemoryRouter>
+    );
+    const { result } = renderHook(() => useGhostMode("h1"), { wrapper });
 
     await waitFor(() => expect(result.current.resolved).toBe(true));
     expect(result.current.isGhost).toBe(true);

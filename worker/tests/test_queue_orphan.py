@@ -17,7 +17,12 @@ import pytest
 from manzil_shared.config import MANZIL_JOB_MAX_ATTEMPTS
 from manzil_shared.models import JobState, JobType
 from manzil_worker.postgres_persistence import HuntExecutionFrozen, PostgresPersistence
-from manzil_worker.queue import JOB_ORPHAN_AFTER, claim_next_job, reclaim_orphans
+from manzil_worker.queue import (
+    JOB_ORPHAN_AFTER,
+    claim_next_job,
+    reclaim_orphans,
+    run_worker_heartbeat,
+)
 from manzil_worker.runner import run_job
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.state import RunState
@@ -112,6 +117,49 @@ async def test_claim_stamps_started_at_once(pg_pool: asyncpg.Pool) -> None:
         await pg_pool.execute("delete from hunts where id = $1", hunt_id)
 
 
+async def test_worker_heartbeat_reports_idle_and_renews_its_job_lease(
+    pg_pool: asyncpg.Pool,
+) -> None:
+    worker_id = f"heartbeat-test-{uuid4()}"
+    job_id, hunt_id = await _seed_running_orphan(pg_pool, attempts=1)
+    await pg_pool.execute(
+        "update jobs set locked_by = $2 where id = $1",
+        job_id,
+        worker_id,
+    )
+    stop = asyncio.Event()
+    task = asyncio.create_task(
+        run_worker_heartbeat(
+            pg_pool,
+            stop,
+            worker_id=worker_id,
+            interval=0.01,
+        )
+    )
+    try:
+        for _ in range(20):
+            row = await pg_pool.fetchrow(
+                "select mode, started_at, last_seen_at from worker_heartbeats where worker_id = $1",
+                worker_id,
+            )
+            renewed = await pg_pool.fetchval(
+                "select locked_at > now() - interval '2 seconds' from jobs where id = $1",
+                job_id,
+            )
+            if row is not None and renewed:
+                break
+            await asyncio.sleep(0.01)
+        assert row is not None
+        assert row["mode"] == "workflow"
+        assert row["last_seen_at"] >= row["started_at"]
+        assert renewed is True
+    finally:
+        stop.set()
+        await task
+        await pg_pool.execute("delete from worker_heartbeats where worker_id = $1", worker_id)
+        await pg_pool.execute("delete from hunts where id = $1", hunt_id)
+
+
 def _stages(executed: list[str], *, crash_at: int | None):  # type: ignore[no-untyped-def]
     out = []
     for index, name in enumerate(STAGE_NAMES):
@@ -153,7 +201,7 @@ async def test_orphaned_job_resumes_from_current_stage(pg_pool: asyncpg.Pool) ->
 
         # It runs a, b (persisting each) then dies inside c.
         executed: list[str] = []
-        first = PostgresPersistence(pg_pool, job_id, STAGE_NAMES)
+        first = PostgresPersistence(pg_pool, job_id, STAGE_NAMES, locked_by="worker-1")
         state = RunState(job_id=job_id, job_type=JobType.INGEST, url="https://x.test/1")
         with pytest.raises(asyncio.CancelledError):
             await run_job(state, StageCtx(persistence=first), _stages(executed, crash_at=2))
@@ -180,7 +228,11 @@ async def test_orphaned_job_resumes_from_current_stage(pg_pool: asyncpg.Pool) ->
         resumed_state = await PostgresPersistence(pg_pool, job_id, STAGE_NAMES).load(job_id)
         assert resumed_state.cursor == 2
         second = PostgresPersistence(
-            pg_pool, job_id, STAGE_NAMES, start_cursor=resumed_state.cursor
+            pg_pool,
+            job_id,
+            STAGE_NAMES,
+            start_cursor=resumed_state.cursor,
+            locked_by="worker-2",
         )
         final = await run_job(
             resumed_state, StageCtx(persistence=second), _stages(executed, crash_at=None)
@@ -190,6 +242,50 @@ async def test_orphaned_job_resumes_from_current_stage(pg_pool: asyncpg.Pool) ->
         assert final.status is JobState.DONE
         done = await pg_pool.fetchrow("select state from jobs where id = $1", job_id)
         assert done["state"] == "done"
+    finally:
+        await pg_pool.execute("delete from jobs where id = $1", job_id)
+        await pg_pool.execute("delete from hunts where id = $1", hunt_id)
+
+
+async def test_reclaimed_job_rejects_a_stale_workers_persistence(
+    pg_pool: asyncpg.Pool,
+) -> None:
+    """A former worker must not overwrite the state after a lease transfer."""
+    job_id, hunt_id = uuid4(), uuid4()
+    await pg_pool.execute(
+        "insert into hunts (id, name, owner_id) values ($1, 'test', $2)", hunt_id, uuid4()
+    )
+    await pg_pool.execute(
+        "insert into jobs (id, hunt_id, type, state) values ($1, $2, 'ingest', 'queued')",
+        job_id,
+        hunt_id,
+    )
+    try:
+        async with pg_pool.acquire() as conn:
+            first_claim = await claim_next_job(conn, "worker-1")
+        assert first_claim is not None and first_claim["id"] == job_id
+
+        stale_worker = PostgresPersistence(pg_pool, job_id, STAGE_NAMES, locked_by="worker-1")
+        await pg_pool.execute(
+            "update jobs set locked_at = now() - $2::interval where id = $1",
+            job_id,
+            JOB_ORPHAN_AFTER + timedelta(seconds=30),
+        )
+        async with pg_pool.acquire() as conn:
+            assert await reclaim_orphans(conn) >= 1
+            second_claim = await claim_next_job(conn, "worker-2")
+        assert second_claim is not None and second_claim["id"] == job_id
+
+        state = RunState(job_id=job_id, job_type=JobType.INGEST, url="https://x.test/1")
+        with pytest.raises(HuntExecutionFrozen, match="lease moved"):
+            await stale_worker.save(state)
+
+        row = await pg_pool.fetchrow(
+            "select state, locked_by, current_stage, error from jobs where id = $1", job_id
+        )
+        assert row["state"] == "running"
+        assert row["locked_by"] == "worker-2"
+        assert row["current_stage"] is None and row["error"] is None
     finally:
         await pg_pool.execute("delete from jobs where id = $1", job_id)
         await pg_pool.execute("delete from hunts where id = $1", hunt_id)

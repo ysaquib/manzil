@@ -33,6 +33,7 @@ from manzil_api.admin.schemas import (
     FeedbackReport,
     FeedbackTriageUpdate,
     GrantAdmin,
+    HuntArchiveUpdate,
     HuntDelete,
     HuntDeleteResult,
     HuntLockUpdate,
@@ -42,6 +43,7 @@ from manzil_api.admin.schemas import (
     HuntPage,
     HuntSummary,
 )
+from manzil_api.analytics import calendar_window
 from manzil_api.collaboration.exceptions import TransferTargetNotMember
 from manzil_api.collaboration.schemas import TransferOwnershipRequest, TransferOwnershipResponse
 from manzil_api.dependencies import CurrentUser, DbPool
@@ -100,7 +102,12 @@ async def whoami(user: CurrentUser, pool: DbPool) -> AdminIdentity:
 
 
 @router.get("/summary", response_model=AdminSummary, summary="Overview counters")
-async def summary(admin: AdminUser, pool: DbPool) -> AdminSummary:
+async def summary(
+    admin: AdminUser,
+    pool: DbPool,
+    timezone: str = Query("UTC", min_length=1, max_length=100),
+) -> AdminSummary:
+    start, end, labels = calendar_window(30, timezone)
     row = await pool.fetchrow(
         """
         select
@@ -116,12 +123,27 @@ async def summary(admin: AdminUser, pool: DbPool) -> AdminSummary:
             -- (DESIGN §20 v3.80).
             (select coalesce(sum(cost_actual_usd), 0) from jobs
               where coalesce(finished_at, started_at, created_at)
-                    > now() - interval '30 days')                        as spend_30d,
+                    >= $1 and coalesce(finished_at, started_at, created_at) < $2)
+                                                                         as spend_30d,
             (select coalesce(sum(credits), 0) from tier3_credit_usage
               where month = date_trunc('month', now()))                  as credits_used,
             (select count(*) from feedback where triage = 'new')          as feedback_new
-        """
+        """,
+        start,
+        end,
     )
+    submission_rows = await pool.fetch(
+        """
+        select (created_at at time zone $3)::date as day, count(*) as count
+          from jobs
+         where type = 'ingest' and created_at >= $1 and created_at < $2
+         group by 1 order by 1
+        """,
+        start,
+        end,
+        timezone,
+    )
+    submissions = {item["day"]: int(item["count"]) for item in submission_rows}
     return AdminSummary(
         users=row["users"],
         hunts=row["hunts"],
@@ -133,6 +155,9 @@ async def summary(admin: AdminUser, pool: DbPool) -> AdminSummary:
         # The allowance is per provider; the panel shows the configured one.
         tier3_credits_allowance=TIER3_FREE_MONTHLY_CREDITS.get("brightdata"),
         feedback_new=row["feedback_new"],
+        listing_submissions_daily=[
+            {"day": label, "count": submissions.get(label, 0)} for label in labels
+        ],
     )
 
 
@@ -506,6 +531,64 @@ async def delete_admin_hunt(
             conn=connection,
         )
     return result
+
+
+@router.put(
+    "/hunts/{hunt_id}/archive",
+    response_model=HuntManagement,
+    summary="Archive or restore a Hunt",
+)
+async def set_hunt_archive(
+    hunt_id: UUID,
+    body: HuntArchiveUpdate,
+    admin: AdminUser,
+    pool: DbPool,
+    audit: Audit,
+) -> HuntManagement:
+    async with pool.acquire() as connection, connection.transaction():
+        hunt = await connection.fetchrow(
+            "select name, archived_at, locked_at from hunts where id=$1 for update", hunt_id
+        )
+        if hunt is None:
+            raise AdminHuntNotFound("Hunt not found")
+        if hunt["locked_at"] is not None:
+            raise AdminHuntLocked("Unlock this Hunt before changing its archive state")
+
+        was_archived = hunt["archived_at"] is not None
+        if body.archived is not was_archived:
+            await connection.execute(
+                "select set_config('request.jwt.claim.sub', $1, true), "
+                "set_config('manzil.lifecycle_transition', 'on', true)",
+                admin.id,
+            )
+            await connection.execute(
+                "update hunts set archived_at=$2 where id=$1",
+                hunt_id,
+                datetime.now(UTC) if body.archived else None,
+            )
+            if body.archived:
+                await connection.execute(
+                    """
+                    update jobs
+                    set state='cancelled', finished_at=coalesce(finished_at, now()),
+                        locked_by=null, locked_at=null,
+                        error=coalesce(error, 'Cancelled because the Hunt was archived')
+                    where hunt_id=$1 and state in ('queued', 'running', 'waiting_user')
+                    """,
+                    hunt_id,
+                )
+            await audit.record(
+                "hunt.archive" if body.archived else "hunt.restore",
+                target_type="hunt",
+                target_id=hunt_id,
+                target_label=hunt["name"],
+                hunt_id=hunt_id,
+                before={"archived": was_archived},
+                after={"archived": body.archived},
+                conn=connection,
+            )
+
+    return await hunt_management(hunt_id, admin, pool)
 
 
 @router.put(

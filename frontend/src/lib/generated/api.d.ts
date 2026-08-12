@@ -665,6 +665,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Job */
+        delete: operations["delete_job_v1_jobs__job_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/jobs/{job_id}/checkpoint": {
         parameters: {
             query?: never;
@@ -1077,6 +1094,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/hunts/{hunt_id}/statistics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Hunt spend and operational usage */
+        get: operations["hunt_statistics_v1_hunts__hunt_id__statistics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/me": {
         parameters: {
             query?: never;
@@ -1224,6 +1258,23 @@ export interface paths {
         post?: never;
         /** Permanently delete a Hunt and its Hunt-scoped data */
         delete: operations["delete_admin_hunt_v1_admin_hunts__hunt_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/hunts/{hunt_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Archive or restore a Hunt */
+        put: operations["set_hunt_archive_v1_admin_hunts__hunt_id__archive_put"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1604,7 +1655,8 @@ export interface paths {
         get: operations["get_job_v1_admin_jobs__job_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Soft-delete a terminal Job */
+        delete: operations["delete_job_v1_admin_jobs__job_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2214,6 +2266,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Build identity */
+        get: operations["version_v1_version_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/ready": {
         parameters: {
             query?: never;
@@ -2303,6 +2372,52 @@ export interface components {
             /** Granted At */
             granted_at?: string | null;
         };
+        /** AdminJobEvent */
+        AdminJobEvent: {
+            /** Stage */
+            stage: string;
+            /** Event */
+            event: string;
+            /** Detail */
+            detail?: {
+                [key: string]: unknown;
+            };
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+        };
+        /** AdminJobStageCost */
+        AdminJobStageCost: {
+            /** Stage */
+            stage: string;
+            /** Llm Cost Usd */
+            llm_cost_usd: number;
+            /** Fetch Cost Usd */
+            fetch_cost_usd: number;
+            /** Llm Calls */
+            llm_calls: number;
+            /** Fetch Calls */
+            fetch_calls: number;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Cache Read Tokens */
+            cache_read_tokens: number;
+            /** Cache Write Tokens */
+            cache_write_tokens: number;
+            /** Fetch Calls By Provider */
+            fetch_calls_by_provider?: {
+                [key: string]: number;
+            };
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
         /**
          * AdminSummary
          * @description The Overview tab's counters.
@@ -2326,11 +2441,30 @@ export interface components {
             tier3_credits_allowance?: number | null;
             /** Feedback New */
             feedback_new: number;
+            /** Listing Submissions Daily */
+            listing_submissions_daily?: components["schemas"]["DailyCount"][];
         };
         /** AttentionResponse */
         AttentionResponse: {
             /** Waiting Checkpoint Count */
             waiting_checkpoint_count: number;
+            /**
+             * Failed
+             * @default 0
+             */
+            failed: number;
+            /**
+             * Waiting User
+             * @default 0
+             */
+            waiting_user: number;
+            /**
+             * Running
+             * @default 0
+             */
+            running: number;
+            /** Task Status */
+            task_status?: ("failed" | "waiting_user" | "running") | null;
         };
         /** AuditEntry */
         AuditEntry: {
@@ -2382,6 +2516,22 @@ export interface components {
             corrected_at?: string | null;
             /** Correction Job Id */
             correction_job_id?: string | null;
+        };
+        /** BuildInfo */
+        BuildInfo: {
+            /**
+             * Service
+             * @default api
+             */
+            service: string;
+            /** Release Version */
+            release_version: string;
+            /** Build Sha */
+            build_sha: string;
+            /** Build Id */
+            build_id: string;
+            /** Environment */
+            environment: string;
         };
         /**
          * CheckpointAnswer
@@ -2483,6 +2633,11 @@ export interface components {
             /** Days */
             days: number;
             /**
+             * Timezone
+             * @default UTC
+             */
+            timezone: string;
+            /**
              * Total Cost Usd
              * @default 0
              */
@@ -2583,6 +2738,16 @@ export interface components {
             reason: string;
             /** Supported */
             supported: boolean;
+        };
+        /** DailyCount */
+        DailyCount: {
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /** Count */
+            count: number;
         };
         /** DemoConfigResponse */
         DemoConfigResponse: {
@@ -2806,6 +2971,11 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** HuntArchiveUpdate */
+        HuntArchiveUpdate: {
+            /** Archived */
+            archived: boolean;
+        };
         /** HuntCreate */
         HuntCreate: {
             /** Name */
@@ -3003,6 +3173,76 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** HuntStatisticsPoint */
+        HuntStatisticsPoint: {
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /**
+             * Billed Cost Usd
+             * @default 0
+             */
+            billed_cost_usd: number;
+            /**
+             * Deleted Cost Usd
+             * @default 0
+             */
+            deleted_cost_usd: number;
+            /**
+             * Listing Submissions
+             * @default 0
+             */
+            listing_submissions: number;
+            /**
+             * Jobs Completed
+             * @default 0
+             */
+            jobs_completed: number;
+            /**
+             * Jobs Failed
+             * @default 0
+             */
+            jobs_failed: number;
+            /**
+             * Llm Calls
+             * @default 0
+             */
+            llm_calls: number;
+            /**
+             * Fetch Calls
+             * @default 0
+             */
+            fetch_calls: number;
+        };
+        /** HuntStatisticsReport */
+        HuntStatisticsReport: {
+            /** Days */
+            days: number;
+            /** Timezone */
+            timezone: string;
+            summary: components["schemas"]["HuntStatisticsSummary"];
+            /** Daily */
+            daily?: components["schemas"]["HuntStatisticsPoint"][];
+        };
+        /** HuntStatisticsSummary */
+        HuntStatisticsSummary: {
+            /** Billed Cost Usd */
+            billed_cost_usd: number;
+            /** Deleted Cost Usd */
+            deleted_cost_usd: number;
+            /** Listing Submissions */
+            listing_submissions: number;
+            /** Jobs Completed */
+            jobs_completed: number;
+            /** Jobs Failed */
+            jobs_failed: number;
+            /** Llm Calls */
+            llm_calls: number;
+            /** Fetch Calls */
+            fetch_calls: number;
+        };
         /** HuntSummary */
         HuntSummary: {
             /**
@@ -3180,6 +3420,24 @@ export interface components {
              */
             delivery_status: "queued" | "sending" | "sent" | "delivered" | "delayed" | "failed" | "bounced" | "suppressed" | "complained" | "disabled" | "cancelled";
         };
+        /** JobDeletionReceipt */
+        JobDeletionReceipt: {
+            /**
+             * Job Id
+             * Format: uuid
+             */
+            job_id: string;
+            /**
+             * Deleted At
+             * Format: date-time
+             */
+            deleted_at: string;
+            deleted_from_state: components["schemas"]["JobState"];
+            /** Removed Placeholder Listing */
+            removed_placeholder_listing: boolean;
+            /** Retained Cost Usd */
+            retained_cost_usd: number;
+        };
         /** JobDetail */
         JobDetail: {
             /**
@@ -3221,14 +3479,28 @@ export interface components {
              * @default false
              */
             stale: boolean;
+            /** Plan */
+            plan?: {
+                [key: string]: unknown;
+            } | null;
+            /** Warnings */
+            warnings?: {
+                [key: string]: unknown;
+            }[];
+            /** Requested By */
+            requested_by?: string | null;
+            /** Requested By Name */
+            requested_by_name?: string | null;
+            /** Requested By Email */
+            requested_by_email?: string | null;
+            /** Started At */
+            started_at?: string | null;
+            /** Duration Seconds */
+            duration_seconds?: number | null;
             /** Events */
-            events?: {
-                [key: string]: unknown;
-            }[];
+            events?: components["schemas"]["AdminJobEvent"][];
             /** Stage Costs */
-            stage_costs?: {
-                [key: string]: unknown;
-            }[];
+            stage_costs?: components["schemas"]["AdminJobStageCost"][];
         };
         /** JobResponse */
         JobResponse: {
@@ -3261,6 +3533,8 @@ export interface components {
             started_at?: string | null;
             /** Finished At */
             finished_at?: string | null;
+            /** Requested By */
+            requested_by?: string | null;
             checkpoint?: components["schemas"]["CheckpointPrompt"] | null;
             checkpoint_context?: components["schemas"]["CheckpointContext"] | null;
             auto_resolved_checkpoint?: components["schemas"]["AutoResolvedCheckpoint"] | null;
@@ -3313,7 +3587,7 @@ export interface components {
          * JobState
          * @enum {string}
          */
-        JobState: "queued" | "running" | "waiting_user" | "done" | "failed" | "cancelled";
+        JobState: "queued" | "running" | "waiting_user" | "done" | "failed" | "cancelled" | "deleted";
         /**
          * JobType
          * @enum {string}
@@ -3925,6 +4199,15 @@ export interface components {
             stale_locks: number;
             /** Oldest Queued Seconds */
             oldest_queued_seconds: number;
+            /**
+             * Worker Status
+             * @enum {string}
+             */
+            worker_status: "live_idle" | "live_busy" | "unavailable";
+            /** Live Workers */
+            live_workers: number;
+            /** Busy Workers */
+            busy_workers: number;
             /** Last Heartbeat */
             last_heartbeat?: string | null;
             /** Finished 24H */
@@ -5583,6 +5866,8 @@ export interface operations {
             /** @description Successful Response */
             200: {
                 headers: {
+                    /** @description Number of active Listings queued for cached-evidence backfill. */
+                    "X-Manzil-Backfill-Count"?: number;
                     [name: string]: unknown;
                 };
                 content: {
@@ -6060,6 +6345,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_job_v1_jobs__job_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobDeletionReceipt"];
                 };
             };
             /** @description Validation Error */
@@ -6954,6 +7270,40 @@ export interface operations {
             };
         };
     };
+    hunt_statistics_v1_hunts__hunt_id__statistics_get: {
+        parameters: {
+            query?: {
+                days?: number;
+                timezone?: string;
+            };
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HuntStatisticsReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     whoami_v1_admin_me_get: {
         parameters: {
             query?: never;
@@ -6976,7 +7326,9 @@ export interface operations {
     };
     summary_v1_admin_summary_get: {
         parameters: {
-            query?: never;
+            query?: {
+                timezone?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -6990,6 +7342,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -7147,6 +7508,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HuntDeleteResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_hunt_archive_v1_admin_hunts__hunt_id__archive_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HuntArchiveUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HuntManagement"];
                 };
             };
             /** @description Validation Error */
@@ -7955,6 +8351,37 @@ export interface operations {
             };
         };
     };
+    delete_job_v1_admin_jobs__job_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     retry_job_v1_admin_jobs__job_id__retry_post: {
         parameters: {
             query?: never;
@@ -8041,6 +8468,7 @@ export interface operations {
         parameters: {
             query?: {
                 days?: number;
+                timezone?: string;
             };
             header?: never;
             path?: never;
@@ -8242,6 +8670,8 @@ export interface operations {
             /** @description Successful Response */
             200: {
                 headers: {
+                    /** @description Active Listings queued for cached-evidence backfill. */
+                    "X-Manzil-Backfill-Count"?: number;
                     [name: string]: unknown;
                 };
                 content: {
@@ -9218,6 +9648,26 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+        };
+    };
+    version_v1_version_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BuildInfo"];
                 };
             };
         };

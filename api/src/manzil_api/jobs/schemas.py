@@ -64,10 +64,19 @@ class JobResponse(BaseModel):
     created_at: datetime | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    requested_by: UUID | None = None
     checkpoint: CheckpointPrompt | None = None
     checkpoint_context: CheckpointContext | None = None
     auto_resolved_checkpoint: AutoResolvedCheckpoint | None = None
     warnings: list[JobWarning] = Field(default_factory=list)
+
+
+class JobDeletionReceipt(BaseModel):
+    job_id: UUID
+    deleted_at: datetime
+    deleted_from_state: JobState
+    removed_placeholder_listing: bool
+    retained_cost_usd: float
 
 
 class CheckpointAnswer(BaseModel):

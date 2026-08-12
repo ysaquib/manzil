@@ -12,19 +12,20 @@ from uuid import UUID
 from supabase import Client
 
 
-async def enqueue_rescore(client: Client, hunt_id: UUID) -> None:
+async def enqueue_rescore(client: Client, hunt_id: UUID, *, requested_by: str) -> None:
     client.table("jobs").insert(
         {
             "hunt_id": str(hunt_id),
             "type": "rescore",
             "state": "queued",
+            "requested_by": requested_by,
             "payload": {"hunt_id": str(hunt_id)},
         },
         returning="minimal",
     ).execute()
 
 
-async def enqueue_enrich_refresh(client: Client, hunt_id: UUID) -> None:
+async def enqueue_enrich_refresh(client: Client, hunt_id: UUID, *, requested_by: str) -> None:
     """Hunt-level ENRICH re-run + rescore (P3-8): the `proximity_mode` flip path.
     Zero LLM spend in the worker — Maps calls against cached geocodes only."""
     client.table("jobs").insert(
@@ -32,6 +33,7 @@ async def enqueue_enrich_refresh(client: Client, hunt_id: UUID) -> None:
             "hunt_id": str(hunt_id),
             "type": "refresh",
             "state": "queued",
+            "requested_by": requested_by,
             "payload": {"hunt_id": str(hunt_id), "scope": "enrich"},
         },
         returning="minimal",

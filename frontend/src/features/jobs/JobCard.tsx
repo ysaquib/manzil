@@ -21,6 +21,7 @@ export const STATE_COLOR: Record<JobState, string> = {
   done: "green",
   failed: "red",
   cancelled: "gray",
+  deleted: "gray",
 };
 
 export function isCancellable(state: JobState): boolean {

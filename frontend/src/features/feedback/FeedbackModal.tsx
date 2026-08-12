@@ -22,6 +22,7 @@ import { useLocation, useParams } from "react-router-dom";
 
 import { useAuth } from "../../auth/useAuth";
 import { ApiError } from "../../lib/apiClient";
+import { feedbackBuildContext, useApiBuildInfo } from "../../lib/buildInfo";
 import {
   FEEDBACK_CATEGORIES,
   appVersion,
@@ -36,6 +37,7 @@ export function FeedbackModal({ opened, onClose }: { opened: boolean; onClose: (
   const { huntId } = useParams();
   const { session } = useAuth();
   const submit = useSubmitFeedback();
+  const apiBuild = useApiBuildInfo();
 
   const [category, setCategory] = useState<FeedbackCategory>("bug");
   const [body, setBody] = useState("");
@@ -43,7 +45,7 @@ export function FeedbackModal({ opened, onClose }: { opened: boolean; onClose: (
   // Captured at render, so the strip shows exactly what will be sent — including
   // the Drawer that is open behind the modal.
   const route = `${location.pathname}${location.search}`;
-  const version = appVersion();
+  const version = feedbackBuildContext(appVersion(), apiBuild.data);
 
   const close = () => {
     onClose();
