@@ -1,5 +1,5 @@
 import { MantineProvider } from "@mantine/core";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -174,6 +174,67 @@ describe("RubricEditor", () => {
 
     expect(screen.getByLabelText("enable Quiet hours")).toBeChecked();
     expect(screen.getByText("2 of 4 criteria enabled")).toBeInTheDocument();
+  });
+
+  it("validates only on Save, not live: an already-invalid draft keeps Save enabled until clicked", async () => {
+    const invalidSaved: RubricCriterion[] = [
+      {
+        catalog_key: "beds",
+        custom_def: null,
+        enabled: true,
+        options: [{ match: { op: "bool", value: true }, delta: 0.5, dealbreaker_set_score: null }],
+        unknown_delta: 0,
+        non_negotiable: null,
+        is_bonus: true,
+        position: 0,
+      },
+    ];
+    render(
+      <MantineProvider>
+        <RubricEditor huntId="h1" catalog={catalog} saved={invalidSaved} onDone={vi.fn()} />
+      </MantineProvider>,
+    );
+
+    const saveButton = screen.getByRole("button", { name: "Save rubric" });
+    expect(saveButton).not.toBeDisabled();
+    expect(screen.queryByText("Fix before saving")).not.toBeInTheDocument();
+
+    await userEvent.click(saveButton);
+
+    expect(mutate).not.toHaveBeenCalled();
+    expect(screen.getByText("Fix before saving")).toBeInTheDocument();
+    // Both the top summary and the card itself surface the same issue.
+    expect(screen.getAllByText(/bool match on a non-boolean criterion/)).toHaveLength(2);
+  });
+
+  it("shows the sticky save bar with per-criterion labels once dirty, and Discard opens the confirm modal", async () => {
+    renderEditor();
+    expect(screen.queryByText(/unsaved change/)).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Square footage" }));
+
+    // dnd-kit mounts its own hidden `role="status"` live region per card, so
+    // scope through the Discard button (unique to the save bar) instead.
+    const discardButton = screen.getByRole("button", { name: "Discard" });
+    const saveBar = discardButton.closest('[role="status"]') as HTMLElement;
+    expect(within(saveBar).getByText("1 unsaved change")).toBeInTheDocument();
+    expect(within(saveBar).getByText(/Square footage/)).toBeInTheDocument();
+
+    await userEvent.click(discardButton);
+    expect(await screen.findByRole("dialog", { name: "Discard changes?" })).toBeInTheDocument();
+  });
+
+  it("marks a toggled criterion Modified and reverts it independently of the rest of the draft", async () => {
+    renderEditor();
+
+    await userEvent.click(screen.getByRole("button", { name: "Square footage" }));
+    expect(screen.getByText("Modified")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByLabelText("revert to saved"));
+
+    expect(screen.getByRole("button", { name: "Square footage" })).toBeInTheDocument();
+    expect(screen.queryByText("Modified")).not.toBeInTheDocument();
+    expect(screen.queryByText(/unsaved change/)).not.toBeInTheDocument();
   });
 
   it("warns when objective flooring materials and subjective quality are both enabled", () => {
