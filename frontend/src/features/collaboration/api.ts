@@ -62,26 +62,32 @@ export function useMembers(huntId: string) {
         .eq("hunt_id", huntId);
       if (error) throw error;
       const rows = (data ?? []) as Omit<HuntMember, "display_name_override" | "color_override">[];
-      const userIds = rows.map((row) => row.user_id);
-      const profiles = userIds.length
-        ? await supabase
-            .from("user_profiles")
-            .select("user_id, default_display_name, default_color")
-            .in("user_id", userIds)
-        : { data: [], error: null };
-      if (profiles.error) throw profiles.error;
-      const defaults = new Map(
-        (profiles.data ?? []).map((profile) => [profile.user_id, profile] as const),
+      // A direct `user_profiles` read is deliberately membership-scoped. That
+      // is correct for ordinary members, but a Site Admin in Ghost View is not
+      // a member and therefore received no defaults, reducing every current
+      // person to "Member". This RPC is the narrow, Hunt-scoped attribution
+      // projection: it returns effective names and colours for this Hunt only
+      // and explicitly admits Site Admins (DESIGN §3 Ghost View / Former User).
+      const identities = await supabase.rpc("get_hunt_contributor_identities", {
+        p_hunt_id: huntId,
+      });
+      if (identities.error) throw identities.error;
+      const byUserId = new Map(
+        ((identities.data ?? []) as HuntContributor[]).map((identity) => [
+          identity.user_id,
+          identity,
+        ]),
       );
       // Hunt-level values are overrides; null inherits the account default
-      // (name always, color when the profile has one — same rule as the DB
-      // membership-insert trigger).
+      // (name always, colour when the profile has one — same rule as the DB
+      // membership-insert trigger). `identities` is authoritative for the
+      // inherited value and avoids widening account-profile RLS for Ghosts.
       return rows.map((row) => ({
         ...row,
         display_name_override: row.display_name,
         color_override: row.color,
-        display_name: row.display_name ?? defaults.get(row.user_id)?.default_display_name ?? null,
-        color: row.color ?? defaults.get(row.user_id)?.default_color ?? null,
+        display_name: row.display_name ?? byUserId.get(row.user_id)?.display_name ?? null,
+        color: row.color ?? byUserId.get(row.user_id)?.color ?? null,
       }));
     },
     refetchOnWindowFocus: true,
