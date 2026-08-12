@@ -4,8 +4,8 @@ import { useParams } from "react-router-dom";
 
 import { sentenceCase } from "../../lib/text";
 import { ConfirmDeleteModal } from "../../components/ConfirmDeleteModal";
-import { useHuntContributors } from "../collaboration/api";
-import { contributorDisplayName } from "../collaboration/memberDisplay";
+import { useHuntContributors, useMembers } from "../collaboration/api";
+import { contributorDisplayName, memberDisplayName } from "../collaboration/memberDisplay";
 import { useListings } from "../listings/api";
 import classes from "./HistoryCard.module.css";
 import { JobCardHeader } from "./JobCardHeader";
@@ -175,6 +175,7 @@ export function TasksHistoryTab() {
   const { data: jobs = [], error } = useHistoryJobs(huntId);
   const { data: listings = [] } = useListings(huntId);
   const { data: contributors = [] } = useHuntContributors(huntId);
+  const { data: members = [] } = useMembers(huntId);
   const retryJob = useRetryJob(huntId);
   const deleteJob = useDeleteJob(huntId);
   const access = useHuntAccess(huntId);
@@ -222,9 +223,14 @@ export function TasksHistoryTab() {
         {filtered.map((job) => {
           const listing = job.hunt_listing_id ? listingById.get(job.hunt_listing_id) : null;
           const contributor = listing ? contributorById.get(listing.added_by) : null;
+          const memberName = listing
+            ? contributor
+              ? contributorDisplayName(contributor)
+              : (memberDisplayName(members, listing.added_by) ?? "Former User")
+            : "system";
           return (
             <HistoryCard key={job.id} job={job} listingName={listing?.property.name ?? null}
-              memberName={listing ? contributorDisplayName(contributor) : "system"}
+              memberName={memberName}
               onRetry={() => retryJob.mutate(job.id)}
               onDelete={() => deleteJob.mutate(job.id)}
               readOnly={!access.canMutate}
