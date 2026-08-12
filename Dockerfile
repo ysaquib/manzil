@@ -26,6 +26,8 @@ COPY shared/src shared/src
 COPY worker/src worker/src
 COPY api/src api/src
 COPY worker/prompts/vision_refs worker/prompts/vision_refs
+# Product SemVer — `manzil_api.build_info.release_version()` reads /app/VERSION.
+COPY VERSION VERSION
 
 RUN uv sync --frozen --package manzil-api --extra vision-onnx --no-dev
 
@@ -56,6 +58,7 @@ COPY --from=builder /app/shared/src /app/shared/src
 COPY --from=builder /app/worker/src /app/worker/src
 COPY --from=builder /app/api/src /app/api/src
 COPY --from=builder /app/worker/prompts/vision_refs /app/worker/prompts/vision_refs
+COPY --from=builder /app/VERSION /app/VERSION
 COPY --from=builder /app/.manzil/models/clip-vision-uint8 /app/.manzil/models/clip-vision-uint8
 
 RUN /app/.venv/bin/playwright install-deps chromium \
