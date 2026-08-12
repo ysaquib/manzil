@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
@@ -47,8 +47,14 @@ describe("HuntStatisticsPage", () => {
     expect(screen.getByText("$0.02")).toBeInTheDocument();
     expect(screen.getByText("Completion rate")).toBeInTheDocument();
     expect(screen.getByText("50%")).toBeInTheDocument();
-    expect(screen.getByText("completed")).toBeInTheDocument();
-    expect(screen.getByText("failed")).toBeInTheDocument();
+    // Job outcomes shows just the counts (colored, "/"-separated) — no
+    // "completed"/"failed" labels, which used to overflow the stat card.
+    const jobOutcomesCard = screen
+      .getByText("Job outcomes")
+      .closest<HTMLElement>(".mantine-Card-root")!;
+    expect(within(jobOutcomesCard).getAllByText("1")).toHaveLength(2);
+    expect(within(jobOutcomesCard).queryByText(/completed/i)).not.toBeInTheDocument();
+    expect(within(jobOutcomesCard).queryByText(/failed/i)).not.toBeInTheDocument();
     expect(screen.getByText("Billed / completed Job")).toBeInTheDocument();
     expect(screen.getAllByText("$0.03")).toHaveLength(2);
     expect(screen.getAllByText("Listings submitted")).toHaveLength(2);

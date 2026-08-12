@@ -1,4 +1,5 @@
 import { fireEvent, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { renderWithProviders } from "./testUtils";
@@ -20,6 +21,14 @@ vi.mock("../src/features/admin/api", () => ({
 
 import { AdminJobsPage } from "../src/features/admin/AdminJobsPage";
 
+function renderPage() {
+  return renderWithProviders(
+    <MemoryRouter>
+      <AdminJobsPage />
+    </MemoryRouter>,
+  );
+}
+
 const FAILED_JOB = {
   id: "00000000-0000-0000-0000-000000000052",
   hunt_id: "hunt-1",
@@ -35,6 +44,9 @@ const FAILED_JOB = {
   finished_at: "2026-08-03T00:01:00Z",
   locked_by: null,
   locked_at: null,
+  requested_by: null,
+  requested_by_name: null,
+  requested_by_email: null,
   stale: false,
 };
 
@@ -81,10 +93,15 @@ describe("AdminJobsPage", () => {
     });
   });
 
-  it("opens on failed Jobs and retries through the AD-5 action", () => {
-    renderWithProviders(<AdminJobsPage />);
+  it("opens on all Jobs and retries through the AD-5 action", () => {
+    renderPage();
 
-    expect(useAdminJobs).toHaveBeenCalledWith("failed", false);
+    expect(useAdminJobs).toHaveBeenCalledWith({
+      state: null,
+      staleOnly: false,
+      search: "",
+      searchMode: "text",
+    });
     expect(screen.getByText("Detroit Hunt")).toBeInTheDocument();
     expect(screen.getByText("Source blocked")).toBeInTheDocument();
 
@@ -96,7 +113,7 @@ describe("AdminJobsPage", () => {
   });
 
   it("opens a payload-safe detail drawer with timeline, plan, and complete costs", async () => {
-    renderWithProviders(<AdminJobsPage />);
+    renderPage();
 
     fireEvent.click(screen.getByRole("button", { name: "Inspect Example Apartments" }));
 
@@ -108,5 +125,18 @@ describe("AdminJobsPage", () => {
     expect(screen.getByText("brightdata: 1")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Delete Job" })).toBeInTheDocument();
     expect(useAdminJob).toHaveBeenLastCalledWith(FAILED_JOB.id);
+    expect(screen.getAllByRole("link", { name: "Detroit Hunt" })).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          href: expect.stringContaining(
+            "/admin/hunts?search=hunt-1&search_mode=id&selected=hunt-1",
+          ),
+        }),
+      ]),
+    );
+    expect(screen.getByRole("link", { name: "Yusuf" })).toHaveAttribute(
+      "href",
+      "/admin/people?search=user-1&search_mode=id&selected=user-1",
+    );
   });
 });

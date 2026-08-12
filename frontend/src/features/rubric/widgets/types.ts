@@ -5,7 +5,7 @@ import type { MantineSize } from "@mantine/core";
 import type { UnitFormat } from "../../../lib/criterionUnits";
 
 export interface ValueSchema {
-  type: "integer" | "number" | "boolean" | "string" | "array";
+  type: "integer" | "number" | "boolean" | "string" | "array" | "object";
   format?: "date";
   minimum?: number;
   maximum?: number;
@@ -14,6 +14,11 @@ export interface ValueSchema {
   minItems?: number;
   maxItems?: number;
   uniqueItems?: boolean;
+  /** Only meaningful for `type: "object"` — e.g. management_reviews's
+      `{rating, summary}`. Ordered ops compare on `properties.rating` (§9.3
+      `_comparable`); there is no widget or match support for the object shape
+      itself. */
+  properties?: Record<string, ValueSchema>;
 }
 
 export type WidgetValue = number | boolean | string | string[] | null;

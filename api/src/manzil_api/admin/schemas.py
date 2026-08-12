@@ -272,6 +272,11 @@ class JobRow(BaseModel):
     finished_at: datetime | None = None
     locked_by: str | None = None
     locked_at: datetime | None = None
+    # The account that requested this work. It is a first-class list field so
+    # the admin queue can link back to the person without opening every drawer.
+    requested_by: UUID | None = None
+    requested_by_name: str | None = None
+    requested_by_email: str | None = None
     # A `running` Job whose heartbeat has gone stale: its worker is gone and the
     # lock will never be released on its own.
     stale: bool = False

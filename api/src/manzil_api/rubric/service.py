@@ -48,6 +48,14 @@ def _validate_option_schema(label: str, schema: dict[str, Any], option: RubricOp
     schema_type = schema.get("type")
     op = option.match.op
     array_ops = (MatchOp.CONTAINS_ANY, MatchOp.CONTAINS_ALL)
+    if schema_type == "object":
+        # Mirrors the scoring engine's `_comparable()` (§9.3): every non-array op
+        # against an object-typed fact (e.g. management_reviews) compares on its
+        # numeric "rating" field, not the object itself.
+        rating_schema = schema.get("properties", {}).get("rating")
+        if rating_schema is not None:
+            schema = rating_schema
+            schema_type = rating_schema.get("type")
     if schema_type == "array":
         if op not in array_ops:
             raise InvalidRubricOption(
@@ -210,8 +218,14 @@ async def put_rubric(
         if crit.catalog_key is not None and crit.custom_def is not None:
             raise InvalidRubricOption("Criterion cannot have both catalog_key and custom_def")
         if crit.catalog_key is not None:
-            for option in crit.options:
-                _validate_option(crit.catalog_key, option)
+            # A disabled criterion's options never reach the scoring engine
+            # (`get_rubric` only returns `enabled=True` rows), and the payload
+            # always carries one draft criterion per catalog entry regardless of
+            # whether it's used (§9.2). Validating them anyway would block a save
+            # over a criterion nobody is scoring on.
+            if crit.enabled:
+                for option in crit.options:
+                    _validate_option(crit.catalog_key, option)
         else:
             assert crit.custom_def is not None
             custom = crit.custom_def
@@ -234,8 +248,9 @@ async def put_rubric(
                     raise InvalidRubricOption(
                         "Changing a custom Criterion's acquisition semantics requires a new key"
                     )
-            for option in crit.options:
-                _validate_option_schema(custom.label, custom.value_schema, option)
+            if crit.enabled:
+                for option in crit.options:
+                    _validate_option_schema(custom.label, custom.value_schema, option)
 
     client.table("rubric_criteria").delete().eq("hunt_id", str(hunt_id)).execute()
 

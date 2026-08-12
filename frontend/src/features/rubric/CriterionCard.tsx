@@ -22,6 +22,7 @@
 // tile, label, the catalog's extraction hint, then quiet bonus/gate glyphs. The
 // editor only renders criteria that are switched on — everything else lives in
 // the group's CriterionPicker strip — so this card is always a scored one.
+import { memo } from "react";
 import {
   ActionIcon,
   Button,
@@ -35,6 +36,7 @@ import {
   Tooltip,
 } from "@mantine/core";
 import {
+  IconArrowBackUp,
   IconBan,
   IconHelpCircle,
   IconGripVertical,
@@ -55,7 +57,9 @@ import { BonusMark, GateMark } from "./CriterionMarkers";
 import { GateControls } from "./GateControls";
 import { OptionMatchEditor } from "./OptionMatchEditor";
 import { OptionGridRow } from "./OptionGridRow";
-import { deriveIsBonus, isOptionDealbreaker } from "./rubricDraft";
+import { deriveIsBonus, isOptionDealbreaker, type CriterionIssue } from "./rubricDraft";
+
+const EMPTY_ISSUES: CriterionIssue[] = [];
 
 function PointsInput({
   value,
@@ -344,16 +348,54 @@ function BoolRows({
   );
 }
 
-export function CriterionCard({
+// Shown in the header once this criterion's draft diverges from what's saved,
+// alongside a one-criterion revert — so fixing a mistake doesn't mean
+// discarding every other edit on the page (unlike header Cancel, which does).
+function ModifiedIndicator({
+  onRevert,
+  sizes,
+}: {
+  onRevert: () => void;
+  sizes: ControlSizes;
+}) {
+  return (
+    <Group gap={2} wrap="nowrap">
+      <Text size="xs" c="dimmed" fs="italic">
+        Modified
+      </Text>
+      <Tooltip label="Revert this criterion to saved" openDelay={300}>
+        <ActionIcon
+          color="gray"
+          size={sizes.headerAction}
+          variant="subtle"
+          aria-label="revert to saved"
+          onClick={onRevert}
+        >
+          <IconArrowBackUp size={sizes.glyph} stroke={1.5} />
+        </ActionIcon>
+      </Tooltip>
+    </Group>
+  );
+}
+
+function CriterionCardInner({
   criterion,
   entry,
+  issues = EMPTY_ISSUES,
+  dirty = false,
   onChange,
   onRemove,
+  onRevert,
 }: {
   criterion: RubricCriterion;
   entry: CatalogEntry;
+  /** Save-time validation issues scoped to this criterion (empty while editing). */
+  issues?: CriterionIssue[];
+  /** Whether this criterion's draft differs from what's saved. */
+  dirty?: boolean;
   onChange: (criterion: RubricCriterion) => void;
-  onRemove?: () => void;
+  onRemove?: (key: string) => void;
+  onRevert?: (key: string) => void;
 }) {
   const isBonus = deriveIsBonus(criterion.options, criterion.unknown_delta);
   const isBoolean = entry.value_schema.type === "boolean";
@@ -403,6 +445,9 @@ export function CriterionCard({
           {criterion.non_negotiable !== null && criterion.enabled && (
             <GateMark setScore={criterion.non_negotiable.set_score} />
           )}
+          {dirty && onRevert && (
+            <ModifiedIndicator onRevert={() => onRevert(entry.key)} sizes={sizes} />
+          )}
           {onRemove && (
             <Tooltip label="Remove custom criterion" openDelay={300}>
               <ActionIcon
@@ -410,13 +455,23 @@ export function CriterionCard({
                 size={sizes.headerAction}
                 variant="subtle"
                 aria-label={`remove ${entry.label}`}
-                onClick={onRemove}
+                onClick={() => onRemove(entry.key)}
               >
                 <IconTrash size={sizes.glyph} stroke={1.5} />
               </ActionIcon>
             </Tooltip>
           )}
         </Group>
+
+        {issues.length > 0 && (
+          <Stack gap={2}>
+            {issues.map((issue, i) => (
+              <Text key={i} size="xs" c="red">
+                {issue.message}
+              </Text>
+            ))}
+          </Stack>
+        )}
 
         {criterion.enabled && (
           <Stack gap="xs">
@@ -532,3 +587,10 @@ export function CriterionCard({
     </Card>
   );
 }
+
+// Memoized: the editor re-renders on every keystroke in any card (the draft
+// array's identity always changes), and without this every other card would
+// re-render too. RubricEditor keeps `onChange`/`onRemove`/`onRevert` stable
+// via useCallback and `entry` stable from `catalog`, so an untouched card's
+// props are referentially equal and this skips its re-render entirely.
+export const CriterionCard = memo(CriterionCardInner);

@@ -63,12 +63,19 @@ async def test_the_roster_answers_who_they_are_and_what_they_hold(
     assert by_email["outsider@test.manzil"]["is_site_admin"] is True
 
 
-async def test_search_matches_email_or_display_name(as_admin: AsyncClient, collab_hunt) -> None:
+async def test_search_matches_text_or_exact_id(
+    as_admin: AsyncClient, collab_hunt, seeded_users
+) -> None:
     hit = await as_admin.get("/v1/admin/people?search=curator@test")
     assert [row["email"] for row in hit.json()] == ["curator@test.manzil"]
 
     miss = await as_admin.get("/v1/admin/people?search=nobody-by-that-name")
     assert miss.json() == []
+
+    by_id = await as_admin.get(
+        f"/v1/admin/people?search={seeded_users['curator'].user_id}&search_mode=id"
+    )
+    assert [row["user_id"] for row in by_id.json()] == [seeded_users["curator"].user_id]
 
 
 async def test_detail_carries_memberships_and_what_blocks_deletion(

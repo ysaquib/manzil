@@ -72,6 +72,97 @@ async def test_put_rubric_rejects_numeric_style_availability_date_operator(
 
 
 @pytest.mark.asyncio
+async def test_put_rubric_ignores_invalid_options_on_disabled_criteria(
+    client: AsyncClient, db_pool
+) -> None:
+    """A disabled criterion's options never reach the scoring engine, so a stale
+    or catalog-default-but-mismatched option must never block a save — this is
+    the shape every save sends today, since the payload carries one draft
+    criterion per catalog entry regardless of whether it's enabled (§9.2)."""
+    hunt_id = uuid4()
+    await db_pool.execute(
+        "insert into hunts (id, name, owner_id, settings) values ($1, 'R', $2, '{}'::jsonb)",
+        hunt_id,
+        FAKE_USER.id,
+    )
+    try:
+        resp = await client.put(
+            f"/v1/hunts/{hunt_id}/rubric",
+            json={
+                "criteria": [
+                    {
+                        "catalog_key": "management_reviews",
+                        "enabled": False,
+                        "options": [
+                            {"match": {"op": "gt", "value": 4}, "delta": 0.5},
+                            {"match": {"op": "range", "value": [3, 4]}, "delta": 0.0},
+                            {"match": {"op": "lt", "value": 3}, "delta": -0.5},
+                        ],
+                        "position": 0,
+                    }
+                ]
+            },
+        )
+        assert resp.status_code == 200, resp.text
+    finally:
+        await db_pool.execute("delete from hunts where id = $1", hunt_id)
+
+
+@pytest.mark.asyncio
+async def test_put_rubric_validates_management_reviews_against_its_rating_field(
+    client: AsyncClient, db_pool
+) -> None:
+    """management_reviews is object-typed (`{rating, summary}`), but the scoring
+    engine compares ordered ops against its "rating" field, not the object
+    itself (§9.3 `_comparable`) — the validator must mirror that, both when the
+    Criterion is in active use (enabled, numeric options accepted) and when a
+    genuinely bad value is supplied (still rejected, on the rating field)."""
+    hunt_id = uuid4()
+    await db_pool.execute(
+        "insert into hunts (id, name, owner_id, settings) values ($1, 'Reviews', $2, '{}'::jsonb)",
+        hunt_id,
+        FAKE_USER.id,
+    )
+    try:
+        valid = await client.put(
+            f"/v1/hunts/{hunt_id}/rubric",
+            json={
+                "criteria": [
+                    {
+                        "catalog_key": "management_reviews",
+                        "enabled": True,
+                        "options": [
+                            {"match": {"op": "gt", "value": 4}, "delta": 0.5},
+                            {"match": {"op": "range", "value": [3, 4]}, "delta": 0.0},
+                            {"match": {"op": "lt", "value": 3}, "delta": -0.5},
+                        ],
+                        "position": 0,
+                    }
+                ]
+            },
+        )
+        assert valid.status_code == 200, valid.text
+
+        invalid = await client.put(
+            f"/v1/hunts/{hunt_id}/rubric",
+            json={
+                "criteria": [
+                    {
+                        "catalog_key": "management_reviews",
+                        "enabled": True,
+                        "options": [{"match": {"op": "gt", "value": "great"}, "delta": 0.5}],
+                        "position": 0,
+                    }
+                ]
+            },
+        )
+        assert invalid.status_code == 422
+        assert invalid.json()["code"] == "invalid_rubric_option"
+    finally:
+        await db_pool.execute("delete from hunts where id = $1", hunt_id)
+
+
+@pytest.mark.asyncio
 async def test_put_rubric_bumps_version_and_enqueues_rescore(client: AsyncClient, db_pool) -> None:
     hunt_id = uuid4()
     await db_pool.execute(

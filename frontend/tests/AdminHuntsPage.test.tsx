@@ -69,9 +69,9 @@ const listCalls = () =>
     .map((call) => String(call[0]))
     .filter((path) => path.startsWith("/v1/admin/hunts?"));
 
-function renderPage() {
+function renderPage(initialEntry = "/admin/hunts") {
   return renderWithProviders(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <AdminHuntsPage />
     </MemoryRouter>,
   );
@@ -86,10 +86,13 @@ describe("AdminHuntsPage", () => {
       if (path.startsWith("/v1/admin/hunts?")) {
         const params = new URLSearchParams(path.split("?")[1]);
         const search = params.get("search");
+        const searchMode = params.get("search_mode");
         const limit = Number(params.get("limit"));
         const offset = Number(params.get("offset"));
         const matched = search
-          ? ALL.filter((h) => h.name.toLowerCase().includes(search.toLowerCase()))
+          ? searchMode === "id"
+            ? ALL.filter((h) => h.hunt_id === search)
+            : ALL.filter((h) => h.name.toLowerCase().includes(search.toLowerCase()))
           : ALL;
         return Promise.resolve({
           items: matched.slice(offset, offset + limit),
@@ -147,6 +150,15 @@ describe("AdminHuntsPage", () => {
     expect(screen.getByText(/Showing 1–\d+ of 11 Hunts/)).toBeInTheDocument();
   });
 
+  it("restores an exact-ID result and opens its detail after cross-panel navigation", async () => {
+    renderPage("/admin/hunts?search=h1&search_mode=id&selected=h1");
+
+    await waitFor(() =>
+      expect(listCalls()).toContain("/v1/admin/hunts?limit=50&offset=0&search=h1&search_mode=id"),
+    );
+    expect(await screen.findByText("Hunt management")).toBeInTheDocument();
+  });
+
   it("transfers ownership to an existing Hunt member from the detail panel", async () => {
     const user = userEvent.setup();
     renderPage();
@@ -169,6 +181,17 @@ describe("AdminHuntsPage", () => {
         method: "POST",
         body: { new_owner_id: "u2" },
       }),
+    );
+  });
+
+  it("links Hunt members to their exact-ID admin people result", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByText("Hunt 1"));
+    expect(await screen.findByRole("link", { name: "Sam Lee" })).toHaveAttribute(
+      "href",
+      "/admin/people?search=u2&search_mode=id&selected=u2",
     );
   });
 

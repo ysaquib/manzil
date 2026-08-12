@@ -32,7 +32,7 @@ import {
   IconTrash,
 } from "@tabler/icons-react";
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 
 import {
   ConfirmDeleteModal,
@@ -55,6 +55,11 @@ import {
   type ActivityEntry,
   type HuntSummary,
 } from "./api";
+import {
+  ADMIN_SEARCH_MODE_OPTIONS,
+  adminDirectoryLink,
+  adminSearchMode,
+} from "./navigation";
 
 function relative(iso: string | null): string {
   if (!iso) return "never";
@@ -271,6 +276,38 @@ function HuntDetail({ hunt, onDeleted }: { hunt: HuntSummary; onDeleted: () => v
       </Stack>
 
       <Title order={6} mb={4}>
+        Members
+      </Title>
+      {management.isPending && <Loader size="xs" mb="sm" />}
+      {management.data && (
+        <Stack gap={4} mb="md">
+          {management.data.members.map((member) => (
+            <Group
+              key={member.user_id}
+              justify="space-between"
+              wrap="nowrap"
+              px="xs"
+              py={6}
+              style={{ borderRadius: "var(--mantine-radius-sm)" }}
+              bg="var(--mantine-color-default-hover)"
+            >
+              <Anchor
+                component={Link}
+                to={adminDirectoryLink("people", member.user_id)}
+                size="sm"
+                truncate
+              >
+                {member.display_name}
+              </Anchor>
+              <Badge size="sm" variant="light" color={member.role === "owner" ? "primary" : "gray"}>
+                {member.role}
+              </Badge>
+            </Group>
+          ))}
+        </Stack>
+      )}
+
+      <Title order={6} mb={4}>
         Recent activity
       </Title>
       {activity.isPending && <Loader size="xs" />}
@@ -372,8 +409,13 @@ function HuntDetail({ hunt, onDeleted }: { hunt: HuntSummary; onDeleted: () => v
 }
 
 export function AdminHuntsPage() {
-  const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const requestedSearch = searchParams.get("search") ?? "";
+  const requestedMode = adminSearchMode(searchParams.get("search_mode"));
+  const requestedSelected = searchParams.get("selected");
+  const [search, setSearch] = useState(requestedSearch);
+  const [searchMode, setSearchMode] = useState(requestedMode);
+  const [selected, setSelected] = useState<string | null>(requestedSelected);
   const isCompact = useMediaQuery("(max-width: 48em)") ?? false;
   // Server-side now: this route carries per-Hunt roll-ups, so filtering in the
   // browser meant fetching the whole installation first.
@@ -381,6 +423,7 @@ export function AdminHuntsPage() {
   const pager = usePagerState("admin-hunts");
   const hunts = useAdminHunts({
     search: debouncedSearch,
+    searchMode,
     limit: pager.pageSize,
     offset: pager.offset,
   });
@@ -391,6 +434,13 @@ export function AdminHuntsPage() {
   // empty table and blame the search.
   const { setPage } = pager;
   useEffect(() => setPage(1), [debouncedSearch, setPage]);
+  // Cross-panel links are URLs, not transient navigation state. Following a
+  // linked membership therefore restores both exact-ID search and selection.
+  useEffect(() => {
+    setSearch(requestedSearch);
+    setSearchMode(requestedMode);
+    setSelected(requestedSelected);
+  }, [requestedMode, requestedSearch, requestedSelected]);
 
   const selectedHunt = rows.find((hunt) => hunt.hunt_id === selected);
 
@@ -398,14 +448,30 @@ export function AdminHuntsPage() {
     <Stack gap="md">
       <Group justify="space-between" align="center" wrap="wrap" gap="xs">
         <Title order={2}>Hunts</Title>
-        <TextInput
-          size="xs"
-          w={isCompact ? "100%" : 240}
-          placeholder="Search Hunt or owner…"
-          leftSection={<IconSearch size={14} />}
-          value={search}
-          onChange={(event) => setSearch(event.currentTarget.value)}
-        />
+        <Group
+          gap="xs"
+          wrap={isCompact ? "wrap" : "nowrap"}
+          style={isCompact ? { flex: "1 1 100%" } : undefined}
+        >
+          <Select
+            size="xs"
+            aria-label="Hunt search mode"
+            data={ADMIN_SEARCH_MODE_OPTIONS}
+            value={searchMode}
+            allowDeselect={false}
+            onChange={(value) => value && setSearchMode(value as typeof searchMode)}
+            w={isCompact ? 132 : 140}
+          />
+          <TextInput
+            size="xs"
+            w={isCompact ? undefined : 240}
+            style={isCompact ? { flex: 1 } : undefined}
+            placeholder={searchMode === "id" ? "Hunt ID…" : "Search Hunt or owner…"}
+            leftSection={<IconSearch size={14} />}
+            value={search}
+            onChange={(event) => setSearch(event.currentTarget.value)}
+          />
+        </Group>
       </Group>
 
       <Card padding={0} radius="md" withBorder>

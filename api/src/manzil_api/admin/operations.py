@@ -16,7 +16,7 @@ last week has its old spend filed under the new model.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Query, status
@@ -109,6 +109,8 @@ async def list_jobs(
     state: str | None = Query(None, max_length=20),
     hunt_id: UUID | None = None,
     stale_only: bool = False,
+    search: str | None = Query(None, max_length=200),
+    search_mode: Literal["text", "id"] = Query("text"),
     limit: int = Query(100, ge=1, le=500),
 ) -> list[JobRow]:
     rows = await pool.fetch(
@@ -119,13 +121,23 @@ async def list_jobs(
           and ($3::uuid is null or j.hunt_id = $3)
           and (not $4 or (j.state = 'running'
                           and j.locked_at < now() - ($1 || ' minutes')::interval))
+          and ($5::text is null
+               or ($6 = 'id' and j.id::text = $5)
+               or ($6 = 'text' and (
+                   h.name ilike '%' || $5 || '%'
+                   or p.name ilike '%' || $5 || '%'
+                   or up.default_display_name ilike '%' || $5 || '%'
+                   or u.email ilike '%' || $5 || '%'
+               )))
         order by j.created_at desc
-        limit $5
+        limit $7
         """,
         str(STALE_LOCK_MINUTES),
         state,
         hunt_id,
         stale_only,
+        search,
+        search_mode,
         limit,
     )
     return [_job_row(row) for row in rows]
