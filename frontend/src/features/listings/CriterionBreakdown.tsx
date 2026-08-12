@@ -465,7 +465,7 @@ function CriterionRow({
           <Text size="sm">{entry?.label ?? criterion.key}</Text>
         </Group>
         {(galleryEstimate || flag || extraction) && (
-          <Box className={`${drawer.ledgerSubline} ${classes.subline}`}>
+          <Box className={classes.subline}>
             {galleryEstimate && (
               <Tooltip label="Property-gallery estimate — this kitchen may not represent this Floor Plan.">
                 <Text component="span" inherit>

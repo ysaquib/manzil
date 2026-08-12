@@ -159,7 +159,10 @@ function HistoryCard({ job, listingName, memberName, onRetry, onDelete, retrying
         onClose={() => setDeleteOpened(false)}
         targets={[{ id: job.id, label: `${listingName ?? "Hunt-wide run"} · ${job.id.slice(0, 8)}` }]}
         noun={{ singular: "Job", plural: "Jobs" }}
+        title="Delete failed Job?"
         warning="This removes the failed Job from Tasks. Its cost and backend timeline are retained."
+        confirmLabel="Delete Job"
+        requireTypedConfirmation={false}
         loading={deleting}
         onConfirm={() => onDelete()}
       />

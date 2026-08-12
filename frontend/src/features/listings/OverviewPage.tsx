@@ -21,7 +21,7 @@ import { useLocalStorage, useMediaQuery } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import { IconArchive, IconArrowsLeftRight, IconChevronDown, IconHome } from "@tabler/icons-react";
 import { useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 
 import { PageHeader } from "../../components/PageHeader";
 import { TablePagination, usePagedRows } from "../../components/TablePagination";
@@ -70,7 +70,6 @@ import { propertyLocationLabel } from "./locality";
 import { INTEREST_STATUSES, type InterestStatus } from "./types";
 import { SubmitUrlControl } from "./SubmitUrlControl";
 import { statusesByListing } from "./staleness";
-import { useHuntStatistics } from "../statistics/api";
 
 /** Listings to archive (single row action or bulk), driving the confirm modal. */
 interface ArchiveTarget {
@@ -90,7 +89,6 @@ export function OverviewPage() {
   const { isGhost } = useGhostMode(huntId);
   const { data: currentMember } = useCurrentMember(huntId);
   const access = useHuntAccess(huntId);
-  const statistics = useHuntStatistics(huntId, 30, !isDemo());
   const canManageListings = access.canMutate && (isGhost === true || currentMember?.role === "owner");
 
   const [sort, setSort] = useState<SortState>({ key: "score", dir: "desc" });
@@ -274,13 +272,6 @@ export function OverviewPage() {
   return (
     <Stack gap="lg">
       <PageHeader title="Overview" description="All unit groups in this hunt" />
-
-      {(statistics.data?.summary.deleted_cost_usd ?? 0) > 0 && (
-        <Alert color="gray" variant="light">
-          Total spend includes ${statistics.data!.summary.deleted_cost_usd.toFixed(2)} from deleted
-          Jobs. <Text component={Link} to={`/h/${huntId}/statistics`} span inherit td="underline">See Statistics</Text>
-        </Alert>
-      )}
 
       {hunt && access.canMutate && (
         <SubmitUrlControl
