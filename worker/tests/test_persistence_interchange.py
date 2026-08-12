@@ -77,8 +77,10 @@ async def persistence_case(request, tmp_path: Path):  # type: ignore[no-untyped-
         await pool.execute(
             "insert into hunts (id, name, owner_id) values ($1, 'test', $2)", hunt_id, uuid4()
         )
+        # Lease-safe persistence only writes while the Job is `running`
+        # (ab57e33); fixtures that call save() directly must seed that state.
         await pool.execute(
-            "insert into jobs (id, hunt_id, type, state) values ($1, $2, 'ingest', 'queued')",
+            "insert into jobs (id, hunt_id, type, state) values ($1, $2, 'ingest', 'running')",
             job_id,
             hunt_id,
         )

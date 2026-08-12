@@ -41,7 +41,15 @@ EXPECTED_TABLES = {
 EXPECTED_ENUMS = {
     "hunt_role": {"owner", "curator", "member"},
     "job_type": {"ingest", "refresh", "rescore", "investigate"},
-    "job_state": {"queued", "running", "waiting_user", "done", "failed", "cancelled"},
+    "job_state": {
+        "queued",
+        "running",
+        "waiting_user",
+        "done",
+        "failed",
+        "cancelled",
+        "deleted",
+    },
     "value_state": {"extracted", "manual", "estimated", "unknown"},
 }
 
