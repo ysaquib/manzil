@@ -334,6 +334,23 @@ export function useSetAdminHuntLock(huntId: string) {
   });
 }
 
+export function useSetAdminHuntArchived(huntId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (archived: boolean) =>
+      apiFetch<HuntManagement>(`/v1/admin/hunts/${huntId}/archive`, {
+        method: "PUT",
+        body: { archived },
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["admin", "hunts"] });
+      void queryClient.invalidateQueries({ queryKey: ["hunts"] });
+      void queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      void queryClient.invalidateQueries({ queryKey: ["admin", "jobs"] });
+    },
+  });
+}
+
 export function useDeleteAdminHunt() {
   const queryClient = useQueryClient();
   return useMutation({

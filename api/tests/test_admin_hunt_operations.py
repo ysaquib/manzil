@@ -108,7 +108,7 @@ async def test_ghost_delete_rolls_back_when_audit_fails(
     )
 
 
-async def test_admin_members_cannot_elevate_their_hunt_role(
+async def test_admin_members_can_explicitly_use_the_audited_ghost_path(
     db_pool, collab_hunt, seeded_users
 ) -> None:
     await db_pool.execute(
@@ -128,8 +128,8 @@ async def test_admin_members_cannot_elevate_their_hunt_role(
                 f"/v1/admin/ghost/listings/{collab_hunt['owner_listing_id']}/status",
                 json={"status": "archived"},
             )
-        assert response.status_code == 403
-        assert response.json()["code"] == "ghost_view_unavailable"
+        assert response.status_code == 200, response.text
+        assert response.json()["status"] == "archived"
 
         async with AsyncClient(
             transport=ASGITransport(app=app),
@@ -141,9 +141,8 @@ async def test_admin_members_cannot_elevate_their_hunt_role(
                 f"/v1/admin/ghost/listings/{collab_hunt['owner_listing_id']}",
                 json={"confirmation_name": "Owner Property"},
             )
-        assert response.status_code == 403
-        assert response.json()["code"] == "ghost_view_unavailable"
-        assert await db_pool.fetchval(
+        assert response.status_code == 200, response.text
+        assert not await db_pool.fetchval(
             "select exists(select 1 from hunt_listings where id=$1)",
             collab_hunt["owner_listing_id"],
         )

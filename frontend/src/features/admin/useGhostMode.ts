@@ -1,13 +1,16 @@
 // Ghost mode (AD-4, DESIGN §4.2, §20 v3.39).
 //
-// **Derived from non-membership, never from URL state.** A `?ghost=1` param
-// would be forgeable, could go stale, and — worse — could be *missing* when it
-// should be set, which is the direction that puts a Site Admin into a Hunt's
-// Presence as a phantom body. The only thing that decides is the same fact
-// §4.2 uses: are they a member of this Hunt or not.
+// Non-membership still enters Ghost View automatically. A member can enter it
+// only through the Admin Hunts dashboard, whose navigation state is captured by
+// `GhostModeProvider` for the lifetime of this Hunt route. It is intentionally
+// not a query parameter: ordinary Hunt links remain ordinary, and the admin
+// context cannot leak into a copied URL.
 //
 // This is UX. Every write a ghost cannot make is refused by RLS, whose write
 // policies were deliberately left untouched by AD-4's read predicate.
+import { createContext, createElement, type ReactNode, useContext, useState } from "react";
+import { useLocation } from "react-router-dom";
+
 import { useAuth } from "../../auth/useAuth";
 import { useMembers } from "../collaboration/api";
 import { useHunt } from "../hunts/api";
@@ -20,7 +23,20 @@ export interface GhostMode {
   resolved: boolean;
 }
 
+const AdminGhostEntryContext = createContext(false);
+
+export function GhostModeProvider({ children }: { children: ReactNode }) {
+  const location = useLocation();
+  // Capture once. Child navigation replaces location state, but the explicit
+  // admin mode must remain until this Hunt route is left or switched.
+  const [adminGhostEntry] = useState(
+    () => (location.state as { adminGhost?: unknown } | null)?.adminGhost === true,
+  );
+  return createElement(AdminGhostEntryContext.Provider, { value: adminGhostEntry }, children);
+}
+
 export function useGhostMode(huntId: string | undefined): GhostMode {
+  const adminGhostEntry = useContext(AdminGhostEntryContext);
   const { session } = useAuth();
   const admin = useAdminIdentity();
   const members = useMembers(huntId ?? "");
@@ -38,16 +54,10 @@ export function useGhostMode(huntId: string | undefined): GhostMode {
   const userId = session?.user.id;
   const isMember = (members.data ?? []).some((member) => member.user_id === userId);
 
-  // Archived Hunts are the one intentional exception to the membership rule:
-  // every Site Admin override must use the audited admin path, even when the
-  // admin also happens to be a member of this Hunt.
-  if (hunt.data?.archived_at) {
-    return { isGhost: true, resolved: true };
-  }
-
-  // An admin who genuinely belongs to this Hunt is an ordinary member here —
-  // §4.2's column does not apply to them at all.
-  return { isGhost: !isMember, resolved: true };
+  // An explicit Admin-dashboard entry opts into audited support mode even for
+  // a member. Everywhere else, genuine membership wins — including archived
+  // Hunts, so an Owner can reach the ordinary restore controls.
+  return { isGhost: adminGhostEntry || !isMember, resolved: true };
 }
 
 /** Route an ordinary Hunt mutation through the audited Ghost View surface. */
