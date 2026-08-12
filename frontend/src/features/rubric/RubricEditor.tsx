@@ -1,5 +1,5 @@
 // Single-page rubric editor (§13.2): all criteria on one scrollable page with
-// inline validation. Replaces the former 3-step Stepper wizard.
+// save-time validation. Replaces the former 3-step Stepper wizard.
 import {
   Alert,
   Button,
@@ -11,9 +11,10 @@ import {
 } from "@mantine/core";
 import { IconDeviceFloppy, IconPlus } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
-import { useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import { PageHeader } from "../../components/PageHeader";
+import { SettingsSaveBar } from "../../components/SettingsShell";
 import { ApiError } from "../../lib/apiClient";
 import type { CatalogEntry, CustomCriterionDef, RubricCriterion } from "./api";
 import { usePutRubric } from "./api";
@@ -23,7 +24,14 @@ import { CriterionCard } from "./CriterionCard";
 import { CriterionGroupHeader } from "./CriterionGroupHeader";
 import { CriterionPicker } from "./CriterionPicker";
 import { groupCatalog } from "./catalogGroups";
-import { draftToPayload, initDraft, overlapWarnings, validateDraft } from "./rubricDraft";
+import {
+  type CriterionIssue,
+  draftToPayload,
+  initDraft,
+  isCriterionDirty,
+  overlapWarnings,
+  validateDraft,
+} from "./rubricDraft";
 
 function isDirty(
   draft: RubricCriterion[],
@@ -32,6 +40,11 @@ function isDirty(
 ): boolean {
   const baseline = draftToPayload(initDraft(catalog, saved));
   return JSON.stringify(draftToPayload(draft)) !== JSON.stringify(baseline);
+}
+
+function labelFor(criterion: RubricCriterion, catalogLabelByKey: Map<string, string>): string {
+  if (criterion.custom_def) return criterion.custom_def.label;
+  return catalogLabelByKey.get(criterion.catalog_key ?? "") ?? criterionKey(criterion) ?? "Criterion";
 }
 
 export function RubricEditor({
@@ -49,16 +62,49 @@ export function RubricEditor({
   const [draft, setDraft] = useState<RubricCriterion[]>(() => initDraft(catalog, saved));
   const [discardOpen, setDiscardOpen] = useState(false);
   const [customOpen, setCustomOpen] = useState(false);
+  // Validated only on Save (perf + UX — see UI Decision Log): stale until the
+  // next Save attempt rather than recomputed on every keystroke.
+  const [saveIssues, setSaveIssues] = useState<CriterionIssue[]>([]);
+
+  // Same object per unedited custom_def across renders, so an untouched
+  // custom card's `entry` prop stays referentially stable for React.memo.
+  const customEntryCache = useRef(new WeakMap<CustomCriterionDef, CatalogEntry>()).current;
+  const entryForCustomDef = useCallback(
+    (def: CustomCriterionDef): CatalogEntry => {
+      let cached = customEntryCache.get(def);
+      if (!cached) {
+        cached = customCatalogEntry(def);
+        customEntryCache.set(def, cached);
+      }
+      return cached;
+    },
+    [customEntryCache],
+  );
+
+  const groups = useMemo(() => groupCatalog(catalog), [catalog]);
+  const catalogLabelByKey = useMemo(
+    () => new Map(catalog.map((entry) => [entry.key, entry.label])),
+    [catalog],
+  );
+  // What's actually saved right now, keyed the same way the draft is — the
+  // per-card "Modified" badge/revert and the sticky bar's dirty list both
+  // diff against this rather than the catalog defaults.
+  const baseline = useMemo(() => initDraft(catalog, saved), [catalog, saved]);
+  const baselineByKey = useMemo(() => {
+    const map = new Map<string, RubricCriterion>();
+    for (const criterion of baseline) {
+      const key = criterionKey(criterion);
+      if (key !== null) map.set(key, criterion);
+    }
+    return map;
+  }, [baseline]);
 
   const customCriteria = draft.filter(
     (criterion): criterion is RubricCriterion & { custom_def: CustomCriterionDef } =>
       criterion.custom_def !== null,
   );
-  const customEntries = customCriteria.map((criterion) =>
-    customCatalogEntry(criterion.custom_def),
-  );
+  const customEntries = customCriteria.map((criterion) => entryForCustomDef(criterion.custom_def));
   const entryByKey = new Map([...catalog, ...customEntries].map((e) => [e.key, e]));
-  const issues = validateDraft(draft, catalog);
   const warnings = overlapWarnings(draft, catalog);
   const infoWarnings = warnings.filter((warning) => warning.tone === "info");
   const reviewWarnings = warnings.filter((warning) => warning.tone !== "info");
@@ -69,12 +115,68 @@ export function RubricEditor({
       .filter((entry): entry is readonly [string, RubricCriterion] => entry[0] !== null),
   );
 
-  const setCriterion = (next: RubricCriterion) =>
+  const issuesByKey = useMemo(() => {
+    const map = new Map<string, CriterionIssue[]>();
+    for (const issue of saveIssues) {
+      const list = map.get(issue.catalogKey);
+      if (list) list.push(issue);
+      else map.set(issue.catalogKey, [issue]);
+    }
+    return map;
+  }, [saveIssues]);
+
+  const dirtyByKey = useMemo(() => {
+    const map = new Map<string, boolean>();
+    for (const criterion of draft) {
+      const key = criterionKey(criterion);
+      if (key === null) continue;
+      const base = baselineByKey.get(key);
+      map.set(key, base ? isCriterionDirty(criterion, base) : true);
+    }
+    return map;
+  }, [draft, baselineByKey]);
+
+  const dirtyLabels = useMemo(() => {
+    const draftKeys = new Set<string>();
+    const labels: string[] = [];
+    for (const criterion of draft) {
+      const key = criterionKey(criterion);
+      if (key === null) continue;
+      draftKeys.add(key);
+      if (dirtyByKey.get(key)) labels.push(labelFor(criterion, catalogLabelByKey));
+    }
+    for (const criterion of baseline) {
+      const key = criterionKey(criterion);
+      if (key !== null && !draftKeys.has(key)) {
+        labels.push(`${labelFor(criterion, catalogLabelByKey)} (removed)`);
+      }
+    }
+    return labels;
+  }, [draft, baseline, dirtyByKey, catalogLabelByKey]);
+
+  // Stable across renders — every CriterionCard shares one instance, so an
+  // untouched card's `onChange` prop never breaks React.memo.
+  const setCriterion = useCallback((next: RubricCriterion) => {
     setDraft((prev) =>
-      prev.map((criterion) =>
-        criterionKey(criterion) === criterionKey(next) ? next : criterion,
-      ),
+      prev.map((criterion) => (criterionKey(criterion) === criterionKey(next) ? next : criterion)),
     );
+  }, []);
+
+  const removeCriterion = useCallback((key: string) => {
+    setDraft((current) => current.filter((item) => criterionKey(item) !== key));
+  }, []);
+
+  const revertCriterion = useCallback(
+    (key: string) => {
+      const base = baselineByKey.get(key);
+      setDraft((current) =>
+        base
+          ? current.map((item) => (criterionKey(item) === key ? base : item))
+          : current.filter((item) => criterionKey(item) !== key),
+      );
+    },
+    [baselineByKey],
+  );
 
   const save = () =>
     putRubric.mutate(draftToPayload(draft), {
@@ -97,6 +199,20 @@ export function RubricEditor({
         }),
     });
 
+  const attemptSave = () => {
+    const nextIssues = validateDraft(draft, catalog);
+    setSaveIssues(nextIssues);
+    if (nextIssues.length > 0) {
+      notifications.show({
+        title: nextIssues.length === 1 ? "1 issue to fix" : `${nextIssues.length} issues to fix`,
+        message: "Review the highlighted criteria before saving.",
+        color: "red",
+      });
+      return;
+    }
+    save();
+  };
+
   const cancel = () => {
     if (isDirty(draft, catalog, saved)) setDiscardOpen(true);
     else onDone();
@@ -114,8 +230,8 @@ export function RubricEditor({
             </Button>
             <Button
               leftSection={<IconDeviceFloppy size={16} stroke={1.5} />}
-              onClick={save}
-              disabled={issues.length > 0 || enabledCount === 0}
+              onClick={attemptSave}
+              disabled={enabledCount === 0}
               loading={putRubric.isPending}
             >
               Save rubric
@@ -128,10 +244,10 @@ export function RubricEditor({
         {enabledCount} of {draft.length} criteria enabled
       </Text>
 
-      {issues.length > 0 && (
+      {saveIssues.length > 0 && (
         <Alert color={"red"} title="Fix before saving">
           <Stack gap={4}>
-            {issues.map((issue, i) => (
+            {saveIssues.map((issue, i) => (
               <Text size="sm" key={i}>
                 {entryByKey.get(issue.catalogKey)?.label ?? issue.catalogKey}: {issue.message}
               </Text>
@@ -164,7 +280,7 @@ export function RubricEditor({
         </Alert>
       )}
 
-      {groupCatalog(catalog).map((group) => {
+      {groups.map((group) => {
         // Scored criteria get cards; the rest collapse into one add-pill strip,
         // so a category you aren't using costs a heading and a line rather than
         // a dozen empty boxes (UI Decision Log 2026-07-25).
@@ -195,7 +311,10 @@ export function RubricEditor({
                     key={entry.key}
                     criterion={criterion}
                     entry={entry}
+                    issues={issuesByKey.get(entry.key)}
+                    dirty={dirtyByKey.get(entry.key) ?? false}
                     onChange={setCriterion}
+                    onRevert={revertCriterion}
                   />
                 ) : null;
               })}
@@ -228,13 +347,12 @@ export function RubricEditor({
               <CriterionCard
                 key={custom.key}
                 criterion={criterion}
-                entry={customCatalogEntry(custom)}
+                entry={entryForCustomDef(custom)}
+                issues={issuesByKey.get(custom.key)}
+                dirty={dirtyByKey.get(custom.key) ?? false}
                 onChange={setCriterion}
-                onRemove={() =>
-                  setDraft((current) =>
-                    current.filter((item) => criterionKey(item) !== custom.key),
-                  )
-                }
+                onRemove={removeCriterion}
+                onRevert={revertCriterion}
               />
             );
           })}
@@ -280,6 +398,13 @@ export function RubricEditor({
           </Group>
         </Stack>
       </Modal>
+
+      <SettingsSaveBar
+        dirtyLabels={dirtyLabels}
+        saving={putRubric.isPending}
+        onSave={attemptSave}
+        onDiscard={cancel}
+      />
     </Stack>
   );
 }

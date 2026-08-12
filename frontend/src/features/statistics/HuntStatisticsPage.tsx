@@ -87,12 +87,10 @@ export function HuntStatisticsPage() {
             <Group gap={8} align="baseline" wrap="nowrap">
               <Text component="span" size="xl" fw={600} ff="monospace" c="green.7">
                 {summary.jobs_completed}
-                <Text component="span" size="xs" fw={600} ml={4}>completed</Text>
               </Text>
               <Text component="span" c="dimmed">/</Text>
               <Text component="span" size="xl" fw={600} ff="monospace" c="red.7">
                 {summary.jobs_failed}
-                <Text component="span" size="xs" fw={600} ml={4}>failed</Text>
               </Text>
             </Group>
           }

@@ -5,6 +5,7 @@
 // saying so *before* the click rather than surfacing an error after it.
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { renderWithProviders } from "./testUtils";
@@ -16,6 +17,14 @@ vi.mock("../src/lib/apiClient", () => ({
 }));
 
 import { AdminPeoplePage } from "../src/features/admin/AdminPeoplePage";
+
+function renderPage(initialEntry = "/admin/people") {
+  return renderWithProviders(
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <AdminPeoplePage />
+    </MemoryRouter>,
+  );
+}
 
 const OWNER = {
   user_id: "u-owner",
@@ -82,7 +91,7 @@ describe("AdminPeoplePage", () => {
   });
 
   it("shows who owns what, since owning is what constrains every other action", async () => {
-    renderWithProviders(<AdminPeoplePage />);
+    renderPage();
 
     expect(await screen.findByText("N. Rahman")).toBeInTheDocument();
     expect(screen.getByText("(1 own)")).toBeInTheDocument();
@@ -90,7 +99,7 @@ describe("AdminPeoplePage", () => {
   });
 
   it("keeps the roster card independent from the detail panel height", async () => {
-    renderWithProviders(<AdminPeoplePage />);
+    renderPage();
 
     await screen.findByText("N. Rahman");
     const directory = screen.getByRole("region", { name: "People directory" });
@@ -101,7 +110,7 @@ describe("AdminPeoplePage", () => {
 
   it("disables Delete for a Hunt owner and names the Hunt blocking it", async () => {
     const user = userEvent.setup();
-    renderWithProviders(<AdminPeoplePage />);
+    renderPage();
 
     await user.click(await screen.findByText("N. Rahman"));
 
@@ -117,9 +126,20 @@ describe("AdminPeoplePage", () => {
     );
   });
 
+  it("links each membership to a selected exact-ID Hunt search", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(await screen.findByText("N. Rahman"));
+    expect(await screen.findByRole("link", { name: "Brooklyn 2026" })).toHaveAttribute(
+      "href",
+      "/admin/hunts?search=h2&search_mode=id&selected=h2",
+    );
+  });
+
   it("enables Delete for someone who owns nothing, but only through the confirmation", async () => {
     const user = userEvent.setup();
-    renderWithProviders(<AdminPeoplePage />);
+    renderPage();
 
     await user.click(await screen.findByText("A. Osei"));
 
@@ -158,7 +178,7 @@ describe("AdminPeoplePage", () => {
 
   it("removes a membership only after showing which Hunt goes", async () => {
     const user = userEvent.setup();
-    renderWithProviders(<AdminPeoplePage />);
+    renderPage();
     await user.click(await screen.findByText("N. Rahman"));
 
     await user.click(
@@ -183,7 +203,7 @@ describe("AdminPeoplePage", () => {
 
   it("lists every selected account for a bulk delete, skips the Hunt owner, and asks for the phrase", async () => {
     const user = userEvent.setup();
-    renderWithProviders(<AdminPeoplePage />);
+    renderPage();
 
     await screen.findByText("N. Rahman");
     await user.click(screen.getByLabelText("Select owner@example.com"));
@@ -218,29 +238,20 @@ describe("AdminPeoplePage", () => {
 
   it("refuses to remove the Owner from their own Hunt", async () => {
     const user = userEvent.setup();
-    renderWithProviders(<AdminPeoplePage />);
+    renderPage();
     await user.click(await screen.findByText("N. Rahman"));
 
-    // "Jersey City" also appears in the blocking alert and the Hunt picker, so
-    // scope to the memberships table rather than matching on text alone.
-    const membershipRow = (name: string) =>
-      screen
-        .getAllByText(name)
-        .map((node) => node.closest("tr"))
-        .find((row): row is HTMLTableRowElement => row !== null);
-
-    const ownerRow = membershipRow("Jersey City");
-    expect(ownerRow).toBeDefined();
-    expect(within(ownerRow as HTMLElement).getByRole("button")).toBeDisabled();
+    const ownerCard = screen.getByRole("article", { name: "Jersey City membership" });
+    expect(within(ownerCard).getByRole("button")).toBeDisabled();
 
     // ...but an ordinary membership is removable.
-    const curatorRow = membershipRow("Brooklyn 2026");
-    expect(within(curatorRow as HTMLElement).getByRole("button")).toBeEnabled();
+    const curatorCard = screen.getByRole("article", { name: "Brooklyn 2026 membership" });
+    expect(within(curatorCard).getByRole("button")).toBeEnabled();
   });
 
   it("offers Suspend as the reversible alternative and flips to Restore", async () => {
     const user = userEvent.setup();
-    renderWithProviders(<AdminPeoplePage />);
+    renderPage();
     await user.click(await screen.findByText("A. Osei"));
 
     await user.click(await screen.findByRole("button", { name: "Suspend" }));

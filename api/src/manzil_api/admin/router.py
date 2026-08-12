@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import UTC, datetime
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Query, status
@@ -166,6 +167,7 @@ async def list_hunts(
     admin: AdminUser,
     pool: DbPool,
     search: str | None = Query(None, max_length=200),
+    search_mode: Literal["text", "id"] = Query("text"),
     limit: int = Query(50, ge=1, le=250),
     offset: int = Query(0, ge=0),
 ) -> HuntPage:
@@ -201,8 +203,11 @@ async def list_hunts(
             from hunts h
             left join user_profiles up on up.user_id = h.owner_id
             where $1::text is null
-               or h.name ilike '%' || $1 || '%'
-               or up.default_display_name ilike '%' || $1 || '%'
+               or ($2 = 'id' and h.id::text = $1)
+               or ($2 = 'text' and (
+                   h.name ilike '%' || $1 || '%'
+                   or up.default_display_name ilike '%' || $1 || '%'
+               ))
         ),
         billed as (
             select j.hunt_id as id, coalesce(sum(j.cost_actual_usd), 0) as billed
@@ -227,7 +232,7 @@ async def list_hunts(
             left join billed b on b.id = f.id
             left join split s on s.id = f.id
             order by coalesce(b.billed, 0) desc, f.created_at desc
-            limit $2 offset $3
+            limit $3 offset $4
         )
         select
             p.id as hunt_id, p.name, p.owner_id, p.owner_name, p.created_at,
@@ -242,6 +247,7 @@ async def list_hunts(
         order by p.billed desc, p.created_at desc
         """,
         search,
+        search_mode,
         limit,
         offset,
     )
@@ -257,10 +263,14 @@ async def list_hunts(
             from hunts h
             left join user_profiles up on up.user_id = h.owner_id
             where $1::text is null
-               or h.name ilike '%' || $1 || '%'
-               or up.default_display_name ilike '%' || $1 || '%'
+               or ($2 = 'id' and h.id::text = $1)
+               or ($2 = 'text' and (
+                   h.name ilike '%' || $1 || '%'
+                   or up.default_display_name ilike '%' || $1 || '%'
+               ))
             """,
             search,
+            search_mode,
         )
     return HuntPage(
         total=total,

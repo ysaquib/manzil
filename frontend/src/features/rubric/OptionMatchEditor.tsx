@@ -9,6 +9,7 @@ import { criterionUnit } from "../../lib/criterionUnits";
 import type { ControlSizes } from "./controlSizes";
 import type { MatchOp, OptionMatch } from "../../lib/contracts";
 import { OP_LABEL_SHORT, OP_LABEL_WORD, opsForSchema } from "./matchLabels";
+import { comparableSchema } from "./rubricDraft";
 import { NumberWidget } from "./widgets/NumberWidget";
 import { DateWidget } from "./widgets/DateWidget";
 import type { ValueSchema } from "./widgets/types";
@@ -36,7 +37,7 @@ function selectWidth(sizes: ControlSizes, isEnum: boolean, op: MatchOp): number 
 
 export function OptionMatchEditor({
   match,
-  schema,
+  schema: rawSchema,
   criterionKey,
   onChange,
   sizes,
@@ -47,6 +48,12 @@ export function OptionMatchEditor({
   onChange: (match: OptionMatch) => void;
   sizes: ControlSizes;
 }) {
+  // For an object-typed criterion (management_reviews) every op here
+  // compares on its numeric "rating" field, not the object itself — resolve
+  // once so operator choice, widths, and widget selection all agree with
+  // what the value actually is (rubricDraft.ts's `comparableSchema`, the
+  // same rule the API and scoring engine apply).
+  const schema = comparableSchema(rawSchema) ?? rawSchema;
   const ops = opsForSchema(schema);
   const isEnum = Boolean(schema.enum) || schema.type === "array";
   const isDate = schema.type === "string" && schema.format === "date";

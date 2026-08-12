@@ -71,6 +71,17 @@ export function initDraft(
   return [...catalogDraft, ...custom];
 }
 
+// Mirrors the API's `_validate_option_schema` and the scoring engine's
+// `_comparable()` (§9.3): ordered ops against an object-typed fact (e.g.
+// management_reviews) compare on its numeric "rating" field, not the object
+// itself — there is no match or widget support for the object shape itself.
+// Every other schema type is returned unchanged. Shared by validation
+// (below) and the option-match editor's operator/widget selection.
+export function comparableSchema(schema: ValueSchema): ValueSchema | null {
+  if (schema.type !== "object") return schema;
+  return schema.properties?.rating ?? null;
+}
+
 function typeMatches(value: unknown, schema: ValueSchema): boolean {
   if (schema.type === "array") return Array.isArray(value);
   if (schema.type === "boolean") return typeof value === "boolean";
@@ -80,6 +91,10 @@ function typeMatches(value: unknown, schema: ValueSchema): boolean {
 }
 
 function scalarError(value: unknown, schema: ValueSchema): string | null {
+  if (schema.type === "object") {
+    const resolved = comparableSchema(schema);
+    return resolved ? scalarError(value, resolved) : "unsupported object criterion";
+  }
   if (value === null || value === undefined) return "value is required";
   if (!typeMatches(value, schema)) return `expected a ${schema.type}`;
   if (schema.type === "string" && schema.format === "date") {
@@ -318,4 +333,16 @@ export function draftToPayload(draft: RubricCriterion[]): RubricCriterion[] {
     is_bonus: deriveIsBonus(criterion.options, criterion.unknown_delta),
     position: index,
   }));
+}
+
+// Per-criterion dirty check backing the card's "Modified" indicator and the
+// sticky save bar's dirty-labels list. `position` is normalized away: it
+// reflects this criterion's slot in the draft array, not an edit the user made.
+export function isCriterionDirty(criterion: RubricCriterion, baseline: RubricCriterion): boolean {
+  const strip = (c: RubricCriterion) => ({
+    ...c,
+    position: 0,
+    is_bonus: deriveIsBonus(c.options, c.unknown_delta),
+  });
+  return JSON.stringify(strip(criterion)) !== JSON.stringify(strip(baseline));
 }

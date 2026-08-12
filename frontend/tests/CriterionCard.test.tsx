@@ -37,6 +37,21 @@ const boolEntry: CatalogEntry = {
   value_schema: { type: "boolean" },
 };
 
+// The one object-typed catalog entry: ordered ops compare on `rating`, not
+// the object itself (rubricDraft.ts's `comparableSchema`).
+const reviewsEntry: CatalogEntry = {
+  ...numericEntry,
+  key: "management_reviews",
+  label: "Management reviews",
+  value_schema: {
+    type: "object",
+    properties: {
+      rating: { type: "number", minimum: 1, maximum: 5 },
+      summary: { type: "string" },
+    },
+  },
+};
+
 const criterion = (overrides: Partial<RubricCriterion> = {}): RubricCriterion => ({
   catalog_key: "rent",
   custom_def: null,
@@ -159,5 +174,94 @@ describe("CriterionCard — consequences readable without hover", () => {
     expect(
       screen.getByText("Not met sets the listing's score to 2 instead of adding points."),
     ).toBeInTheDocument();
+  });
+});
+
+describe("CriterionCard — object-typed criteria (management_reviews) edit as their rating field", () => {
+  it("renders a real number input for gt/lt, not an empty dropdown, and enforces the rating bounds on range", () => {
+    renderCard(
+      criterion({
+        catalog_key: "management_reviews",
+        options: [
+          { match: { op: "gt", value: 4.5 }, delta: 0.5, dealbreaker_set_score: null },
+          { match: { op: "range", value: [2, 3] }, delta: 0, dealbreaker_set_score: null },
+          { match: { op: "lt", value: 1.5 }, delta: -0.5, dealbreaker_set_score: null },
+        ],
+      }),
+      reviewsEntry,
+    );
+
+    // gt/lt used to fall through to EnumWidget (an empty <Select>, no `enum`
+    // on an object schema) and render blank despite a valid stored value.
+    const gtInput = screen.getByDisplayValue("4.5");
+    const ltInput = screen.getByDisplayValue("1.5");
+    expect(gtInput.tagName).toBe("INPUT");
+    expect(ltInput.tagName).toBe("INPUT");
+    expect(screen.getByDisplayValue("2")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("3")).toBeInTheDocument();
+  });
+});
+
+describe("CriterionCard — modified indicator, revert, and inline issues", () => {
+  it("shows no Modified indicator when not dirty, and one with a working revert when dirty", async () => {
+    const onRevert = vi.fn();
+    const { rerender } = render(
+      <MantineProvider>
+        <CriterionCard
+          criterion={criterion()}
+          entry={numericEntry}
+          onChange={vi.fn()}
+          onRevert={onRevert}
+          dirty={false}
+        />
+      </MantineProvider>,
+    );
+    expect(screen.queryByText("Modified")).not.toBeInTheDocument();
+
+    rerender(
+      <MantineProvider>
+        <CriterionCard
+          criterion={criterion()}
+          entry={numericEntry}
+          onChange={vi.fn()}
+          onRevert={onRevert}
+          dirty={true}
+        />
+      </MantineProvider>,
+    );
+    expect(screen.getByText("Modified")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByLabelText("revert to saved"));
+    expect(onRevert).toHaveBeenCalledWith("rent");
+  });
+
+  it("renders save-time issues scoped to this criterion", () => {
+    render(
+      <MantineProvider>
+        <CriterionCard
+          criterion={criterion()}
+          entry={numericEntry}
+          onChange={vi.fn()}
+          issues={[{ catalogKey: "rent", message: "option 1: expected a number" }]}
+        />
+      </MantineProvider>,
+    );
+    expect(screen.getByText("option 1: expected a number")).toBeInTheDocument();
+  });
+
+  it("calls onRemove with the entry's key, not a bare event handler", async () => {
+    const onRemove = vi.fn();
+    render(
+      <MantineProvider>
+        <CriterionCard
+          criterion={criterion()}
+          entry={numericEntry}
+          onChange={vi.fn()}
+          onRemove={onRemove}
+        />
+      </MantineProvider>,
+    );
+    await userEvent.click(screen.getByLabelText("remove Base rent"));
+    expect(onRemove).toHaveBeenCalledWith("rent");
   });
 });

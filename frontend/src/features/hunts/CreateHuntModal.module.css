@@ -1,0 +1,80 @@
+/* Hunt creation stepper chrome. Two repeated surfaces earn a class each: the
+   option card (a two-way choice shown as cards rather than a dropdown, because
+   both options carry a sentence of consequence) and the review tile. Selection
+   and hover states go through theme tokens so both schemes follow the theme. */
+
+.choice {
+  display: block;
+  width: 100%;
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-md);
+  background-color: var(--mantine-color-body);
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.choice:hover {
+  background-color: var(--mantine-color-default-hover);
+}
+
+.choice[data-selected] {
+  border-color: var(--mantine-primary-color-filled);
+  background-color: var(--mantine-color-primary-light);
+}
+
+.choice:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 2px;
+}
+
+/* Review tiles double as the way back to the step that owns the value, so they
+   read as pressable without shouting — the pencil only appears on approach. */
+.tile {
+  display: block;
+  width: 100%;
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-md);
+  background-color: var(--mantine-color-body);
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.tile:hover {
+  background-color: var(--mantine-color-default-hover);
+  border-color: var(--mantine-color-dimmed);
+}
+
+.tile:focus-visible {
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 2px;
+}
+
+.tileEdit {
+  opacity: 0;
+  color: var(--mantine-color-dimmed);
+  flex: none;
+  transition: opacity 140ms ease;
+}
+
+.tile:hover .tileEdit,
+.tile:focus-visible .tileEdit {
+  opacity: 1;
+}
+
+/* The identity preview: a filled dot in the member's chosen color beside the
+   name, the same pairing the roster and comment bylines use. */
+.previewDot {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  background-color: var(--preview-color);
+  flex: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .choice,
+  .tile,
+  .tileEdit {
+    transition: none;
+  }
+}

@@ -180,6 +180,21 @@ describe("validateMatch (mirrors the API's value_schema check)", () => {
     expect(validateMatch({ op: "lt", value: "2026-02-31" }, dateSchema)).toMatch(/valid date/);
     expect(validateMatch({ op: "lte", value: "2026-09-01" }, dateSchema)).toMatch(/before, after, or between/);
   });
+
+  it("validates object-typed criteria (management_reviews) against their rating field, mirroring the API", () => {
+    const reviewSchema = {
+      type: "object" as const,
+      properties: {
+        rating: { type: "number" as const, minimum: 1, maximum: 5 },
+        summary: { type: "string" as const },
+      },
+    };
+    expect(validateMatch({ op: "gt", value: 4 }, reviewSchema)).toBeNull();
+    expect(validateMatch({ op: "range", value: [3, 4] }, reviewSchema)).toBeNull();
+    expect(validateMatch({ op: "lt", value: 3 }, reviewSchema)).toBeNull();
+    expect(validateMatch({ op: "gt", value: "great" }, reviewSchema)).toMatch(/number/);
+    expect(validateMatch({ op: "gt", value: 9 }, reviewSchema)).toMatch(/≤ 5/);
+  });
 });
 
 describe("overlapWarnings", () => {
