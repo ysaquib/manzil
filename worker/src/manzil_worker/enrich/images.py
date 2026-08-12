@@ -98,7 +98,7 @@ def _absolute_http_url(value: str | None, base_url: str) -> str | None:
             candidate = json.loads(candidate) if candidate[0] == '"' else candidate[1:-1]
         except json.JSONDecodeError:
             return None
-    candidate = candidate.replace(r'\"', '"').replace(r"\'", "'")
+    candidate = candidate.replace(r"\"", '"').replace(r"\'", "'")
     if candidate.startswith('"') and candidate.endswith('"'):
         candidate = candidate[1:-1]
     if any(ord(char) < 32 or char in {'"', "'"} for char in candidate):
