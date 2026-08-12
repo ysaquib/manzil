@@ -22,7 +22,7 @@ import asyncpg
 from manzil_shared.models import JobState, JobType
 from manzil_worker.fetching.registry import InMemoryRegistry
 from manzil_worker.phase0_rubric import PHASE0_RUBRIC_VERSION, phase0_rubric
-from manzil_worker.queue import make_ingest_dispatcher
+from manzil_worker.queue import claim_next_job, make_ingest_dispatcher
 from manzil_worker.runner import INGEST_STAGE_NAMES, INGEST_STAGES, run_job
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.state import DedupeDecision, GeocodeIn, RunState
@@ -96,6 +96,7 @@ async def _seed_canonical_and_placeholder(
         p2,
         uuid4(),
     )
+    # The dispatcher receives only a claimed, `running` Job in production.
     await pool.execute(
         "insert into jobs (id, hunt_id, hunt_listing_id, type, state, payload) "
         "values ($1, $2, $3, 'ingest', 'queued', $4)",
@@ -134,7 +135,9 @@ async def test_second_url_merges_into_canonical_via_checkpoint(pg_pool: asyncpg.
             call_agent=empty_discovery_agent,
             geocode_address=_fake_geocode,
         )
-        job = await pg_pool.fetchrow("select * from jobs where id = $1", job_id)
+        async with pg_pool.acquire() as conn:
+            job = await claim_next_job(conn, "dedupe-test-1")
+        assert job is not None and job["id"] == job_id
         await dispatch(pg_pool, job)
 
         # Parked at the resolve_dedupe checkpoint naming P1 as the merge target.
@@ -159,7 +162,9 @@ async def test_second_url_merges_into_canonical_via_checkpoint(pg_pool: asyncpg.
             json.dumps(payload),
         )
 
-        job = await pg_pool.fetchrow("select * from jobs where id = $1", job_id)
+        async with pg_pool.acquire() as conn:
+            job = await claim_next_job(conn, "dedupe-test-2")
+        assert job is not None and job["id"] == job_id
         await dispatch(pg_pool, job)
 
         # One property survives (P2 deleted); both sources + extractions on P1; the
@@ -225,7 +230,9 @@ async def test_resume_after_merge_keeps_canonical_property_id(pg_pool: asyncpg.P
             call_agent=empty_discovery_agent,
             geocode_address=_fake_geocode,
         )
-        job = await pg_pool.fetchrow("select * from jobs where id = $1", job_id)
+        async with pg_pool.acquire() as conn:
+            job = await claim_next_job(conn, "dedupe-test-3")
+        assert job is not None and job["id"] == job_id
         await dispatch(pg_pool, job)
 
         # The dispatcher did NOT clobber property_id back to P2: the run merged onto
