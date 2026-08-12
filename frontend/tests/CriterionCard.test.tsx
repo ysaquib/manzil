@@ -37,6 +37,21 @@ const boolEntry: CatalogEntry = {
   value_schema: { type: "boolean" },
 };
 
+// The one object-typed catalog entry: ordered ops compare on `rating`, not
+// the object itself (rubricDraft.ts's `comparableSchema`).
+const reviewsEntry: CatalogEntry = {
+  ...numericEntry,
+  key: "management_reviews",
+  label: "Management reviews",
+  value_schema: {
+    type: "object",
+    properties: {
+      rating: { type: "number", minimum: 1, maximum: 5 },
+      summary: { type: "string" },
+    },
+  },
+};
+
 const criterion = (overrides: Partial<RubricCriterion> = {}): RubricCriterion => ({
   catalog_key: "rent",
   custom_def: null,
@@ -159,6 +174,31 @@ describe("CriterionCard — consequences readable without hover", () => {
     expect(
       screen.getByText("Not met sets the listing's score to 2 instead of adding points."),
     ).toBeInTheDocument();
+  });
+});
+
+describe("CriterionCard — object-typed criteria (management_reviews) edit as their rating field", () => {
+  it("renders a real number input for gt/lt, not an empty dropdown, and enforces the rating bounds on range", () => {
+    renderCard(
+      criterion({
+        catalog_key: "management_reviews",
+        options: [
+          { match: { op: "gt", value: 4.5 }, delta: 0.5, dealbreaker_set_score: null },
+          { match: { op: "range", value: [2, 3] }, delta: 0, dealbreaker_set_score: null },
+          { match: { op: "lt", value: 1.5 }, delta: -0.5, dealbreaker_set_score: null },
+        ],
+      }),
+      reviewsEntry,
+    );
+
+    // gt/lt used to fall through to EnumWidget (an empty <Select>, no `enum`
+    // on an object schema) and render blank despite a valid stored value.
+    const gtInput = screen.getByDisplayValue("4.5");
+    const ltInput = screen.getByDisplayValue("1.5");
+    expect(gtInput.tagName).toBe("INPUT");
+    expect(ltInput.tagName).toBe("INPUT");
+    expect(screen.getByDisplayValue("2")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("3")).toBeInTheDocument();
   });
 });
 
