@@ -444,43 +444,46 @@ function CriterionRow({
     entry?.acquisition === "manual" && criterion.unknown && !isPending && !valueOverridden;
   const flag = rowFlag(criterion, extraction, isPending);
   const showRevert = showOverrideDot || isPending;
+  const galleryEstimate = extraction?.resolution_rule === "vision_weighted_median_gallery";
 
   return (
     <Box
       className={classes.crit}
       data-hover-reveal={!showRevert ? "true" : undefined}
     >
-      <Group gap={6} wrap="nowrap" className={classes.nameCell}>
-        {showOverrideDot && (
-          <Tooltip
-            label={
-              overrideBy ? `Overridden manually by ${overrideBy}` : "Value overridden manually"
-            }
-          >
-            <Box component="span" className={classes.dot} aria-label="overridden" />
-          </Tooltip>
+      <Box className={classes.nameCell}>
+        <Group gap={6} wrap="nowrap" className={classes.nameLine}>
+          {showOverrideDot && (
+            <Tooltip
+              label={
+                overrideBy ? `Overridden manually by ${overrideBy}` : "Value overridden manually"
+              }
+            >
+              <Box component="span" className={classes.dot} aria-label="overridden" />
+            </Tooltip>
+          )}
+          <Text size="sm">{entry?.label ?? criterion.key}</Text>
+        </Group>
+        {(galleryEstimate || flag || extraction) && (
+          <Box className={`${drawer.ledgerSubline} ${classes.subline}`}>
+            {galleryEstimate && (
+              <Tooltip label="Property-gallery estimate — this kitchen may not represent this Floor Plan.">
+                <Text component="span" inherit>
+                  Property-gallery estimate
+                </Text>
+              </Tooltip>
+            )}
+            {flag && <Text component="span" inherit>{flag}</Text>}
+            {extraction && (
+              <EvidenceButton
+                extraction={extraction}
+                overridden={evidenceOverridden}
+                isMobile={isMobile}
+              />
+            )}
+          </Box>
         )}
-        <Text size="sm">{entry?.label ?? criterion.key}</Text>
-        {extraction?.resolution_rule === "vision_weighted_median_gallery" && (
-          <Tooltip label="Property-gallery estimate — this kitchen may not represent this Floor Plan.">
-            <Text component="span" size="xs" c="dimmed" fw={500}>
-              Property-gallery estimate
-            </Text>
-          </Tooltip>
-        )}
-        {flag && (
-          <Text component="span" size="xs" c="dimmed" fw={500} className={classes.flag}>
-            {flag}
-          </Text>
-        )}
-        {extraction && (
-          <EvidenceButton
-            extraction={extraction}
-            overridden={evidenceOverridden}
-            isMobile={isMobile}
-          />
-        )}
-      </Group>
+      </Box>
       <Text
         size="sm"
         fw={600}
