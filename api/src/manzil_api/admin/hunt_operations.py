@@ -138,15 +138,6 @@ async def _require_ghost_hunt(
         raise GhostTargetNotFound("Hunt not found")
     if writable and row["locked_at"] is not None:
         raise GhostHuntLocked("Unlock this Hunt before making any changes")
-    member = await pool.fetchval(
-        "select exists(select 1 from hunt_members where hunt_id = $1 and user_id = $2)",
-        hunt_id,
-        UUID(admin.id),
-    )
-    if member and row["archived_at"] is None:
-        raise GhostViewUnavailable(
-            "Site Admins who belong to this Hunt must use their assigned Hunt role"
-        )
     hunt = dict(row)
     if isinstance(hunt.get("settings"), str):
         hunt["settings"] = json.loads(hunt["settings"])

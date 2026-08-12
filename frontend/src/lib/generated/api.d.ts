@@ -1263,6 +1263,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/hunts/{hunt_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Archive or restore a Hunt */
+        put: operations["set_hunt_archive_v1_admin_hunts__hunt_id__archive_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/hunts/{hunt_id}/lock": {
         parameters: {
             query?: never;
@@ -2953,6 +2970,11 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HuntArchiveUpdate */
+        HuntArchiveUpdate: {
+            /** Archived */
+            archived: boolean;
         };
         /** HuntCreate */
         HuntCreate: {
@@ -7486,6 +7508,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HuntDeleteResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_hunt_archive_v1_admin_hunts__hunt_id__archive_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                hunt_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HuntArchiveUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HuntManagement"];
                 };
             };
             /** @description Validation Error */

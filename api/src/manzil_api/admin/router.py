@@ -33,6 +33,7 @@ from manzil_api.admin.schemas import (
     FeedbackReport,
     FeedbackTriageUpdate,
     GrantAdmin,
+    HuntArchiveUpdate,
     HuntDelete,
     HuntDeleteResult,
     HuntLockUpdate,
@@ -530,6 +531,64 @@ async def delete_admin_hunt(
             conn=connection,
         )
     return result
+
+
+@router.put(
+    "/hunts/{hunt_id}/archive",
+    response_model=HuntManagement,
+    summary="Archive or restore a Hunt",
+)
+async def set_hunt_archive(
+    hunt_id: UUID,
+    body: HuntArchiveUpdate,
+    admin: AdminUser,
+    pool: DbPool,
+    audit: Audit,
+) -> HuntManagement:
+    async with pool.acquire() as connection, connection.transaction():
+        hunt = await connection.fetchrow(
+            "select name, archived_at, locked_at from hunts where id=$1 for update", hunt_id
+        )
+        if hunt is None:
+            raise AdminHuntNotFound("Hunt not found")
+        if hunt["locked_at"] is not None:
+            raise AdminHuntLocked("Unlock this Hunt before changing its archive state")
+
+        was_archived = hunt["archived_at"] is not None
+        if body.archived is not was_archived:
+            await connection.execute(
+                "select set_config('request.jwt.claim.sub', $1, true), "
+                "set_config('manzil.lifecycle_transition', 'on', true)",
+                admin.id,
+            )
+            await connection.execute(
+                "update hunts set archived_at=$2 where id=$1",
+                hunt_id,
+                datetime.now(UTC) if body.archived else None,
+            )
+            if body.archived:
+                await connection.execute(
+                    """
+                    update jobs
+                    set state='cancelled', finished_at=coalesce(finished_at, now()),
+                        locked_by=null, locked_at=null,
+                        error=coalesce(error, 'Cancelled because the Hunt was archived')
+                    where hunt_id=$1 and state in ('queued', 'running', 'waiting_user')
+                    """,
+                    hunt_id,
+                )
+            await audit.record(
+                "hunt.archive" if body.archived else "hunt.restore",
+                target_type="hunt",
+                target_id=hunt_id,
+                target_label=hunt["name"],
+                hunt_id=hunt_id,
+                before={"archived": was_archived},
+                after={"archived": body.archived},
+                conn=connection,
+            )
+
+    return await hunt_management(hunt_id, admin, pool)
 
 
 @router.put(

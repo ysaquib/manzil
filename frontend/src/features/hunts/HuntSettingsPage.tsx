@@ -150,6 +150,30 @@ function HuntPanel({ hunt, isOwner, isGhost }: { hunt: Hunt; isOwner: boolean; i
 
   return (
     <>
+      {hunt.archived_at && isGhost && (
+        <SectionCard title="Restore Hunt">
+          <Group justify="space-between" align="center" wrap="wrap">
+            <Text size="sm" c="dimmed" maw={520}>
+              Restore this Hunt to let its members submit Listings and make changes again.
+            </Text>
+            <Button
+              onClick={() =>
+                patchHunt.mutate(
+                  { archived: false },
+                  {
+                    onSuccess: () =>
+                      notifications.show({ message: "Hunt restored", color: "green" }),
+                    onError: notifyError("Couldn't restore hunt"),
+                  },
+                )
+              }
+              loading={patchHunt.isPending}
+            >
+              Restore Hunt
+            </Button>
+          </Group>
+        </SectionCard>
+      )}
       <SectionCard title="General">
         <Group align="flex-end" gap="sm">
           <TextInput

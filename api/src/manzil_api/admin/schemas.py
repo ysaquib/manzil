@@ -114,6 +114,10 @@ class HuntLockUpdate(BaseModel):
     locked: bool
 
 
+class HuntArchiveUpdate(BaseModel):
+    archived: bool
+
+
 class HuntDeleteResult(BaseModel):
     hunt_id: UUID
     name: str

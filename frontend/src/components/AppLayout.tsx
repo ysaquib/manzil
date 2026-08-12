@@ -76,7 +76,7 @@ function isNavActive(pathname: string, huntId: string, itemTo: string): boolean 
 function HuntSwitcher({ huntId }: { huntId: string }) {
   const { data: hunt } = useHunt(huntId);
   const { data: hunts = [] } = useHunts();
-  const others = hunts.filter((candidate) => candidate.id !== huntId);
+  const others = hunts.filter((candidate) => candidate.id !== huntId && !candidate.archived_at);
 
   if (!hunt) return null;
 
@@ -125,11 +125,12 @@ export function AppLayout() {
     <>
       {isDemo() && <DemoBanner />}
     <AppShell
-      header={{ height: 56 }}
+      header={{ height: isGhost === true ? 90 : 56 }}
       navbar={{ width: 224, breakpoint: "sm", collapsed: { mobile: !navOpened } }}
       padding="md"
     >
       <AppShell.Header>
+        {isGhost === true && <GhostBanner huntName={ghostHunt?.name} />}
         <div className={classes.header}>
           <Group gap="sm" wrap="nowrap">
             <Burger opened={navOpened} onClick={toggle} hiddenFrom="sm" size="sm" />
@@ -209,7 +210,6 @@ export function AppLayout() {
       </AppShell.Navbar>
 
       <AppShell.Main className={classes.main}>
-        {isGhost === true && <GhostBanner huntName={ghostHunt?.name} />}
         <HuntStateBanner reason={access.state} adminOverride={access.adminArchivedOverride} />
         {huntId && access.canMutate && <CreateRubricPrompt huntId={huntId} />}
         {/* Filter state lives above the Outlet so Overview and Map filter the
