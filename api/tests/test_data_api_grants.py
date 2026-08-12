@@ -38,3 +38,19 @@ async def test_intentional_data_api_withholdings_still_hold(db_pool) -> None:
     assert not await db_pool.fetchval(
         "select has_table_privilege('authenticated', 'public.worker_heartbeats', 'SELECT')"
     )
+
+
+async def test_service_role_can_execute_issue_demo_session(db_pool) -> None:
+    """CLI >= 2.106 drops default EXECUTE; 20260901000024 restores it."""
+    assert await db_pool.fetchval(
+        "select has_function_privilege('service_role',"
+        " 'public.issue_demo_session(text, integer, integer)', 'EXECUTE')"
+    )
+    assert not await db_pool.fetchval(
+        "select has_function_privilege('authenticated',"
+        " 'public.issue_demo_session(text, integer, integer)', 'EXECUTE')"
+    )
+    assert not await db_pool.fetchval(
+        "select has_function_privilege('anon',"
+        " 'public.issue_demo_session(text, integer, integer)', 'EXECUTE')"
+    )
