@@ -77,13 +77,13 @@ export function useSaveHuntNotificationPreferences(huntId: string) {
         body,
         demoResult: () => ({
           account_email: Object.fromEntries(
-            NOTIFICATION_EVENTS.map((event) => [event, event === "checkpoint_waiting" || event === "run_failed"]),
+            NOTIFICATION_EVENTS.map((event) => [event, false]),
           ) as Record<NotificationEvent, boolean>,
           email_overrides: body.email_overrides,
           effective_email: Object.fromEntries(
             NOTIFICATION_EVENTS.map((event) => [
               event,
-              body.email_overrides[event] ?? (event === "checkpoint_waiting" || event === "run_failed"),
+              body.email_overrides[event] ?? false,
             ]),
           ) as Record<NotificationEvent, boolean>,
         }),
