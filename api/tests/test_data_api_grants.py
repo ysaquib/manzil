@@ -1,4 +1,4 @@
-"""Data API table grants survive CLI auto_expose_new_tables=false."""
+"""Data API grants are explicit under Supabase CLI's opt-in exposure model."""
 
 from __future__ import annotations
 
@@ -40,8 +40,51 @@ async def test_intentional_data_api_withholdings_still_hold(db_pool) -> None:
     )
 
 
+async def test_anonymous_postgrest_cannot_reach_public_relations(db_pool) -> None:
+    """Manzil's unauthenticated surface is API/GoTrue, never table endpoints."""
+    exposed = await db_pool.fetch(
+        """
+        select c.relname
+          from pg_class c
+          join pg_namespace n on n.oid = c.relnamespace
+         where n.nspname = 'public'
+           and c.relkind in ('r', 'p', 'v', 'm', 'f')
+           and (
+               has_table_privilege('anon', c.oid, 'SELECT')
+               or has_table_privilege('anon', c.oid, 'INSERT')
+               or has_table_privilege('anon', c.oid, 'UPDATE')
+               or has_table_privilege('anon', c.oid, 'DELETE')
+           )
+         order by c.relname
+        """
+    )
+    assert [row["relname"] for row in exposed] == []
+
+
+async def test_future_relations_require_own_data_api_grants(db_pool) -> None:
+    """Do not reintroduce the legacy automatic public-schema exposure."""
+    grants = await db_pool.fetch(
+        """
+        select d.defaclobjtype, acl.privilege_type
+          from pg_default_acl d
+          cross join lateral aclexplode(d.defaclacl)
+            as acl(grantor, grantee, privilege_type, is_grantable)
+         where d.defaclrole = 'postgres'::regrole
+           and d.defaclnamespace = 'public'::regnamespace
+           and d.defaclobjtype in ('r', 'S', 'f')
+           and acl.grantee in (
+               'anon'::regrole,
+               'authenticated'::regrole,
+               'service_role'::regrole,
+               0
+           )
+        """
+    )
+    assert grants == []
+
+
 async def test_service_role_can_execute_issue_demo_session(db_pool) -> None:
-    """CLI >= 2.106 drops default EXECUTE; 20260901000024 restores it."""
+    """The one server-side demo RPC receives an explicit service-role grant."""
     assert await db_pool.fetchval(
         "select has_function_privilege('service_role',"
         " 'public.issue_demo_session(text, integer, integer)', 'EXECUTE')"
@@ -53,4 +96,9 @@ async def test_service_role_can_execute_issue_demo_session(db_pool) -> None:
     assert not await db_pool.fetchval(
         "select has_function_privilege('anon',"
         " 'public.issue_demo_session(text, integer, integer)', 'EXECUTE')"
+    )
+    # This public user RPC must not acquire service access through an all-functions grant.
+    assert not await db_pool.fetchval(
+        "select has_function_privilege('service_role',"
+        " 'public.set_hunt_archived(uuid, boolean)', 'EXECUTE')"
     )
