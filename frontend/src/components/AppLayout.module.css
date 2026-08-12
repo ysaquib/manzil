@@ -71,6 +71,12 @@
 /* Three things share a phone-width header (Burger + wordmark, hunt, account),
    so the hunt name drops a step in size rather than pushing the side cells. */
 @media (max-width: 48em) {
+  /* Mantine's xs navbar padding is 10px. A 6px mobile drawer gutter keeps
+     tap targets intact while giving the narrow navigation panel more room. */
+  .navbar {
+    padding: 6px;
+  }
+
   .header {
     padding: 0 var(--mantine-spacing-sm);
     gap: var(--mantine-spacing-xs);
