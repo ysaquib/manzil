@@ -6,6 +6,7 @@
 // just looks slow. So it gets its own filter and its own bulk action.
 import {
   Alert,
+  Anchor,
   Badge,
   Button,
   Card,
@@ -13,16 +14,19 @@ import {
   Drawer,
   Group,
   Loader,
+  Select,
   SimpleGrid,
   Stack,
   Switch,
   Table,
   Text,
+  TextInput,
   Title,
 } from "@mantine/core";
-import { IconAlertTriangle, IconLockOpen } from "@tabler/icons-react";
+import { IconAlertTriangle, IconLockOpen, IconSearch } from "@tabler/icons-react";
 import { useMediaQuery } from "@mantine/hooks";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 
 import { TablePagination, usePagedRows } from "../../components/TablePagination";
 import { ConfirmDeleteModal } from "../../components/ConfirmDeleteModal";
@@ -35,6 +39,11 @@ import {
   type JobRow,
 } from "./api";
 import { JobWarnings } from "../jobs/JobWarnings";
+import {
+  ADMIN_SEARCH_MODE_OPTIONS,
+  adminDirectoryLink,
+  adminSearchMode,
+} from "./navigation";
 
 const STATES = ["failed", "running", "queued", "waiting_user", "done", "cancelled"];
 
@@ -100,6 +109,24 @@ function formatDuration(seconds: number | null): string {
   return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
 }
 
+function HuntLink({ huntId, huntName }: { huntId: string | null; huntName: string | null }) {
+  if (!huntId) return <>{huntName ?? "—"}</>;
+  return (
+    <Anchor component={Link} to={adminDirectoryLink("hunts", huntId)} size="sm">
+      {huntName ?? huntId}
+    </Anchor>
+  );
+}
+
+function RequesterLink({ job }: { job: Pick<JobRow, "requested_by" | "requested_by_name" | "requested_by_email"> }) {
+  if (!job.requested_by) return <>Scheduler</>;
+  return (
+    <Anchor component={Link} to={adminDirectoryLink("people", job.requested_by)} size="sm">
+      {job.requested_by_name ?? job.requested_by_email ?? job.requested_by.slice(0, 8)}
+    </Anchor>
+  );
+}
+
 function AdminJobDrawer({ jobId, onClose }: { jobId: string | null; onClose: () => void }) {
   const detail = useAdminJob(jobId);
   const action = useJobAction();
@@ -127,13 +154,12 @@ function AdminJobDrawer({ jobId, onClose }: { jobId: string | null; onClose: () 
           <JobWarnings warnings={job.warnings} />
 
           <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
-            <Text size="sm"><Text span c="dimmed">Hunt: </Text>{job.hunt_name ?? "—"}</Text>
+            <Text size="sm"><Text span c="dimmed">Hunt: </Text><HuntLink huntId={job.hunt_id} huntName={job.hunt_name} /></Text>
             <Text size="sm"><Text span c="dimmed">Type: </Text>{job.type}</Text>
             <Text size="sm"><Text span c="dimmed">Stage: </Text>{job.current_stage ?? "—"}</Text>
             <Text size="sm"><Text span c="dimmed">Attempts: </Text>{job.attempts}</Text>
             <Text size="sm">
-              <Text span c="dimmed">Requested by: </Text>
-              {job.requested_by_name ?? job.requested_by_email ?? (job.requested_by ? job.requested_by.slice(0, 8) : "Scheduler")}
+              <Text span c="dimmed">Started by: </Text><RequesterLink job={job} />
             </Text>
             <Text size="sm"><Text span c="dimmed">Duration: </Text>{formatDuration(job.duration_seconds)}</Text>
             <Text size="sm"><Text span c="dimmed">Started: </Text>{job.started_at ? new Date(job.started_at).toLocaleString() : "—"}</Text>
@@ -215,10 +241,16 @@ function AdminJobDrawer({ jobId, onClose }: { jobId: string | null; onClose: () 
 }
 
 export function AdminJobsPage() {
-  const [state, setState] = useState<string | null>("failed");
+  const [searchParams] = useSearchParams();
+  const requestedSearch = searchParams.get("search") ?? "";
+  const requestedMode = adminSearchMode(searchParams.get("search_mode"));
+  const requestedSelected = searchParams.get("selected");
+  const [state, setState] = useState<string | null>(null);
   const [staleOnly, setStaleOnly] = useState(false);
-  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
-  const jobs = useAdminJobs(staleOnly ? null : state, staleOnly);
+  const [search, setSearch] = useState(requestedSearch);
+  const [searchMode, setSearchMode] = useState(requestedMode);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(requestedSelected);
+  const jobs = useAdminJobs({ state: staleOnly ? null : state, staleOnly, search, searchMode });
   // demo-guarded: useReleaseLocks — `releaseLocks.data?.detail` is read below,
   // and an intercepted demo write would leave `isSuccess` true with nothing to
   // show: an empty "it worked" alert for an operation that did not run. No
@@ -229,6 +261,12 @@ export function AdminJobsPage() {
   // redirects before this page mounts.
   const releaseLocks = useReleaseLocks();
   const isCompact = useMediaQuery("(max-width: 48em)") ?? false;
+
+  useEffect(() => {
+    setSearch(requestedSearch);
+    setSearchMode(requestedMode);
+    setSelectedJobId(requestedSelected);
+  }, [requestedMode, requestedSearch, requestedSelected]);
 
   const staleCount = (jobs.data ?? []).filter((job) => job.stale).length;
   const paged = usePagedRows(jobs.data ?? [], "admin-jobs");
@@ -257,7 +295,20 @@ export function AdminJobsPage() {
       </Group>
 
       {!staleOnly && (
-        <Group gap={4}>
+        <Group
+          gap={4}
+          wrap="nowrap"
+          style={{ maxWidth: "100%", overflowX: "auto", paddingBottom: 2 }}
+        >
+          <Button
+            size="compact-xs"
+            variant={state === null ? "light" : "subtle"}
+            color={state === null ? "primary" : "gray"}
+            onClick={() => setState(null)}
+            style={{ flex: "0 0 auto" }}
+          >
+            all
+          </Button>
           {STATES.map((value) => (
             <Button
               key={value}
@@ -265,18 +316,34 @@ export function AdminJobsPage() {
               variant={state === value ? "light" : "subtle"}
               color={state === value ? "primary" : "gray"}
               onClick={() => setState(value)}
+              style={{ flex: "0 0 auto" }}
             >
               {value.replace("_", " ")}
             </Button>
           ))}
-          <Button
-            size="compact-xs"
-            variant={state === null ? "light" : "subtle"}
-            color={state === null ? "primary" : "gray"}
-            onClick={() => setState(null)}
-          >
-            all
-          </Button>
+        </Group>
+      )}
+
+      {!staleOnly && (
+        <Group gap="xs" wrap={isCompact ? "wrap" : "nowrap"}>
+          <Select
+            size="xs"
+            aria-label="Jobs search mode"
+            data={ADMIN_SEARCH_MODE_OPTIONS}
+            value={searchMode}
+            allowDeselect={false}
+            onChange={(value) => value && setSearchMode(value as typeof searchMode)}
+            w={isCompact ? 132 : 140}
+          />
+          <TextInput
+            size="xs"
+            placeholder={searchMode === "id" ? "Job ID…" : "Search job, Hunt, or account…"}
+            leftSection={<IconSearch size={14} />}
+            value={search}
+            onChange={(event) => setSearch(event.currentTarget.value)}
+            w={isCompact ? undefined : 280}
+            style={isCompact ? { flex: 1 } : undefined}
+          />
         </Group>
       )}
 
@@ -317,11 +384,12 @@ export function AdminJobsPage() {
                       <Text size="sm" fw={600} truncate>
                         {job.listing_name ?? job.hunt_name ?? "Unscoped Job"}
                       </Text>
-                      {job.listing_name && (
-                        <Text size="xs" c="dimmed" truncate>
-                          {job.hunt_name ?? "—"}
-                        </Text>
-                      )}
+                      <Text size="xs" c="dimmed" truncate>
+                        <HuntLink huntId={job.hunt_id} huntName={job.hunt_name} />
+                      </Text>
+                      <Text size="xs" c="dimmed" truncate>
+                        Started by <RequesterLink job={job} />
+                      </Text>
                     </div>
                     <Group gap={4} justify="flex-end">
                       <Badge size="sm" variant="light" color={STATE_COLOR[job.state] ?? "gray"}>
@@ -358,6 +426,7 @@ export function AdminJobsPage() {
                 <Table.Tr>
                   <Table.Th>Job</Table.Th>
                   <Table.Th>Hunt</Table.Th>
+                  <Table.Th>Started by</Table.Th>
                   <Table.Th>Type · stage</Table.Th>
                   <Table.Th>State</Table.Th>
                   <Table.Th ta="end">Try</Table.Th>
@@ -390,7 +459,10 @@ export function AdminJobsPage() {
                       )}
                     </Table.Td>
                     <Table.Td>
-                      <Text size="sm">{job.hunt_name ?? "—"}</Text>
+                      <HuntLink huntId={job.hunt_id} huntName={job.hunt_name} />
+                    </Table.Td>
+                    <Table.Td>
+                      <RequesterLink job={job} />
                     </Table.Td>
                     <Table.Td>
                       <Text size="xs">
