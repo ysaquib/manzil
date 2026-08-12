@@ -1,6 +1,6 @@
 import { BarChart } from "@mantine/charts";
 import { Alert, Card, Group, Loader, SegmentedControl, SimpleGrid, Stack, Text, Title } from "@mantine/core";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useParams } from "react-router-dom";
 
 import { formatCalendarDay } from "../../lib/calendarDays";
@@ -19,8 +19,8 @@ const CALL_SERIES = [
   { name: "fetch", label: "Tier-3 fetch", color: "accent.7" },
 ];
 
-function Stat({ label, value }: { label: string; value: string }) {
-  return <Card padding="sm" withBorder><Text size="xs" c="dimmed" fw={700} tt="uppercase">{label}</Text><Text size="xl" fw={600} ff="monospace">{value}</Text></Card>;
+function Stat({ label, value }: { label: string; value: ReactNode }) {
+  return <Card padding="sm" withBorder><Text size="xs" c="dimmed" fw={700} tt="uppercase">{label}</Text><Text component="div" size="xl" fw={600} ff="monospace">{value}</Text></Card>;
 }
 
 function DeletedPattern() {
@@ -43,6 +43,9 @@ export function HuntStatisticsPage() {
   if (report.isError || !report.data) return <Alert color="red">Could not load Hunt statistics.</Alert>;
 
   const { summary, daily } = report.data;
+  const finishedJobs = summary.jobs_completed + summary.jobs_failed;
+  const completionRate = finishedJobs === 0 ? null : summary.jobs_completed / finishedJobs;
+  const billedCostPerCompletedJob = summary.jobs_completed === 0 ? null : summary.billed_cost_usd / summary.jobs_completed;
   const chart = daily.map((point) => ({
     day: formatCalendarDay(point.day),
     visible: Math.max(point.billed_cost_usd - point.deleted_cost_usd, 0),
@@ -68,9 +71,33 @@ export function HuntStatisticsPage() {
 
       <SimpleGrid cols={{ base: 2, md: 4 }}>
         <Stat label="Billed spend" value={`$${summary.billed_cost_usd.toFixed(2)}`} />
-        <Stat label="Deleted spend" value={`$${summary.deleted_cost_usd.toFixed(2)}`} />
+        <Stat label="Deleted Job spend" value={`$${summary.deleted_cost_usd.toFixed(2)}`} />
         <Stat label="Listings submitted" value={summary.listing_submissions.toLocaleString()} />
-        <Stat label="Job outcomes" value={`${summary.jobs_completed} / ${summary.jobs_failed}`} />
+        <Stat
+          label="Completion rate"
+          value={
+            <Text component="span" c={completionRate === null ? "dimmed" : completionRate >= 0.9 ? "green.7" : completionRate >= 0.7 ? "yellow.8" : "red.7"}>
+              {completionRate === null ? "—" : `${Math.round(completionRate * 100)}%`}
+            </Text>
+          }
+        />
+        <Stat
+          label="Job outcomes"
+          value={
+            <Group gap={8} align="baseline" wrap="nowrap">
+              <Text component="span" size="xl" fw={600} ff="monospace" c="green.7">
+                {summary.jobs_completed}
+                <Text component="span" size="xs" fw={600} ml={4}>completed</Text>
+              </Text>
+              <Text component="span" c="dimmed">/</Text>
+              <Text component="span" size="xl" fw={600} ff="monospace" c="red.7">
+                {summary.jobs_failed}
+                <Text component="span" size="xs" fw={600} ml={4}>failed</Text>
+              </Text>
+            </Group>
+          }
+        />
+        <Stat label="Billed / completed Job" value={billedCostPerCompletedJob === null ? "—" : `$${billedCostPerCompletedJob.toFixed(2)}`} />
         <Stat label="LLM calls" value={summary.llm_calls.toLocaleString()} />
         <Stat label="Tier-3 fetches" value={summary.fetch_calls.toLocaleString()} />
       </SimpleGrid>
