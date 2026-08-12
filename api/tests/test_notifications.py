@@ -292,20 +292,33 @@ async def test_comment_and_job_triggers_apply_recipient_rules(
 
 
 @pytest.mark.asyncio
-async def test_attention_is_role_aware(
+async def test_attention_reports_hunt_wide_job_severity(
     collab_hunt, as_owner: AsyncClient, as_member: AsyncClient, db_pool
 ) -> None:
+    """Attention is hunt-wide (DESIGN/IMPLEMENTATION 2.0.161), not role-scoped.
+
+    Members and Owners both see failed/waiting/running counts plus a strict
+    severity `task_status`; waiting_checkpoint_count stays as the waiting_user
+    alias for the Tasks badge.
+    """
     await db_pool.execute(
         """insert into jobs(hunt_id,hunt_listing_id,type,state)
            values($1,$2,'ingest','waiting_user')""",
         UUID(collab_hunt["hunt_id"]),
         UUID(collab_hunt["owner_listing_id"]),
     )
+    expected = {
+        "waiting_checkpoint_count": 1,
+        "failed": 0,
+        "waiting_user": 1,
+        "running": 0,
+        "task_status": "waiting_user",
+    }
     owner = await as_owner.get(f"/v1/hunts/{collab_hunt['hunt_id']}/attention")
     member = await as_member.get(f"/v1/hunts/{collab_hunt['hunt_id']}/attention")
 
-    assert owner.json() == {"waiting_checkpoint_count": 1}
-    assert member.json() == {"waiting_checkpoint_count": 0}
+    assert owner.json() == expected
+    assert member.json() == expected
 
 
 @pytest.mark.asyncio
