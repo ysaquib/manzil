@@ -23,6 +23,11 @@ class AdminIdentity(BaseModel):
     granted_at: datetime | None = None
 
 
+class DailyCount(BaseModel):
+    day: date
+    count: int
+
+
 class AdminSummary(BaseModel):
     """The Overview tab's counters."""
 
@@ -35,6 +40,7 @@ class AdminSummary(BaseModel):
     tier3_credits_used: int
     tier3_credits_allowance: int | None = None
     feedback_new: int
+    listing_submissions_daily: list[DailyCount] = Field(default_factory=list)
 
 
 class HuntSummary(BaseModel):
@@ -106,6 +112,10 @@ class HuntDelete(BaseModel):
 
 class HuntLockUpdate(BaseModel):
     locked: bool
+
+
+class HuntArchiveUpdate(BaseModel):
+    archived: bool
 
 
 class HuntDeleteResult(BaseModel):
@@ -267,9 +277,37 @@ class JobRow(BaseModel):
     stale: bool = False
 
 
+class AdminJobEvent(BaseModel):
+    stage: str
+    event: str
+    detail: dict = Field(default_factory=dict)
+    at: datetime
+
+
+class AdminJobStageCost(BaseModel):
+    stage: str
+    llm_cost_usd: float
+    fetch_cost_usd: float
+    llm_calls: int
+    fetch_calls: int
+    input_tokens: int
+    output_tokens: int
+    cache_read_tokens: int
+    cache_write_tokens: int
+    fetch_calls_by_provider: dict[str, int] = Field(default_factory=dict)
+    updated_at: datetime
+
+
 class JobDetail(JobRow):
-    events: list[dict] = Field(default_factory=list)
-    stage_costs: list[dict] = Field(default_factory=list)
+    plan: dict | None = None
+    warnings: list[dict] = Field(default_factory=list)
+    requested_by: UUID | None = None
+    requested_by_name: str | None = None
+    requested_by_email: str | None = None
+    started_at: datetime | None = None
+    duration_seconds: float | None = None
+    events: list[AdminJobEvent] = Field(default_factory=list)
+    stage_costs: list[AdminJobStageCost] = Field(default_factory=list)
 
 
 class SpendBucket(BaseModel):
@@ -303,6 +341,7 @@ class SpendPoint(BaseModel):
 
 class CostsReport(BaseModel):
     days: int
+    timezone: str = "UTC"
     # What the window actually billed (`jobs.cost_actual_usd`). Summing
     # `by_stage` under-reports it by every re-run Stage attempt — see
     # `SpendBucket` and DESIGN §20 v3.80.
@@ -324,6 +363,9 @@ class SystemReport(BaseModel):
     running: int
     stale_locks: int
     oldest_queued_seconds: float
+    worker_status: Literal["live_idle", "live_busy", "unavailable"]
+    live_workers: int
+    busy_workers: int
     last_heartbeat: datetime | None = None
     finished_24h: int
     failed_24h: int

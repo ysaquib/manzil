@@ -96,7 +96,14 @@ export function useAttention(huntId: string) {
   const mutationPath = useGhostMutationPath(huntId);
   return useQuery({
     queryKey: ["attention", huntId],
-    queryFn: () => apiFetch<{ waiting_checkpoint_count: number }>(mutationPath(`/v1/hunts/${huntId}/attention`)),
+    queryFn: () =>
+      apiFetch<{
+        waiting_checkpoint_count: number;
+        failed: number;
+        waiting_user: number;
+        running: number;
+        task_status: "failed" | "waiting_user" | "running" | null;
+      }>(mutationPath(`/v1/hunts/${huntId}/attention`)),
     enabled: Boolean(huntId),
   });
 }

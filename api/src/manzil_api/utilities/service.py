@@ -63,5 +63,5 @@ async def upsert_utility_override(
     row: dict[str, Any] | None = (response.data or [None])[0]
     if row is None:
         raise RuntimeError("utility override insert returned no row")
-    await enqueue_rescore(client, hunt_id)
+    await enqueue_rescore(client, hunt_id, requested_by=user_id)
     return UtilityOverrideResponse.model_validate(row)

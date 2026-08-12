@@ -67,6 +67,21 @@ def test_srcset_handles_density_descriptors_and_missing_descriptors() -> None:
     ]
 
 
+def test_discovery_unwraps_zillow_javascript_escaped_urls() -> None:
+    page = r"""
+      <meta property="og:image"
+            content='\"https://photos.zillowstatic.com/fp/kitchen.jpg\"'>
+    """
+    assert discover_image_urls(page, "https://www.zillow.com/apartments/example") == [
+        "https://photos.zillowstatic.com/fp/kitchen.jpg"
+    ]
+
+
+def test_discovery_rejects_stray_quotes_instead_of_fabricating_relative_urls() -> None:
+    page = r"""<img src='\"https://photos.zillowstatic.com/fp/broken.jpg'>"""
+    assert discover_image_urls(page, "https://www.zillow.com/apartments/example") == []
+
+
 def test_normalize_resizes_to_webp_and_hashes_normalized_bytes() -> None:
     image = normalize_image(_png())
     assert image.width == IMAGE_MAX_DIM

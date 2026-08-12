@@ -15,6 +15,7 @@ last week has its old spend filed under the new model.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from uuid import UUID
 
@@ -33,6 +34,7 @@ from manzil_api.admin.schemas import (
     SpendPoint,
     SystemReport,
 )
+from manzil_api.analytics import calendar_window
 from manzil_api.dependencies import DbPool
 from manzil_api.exceptions import ManzilAPIError
 
@@ -65,6 +67,11 @@ _JOB_SQL = """
 select
     j.id, j.hunt_id, h.name as hunt_name, j.type::text as type, j.state::text as state,
     j.current_stage, j.attempts, j.error, j.cost_actual_usd, j.created_at, j.finished_at,
+    j.started_at, j.plan, j.warnings, j.requested_by,
+    up.default_display_name as requested_by_name, u.email as requested_by_email,
+    case when j.started_at is null then null else
+        extract(epoch from coalesce(j.finished_at, now()) - j.started_at)
+    end as duration_seconds,
     j.locked_by, j.locked_at,
     (j.state = 'running' and j.locked_at < now() - ($1 || ' minutes')::interval) as stale,
     p.name as listing_name
@@ -72,12 +79,26 @@ from jobs j
 left join hunts h on h.id = j.hunt_id
 left join hunt_listings hl on hl.id = j.hunt_listing_id
 left join properties p on p.id = hl.property_id
+left join auth.users u on u.id = j.requested_by
+left join user_profiles up on up.user_id = j.requested_by
 """
 
 
-def _job_row(row: Any) -> JobRow:
+def _job_data(row: Any) -> dict[str, Any]:
     data = dict(row)
     data["cost_actual_usd"] = float(data["cost_actual_usd"] or 0)
+    if data.get("duration_seconds") is not None:
+        data["duration_seconds"] = float(data["duration_seconds"])
+    for field, fallback in (("plan", None), ("warnings", [])):
+        if isinstance(data.get(field), str):
+            data[field] = json.loads(data[field])
+        elif data.get(field) is None:
+            data[field] = fallback
+    return data
+
+
+def _job_row(row: Any) -> JobRow:
+    data = _job_data(row)
     return JobRow(**data)
 
 
@@ -93,7 +114,8 @@ async def list_jobs(
     rows = await pool.fetch(
         _JOB_SQL
         + """
-        where ($2::text is null or j.state::text = $2)
+        where j.state <> 'deleted'
+          and ($2::text is null or j.state::text = $2)
           and ($3::uuid is null or j.hunt_id = $3)
           and (not $4 or (j.state = 'running'
                           and j.locked_at < now() - ($1 || ' minutes')::interval))
@@ -109,9 +131,49 @@ async def list_jobs(
     return [_job_row(row) for row in rows]
 
 
+@router.delete("/jobs/{job_id}", response_model=ActionResult, summary="Soft-delete a terminal Job")
+async def delete_job(job_id: UUID, admin: AdminUser, pool: DbPool, audit: Audit) -> ActionResult:
+    async with pool.acquire() as conn, conn.transaction():
+        row = await conn.fetchrow(
+            """select j.state::text as state, j.hunt_id, j.cost_actual_usd,
+                      h.locked_at
+                 from jobs j join hunts h on h.id=j.hunt_id
+                where j.id=$1 for update of j""",
+            job_id,
+        )
+        if row is None or row["state"] == "deleted":
+            raise JobNotFound("No such Job")
+        if row["locked_at"] is not None:
+            raise AdminHuntLocked("Unlock this Hunt before deleting its Jobs")
+        if row["state"] not in ("failed", "cancelled", "done"):
+            raise JobNotRetryable("Active Jobs must finish or be cancelled before deletion")
+        await conn.execute(
+            """update jobs set state='deleted', deleted_at=now(), deleted_by=$2,
+                      deleted_from_state=$3::job_state, locked_by=null, locked_at=null
+                 where id=$1""",
+            job_id,
+            UUID(admin.id),
+            row["state"],
+        )
+        await audit.record(
+            "job.delete",
+            target_type="job",
+            target_id=job_id,
+            hunt_id=row["hunt_id"],
+            before={"state": row["state"]},
+            after={"state": "deleted", "retained_cost_usd": float(row["cost_actual_usd"])},
+            conn=conn,
+        )
+    return ActionResult(detail="Job removed from product views; cost and history retained")
+
+
 @router.get("/jobs/{job_id}", response_model=JobDetail, summary="One Job, with its timeline")
 async def get_job(job_id: UUID, admin: AdminUser, pool: DbPool) -> JobDetail:
-    row = await pool.fetchrow(_JOB_SQL + " where j.id = $2", str(STALE_LOCK_MINUTES), job_id)
+    row = await pool.fetchrow(
+        _JOB_SQL + " where j.id = $2 and j.state <> 'deleted'",
+        str(STALE_LOCK_MINUTES),
+        job_id,
+    )
     if row is None:
         raise JobNotFound("No such Job")
 
@@ -120,13 +182,28 @@ async def get_job(job_id: UUID, admin: AdminUser, pool: DbPool) -> JobDetail:
         job_id,
     )
     costs = await pool.fetch(
-        "select stage, llm_cost_usd, fetch_cost_usd, llm_calls, fetch_calls "
-        "from job_stage_costs where job_id = $1 order by llm_cost_usd + fetch_cost_usd desc",
+        """
+        select stage, llm_cost_usd, fetch_cost_usd, llm_calls, fetch_calls,
+               input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
+               fetch_calls_by_provider, updated_at
+          from job_stage_costs where job_id = $1
+         order by llm_cost_usd + fetch_cost_usd desc, stage
+        """,
         job_id,
     )
     return JobDetail(
-        **_job_row(row).model_dump(),
-        events=[dict(event) for event in events],
+        **_job_data(row),
+        events=[
+            {
+                **dict(event),
+                "detail": (
+                    json.loads(event["detail"])
+                    if isinstance(event["detail"], str)
+                    else event["detail"]
+                ),
+            }
+            for event in events
+        ],
         stage_costs=[
             {
                 "stage": cost["stage"],
@@ -134,6 +211,16 @@ async def get_job(job_id: UUID, admin: AdminUser, pool: DbPool) -> JobDetail:
                 "fetch_cost_usd": float(cost["fetch_cost_usd"]),
                 "llm_calls": cost["llm_calls"],
                 "fetch_calls": cost["fetch_calls"],
+                "input_tokens": cost["input_tokens"],
+                "output_tokens": cost["output_tokens"],
+                "cache_read_tokens": cost["cache_read_tokens"],
+                "cache_write_tokens": cost["cache_write_tokens"],
+                "fetch_calls_by_provider": (
+                    json.loads(cost["fetch_calls_by_provider"])
+                    if isinstance(cost["fetch_calls_by_provider"], str)
+                    else cost["fetch_calls_by_provider"]
+                ),
+                "updated_at": cost["updated_at"],
             }
             for cost in costs
         ],
@@ -236,9 +323,9 @@ async def costs(
     admin: AdminUser,
     pool: DbPool,
     days: int = Query(14, ge=1, le=365),
+    timezone: str = Query("UTC", min_length=1, max_length=100),
 ) -> CostsReport:
-    # asyncpg binds a text parameter; the cast happens in SQL.
-    window = str(days)
+    start, end, labels = calendar_window(days, timezone)
 
     by_stage = await pool.fetch(
         """
@@ -246,12 +333,13 @@ async def costs(
                sum(c.llm_cost_usd) as llm, sum(c.fetch_cost_usd) as fetch,
                sum(c.llm_calls) as llm_calls, sum(c.fetch_calls) as fetch_calls
         from job_stage_costs c
-        where c.updated_at > now() - ($1 || ' days')::interval
+        where c.updated_at >= $1 and c.updated_at < $2
         group by c.stage
         having sum(c.llm_cost_usd + c.fetch_cost_usd) > 0
         order by sum(c.llm_cost_usd + c.fetch_cost_usd) desc
         """,
-        window,
+        start,
+        end,
     )
 
     # Per Hunt the total is the Job accumulator, not the sum of the Stage rows:
@@ -266,8 +354,8 @@ async def costs(
             select j.id, coalesce(h.name, 'unknown') as label, j.cost_actual_usd
             from jobs j
             left join hunts h on h.id = j.hunt_id
-            where coalesce(j.finished_at, j.started_at, j.created_at)
-                  > now() - ($1 || ' days')::interval
+            where coalesce(j.finished_at, j.started_at, j.created_at) >= $1
+              and coalesce(j.finished_at, j.started_at, j.created_at) < $2
         ),
         billed as (
             select label, sum(cost_actual_usd) as billed from scoped group by label
@@ -288,7 +376,8 @@ async def costs(
         where b.billed > 0
         order by b.billed desc
         """,
-        window,
+        start,
+        end,
     )
 
     # The window's authoritative total, for the same reason: summing `by_stage`
@@ -297,24 +386,28 @@ async def costs(
         await pool.fetchval(
             """
             select coalesce(sum(cost_actual_usd), 0) from jobs
-            where coalesce(finished_at, started_at, created_at)
-                  > now() - ($1 || ' days')::interval
+            where coalesce(finished_at, started_at, created_at) >= $1
+              and coalesce(finished_at, started_at, created_at) < $2
             """,
-            window,
+            start,
+            end,
         )
         or 0
     )
 
     daily = await pool.fetch(
         """
-        select date_trunc('day', c.updated_at)::date as day,
+        select (c.updated_at at time zone $3)::date as day,
                sum(c.llm_cost_usd) as llm, sum(c.fetch_cost_usd) as fetch
         from job_stage_costs c
-        where c.updated_at > now() - ($1 || ' days')::interval
+        where c.updated_at >= $1 and c.updated_at < $2
         group by 1 order by 1
         """,
-        window,
+        start,
+        end,
+        timezone,
     )
+    daily_by_day = {row["day"]: row for row in daily}
 
     # Stage spend folded under each stage's *current* pin. See the module
     # docstring: useful, and explicitly not history.
@@ -358,6 +451,7 @@ async def costs(
 
     return CostsReport(
         days=days,
+        timezone=timezone,
         total_cost_usd=billed_total,
         by_stage=[bucket(row) for row in by_stage],
         by_hunt=[hunt_bucket(row) for row in by_hunt],
@@ -379,11 +473,15 @@ async def costs(
         grouped_by_current_pin=True,
         daily=[
             SpendPoint(
-                day=row["day"],
-                llm_cost_usd=float(row["llm"]),
-                fetch_cost_usd=float(row["fetch"]),
+                day=label,
+                llm_cost_usd=float(daily_by_day[label]["llm"] or 0)
+                if label in daily_by_day
+                else 0.0,
+                fetch_cost_usd=float(daily_by_day[label]["fetch"] or 0)
+                if label in daily_by_day
+                else 0.0,
             )
-            for row in daily
+            for label in labels
         ],
         tier3_credits_used=sum(int(row["credits"]) for row in credits),
         tier3_credits_allowance=TIER3_FREE_MONTHLY_CREDITS.get("brightdata"),
@@ -404,13 +502,30 @@ async def system(admin: AdminUser, pool: DbPool) -> SystemReport:
                              and locked_at < now() - ($1 || ' minutes')::interval) as stale,
             (select extract(epoch from now() - min(created_at))
                from jobs where state = 'queued')      as oldest_queued_seconds,
-            (select max(locked_at) from jobs where state = 'running') as last_heartbeat,
             count(*) filter (where finished_at > now() - interval '24 hours') as finished_24h,
             count(*) filter (where state = 'failed'
                              and finished_at > now() - interval '24 hours') as failed_24h
         from jobs
         """,
         str(STALE_LOCK_MINUTES),
+    )
+    workers = await pool.fetchrow(
+        """
+        select
+            max(wh.last_seen_at) as last_heartbeat,
+            count(*) filter (
+                where wh.last_seen_at >= now() - interval '45 seconds'
+            ) as live_workers,
+            count(*) filter (
+                where wh.last_seen_at >= now() - interval '45 seconds'
+                  and exists (
+                      select 1 from jobs j
+                       where j.state = 'running'
+                         and j.locked_by = wh.worker_id
+                  )
+            ) as busy_workers
+        from worker_heartbeats wh
+        """
     )
     migration = await pool.fetchval(
         "select version from supabase_migrations.schema_migrations order by version desc limit 1"
@@ -470,7 +585,16 @@ async def system(admin: AdminUser, pool: DbPool) -> SystemReport:
         running=queue["running"],
         stale_locks=queue["stale"],
         oldest_queued_seconds=float(queue["oldest_queued_seconds"] or 0),
-        last_heartbeat=queue["last_heartbeat"],
+        worker_status=(
+            "unavailable"
+            if workers["live_workers"] == 0
+            else "live_busy"
+            if workers["busy_workers"] > 0
+            else "live_idle"
+        ),
+        live_workers=workers["live_workers"],
+        busy_workers=workers["busy_workers"],
+        last_heartbeat=workers["last_heartbeat"],
         finished_24h=queue["finished_24h"],
         failed_24h=queue["failed_24h"],
         last_migration=migration,

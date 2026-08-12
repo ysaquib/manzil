@@ -272,6 +272,25 @@ async def test_admin_transfers_hunt_ownership_atomically_and_audits_it(
         )
 
 
+async def test_admin_archives_and_restores_a_hunt_with_audit(
+    as_admin: AsyncClient, collab_hunt, db_pool
+) -> None:
+    hunt_id = UUID(collab_hunt["hunt_id"])
+
+    archived = await as_admin.put(f"/v1/admin/hunts/{hunt_id}/archive", json={"archived": True})
+    assert archived.status_code == 200, archived.text
+    assert archived.json()["archived_at"] is not None
+
+    restored = await as_admin.put(f"/v1/admin/hunts/{hunt_id}/archive", json={"archived": False})
+    assert restored.status_code == 200, restored.text
+    assert restored.json()["archived_at"] is None
+
+    actions = await db_pool.fetch(
+        "select action from admin_audit_log where target_id=$1 order by occurred_at", hunt_id
+    )
+    assert [row["action"] for row in actions[-2:]] == ["hunt.archive", "hunt.restore"]
+
+
 async def test_admin_permanently_deletes_a_hunt_but_keeps_global_property_truth(
     as_admin: AsyncClient, db_pool, seeded_users
 ) -> None:

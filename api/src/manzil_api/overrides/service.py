@@ -133,5 +133,5 @@ async def create_override(
     row = (response.data or [None])[0]
     if row is None:
         raise RuntimeError("override insert returned no row")
-    await enqueue_rescore(client, hunt_id)
+    await enqueue_rescore(client, hunt_id, requested_by=user_id)
     return _row_to_response(row)

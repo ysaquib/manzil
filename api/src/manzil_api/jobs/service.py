@@ -13,7 +13,9 @@ from manzil_shared.models import CheckpointPrompt, JobState
 from manzil_api.hunts.exceptions import InsufficientRole
 from manzil_api.jobs.exceptions import (
     InvalidCheckpointAnswer,
+    JobAlreadyDeleted,
     JobNotCancellable,
+    JobNotDeletable,
     JobNotFound,
     JobNotRetryable,
     NotJobOwner,
@@ -23,6 +25,7 @@ from manzil_api.jobs.schemas import (
     CheckpointAnswer,
     CheckpointContext,
     CheckpointEvidence,
+    JobDeletionReceipt,
     JobResponse,
     JobWarning,
 )
@@ -37,7 +40,7 @@ from supabase import Client
 # list so the two paths cannot drift.
 JOB_COLUMNS = (
     "id,hunt_id,hunt_listing_id,type,state,current_stage,plan,payload_public,"
-    "attempts,error,cost_actual_usd,created_at,started_at,finished_at,warnings"
+    "attempts,error,cost_actual_usd,created_at,started_at,finished_at,warnings,requested_by"
 )
 
 
@@ -172,6 +175,7 @@ def row_to_response(row: dict[str, Any]) -> JobResponse:
         created_at=row.get("created_at"),
         started_at=row.get("started_at"),
         finished_at=row.get("finished_at"),
+        requested_by=row.get("requested_by"),
         checkpoint=checkpoint,
         checkpoint_context=checkpoint_context,
         auto_resolved_checkpoint=_auto_resolved_checkpoint(payload, state=row.get("state")),
@@ -221,6 +225,7 @@ async def list_jobs(
     client: Client, hunt_id: UUID, states: list[JobState] | None
 ) -> list[JobResponse]:
     query = client.table("jobs").select(JOB_COLUMNS).eq("hunt_id", str(hunt_id))
+    query = query.neq("state", JobState.DELETED.value)
     if states:
         query = query.in_("state", [s.value for s in states])
     query = (
@@ -229,6 +234,25 @@ async def list_jobs(
         .order("id", desc=True)
     )
     return [row_to_response(row) for row in query.execute().data or []]
+
+
+async def delete_failed_job(client: Client, job_id: UUID) -> JobDeletionReceipt:
+    try:
+        response = client.rpc("delete_failed_job", {"p_job_id": str(job_id)}).execute()
+    except Exception as exc:
+        message = getattr(exc, "message", None) or str(exc)
+        if "job_not_found" in message:
+            raise JobNotFound(f"Job {job_id} not found") from exc
+        if "job_already_deleted" in message:
+            raise JobAlreadyDeleted("This Job was already deleted") from exc
+        if "job_not_failed" in message:
+            raise JobNotDeletable("Only failed Jobs may be deleted") from exc
+        if "job_delete_permission_denied" in message:
+            raise NotJobOwner("Only the requester or Hunt Owner may delete this Job") from exc
+        if "hunt_locked" in message or "hunt_archived" in message:
+            raise JobNotDeletable("Restore or unlock this Hunt before deleting its Jobs") from exc
+        raise
+    return JobDeletionReceipt.model_validate(response.data)
 
 
 async def cancel_job(

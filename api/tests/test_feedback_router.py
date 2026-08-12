@@ -41,7 +41,7 @@ async def test_submit_feedback_records_caller_and_context(
     assert row["body"] == "All-in cost differs between the drawer and the table."
     assert row["route"] == "/h/248f1b46?listing=lst_8f21"
     assert str(row["hunt_id"]) == str(collab_hunt["hunt_id"])
-    assert row["app_version"] == "v3.27"
+    assert row["app_version"].startswith("frontend v3.27 · api ")
     # Captured from the request, not the payload.
     assert row["user_agent"] is not None
 

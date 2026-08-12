@@ -21,7 +21,7 @@ import {
   Tooltip,
 } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
-import { IconMapPin, IconMessageCircle } from "@tabler/icons-react";
+import { IconMapPin, IconMessage2 } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { SectionCard } from "../../components/SectionCard";
@@ -405,7 +405,7 @@ function DrawerShell({
                 aria-label="Submit feedback"
                 onClick={openFeedback}
               >
-                <IconMessageCircle size={18} stroke={1.5} />
+                <IconMessage2 size={18} stroke={1.5} />
               </ActionIcon>
             </Tooltip>
           )}

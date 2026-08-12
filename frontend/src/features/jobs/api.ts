@@ -120,6 +120,22 @@ export function useRetryJob(huntId: string) {
   return useJobAction(huntId, "retry");
 }
 
+export function useDeleteJob(huntId: string) {
+  const qc = useQueryClient();
+  const mutationPath = useGhostMutationPath(huntId);
+  return useMutation({
+    mutationFn: (jobId: string) =>
+      apiFetch<components["schemas"]["JobDeletionReceipt"]>(
+        mutationPath(`/v1/jobs/${jobId}`),
+        { method: "DELETE" },
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["jobs", huntId] });
+      void qc.invalidateQueries({ queryKey: ["attention", huntId] });
+    },
+  });
+}
+
 // Checkpoint answer payload (§10.10): a chosen option, with free text when the
 // option is the `other:<input>` form. The dict shape lands in jobs.payload —
 // assumed contract, recorded in API_ASSUMPTIONS.md.

@@ -7,6 +7,10 @@ on:
   push:
     branches: [main, master]
   pull_request:
+  # Release PRs are opened with GITHUB_TOKEN, whose recursion guard suppresses
+  # the ordinary pull_request event. release.yml dispatches this exact same CI
+  # workflow against that branch so the PR still carries the normal checks.
+  workflow_dispatch:
 
 jobs:
   lint:
@@ -40,19 +44,19 @@ jobs:
       - uses: astral-sh/setup-uv@v7
       - uses: supabase/setup-cli@v3
         with:
-          version: 2.98.2
+          version: 2.113.0
       - run: uv sync --all-packages
-      - run: supabase start
-      - run: supabase db reset --yes
-      - name: Export local Supabase environment
-        shell: bash
-        run: |
-          supabase status -o json | jq -er '
-            "SUPABASE_URL=\(.API_URL)",
-            "SUPABASE_ANON_KEY=\(.ANON_KEY)",
-            "SUPABASE_SERVICE_ROLE_KEY=\(.SERVICE_ROLE_KEY)",
-            "DATABASE_URL=\(.DB_URL)"
-          ' >> "$GITHUB_ENV"
+      - name: Reset and verify local Supabase
+        env:
+          MANZIL_SUPABASE_DIAGNOSTICS: ${{ runner.temp }}/supabase-ci-diagnostics
+        run: bash .github/scripts/setup-supabase-ci.sh
+      - name: Upload Supabase setup diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: supabase-setup-test
+          path: ${{ runner.temp }}/supabase-ci-diagnostics
+          if-no-files-found: ignore
       - run: uv run --package manzil-shared pytest shared/tests
       - run: uv run --package manzil-api pytest api/tests --ignore=api/tests/test_rls_matrix.py
       - run: uv run --package manzil-worker pytest worker/tests
@@ -67,19 +71,19 @@ jobs:
       - uses: astral-sh/setup-uv@v7
       - uses: supabase/setup-cli@v3
         with:
-          version: 2.98.2
+          version: 2.113.0
       - run: uv sync --all-packages
-      - run: supabase start
-      - run: supabase db reset --yes
-      - name: Export local Supabase environment
-        shell: bash
-        run: |
-          supabase status -o json | jq -er '
-            "SUPABASE_URL=\(.API_URL)",
-            "SUPABASE_ANON_KEY=\(.ANON_KEY)",
-            "SUPABASE_SERVICE_ROLE_KEY=\(.SERVICE_ROLE_KEY)",
-            "DATABASE_URL=\(.DB_URL)"
-          ' >> "$GITHUB_ENV"
+      - name: Reset and verify local Supabase
+        env:
+          MANZIL_SUPABASE_DIAGNOSTICS: ${{ runner.temp }}/supabase-ci-diagnostics
+        run: bash .github/scripts/setup-supabase-ci.sh
+      - name: Upload Supabase setup diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: supabase-setup-collaboration-security
+          path: ${{ runner.temp }}/supabase-ci-diagnostics
+          if-no-files-found: ignore
       - run: uv run --package manzil-api pytest api/tests/test_rls_matrix.py
 
   frontend:
@@ -145,7 +149,11 @@ jobs:
             --env DATABASE_URL=postgresql://ci:ci@localhost:5432/ci \
             --env MANZIL_WORKER_INPROCESS=false \
             manzil-api:ci \
-            /app/.venv/bin/python -c 'import manzil_api.main'
+            /app/.venv/bin/python -c \
+            'from pathlib import Path; from manzil_api.build_info import release_version; \
+             assert Path("/app/VERSION").is_file(), "/app/VERSION missing from image"; \
+             assert release_version() == Path("/app/VERSION").read_text().strip(); \
+             import manzil_api.main'
           docker run --rm manzil-api:ci /app/.venv/bin/python -c \
             'from pathlib import Path; from manzil_worker.vision_onnx import artifact_digest, ONNX_SHADOW_ARTIFACT_SHA256; \
              p=Path("/app/.manzil/models/clip-vision-uint8"); \
@@ -191,7 +199,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: supabase/setup-cli@v3
         with:
-          version: 2.98.2
+          version: 2.113.0
       - run: supabase link --project-ref "$SUPABASE_PROJECT_ID"
       - run: supabase db push --dry-run
       - run: supabase db push

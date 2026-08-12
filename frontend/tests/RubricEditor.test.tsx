@@ -3,9 +3,14 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mutate, classifyMutate } = vi.hoisted(() => ({
+const { mutate, classifyMutate, showNotification } = vi.hoisted(() => ({
   mutate: vi.fn(),
   classifyMutate: vi.fn(),
+  showNotification: vi.fn(),
+}));
+
+vi.mock("@mantine/notifications", () => ({
+  notifications: { show: showNotification },
 }));
 
 vi.mock("../src/features/rubric/api", () => ({
@@ -65,6 +70,7 @@ describe("RubricEditor", () => {
   beforeEach(() => {
     mutate.mockClear();
     classifyMutate.mockClear();
+    showNotification.mockClear();
   });
 
   it("cards the scored criteria and offers the rest as add-pills", () => {
@@ -112,6 +118,24 @@ describe("RubricEditor", () => {
       ["sqft", true, 1],
       ["parking", false, 2],
     ]);
+  });
+
+  it("reports custom Criterion backfill work after saving", async () => {
+    mutate.mockImplementation(
+      (
+        _payload: RubricCriterion[],
+        callbacks: { onSuccess: (result: { backfillCount: number }) => void },
+      ) => callbacks.onSuccess({ backfillCount: 3 }),
+    );
+    renderEditor();
+
+    await userEvent.click(screen.getByRole("button", { name: "Save rubric" }));
+
+    expect(showNotification).toHaveBeenCalledWith({
+      title: "Backfilling 3 Listings",
+      message: "Cached evidence is updating their scores. Follow progress in Tasks.",
+      color: "violet",
+    });
   });
 
   it("confirms routing before adding a custom criterion", async () => {

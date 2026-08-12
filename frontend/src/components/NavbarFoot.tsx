@@ -22,6 +22,7 @@ import { useAuth } from "../auth/useAuth";
 import { useProfile } from "../auth/profile";
 import { useAdminIdentity } from "../features/admin/api";
 import { memberColor } from "../features/collaboration/memberColors";
+import { BuildVersionPopover } from "./BuildVersionPopover";
 import classes from "./NavbarFoot.module.css";
 
 export function NavbarFoot({ onOpenFeedback }: { onOpenFeedback: () => void }) {
@@ -103,6 +104,7 @@ export function NavbarFoot({ onOpenFeedback }: { onOpenFeedback: () => void }) {
           </UnstyledButton>
         </Stack>
       </Collapse>
+      <BuildVersionPopover />
     </Box>
   );
 }

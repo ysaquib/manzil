@@ -4,6 +4,7 @@ rows, bump `hunts.rubric_version`, enqueue a hunt-level rescore job (P1-5)."""
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -23,6 +24,13 @@ from manzil_api.rubric.schemas import (
     RubricPut,
 )
 from supabase import Client
+
+
+@dataclass(frozen=True)
+class RubricSaveResult:
+    criteria: list[RubricCriterionOut]
+    backfill_count: int
+
 
 _CATALOG_BY_KEY = {entry.key: entry for entry in CATALOG}
 
@@ -177,7 +185,9 @@ async def get_rubric(client: Client, hunt_id: UUID) -> list[RubricCriterionOut]:
     return [_row_to_out(row) for row in response.data or []]
 
 
-async def put_rubric(client: Client, hunt_id: UUID, body: RubricPut) -> list[RubricCriterionOut]:
+async def put_rubric(
+    client: Client, hunt_id: UUID, user_id: str, body: RubricPut
+) -> RubricSaveResult:
     existing_rows = (
         client.table("rubric_criteria")
         .select("custom_def")
@@ -256,10 +266,11 @@ async def put_rubric(client: Client, hunt_id: UUID, body: RubricPut) -> list[Rub
     current = (hunt.data or [{}])[0].get("rubric_version", 0)
     client.table("hunts").update({"rubric_version": current + 1}).eq("id", str(hunt_id)).execute()
 
-    await enqueue_rescore(client, hunt_id)
+    await enqueue_rescore(client, hunt_id, requested_by=user_id)
     new_keys = sorted(
         key for key in custom_keys - set(existing_defs) if not custom_defs_by_key[key].is_manual
     )
+    backfill_count = 0
     if new_keys:
         listings = (
             client.table("hunt_listings")
@@ -285,6 +296,7 @@ async def put_rubric(client: Client, hunt_id: UUID, body: RubricPut) -> list[Rub
                     "hunt_listing_id": listing["id"],
                     "type": "refresh",
                     "state": "queued",
+                    "requested_by": user_id,
                     "payload": {
                         "url": url,
                         "hunt_id": str(hunt_id),
@@ -299,4 +311,8 @@ async def put_rubric(client: Client, hunt_id: UUID, body: RubricPut) -> list[Rub
             # `minimal`: the rows are not read back, and a representation is a
             # `select *` on `jobs`, whose `payload` is withheld from members.
             client.table("jobs").insert(jobs, returning="minimal").execute()
-    return await get_rubric(client, hunt_id)
+            backfill_count = len(jobs)
+    return RubricSaveResult(
+        criteria=await get_rubric(client, hunt_id),
+        backfill_count=backfill_count,
+    )
