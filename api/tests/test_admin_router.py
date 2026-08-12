@@ -170,9 +170,7 @@ async def test_hunt_list_pages_and_searches_on_the_server(
     assert {row["name"] for row in searched.json()["items"]} == {"Collab Hunt"}
     assert searched.json()["total"] == 1
 
-    by_id = await as_admin.get(
-        f"/v1/admin/hunts?search={collab_hunt['hunt_id']}&search_mode=id"
-    )
+    by_id = await as_admin.get(f"/v1/admin/hunts?search={collab_hunt['hunt_id']}&search_mode=id")
     assert by_id.status_code == 200
     assert [row["hunt_id"] for row in by_id.json()["items"]] == [collab_hunt["hunt_id"]]
 

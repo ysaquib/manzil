@@ -336,12 +336,13 @@ export function draftToPayload(draft: RubricCriterion[]): RubricCriterion[] {
 }
 
 // Per-criterion dirty check backing the card's "Modified" indicator and the
-// sticky save bar's dirty-labels list. `position` is excluded: it reflects
-// this criterion's slot in the draft array, not an edit the user made to it.
+// sticky save bar's dirty-labels list. `position` is normalized away: it
+// reflects this criterion's slot in the draft array, not an edit the user made.
 export function isCriterionDirty(criterion: RubricCriterion, baseline: RubricCriterion): boolean {
-  const strip = (c: RubricCriterion) => {
-    const { position: _position, ...rest } = c;
-    return { ...rest, is_bonus: deriveIsBonus(c.options, c.unknown_delta) };
-  };
+  const strip = (c: RubricCriterion) => ({
+    ...c,
+    position: 0,
+    is_bonus: deriveIsBonus(c.options, c.unknown_delta),
+  });
   return JSON.stringify(strip(criterion)) !== JSON.stringify(strip(baseline));
 }
