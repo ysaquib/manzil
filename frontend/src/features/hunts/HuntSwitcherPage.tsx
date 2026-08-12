@@ -1,5 +1,5 @@
 // Hunt switcher / landing (P1-9): the user's hunts + create. Empty state
-// leads with the create form — the first-run path is "make a hunt".
+// leads with the create flow — the first-run path is "make a hunt".
 import {
   Button,
   Group,
@@ -7,19 +7,24 @@ import {
   NavLink,
   Stack,
   Text,
-  TextInput,
   UnstyledButton,
 } from "@mantine/core";
-import { IconArchive, IconChevronDown, IconChevronRight, IconLock, IconShieldLock } from "@tabler/icons-react";
-import { notifications } from "@mantine/notifications";
+import {
+  IconArchive,
+  IconChevronDown,
+  IconChevronRight,
+  IconLock,
+  IconPlus,
+  IconShieldLock,
+} from "@tabler/icons-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import { PublicPageShell } from "../../components/PublicPageShell";
 import { UserMenu } from "../../components/UserMenu";
 import { useAdminIdentity } from "../admin/api";
-import { ApiError } from "../../lib/apiClient";
-import { useCreateHunt, useHunts } from "./api";
+import { CreateHuntModal } from "./CreateHuntModal";
+import { useHunts } from "./api";
 
 const huntCreatedDate = (createdAt: string) => {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -37,41 +42,31 @@ const huntCreatedDate = (createdAt: string) => {
 export function HuntSwitcherPage() {
   const { data: hunts, isLoading, error } = useHunts();
   const admin = useAdminIdentity();
-  const createHunt = useCreateHunt();
-  const [name, setName] = useState("");
   const [showArchived, setShowArchived] = useState(false);
+  const [createOpened, setCreateOpened] = useState(false);
   const activeHunts = (hunts ?? []).filter((hunt) => !hunt.archived_at);
   const archivedHunts = (hunts ?? []).filter((hunt) => Boolean(hunt.archived_at));
-
-  const create = () =>
-    createHunt.mutate(
-      { name: name.trim(), domain: "rent" },
-      {
-        onSuccess: () => setName(""),
-        onError: (e) =>
-          notifications.show({
-            title: "Couldn't create hunt",
-            message: e instanceof ApiError ? e.message : "Unexpected error",
-            color: "red",
-          }),
-      },
-    );
 
   const empty = !isLoading && !error && activeHunts.length === 0 && archivedHunts.length === 0;
 
   return (
     <PublicPageShell rightSlot={<UserMenu />}>
       <Stack gap="lg">
-        <div>
-          <Text fw={600} size="lg">
-            {empty ? "Start your first hunt" : "Your hunts"}
-          </Text>
-          <Text c="dimmed" size="sm">
-            {empty
-              ? "Every search starts somewhere — give this one a name."
-              : "Pick up where you left off, or start fresh."}
-          </Text>
-        </div>
+        <Group justify="space-between" align="flex-end" wrap="wrap">
+          <div>
+            <Text fw={600} size="lg">
+              {empty ? "Start your first hunt" : "Your hunts"}
+            </Text>
+            <Text c="dimmed" size="sm">
+              {empty
+                ? "Every search starts somewhere — name it and set it up in a few steps."
+                : "Pick up where you left off, or start fresh."}
+            </Text>
+          </div>
+          <Button leftSection={<IconPlus size={16} stroke={1.75} />} onClick={() => setCreateOpened(true)}>
+            {empty ? "Create your first hunt" : "Create new hunt"}
+          </Button>
+        </Group>
 
         {isLoading && (
           <Group justify="center" py="lg">
@@ -163,21 +158,9 @@ export function HuntSwitcherPage() {
               />
             ))}
         </Stack>
-
-        <Group align="flex-end" gap="sm">
-          <TextInput
-            label={empty ? "Hunt name" : "New hunt"}
-            placeholder="e.g. Apartment Search 2026"
-            value={name}
-            onChange={(e) => setName(e.currentTarget.value)}
-            onKeyDown={(e) => e.key === "Enter" && name.trim() && create()}
-            style={{ flex: 1 }}
-          />
-          <Button onClick={create} disabled={!name.trim() || createHunt.isPending}>
-            Create
-          </Button>
-        </Group>
       </Stack>
+
+      <CreateHuntModal opened={createOpened} onClose={() => setCreateOpened(false)} />
     </PublicPageShell>
   );
 }

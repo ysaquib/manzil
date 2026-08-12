@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -6,10 +6,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithProviders } from "./testUtils";
 
 const useHunts = vi.hoisted(() => vi.fn());
-const useCreateHunt = vi.hoisted(() => vi.fn());
 const useAdminIdentity = vi.hoisted(() => vi.fn());
 
-vi.mock("../src/features/hunts/api", () => ({ useHunts, useCreateHunt }));
+vi.mock("../src/features/hunts/api", () => ({ useHunts }));
 vi.mock("../src/features/admin/api", () => ({ useAdminIdentity }));
 vi.mock("../src/components/UserMenu", () => ({ UserMenu: () => null }));
 
@@ -37,7 +36,6 @@ function renderPage() {
 describe("HuntSwitcherPage", () => {
   beforeEach(() => {
     useHunts.mockReturnValue({ data: HUNTS, isLoading: false, error: null });
-    useCreateHunt.mockReturnValue({ mutate: vi.fn(), isPending: false });
     useAdminIdentity.mockReturnValue({ data: { is_site_admin: false } });
   });
 
@@ -90,5 +88,18 @@ describe("HuntSwitcherPage", () => {
       "/h/archived-1",
     );
     expect(reveal).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("opens the creation stepper from the header button, starting on Name", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /create new hunt/i }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/create a new hunt/i)).toBeInTheDocument();
+    expect(within(dialog).getByLabelText(/hunt name/i)).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /^next$/i })).toBeDisabled();
   });
 });
