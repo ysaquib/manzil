@@ -68,17 +68,17 @@ def test_srcset_handles_density_descriptors_and_missing_descriptors() -> None:
 
 
 def test_discovery_unwraps_zillow_javascript_escaped_urls() -> None:
-    page = r'''
+    page = r"""
       <meta property="og:image"
             content='\"https://photos.zillowstatic.com/fp/kitchen.jpg\"'>
-    '''
+    """
     assert discover_image_urls(page, "https://www.zillow.com/apartments/example") == [
         "https://photos.zillowstatic.com/fp/kitchen.jpg"
     ]
 
 
 def test_discovery_rejects_stray_quotes_instead_of_fabricating_relative_urls() -> None:
-    page = r'''<img src='\"https://photos.zillowstatic.com/fp/broken.jpg'>'''
+    page = r"""<img src='\"https://photos.zillowstatic.com/fp/broken.jpg'>"""
     assert discover_image_urls(page, "https://www.zillow.com/apartments/example") == []
 
 

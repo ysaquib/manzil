@@ -3143,9 +3143,7 @@ async def run_worker_loop(
                     await heartbeat(conn, job["id"])
                 await handler(pool, job)
                 if await _cancel_if_hunt_became_read_only(pool, job["id"]):
-                    log.info(
-                        "job_stopped_read_only", job_id=str(job["id"]), reason="post-dispatch"
-                    )
+                    log.info("job_stopped_read_only", job_id=str(job["id"]), reason="post-dispatch")
                 if score_notifications_ready and await pool.fetchval(
                     "select state = 'done' from jobs where id=$1", job["id"]
                 ):
