@@ -71,6 +71,17 @@ export function initDraft(
   return [...catalogDraft, ...custom];
 }
 
+// Mirrors the API's `_validate_option_schema` and the scoring engine's
+// `_comparable()` (§9.3): ordered ops against an object-typed fact (e.g.
+// management_reviews) compare on its numeric "rating" field, not the object
+// itself — there is no match or widget support for the object shape itself.
+// Every other schema type is returned unchanged. Shared by validation
+// (below) and the option-match editor's operator/widget selection.
+export function comparableSchema(schema: ValueSchema): ValueSchema | null {
+  if (schema.type !== "object") return schema;
+  return schema.properties?.rating ?? null;
+}
+
 function typeMatches(value: unknown, schema: ValueSchema): boolean {
   if (schema.type === "array") return Array.isArray(value);
   if (schema.type === "boolean") return typeof value === "boolean";
@@ -81,12 +92,8 @@ function typeMatches(value: unknown, schema: ValueSchema): boolean {
 
 function scalarError(value: unknown, schema: ValueSchema): string | null {
   if (schema.type === "object") {
-    // Mirrors the API's `_validate_option_schema` and the scoring engine's
-    // `_comparable()` (§9.3): ordered ops against an object-typed fact (e.g.
-    // management_reviews) compare on its numeric "rating" field, not the
-    // object itself.
-    const ratingSchema = schema.properties?.rating;
-    return ratingSchema ? scalarError(value, ratingSchema) : "unsupported object criterion";
+    const resolved = comparableSchema(schema);
+    return resolved ? scalarError(value, resolved) : "unsupported object criterion";
   }
   if (value === null || value === undefined) return "value is required";
   if (!typeMatches(value, schema)) return `expected a ${schema.type}`;
