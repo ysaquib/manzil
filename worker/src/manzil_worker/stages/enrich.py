@@ -2,8 +2,10 @@
 ratings stage 1 (Google Places), deterministic dispatch — no tool loop (§10.2:
 ENRICH is not a loop stage; the Maps seams are plain injected calls).
 
-What it emits (into `state.source_claims`, downstream of VERIFY by design so the
-page-evidence audit never runs on API-derived values):
+What it emits (into `state.source_claims` and `state.resolved_claims`, dual-written
+like VISION — ENRICH sits after RECONCILE, so nothing downstream promotes its
+candidates; downstream of VERIFY by design so the page-evidence audit never runs
+on API-derived values):
 - `grocery_proximity` — minutes to the nearest grocery per the hunt's
   `proximity_mode` setting (places_nearby → commute_time).
 - `management_reviews` — `{rating, summary}` from one Place Details call keyed
@@ -79,9 +81,13 @@ def grocery_extraction(minutes: float, place_name: str, mode: str) -> SourceClai
         value=minutes,
         confidence=Confidence.HIGH,
         evidence_quote=f"Nearest grocery: {place_name} — {minutes} min {mode} (Google Maps)",
-        source_id="google_maps:places_nearby",
+        # origin_key is the candidate-lineage identity; must be set whenever
+        # source_id is null so persist does not fall through to claim.model.
+        origin_key="google_maps:grocery",
+        source_id=None,
         model=MAPS_MODEL,
         prompt_version=0,
+        resolution_rule="single_source",
     )
 
 
@@ -143,7 +149,9 @@ async def enrich_stage(state: RunState, ctx: StageCtx) -> RunState:
             )
         if found is not None:
             minutes, place_name = found
-            state.source_claims.append(grocery_extraction(minutes, place_name, ctx.proximity_mode))
+            grocery = grocery_extraction(minutes, place_name, ctx.proximity_mode)
+            state.source_claims.append(grocery)
+            state.resolved_claims.append(grocery.model_copy(deep=True))
 
     # management_reviews — ratings stage 1 (§10.12): one Place Details call; the
     # summary synthesis fires only when Google returned review text.
@@ -182,17 +190,21 @@ async def enrich_stage(state: RunState, ctx: StageCtx) -> RunState:
             model = model_for_stage("enrich_reviews")
             prompt_version = load_prompt("enrich_reviews").version
         total = details.get("user_ratings_total") or 0
-        state.source_claims.append(
-            SourceClaim(
-                criterion_key="management_reviews",
-                value={"rating": details["rating"], "summary": summary},
-                confidence=Confidence.HIGH,
-                evidence_quote=f"Google Places rating {details['rating']} ({total} ratings)",
-                source_id=f"google_places:{geocode.place_id}",
-                model=model,
-                prompt_version=prompt_version,
-            )
+        # origin_key matches the historical source_id fallback so reviews'
+        # candidate lineage does not fork when source_id is nulled.
+        reviews = SourceClaim(
+            criterion_key="management_reviews",
+            value={"rating": details["rating"], "summary": summary},
+            confidence=Confidence.HIGH,
+            evidence_quote=f"Google Places rating {details['rating']} ({total} ratings)",
+            origin_key=f"google_places:{geocode.place_id}",
+            source_id=None,
+            model=model,
+            prompt_version=prompt_version,
+            resolution_rule="single_source",
         )
+        state.source_claims.append(reviews)
+        state.resolved_claims.append(reviews.model_copy(deep=True))
 
     # location_safety — deliberately nothing (§20 2026-07-18): override-first
     # placeholder until the P3-17 module; an emitted guess would score.

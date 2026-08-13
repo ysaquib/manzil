@@ -20,7 +20,7 @@ from manzil_shared.models import (
 from manzil_worker.phase0_rubric import PHASE0_RUBRIC_VERSION, phase0_rubric
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.score import score_stage
-from manzil_worker.state import FloorPlanIn, PetCostsIn
+from manzil_worker.state import FloorPlanIn, PetCostsIn, SourceClaim
 from worker_helpers import all_units_fe, fe, get_claim, make_state, set_claim
 
 
@@ -366,3 +366,63 @@ def test_unspecified_laundry_cannot_pass_gate() -> None:
     assert gate["set_score"] == 2.0
     assert gate["value"] == ["advertised_unconfirmed"]
     assert gate["matched"] == {"op": "contains_any", "value": ["advertised_unconfirmed"]}
+
+
+def test_enrich_grocery_on_resolved_scores_only_when_rubric_includes_it() -> None:
+    """ENRICH dual-writes onto resolved_claims; SCORE uses that list. Enabled
+    Criteria score; disabled (absent from Rubric) Criteria are omitted."""
+    from manzil_shared.catalog import CATALOG
+
+    grocery_entry = next(e for e in CATALOG if e.key == "grocery_proximity")
+    grocery_criterion = RubricCriterion(
+        hunt_id=uuid4(),
+        catalog_key="grocery_proximity",
+        options=list(grocery_entry.default_options),
+        position=0,
+    )
+    beds_criterion = RubricCriterion(
+        hunt_id=grocery_criterion.hunt_id,
+        catalog_key="beds",
+        options=[RubricOption(match=OptionMatch(op=MatchOp.EQ, value=2), delta=0.5)],
+        position=1,
+    )
+
+    grocery = SourceClaim(
+        criterion_key="grocery_proximity",
+        value=7.5,
+        confidence=Confidence.HIGH,
+        evidence_quote="Nearest grocery: Kroger — 7.5 min driving (Google Maps)",
+        origin_key="google_maps:grocery",
+        source_id=None,
+        model="maps",
+        prompt_version=0,
+        resolution_rule="single_source",
+    )
+    beds = fe(2, "2 bed")
+    beds.criterion_key = "beds"
+    beds.resolution_rule = "single_source"
+
+    with_grocery = make_state()
+    with_grocery.resolved_claims = [beds.model_copy(deep=True), grocery.model_copy(deep=True)]
+    scored = asyncio.run(
+        score_stage(
+            with_grocery,
+            StageCtx(rubric=[grocery_criterion, beds_criterion], rubric_version=1),
+        )
+    )
+    keys = {row["key"] for row in scored.scores[0].breakdown["criteria"]}
+    assert "grocery_proximity" in keys
+    grocery_row = next(
+        row for row in scored.scores[0].breakdown["criteria"] if row["key"] == "grocery_proximity"
+    )
+    assert grocery_row["value"] == 7.5
+    assert grocery_row["delta"] == 0.5  # < 10 minutes
+
+    without_grocery = make_state()
+    without_grocery.resolved_claims = [beds.model_copy(deep=True), grocery.model_copy(deep=True)]
+    omitted = asyncio.run(
+        score_stage(without_grocery, StageCtx(rubric=[beds_criterion], rubric_version=1))
+    )
+    assert "grocery_proximity" not in {
+        row["key"] for row in omitted.scores[0].breakdown["criteria"]
+    }

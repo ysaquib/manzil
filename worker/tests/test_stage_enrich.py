@@ -42,6 +42,10 @@ def _claims(state: RunState):  # type: ignore[no-untyped-def]
     return {claim.criterion_key: claim for claim in state.source_claims}
 
 
+def _resolved(state: RunState):  # type: ignore[no-untyped-def]
+    return {claim.criterion_key: claim for claim in state.resolved_claims}
+
+
 class SeamLog:
     """Fake Maps seams recording their calls."""
 
@@ -98,16 +102,31 @@ def test_happy_path_grocery_reviews_and_no_safety() -> None:
     assert grocery.value == 7.5
     assert grocery.confidence is Confidence.HIGH
     assert grocery.model == "maps"
+    assert grocery.origin_key == "google_maps:grocery"
+    assert grocery.source_id is None
+    assert grocery.resolution_rule == "single_source"
     assert "Kroger" in (grocery.evidence_quote or "")
     assert seams.commute_calls == [("42.3,-83.05", "42.31,-83.06", "driving")]
 
     reviews = _claims(out)["management_reviews"]
     assert reviews.value == {"rating": 4.2, "summary": "Responsive management."}
-    assert reviews.source_id == f"google_places:{PLACE_ID}"
+    assert reviews.origin_key == f"google_places:{PLACE_ID}"
+    assert reviews.source_id is None
+    assert reviews.resolution_rule == "single_source"
     assert reviews.model != "maps"  # synthesis ran → the LLM pin is recorded
+    # Re-pin lineage guard: origin_key must never fall through to the model slug.
+    assert reviews.origin_key != reviews.model
+    assert grocery.origin_key != grocery.model
+
+    # Dual-write: same facts on resolved_claims so ingest persist / SCORE see them.
+    assert _resolved(out)["grocery_proximity"].value == 7.5
+    assert _resolved(out)["management_reviews"].value == reviews.value
+    assert _resolved(out)["grocery_proximity"].origin_key == "google_maps:grocery"
+    assert _resolved(out)["management_reviews"].origin_key == f"google_places:{PLACE_ID}"
 
     # §20 2026-07-18: the placeholder emits nothing — safety scores unknown.
     assert "location_safety" not in _claims(out)
+    assert "location_safety" not in _resolved(out)
 
 
 def test_proximity_mode_walking_reaches_the_commute_call() -> None:
@@ -122,6 +141,7 @@ def test_no_geocode_skips_everything() -> None:
     state.geocode = None
     out = asyncio.run(enrich_stage(state, seams.ctx()))
     assert out.source_claims == []
+    assert out.resolved_claims == []
     assert {warning.code for warning in out.warnings} == {"enrich_no_geocode"}
     assert seams.nearby_calls == [] and seams.details_calls == []
 
@@ -130,7 +150,9 @@ def test_nearby_maps_error_skips_grocery_but_not_reviews() -> None:
     seams = SeamLog(places=MapsError("quota"))
     out = asyncio.run(enrich_stage(_state(), seams.ctx()))
     assert "grocery_proximity" not in _claims(out)
+    assert "grocery_proximity" not in _resolved(out)
     assert "management_reviews" in _claims(out)
+    assert "management_reviews" in _resolved(out)
     assert {warning.code for warning in out.warnings} == {"location_refresh_failed"}
 
 
@@ -138,7 +160,9 @@ def test_details_maps_error_skips_reviews_but_not_grocery() -> None:
     seams = SeamLog(details=MapsError("denied"))
     out = asyncio.run(enrich_stage(_state(), seams.ctx()))
     assert "grocery_proximity" in _claims(out)
+    assert "grocery_proximity" in _resolved(out)
     assert "management_reviews" not in _claims(out)
+    assert "management_reviews" not in _resolved(out)
     assert {warning.code for warning in out.warnings} == {"reviews_refresh_failed"}
 
 
