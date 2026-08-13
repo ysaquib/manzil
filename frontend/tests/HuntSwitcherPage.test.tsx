@@ -49,6 +49,11 @@ describe("HuntSwitcherPage", () => {
     expect(links[0]).toHaveAttribute("data-active", "true");
     expect(links[1]).toHaveAccessibleName(/detroit apartments/i);
     expect(links[1]).toHaveAttribute("href", "/h/mine-1");
+    const create = screen.getByRole("button", { name: /create new hunt/i });
+    expect(create).toHaveAttribute("data-variant", "outline");
+    expect(create).toHaveClass("mantine-Button-root");
+    expect(links[0].compareDocumentPosition(create) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(create.compareDocumentPosition(links[1]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("does not show the admin card to an ordinary member", () => {

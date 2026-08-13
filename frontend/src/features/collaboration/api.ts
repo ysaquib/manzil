@@ -71,7 +71,17 @@ export function useMembers(huntId: string) {
       const identities = await supabase.rpc("get_hunt_contributor_identities", {
         p_hunt_id: huntId,
       });
-      if (identities.error) throw identities.error;
+      if (identities.error) {
+        // Contributor identities are attribution enrichment, not membership.
+        // Keep the successful membership result if the optional RPC is
+        // unavailable, otherwise a Site Admin's own Hunt is incorrectly
+        // rendered as Ghost View.
+        return rows.map((row) => ({
+          ...row,
+          display_name_override: row.display_name,
+          color_override: row.color,
+        }));
+      }
       const byUserId = new Map(
         ((identities.data ?? []) as HuntContributor[]).map((identity) => [
           identity.user_id,
