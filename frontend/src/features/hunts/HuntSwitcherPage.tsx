@@ -63,9 +63,6 @@ export function HuntSwitcherPage() {
                 : "Pick up where you left off, or start fresh."}
             </Text>
           </div>
-          <Button leftSection={<IconPlus size={16} stroke={1.75} />} onClick={() => setCreateOpened(true)}>
-            {empty ? "Create your first hunt" : "Create new hunt"}
-          </Button>
         </Group>
 
         {isLoading && (
@@ -94,6 +91,16 @@ export function HuntSwitcherPage() {
               style={{ borderRadius: "var(--mantine-radius-md)" }}
             />
           )}
+
+          <Button
+            fullWidth
+            variant="outline"
+            color="primary"
+            leftSection={<IconPlus size={16} stroke={1.75} />}
+            onClick={() => setCreateOpened(true)}
+          >
+            {empty ? "Create your first hunt" : "Create new hunt"}
+          </Button>
 
           {activeHunts.map((hunt) => (
             <NavLink

@@ -5,7 +5,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { HuntMember } from "../src/features/collaboration/api";
 
-const useAuth = vi.fn();
+const { useAuth, from, rpc } = vi.hoisted(() => ({
+  useAuth: vi.fn(),
+  from: vi.fn(),
+  rpc: vi.fn(),
+}));
 
 vi.mock("../src/auth/useAuth", () => ({
   useAuth: () => useAuth(),
@@ -13,12 +17,8 @@ vi.mock("../src/auth/useAuth", () => ({
 
 vi.mock("../src/lib/supabase", () => ({
   supabase: {
-    from: () => ({
-      select: () => ({
-        eq: () => Promise.resolve({ data: [], error: null }),
-        in: () => Promise.resolve({ data: [], error: null }),
-      }),
-    }),
+    from,
+    rpc,
   },
 }));
 
@@ -41,6 +41,8 @@ function wrapper(client: QueryClient) {
 describe("useCurrentMember", () => {
   beforeEach(() => {
     useAuth.mockReset();
+    from.mockReset();
+    rpc.mockReset();
   });
 
   it("returns the matching HuntMember for the signed-in user", async () => {
@@ -79,5 +81,18 @@ describe("useCurrentMember", () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toBeUndefined();
+  });
+
+  it("keeps a confirmed membership when contributor attribution is unavailable", async () => {
+    useAuth.mockReturnValue({ session: { user: { id: "u1" } } });
+    const eq = vi.fn().mockResolvedValue({ data: [member], error: null });
+    from.mockReturnValue({ select: vi.fn(() => ({ eq })) });
+    rpc.mockResolvedValue({ data: null, error: { code: "PGRST202" } });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+
+    const { result } = renderHook(() => useCurrentMember("h1"), { wrapper: wrapper(client) });
+
+    await waitFor(() => expect(result.current.data).toEqual(expect.objectContaining(member)));
+    expect(rpc).toHaveBeenCalledWith("get_hunt_contributor_identities", { p_hunt_id: "h1" });
   });
 });
