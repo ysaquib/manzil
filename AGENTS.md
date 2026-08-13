@@ -109,6 +109,17 @@ Catalog entry (§8.2) · hunt settings (§8.2) · rubric option (§8.2) · score
 - Frontend: `pnpm -C frontend dev | test | build`
 - DB: `supabase db reset` locally; migrations live in `supabase/migrations/`.
 
+### Migration versioning
+
+Migration filenames are an ordered, immutable ledger. Until **2026-09-01**, new
+migrations must continue the existing `20260901` sequence after its highest
+version (currently `20260901000026_*`), rather than using a wall-clock timestamp
+that would sort before migrations already in the ledger. From **2026-09-01**
+onward, use the actual current datetime timestamp when creating a migration
+(prefer `supabase migration new`); never choose an arbitrary future timestamp.
+Never rename or renumber a migration that has been applied to any shared
+database.
+
 ### Local Site Admin bootstrap
 
 Before testing the website through a browser, ensure the local Auth account
