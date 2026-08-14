@@ -1994,13 +1994,14 @@ def make_enrich_refresh_dispatcher(
                         confidence=ext.confidence,
                         evidence_quote=ext.evidence_quote,
                         source_id=None,
-                        origin_key="google_maps:grocery",
+                        origin_key=ext.origin_key or "google_maps:grocery",
                         target_scope=TargetScope.PROPERTY,
                         floor_plan_id=None,
                         applicability=None,
                         claim_group_id=ext.claim_group_id,
                         model=ext.model,
                         job_id=job_id,
+                        resolution_rule=ext.resolution_rule or "single_source",
                     )
                     enriched += 1
                 await rescore_hunt(
@@ -2245,7 +2246,7 @@ async def _persist_enrich_only_refresh(
             confidence=claim.confidence,
             evidence_quote=claim.evidence_quote,
             source_id=None,
-            origin_key=claim.source_id or f"refresh:{claim.criterion_key}",
+            origin_key=claim.origin_key or claim.source_id or f"refresh:{claim.criterion_key}",
             target_scope=claim.target_scope,
             floor_plan_id=claim.floor_plan_id,
             applicability=claim.applicability,
