@@ -134,7 +134,7 @@ async def test_source_results_branch_persists_enrich_without_rubric(
         assert json.loads(grocery_row["value"]) == 7.5
         assert grocery_row["source_id"] is None
         assert grocery_row["hunt_id"] is None
-        assert grocery_row["origin_key"] == "google_maps:grocery"
+        assert grocery_row["origin_key"].startswith("resolution:")
         assert grocery_row["resolution_rule"] == "single_source"
 
         reviews_row = by_key["management_reviews"]
@@ -144,8 +144,21 @@ async def test_source_results_branch_persists_enrich_without_rubric(
         }
         assert reviews_row["source_id"] is None
         assert reviews_row["hunt_id"] is None
-        assert reviews_row["origin_key"] == f"google_places:{PLACE_ID}"
+        assert reviews_row["origin_key"].startswith("resolution:")
         assert reviews_row["resolution_rule"] == "single_source"
+        candidate_origins = await pg_pool.fetch(
+            """
+            select criterion_key, origin_key from current_extraction_candidates
+            where property_id = $1
+              and criterion_key in ('grocery_proximity', 'management_reviews')
+            order by criterion_key
+            """,
+            property_id,
+        )
+        assert {row["criterion_key"]: row["origin_key"] for row in candidate_origins} == {
+            "grocery_proximity": "google_maps:grocery",
+            "management_reviews": f"google_places:{PLACE_ID}",
+        }
     finally:
         await _cleanup(pg_pool, hunt_id, property_id)
 
@@ -164,7 +177,7 @@ async def test_legacy_branch_dual_write_does_not_double_persist(
         state.resolved_claims = [grocery.model_copy(deep=True), reviews.model_copy(deep=True)]
         await _run(pg_pool, listing_id, property_id, state)
 
-        for key, origin in (
+        for key, candidate_origin in (
             ("grocery_proximity", "google_maps:grocery"),
             ("management_reviews", f"google_places:{PLACE_ID}"),
         ):
@@ -189,7 +202,15 @@ async def test_legacy_branch_dual_write_does_not_double_persist(
                     property_id,
                     key,
                 )
-                == origin
+            ).startswith("resolution:")
+            assert (
+                await pg_pool.fetchval(
+                    "select origin_key from current_extraction_candidates "
+                    "where property_id = $1 and criterion_key = $2",
+                    property_id,
+                    key,
+                )
+                == candidate_origin
             )
     finally:
         await _cleanup(pg_pool, hunt_id, property_id)

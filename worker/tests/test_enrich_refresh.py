@@ -154,7 +154,7 @@ async def test_enrich_refresh_rederives_grocery_and_rescores() -> None:
             assert json.loads(row["value"]) == 12.0
             assert row["source_id"] is None  # API-derived, never page provenance
             assert row["model"] == "maps"
-            origin = await conn.fetchval(
+            resolution_origin = await conn.fetchval(
                 """
                 select origin_key from extractions
                 where property_id = $1 and criterion_key = 'grocery_proximity'
@@ -162,7 +162,17 @@ async def test_enrich_refresh_rederives_grocery_and_rescores() -> None:
                 """,
                 property_id,
             )
-            assert origin == "google_maps:grocery"
+            # The current row is the resolved fact. Its job-scoped origin links
+            # to the stable Maps producer retained on the candidate row.
+            assert resolution_origin.startswith("resolution:")
+            candidate_origin = await conn.fetchval(
+                """
+                select origin_key from current_extraction_candidates
+                where property_id = $1 and criterion_key = 'grocery_proximity'
+                """,
+                property_id,
+            )
+            assert candidate_origin == "google_maps:grocery"
             # The hunt's walking mode reached the commute call.
             assert commute.calls and commute.calls[0][2] == "walking"
             breakdown = await conn.fetchval(
