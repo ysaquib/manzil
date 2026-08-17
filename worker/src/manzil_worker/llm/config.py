@@ -26,6 +26,7 @@ import os
 # across. DISCOVER (below) and the taste tier are deliberately exempt. This is a
 # pin decision, not a bench result — do not change it without bench evidence,
 # and remember that every recording re-keys when it moves.
+LIGHTWEIGHT_MODEL = "openai/gpt-5.6-luna"
 WORKHORSE_MODEL = "google/gemini-3-flash-preview"
 TASTE_MODEL = "anthropic/claude-sonnet-4.6"
 
@@ -50,17 +51,17 @@ DISCOVER_MODEL = "openai/gpt-5.6-luna"
 # be assigned a tier deliberately (and get a prompt file) before it can call.
 STAGE_MODELS: dict[str, str] = {
     # workhorse tier
-    "smoke": WORKHORSE_MODEL,  # P0-7 seam check; cheapest tier on purpose
-    "validate": WORKHORSE_MODEL,
+    "smoke": LIGHTWEIGHT_MODEL,  # P0-7 seam check; cheapest tier on purpose
+    "validate": LIGHTWEIGHT_MODEL,
     "extract": EXTRACT_VERIFY_MODEL,  # P0-14 pin (DESIGN §20 2026-07-21)
     "verify": EXTRACT_VERIFY_MODEL,  # P0-14 pin; check 4 only, checks 1-3 are code
-    "reconcile_equivalence": WORKHORSE_MODEL,
+    "reconcile_equivalence": LIGHTWEIGHT_MODEL,
     "custom_route": WORKHORSE_MODEL,
     "custom_match": WORKHORSE_MODEL,
     "custom_match_location": WORKHORSE_MODEL,
-    "enrich_reviews": WORKHORSE_MODEL,  # P3-8 ratings stage 1 review synthesis
+    "enrich_reviews": LIGHTWEIGHT_MODEL,  # P3-8 ratings stage 1 review synthesis
     "utility_baselines": WORKHORSE_MODEL,  # P3-9 metro baselines pass (scheduler tick)
-    "plan_assist": WORKHORSE_MODEL,
+    "plan_assist": LIGHTWEIGHT_MODEL,
     # Owner-selected shadow classifier pin (DESIGN §20 2026-07-28).
     "image_classify": TASTE_MODEL,
     # taste tier
