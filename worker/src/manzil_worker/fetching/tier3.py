@@ -33,12 +33,17 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 import structlog
-from manzil_shared.config import TIER3_TIMEOUT_SECONDS
-from manzil_shared.errors import FetchProviderError, PrivateAddressRefused
+from manzil_shared.config import (
+    FETCH_PROVIDER_RESPONSE_MAX_BYTES,
+    FETCH_TARGET_BODY_MAX_BYTES,
+    TIER3_TIMEOUT_SECONDS,
+)
+from manzil_shared.errors import FetchProviderError, FetchResponseTooLarge, PrivateAddressRefused
 
 from manzil_worker.costs import record_fetch
 from manzil_worker.fetching.results import FetchResult
 from manzil_worker.fetching.ssrf import Resolver, screen_url
+from manzil_worker.fetching.tiers import read_response_limited
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -74,6 +79,19 @@ class _Target:
     status_code: int
     headers: dict[str, str]
     body: str
+
+
+def _target_within_limit(target: _Target, *, url: str) -> _Target:
+    """Reject an oversized complete target before it reaches the HTML cleaner."""
+    size = len(target.body.encode("utf-8"))
+    if size > FETCH_TARGET_BODY_MAX_BYTES:
+        raise FetchResponseTooLarge(
+            url,
+            layer="unwrapped target body",
+            observed_bytes=size,
+            limit_bytes=FETCH_TARGET_BODY_MAX_BYTES,
+        )
+    return target
 
 
 @dataclass(frozen=True)
@@ -291,15 +309,30 @@ class Tier3Fetcher:
             # DNS OSError is caught below → retryable, like any tier.
             await screen_url(url, resolver=self._resolver)
             request = provider.build(url)  # may raise FetchProviderError (config)
-            async with httpx.AsyncClient(
-                timeout=self._timeout, transport=self._transport
-            ) as client:
-                response = await client.request(
+            async with (
+                httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client,
+                client.stream(
                     request.method,
                     request.url,
                     headers=request.headers,
                     json=request.json,
                     params=request.params,
+                ) as streamed,
+            ):
+                # Bright Data's envelope is a second response layer.  Bound it
+                # independently before JSON parsing so a huge vendor payload
+                # cannot coexist with a parsed envelope and HTML.
+                data = await read_response_limited(
+                    streamed,
+                    url=url,
+                    layer="provider response",
+                    limit_bytes=FETCH_PROVIDER_RESPONSE_MAX_BYTES,
+                )
+                response = httpx.Response(
+                    streamed.status_code,
+                    headers=streamed.headers,
+                    content=data,
+                    request=streamed.request,
                 )
         except (PrivateAddressRefused, FetchProviderError):
             raise  # a refusal and a misconfiguration are never retryable fetch errors
@@ -340,6 +373,8 @@ class Tier3Fetcher:
                     else None
                 ),
             )
+
+        target = _target_within_limit(target, url=url)
 
         # Billed on a RESPONSE FROM THE TARGET, not on a happy one (AD-C): the
         # provider ran the request and charged for it whatever status the page

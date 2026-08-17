@@ -17,8 +17,12 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 import structlog
-from manzil_shared.config import FETCH_MAX_REDIRECTS, TIER2_MIN_DELAY_SECONDS
-from manzil_shared.errors import PrivateAddressRefused
+from manzil_shared.config import (
+    FETCH_MAX_REDIRECTS,
+    FETCH_TARGET_BODY_MAX_BYTES,
+    TIER2_MIN_DELAY_SECONDS,
+)
+from manzil_shared.errors import FetchResponseTooLarge, PrivateAddressRefused
 
 from manzil_worker.fetching.results import FetchResult
 from manzil_worker.fetching.ssrf import (
@@ -40,6 +44,50 @@ _HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
 }
+
+
+async def read_response_limited(
+    response: httpx.Response,
+    *,
+    url: str,
+    layer: str,
+    limit_bytes: int,
+) -> bytes:
+    """Read one HTTP response without ever retaining more than ``limit_bytes``.
+
+    Content-Length is only an optimization — chunked and dishonest responses are
+    still stopped at the first over-limit chunk.  Callers decode the returned
+    bytes exactly once after the response stream has closed.
+    """
+    content_length = response.headers.get("content-length")
+    try:
+        declared = int(content_length) if content_length is not None else None
+    except ValueError:
+        declared = None
+    if declared is not None and declared > limit_bytes:
+        raise FetchResponseTooLarge(
+            url, layer=layer, observed_bytes=declared, limit_bytes=limit_bytes
+        )
+
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in response.aiter_bytes():
+        total += len(chunk)
+        if total > limit_bytes:
+            raise FetchResponseTooLarge(
+                url, layer=layer, observed_bytes=total, limit_bytes=limit_bytes
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def decode_response_body(data: bytes, response: httpx.Response) -> str:
+    """Decode bounded page bytes once, with a safe fallback for bad headers."""
+    encoding = response.encoding or "utf-8"
+    try:
+        return data.decode(encoding, errors="replace")
+    except LookupError:
+        return data.decode("utf-8", errors="replace")
 
 
 def site_domain(url: str) -> str:
@@ -97,22 +145,32 @@ class Tier1Fetcher:
                     addresses = await screen_url(current, resolver=self._resolver)
                     # Dial the screened IP; keep the hostname for Host/SNI/cert.
                     pinned, host_header, sni = pin_target(current, addresses[0])
-                    response = await client.get(
+                    async with client.stream(
+                        "GET",
                         pinned,
                         headers={"Host": host_header},
                         extensions={"sni_hostname": sni},
-                    )
-                    if not response.is_redirect or not response.has_redirect_location:
-                        return FetchResult(
-                            url=url,
-                            final_url=current,  # hostname form, not the pinned IP
-                            status_code=response.status_code,
-                            headers={k.lower(): v for k, v in response.headers.items()},
-                            body=response.text,
-                            tier=self.tier,
-                        )
-                    # Relative targets resolve against the current URL.
-                    current = urljoin(current, response.headers["location"])
+                    ) as response:
+                        if not response.is_redirect or not response.has_redirect_location:
+                            body = decode_response_body(
+                                await read_response_limited(
+                                    response,
+                                    url=current,
+                                    layer="target response",
+                                    limit_bytes=FETCH_TARGET_BODY_MAX_BYTES,
+                                ),
+                                response,
+                            )
+                            return FetchResult(
+                                url=url,
+                                final_url=current,  # hostname form, not the pinned IP
+                                status_code=response.status_code,
+                                headers={k.lower(): v for k, v in response.headers.items()},
+                                body=body,
+                                tier=self.tier,
+                            )
+                        # Relative targets resolve against the current URL.
+                        current = urljoin(current, response.headers["location"])
         except PrivateAddressRefused:
             raise  # security refusal: never mask as a retryable fetch error
         except (httpx.HTTPError, OSError) as exc:
@@ -229,6 +287,13 @@ class Tier2Fetcher:
                     await screen_urls(chain, resolver=self._resolver)
                     await page.wait_for_timeout(1500)  # settle JS-rendered content
                     body = await page.content()
+                    if len(body.encode("utf-8")) > FETCH_TARGET_BODY_MAX_BYTES:
+                        raise FetchResponseTooLarge(
+                            url,
+                            layer="rendered target body",
+                            observed_bytes=len(body.encode("utf-8")),
+                            limit_bytes=FETCH_TARGET_BODY_MAX_BYTES,
+                        )
                     screenshot = (
                         await page.screenshot(full_page=True, type="jpeg", quality=70)
                         if capture_screenshot

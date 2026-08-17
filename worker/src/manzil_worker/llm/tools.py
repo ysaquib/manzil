@@ -35,7 +35,14 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import structlog
-from manzil_shared.config import AGENT_TOOL_RESULT_SUMMARY_CAP
+from manzil_shared.config import (
+    AGENT_TOOL_RESULT_SUMMARY_CAP,
+    DISCOVER_MAX_FETCH_PAGE_CALLS,
+    DISCOVER_MAX_FETCH_PAGE_CHARS,
+    DISCOVER_MAX_TIER3_FETCHES,
+    FETCH_PAGE_EMBEDDED_MAX_CHARS,
+    FETCH_PAGE_MAX_CHARS,
+)
 from manzil_shared.errors import AgentBudgetExceeded, StageFatal
 
 from manzil_worker.llm.config import allowed_tools
@@ -182,6 +189,35 @@ class ToolContext:
     conn: Any = None  # asyncpg connection/pool for geocode_property's cache
     event_sink: ToolEventSink | None = None
     maps_transport: Any = None  # httpx transport injected by tests; None → real
+    fetch_page_budget: FetchPageBudget | None = None
+
+
+@dataclass
+class FetchPageBudget:
+    """Stage-local DISCOVER budget for page-fetch tool calls.
+
+    It is deliberately carried by ``ToolContext`` rather than module state: a
+    Job restart receives a fresh bounded attempt and concurrent Jobs cannot
+    spend one another's allowance.
+    """
+
+    max_calls: int = DISCOVER_MAX_FETCH_PAGE_CALLS
+    max_tier3_fetches: int = DISCOVER_MAX_TIER3_FETCHES
+    max_chars: int = DISCOVER_MAX_FETCH_PAGE_CHARS
+    calls_used: int = 0
+    tier3_fetches_used: int = 0
+    chars_used: int = 0
+
+    @property
+    def chars_remaining(self) -> int:
+        return max(0, self.max_chars - self.chars_used)
+
+    def exhausted(self) -> str | None:
+        if self.calls_used >= self.max_calls:
+            return "fetch_page call budget exhausted"
+        if self.chars_remaining <= 0:
+            return "fetch_page character budget exhausted"
+        return None
 
 
 _tool_context: ContextVar[ToolContext | None] = ContextVar("manzil_tool_context", default=None)
@@ -375,20 +411,24 @@ def _fetch_page_event_summary(result: Any) -> str:
     so a support question ("did the two fetches see the same page?") is still
     answerable from the event log without the page being in it.
     """
-    if isinstance(result, str):
+    if isinstance(result, dict) and result.get("outcome") == "fetched":
         return json.dumps(
             {
                 "outcome": "fetched",
-                "chars": len(result),
-                "sha256": hashlib.sha256(result.encode("utf-8")).hexdigest(),
+                "tier": result.get("tier"),
+                "provider": result.get("provider"),
+                "text_chars": result.get("text_chars"),
+                "structured_data_chars": result.get("structured_data_chars"),
+                "truncated": result.get("truncated"),
+                "sha256": result.get("sha256"),
             }
         )
     return json.dumps(result, default=str)
 
 
 @tool(summarize=_fetch_page_event_summary)
-async def fetch_page(url: str) -> str | dict[str, str]:
-    """Fetch a public web page and return its cleaned text.
+async def fetch_page(url: str) -> dict[str, Any]:
+    """Fetch a public web page and return a bounded, structured page brief.
 
     Routes through the tier ladder (§10.7), so it inherits the adapter registry,
     per-domain tiers, rate limits, and politeness. Two-layer §16 SSRF control: the
@@ -406,8 +446,11 @@ async def fetch_page(url: str) -> str | dict[str, str]:
     """
     # Local import breaks the import cycle (validate_url → stages.base → client →
     # tools). By call time every module is loaded.
-    from manzil_shared.config import FETCH_PAGE_MAX_CHARS
-    from manzil_shared.errors import FetchProviderError, PrivateAddressRefused
+    from manzil_shared.errors import (
+        FetchProviderError,
+        FetchResponseTooLarge,
+        PrivateAddressRefused,
+    )
     from manzil_shared.errors import StageFatal as _StageFatal
 
     from manzil_worker.fetching.ladder import fetch_with_ladder
@@ -416,6 +459,13 @@ async def fetch_page(url: str) -> str | dict[str, str]:
     ctx = current_tool_context()
     if ctx.registry is None or not ctx.fetchers:
         raise StageFatal("fetch_page: no fetchers/registry in the ToolContext")
+
+    budget = ctx.fetch_page_budget
+    if budget is not None:
+        exhausted = budget.exhausted()
+        if exhausted is not None:
+            return {"error": "budget_exhausted", "reason": exhausted}
+        budget.calls_used += 1
 
     try:
         safe_url = normalize_url(url)  # scheme + public-host + not-a-binary checks
@@ -427,7 +477,10 @@ async def fetch_page(url: str) -> str | dict[str, str]:
         return {"error": f"refused: {exc}"}
 
     try:
-        ladder = await fetch_with_ladder(safe_url, ctx.registry, ctx.fetchers)
+        fetchers = ctx.fetchers
+        if budget is not None and budget.tier3_fetches_used >= budget.max_tier3_fetches:
+            fetchers = {tier: fetcher for tier, fetcher in fetchers.items() if tier != 3}
+        ladder = await fetch_with_ladder(safe_url, ctx.registry, fetchers)
     except PrivateAddressRefused as exc:
         # The DNS-resolving guard fired inside a tier (host resolved private, or a
         # redirect hop pointed at an internal address). Loop-visible tool error,
@@ -440,5 +493,37 @@ async def fetch_page(url: str) -> str | dict[str, str]:
         # the page is unavailable rather than that it said something it did not.
         log.warning("fetch_page_provider_error", url=url, reason=str(exc))
         return {"error": f"unavailable: {exc}"}
+    except FetchResponseTooLarge as exc:
+        log.warning("fetch_page_response_too_large", url=url, reason=str(exc))
+        return {"error": "response_too_large", "reason": str(exc)}
 
-    return ladder.cleaned.text[:FETCH_PAGE_MAX_CHARS]
+    if budget is not None:
+        budget.tier3_fetches_used += sum(1 for tier, _ in ladder.attempts if tier == 3)
+
+    allowance = FETCH_PAGE_MAX_CHARS
+    if budget is not None:
+        allowance = min(allowance, budget.chars_remaining)
+    embedded_allowance = min(FETCH_PAGE_EMBEDDED_MAX_CHARS, allowance // 2)
+    content_allowance = allowance - embedded_allowance
+    content = ladder.cleaned.content_text[:content_allowance]
+    embedded = ladder.cleaned.embedded_data[:embedded_allowance]
+    returned_chars = len(content) + len(embedded)
+    if budget is not None:
+        budget.chars_used += returned_chars
+
+    return {
+        "outcome": "fetched",
+        "url": safe_url,
+        "final_url": ladder.result.final_url,
+        "tier": ladder.result.tier,
+        "provider": ladder.result.provider,
+        "text": content,
+        "structured_data": embedded,
+        "text_chars": len(content),
+        "structured_data_chars": len(embedded),
+        "truncated": {
+            "text": len(content) < len(ladder.cleaned.content_text),
+            "structured_data": len(embedded) < len(ladder.cleaned.embedded_data),
+        },
+        "sha256": hashlib.sha256((content + "\n" + embedded).encode("utf-8")).hexdigest(),
+    }
