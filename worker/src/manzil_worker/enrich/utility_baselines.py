@@ -3,7 +3,7 @@
 Regional utility estimates behind the §9.5 composition: for each due baseline
 region with an active listing, one forced-schema LLM pass emits winter-weighted
 `monthly_high` and typical `monthly_median` figures per utility per beds
-bucket, upserted into `utility_baselines` on a 120-day TTL.
+bucket, upserted into `utility_baselines` on a 180-day TTL.
 
 NOT a `jobs` row: `jobs.hunt_id` is NOT NULL and this is global, hunt-less
 maintenance — the worker's scheduler tick (queue.py) spawns it directly as a
