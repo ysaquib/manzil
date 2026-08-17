@@ -29,6 +29,12 @@ DEPOSIT_MAX_RENT_MULTIPLIER = 2.0
 STAGE_RETRIES = 3
 STAGE_BACKOFF_BASE_SECONDS = 10
 
+# OpenRouter shared-pool protection.  The advisory-lock gate is per upstream
+# model family and spans every worker/API replica sharing the production DB.
+# One concurrent request is deliberately conservative for Gemini's shared pool.
+OPENROUTER_MAX_CONCURRENT_CALLS = 1
+OPENROUTER_CONCURRENCY_POLL_SECONDS = 0.25
+
 # Queue reclaim: a running job without a heartbeat this long is orphaned
 JOB_ORPHAN_AFTER_SECONDS = 5 * 60
 

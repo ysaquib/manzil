@@ -16,6 +16,10 @@ class ManzilError(Exception):
 class StageRetryable(ManzilError):
     """Transient stage failure: runner retries with backoff."""
 
+    def __init__(self, message: str, *, retry_after_seconds: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after_seconds = retry_after_seconds
+
 
 class StageFatal(ManzilError):
     """Unrecoverable stage failure: job -> failed."""
