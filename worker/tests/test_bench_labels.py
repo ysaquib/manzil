@@ -29,7 +29,7 @@ def valid_payload() -> dict[str, object]:
         "slug": "rent.com--example",
         "url": "https://www.rent.com/example",
         "labeled_at": "2026-07-07",
-        "criteria": {"beds": 2, "pets_policy": "cats_and_dogs"},
+        "criteria": {"min_lease_months": 12, "pets_policy": "cats_and_dogs"},
         "unknown": ["dishwasher"],
         "floor_plans": [{"plan_name": "A1", "beds": 2, "baths": 1.0, "rent_min": 1500.0}],
     }
@@ -42,8 +42,8 @@ def write_label(path: Path, payload: dict[str, object]) -> Path:
 
 def test_valid_label_loads(tmp_path: Path) -> None:
     label = load_label(write_label(tmp_path / "x.json", valid_payload()))
-    assert label.criteria["beds"] == 2
-    assert label.graded_keys() == {"beds", "pets_policy", "dishwasher"}
+    assert label.criteria["min_lease_months"] == 12
+    assert label.graded_keys() == {"min_lease_months", "pets_policy", "dishwasher"}
     assert label.floor_plans is not None and label.floor_plans[0].plan_name == "A1"
 
 
@@ -59,10 +59,10 @@ def test_omitted_floor_plans_means_plans_not_graded(tmp_path: Path) -> None:
         ({"criteria": {"kitchen_vibes": 5}}, "not an extractable catalog key"),
         ({"unknown": ["kitchen_vibes"]}, "not an extractable catalog key"),
         ({"criteria": {"pets_policy": "gerbils_only"}}, "violates the catalog schema"),
-        ({"criteria": {"beds": "two"}}, "violates the catalog schema"),
-        ({"criteria": {"beds": None}}, "null"),
+        ({"criteria": {"min_lease_months": "twelve"}}, "violates the catalog schema"),
+        ({"criteria": {"min_lease_months": None}}, "null"),
         (
-            {"criteria": {"beds": 2}, "unknown": ["beds"]},
+            {"criteria": {"min_lease_months": 12}, "unknown": ["min_lease_months"]},
             "both criteria and unknown",
         ),
     ],
@@ -97,7 +97,7 @@ def test_load_labels_sorted_and_empty_dir_is_empty(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     "mutation",
     [
-        {"criteria": {"beds": None}},  # a null criteria value
+        {"criteria": {"min_lease_months": None}},  # a null criteria value
         {"labeled_at": None},  # undated = unfinished skeleton
     ],
 )
@@ -117,7 +117,7 @@ def test_load_labels_split_partitions_skeletons_from_gradeable(tmp_path: Path) -
     write_label(tmp_path / "skel.json", valid_payload() | {"slug": "skel", "labeled_at": None})
     write_label(
         tmp_path / "nullcrit.json",
-        valid_payload() | {"slug": "nullcrit", "criteria": {"beds": None}},
+        valid_payload() | {"slug": "nullcrit", "criteria": {"min_lease_months": None}},
     )
 
     loaded, skipped = load_labels_split(labels_dir=tmp_path)
