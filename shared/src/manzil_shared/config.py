@@ -145,12 +145,12 @@ CHECKPOINT_TIMEOUT_HOURS = 24
 
 # Scheduler tick (P3-9 lands the scaffold; P3-11/P3-12 add duties): how often
 # the worker loop runs its scheduled duties. The first duty is the
-# utility-baselines sweep (§9.5, §14: 120-day metro TTL).
+# utility-baselines sweep (§9.5, §14: 180-day regional TTL).
 SCHEDULER_TICK_SECONDS = 300.0
 REFRESH_TTL_HOURS = {
-    "pricing": 24,
-    "listing_details": 14 * 24,
-    "images": 30 * 24,
+    "pricing": 10 * 24,
+    "listing_details": 30 * 24,
+    "images": 60 * 24,
     "reviews": 30 * 24,
 }
 # A partial/failed image attempt stays due, but must not be retried on every
@@ -162,7 +162,7 @@ IMAGE_REFRESH_RETRY_COOLDOWN_HOURS = 3
 # and manual retries remain available because only the scheduler reads this.
 REFRESH_FAILURE_BACKOFF_BASE_HOURS = 1
 REFRESH_FAILURE_BACKOFF_MAX_HOURS = 24
-UTILITY_BASELINE_TTL_DAYS = 120
+UTILITY_BASELINE_TTL_DAYS = 180
 # A metro whose baselines pass failed is not retried before this cooldown —
 # without it a persistently failing pass would fire one live LLM call per tick.
 UTILITY_BASELINE_RETRY_SECONDS = 3600.0

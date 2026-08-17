@@ -16,13 +16,10 @@ from manzil_worker.queue import (
 from manzil_worker.state import RunState
 
 
-def test_partial_image_refresh_advances_text_but_not_image_freshness() -> None:
+def test_partial_image_refresh_does_not_advance_unrequested_class_freshness() -> None:
     state = RunState(job_id=uuid4(), job_type=JobType.REFRESH, url="https://example.test")
     assert not state.image_fetch_completed
-    assert _successful_refresh_fields(state, ["images"]) == [
-        "pricing",
-        "listing_details",
-    ]
+    assert _successful_refresh_fields(state, ["images"]) == []
 
     state.image_fetch_completed = True
     assert _successful_refresh_fields(state, ["images"]) == ["images"]
@@ -157,7 +154,7 @@ async def test_refresh_ttl_tick_skips_images_when_cap_saturated_ingest_marked_fr
         await pg_pool.execute("delete from properties where id = $1", property_id)
 
 
-async def test_refresh_ttl_tick_uses_24_hour_pricing_ttl_and_coalesces(
+async def test_refresh_ttl_tick_uses_10_day_pricing_ttl_and_coalesces(
     pg_pool: asyncpg.Pool,
 ) -> None:
     hunt_id, property_id, listing_id = uuid4(), uuid4(), uuid4()
@@ -203,7 +200,7 @@ async def test_refresh_ttl_tick_uses_24_hour_pricing_ttl_and_coalesces(
         values ($1, $2, $3)
         """,
         [
-            (listing_id, "pricing", now - timedelta(hours=25)),
+            (listing_id, "pricing", now - timedelta(days=10, minutes=1)),
             (listing_id, "listing_details", now - timedelta(days=1)),
         ],
     )
@@ -387,7 +384,7 @@ async def test_refresh_ttl_tick_excludes_seed_sources_and_backs_off_failed_class
             (real_listing_id, hunt_id, real_property_id, owner_id, real_source_id),
         ],
     )
-    stale = datetime.now(UTC) - timedelta(hours=25)
+    stale = datetime.now(UTC) - timedelta(days=10, minutes=1)
     fresh = datetime.now(UTC)
     await pg_pool.executemany(
         """

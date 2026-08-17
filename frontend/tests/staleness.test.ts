@@ -25,27 +25,27 @@ function status(
 }
 
 describe("refresh staleness", () => {
-  it("uses the 24-hour pricing boundary exactly", () => {
+  it("uses the 10-day pricing boundary exactly", () => {
     expect(
       staleRefreshClasses(
-        [status("pricing", "2026-07-28T12:00:00Z")],
+        [status("pricing", "2026-07-19T12:00:00Z")],
         NOW,
       ),
     ).toEqual(["pricing"]);
     expect(
       staleRefreshClasses(
-        [status("pricing", "2026-07-28T12:00:01Z")],
+        [status("pricing", "2026-07-19T12:00:01Z")],
         NOW,
       ),
     ).toEqual([]);
   });
 
-  it("uses 14 days for listing details and 30 days for images/reviews", () => {
+  it("uses 30 days for listing details/reviews and 60 days for images", () => {
     expect(
       staleRefreshClasses(
         [
-          status("listing_details", "2026-07-15T12:00:00Z"),
-          status("images", "2026-06-29T12:00:00Z"),
+          status("listing_details", "2026-06-29T12:00:00Z"),
+          status("images", "2026-05-30T12:00:00Z"),
           status("reviews", "2026-06-29T12:00:01Z"),
           status("location", "2020-01-01T00:00:00Z"),
         ],
@@ -57,7 +57,7 @@ describe("refresh staleness", () => {
   it("groups stale classes per Listing", () => {
     const grouped = statusesByListing(
       [
-        status("pricing", "2026-07-28T11:59:00Z", "one"),
+        status("pricing", "2026-07-19T11:59:00Z", "one"),
         status("pricing", "2026-07-29T11:59:00Z", "two"),
       ],
       NOW,
@@ -88,7 +88,7 @@ describe("refresh staleness", () => {
     expect(
       listingNeedsImageRefresh(
         [
-          status("images", "2026-06-29T12:00:00Z", "one"),
+          status("images", "2026-05-30T12:00:00Z", "one"),
           status("pricing", "2026-07-29T11:59:00Z", "one"),
         ],
         "one",
@@ -98,7 +98,7 @@ describe("refresh staleness", () => {
     expect(
       listingNeedsImageRefresh(
         [
-          status("images", "2026-06-29T12:00:01Z", "one"),
+          status("images", "2026-05-30T12:00:01Z", "one"),
           status("pricing", "2026-07-29T11:59:00Z", "one"),
         ],
         "one",
@@ -124,7 +124,7 @@ describe("refresh staleness", () => {
     expect(hasRetryableImageFetchPartial([saturatedJob], "listing-a")).toBe(false);
     expect(
       showRefreshImagesAction(
-        [status("images", "2026-06-29T12:00:01Z", "listing-a")],
+        [status("images", "2026-05-30T12:00:01Z", "listing-a")],
         "listing-a",
         [saturatedJob],
         NOW,

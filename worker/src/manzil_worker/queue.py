@@ -2149,10 +2149,6 @@ async def _mark_refresh_classes_current(
     fields: list[str],
 ) -> None:
     classes = set(fields)
-    # A complete page check uses the full Catalog whenever bytes changed, so
-    # either text class proves both text classes current.
-    if classes & {"pricing", "listing_details", "images"}:
-        classes.update({"pricing", "listing_details"})
     for refresh_class in sorted(classes):
         await conn.execute(
             """
@@ -2182,13 +2178,6 @@ def _successful_refresh_fields(state: RunState, fields: list[str]) -> list[str]:
     if partial_images:
         failed_classes.add("images")
     successful = [field for field in fields if field not in failed_classes]
-    # Image discovery re-fetched and successfully projected the complete text
-    # Catalog even when one image download was partial. Keep those independent
-    # text success markers honest while leaving only `images` due for retry.
-    if partial_images:
-        successful.extend(
-            field for field in ("pricing", "listing_details") if field not in successful
-        )
     return successful
 
 

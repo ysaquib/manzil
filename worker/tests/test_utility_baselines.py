@@ -227,7 +227,7 @@ async def test_due_regions_require_all_twenty_four_fresh_rows(pg_pool: asyncpg.P
                         utility,
                     )
             assert region not in await due_baseline_regions(conn)
-            stale = datetime.now(UTC) - timedelta(days=121)
+            stale = datetime.now(UTC) - timedelta(days=181)
             await conn.execute(
                 """
                 update utility_baselines set refreshed_at = $4
