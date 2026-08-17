@@ -168,7 +168,7 @@ def test_record_then_replay_round_trip(monkeypatch: pytest.MonkeyPatch, tmp_path
     assert tally.cache_read_tokens == 50
     assert tally.cost_usd == pytest.approx(
         cost_usd(
-            WORKHORSE_MODEL,
+            model_for_stage("smoke"),
             input_tokens=100,
             output_tokens=20,
             cache_read_tokens=50,
