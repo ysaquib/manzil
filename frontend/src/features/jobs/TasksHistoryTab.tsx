@@ -20,7 +20,7 @@ import {
   type JobEvent,
   type Job,
 } from "./api";
-import { filterHistoryJobs, formatJobCostUsd, historySpendLabel, jobDuration } from "./history";
+import { filterHistoryJobs, historySpendLabel, jobMeta } from "./history";
 import { useHuntAccess } from "../hunts/access";
 
 // A stage event reads as a failure when its name mentions failing or erroring.
@@ -59,15 +59,6 @@ function EventTimeline({ jobId, expanded }: { jobId: string; expanded: boolean }
       })}
     </div>
   );
-}
-
-function jobMeta(job: Job, memberName: string): string {
-  const parts = [memberName];
-  if (job.attempts > 1) parts.push(`attempt ${job.attempts}`);
-  const duration = jobDuration(job);
-  if (duration) parts.push(duration);
-  parts.push(formatJobCostUsd(job.cost_actual_usd));
-  return parts.join(" · ");
 }
 
 function escalationSummary(plan: unknown): string | null {
