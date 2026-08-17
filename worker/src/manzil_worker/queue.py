@@ -601,13 +601,18 @@ async def _upsert_floor_plans(
                     now(), true, $15::jsonb)
             on conflict {conflict} do update set
                 detail_url = coalesce(excluded.detail_url, floor_plans.detail_url),
-                unit_types = excluded.unit_types,
-                sqft_min = excluded.sqft_min,
-                sqft_max = excluded.sqft_max,
-                rent_min = excluded.rent_min,
-                rent_max = excluded.rent_max,
-                deposit = excluded.deposit,
-                availability_date = excluded.availability_date,
+                unit_types = case
+                    when jsonb_array_length(excluded.unit_types) > 0 then excluded.unit_types
+                    else floor_plans.unit_types
+                end,
+                sqft_min = coalesce(excluded.sqft_min, floor_plans.sqft_min),
+                sqft_max = coalesce(excluded.sqft_max, floor_plans.sqft_max),
+                rent_min = coalesce(excluded.rent_min, floor_plans.rent_min),
+                rent_max = coalesce(excluded.rent_max, floor_plans.rent_max),
+                deposit = coalesce(excluded.deposit, floor_plans.deposit),
+                availability_date = coalesce(
+                    excluded.availability_date, floor_plans.availability_date
+                ),
                 last_seen_at = now(),
                 is_current = true,
                 raw = excluded.raw

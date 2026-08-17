@@ -36,6 +36,59 @@ def _claim_variant(criterion_key: str, value: Any, explicit: str | None = None) 
     return None
 
 
+def _is_known_value(value: Any, confidence: Confidence) -> bool:
+    """Whether a refresh observation is safe to replace displayed truth with.
+
+    `none` is an explicit known value for several Catalog Criteria and must not
+    be confused with an extractor's unknown/not-found result.
+    """
+    return (
+        confidence is not Confidence.NOT_FOUND
+        and value is not None
+        and not (isinstance(value, str) and value.lower() in {"unknown", "not_found"})
+    )
+
+
+async def _should_append_refresh_resolution(
+    conn: asyncpg.Connection,
+    *,
+    property_id: UUID,
+    hunt_id: UUID | None,
+    claim: SourceClaim,
+    floor_plan_id: UUID | None,
+) -> bool:
+    """Keep a known resolved fact stable until a refresh supplies a new known value.
+
+    Candidate rows still record every refresh observation. This gate controls
+    only the current resolved projection, so a complete Source refresh can say
+    "not found" without erasing a value that was previously evidenced.
+    """
+    incoming_known = _is_known_value(claim.value, claim.confidence)
+    current = await conn.fetchrow(
+        """
+        select value, confidence
+        from current_extractions
+        where property_id = $1
+          and hunt_id is not distinct from $2
+          and criterion_key = $3
+          and target_scope = $4
+          and floor_plan_id is not distinct from $5
+          and claim_variant is not distinct from $6
+        """,
+        property_id,
+        hunt_id,
+        claim.criterion_key,
+        claim.target_scope.value,
+        floor_plan_id,
+        _claim_variant(claim.criterion_key, claim.value, claim.claim_variant),
+    )
+    if current is None:
+        return incoming_known
+    current_value = _json_value(current["value"])
+    current_known = _is_known_value(current_value, Confidence(current["confidence"]))
+    return incoming_known and (not current_known or current_value != claim.value)
+
+
 async def append_candidate(
     conn: asyncpg.Connection,
     *,
@@ -169,8 +222,9 @@ async def append_candidate_resolution(
     resolution_rule: str = "single_source",
     disputed: bool = False,
     claim_variant: str | None = None,
-) -> tuple[UUID, UUID]:
-    """Append one candidate, its one-Source resolution, and lineage edge."""
+    preserve_known_on_refresh: bool = False,
+) -> tuple[UUID, UUID | None]:
+    """Append one candidate and, when eligible, its one-Source resolution."""
     candidate_id = await append_candidate(
         conn,
         property_id=property_id,
@@ -206,6 +260,14 @@ async def append_candidate_resolution(
         disputed=disputed,
         candidate_claim_group_ids=[claim_group_id],
     )
+    if preserve_known_on_refresh and not await _should_append_refresh_resolution(
+        conn,
+        property_id=property_id,
+        hunt_id=hunt_id,
+        claim=resolution_claim,
+        floor_plan_id=floor_plan_id,
+    ):
+        return candidate_id, None
     resolution_id = await append_resolution(
         conn,
         property_id=property_id,
@@ -234,9 +296,9 @@ async def persist_reconciled_claims(
     """Append every Source candidate, then one resolution with full lineage.
 
     A successfully extracted Source is authoritative only for its own candidate
-    identities. Omitted identities receive a Source-local not-found candidate;
-    the Property resolution is retired only when no Source in this run still
-    supports that identity.
+    identities. Omitted identities receive a Source-local not-found candidate.
+    The refresh guard retains known resolved truth until a new known value
+    supersedes it.
     """
     materialized_candidates = list(candidate_claims)
     materialized_resolutions = list(resolved_claims)
@@ -314,16 +376,23 @@ async def persist_reconciled_claims(
                 _claim_variant(claim.criterion_key, claim.value, claim.claim_variant),
             )
         )
-        await append_resolution(
+        if not authoritative_urls or await _should_append_refresh_resolution(
             conn,
             property_id=property_id,
             hunt_id=hunt_id,
             claim=claim,
             floor_plan_id=floor_plan_id,
-            model=claim.model,
-            job_id=job_id,
-            candidate_ids=candidate_ids,
-        )
+        ):
+            await append_resolution(
+                conn,
+                property_id=property_id,
+                hunt_id=hunt_id,
+                claim=claim,
+                floor_plan_id=floor_plan_id,
+                model=claim.model,
+                job_id=job_id,
+                candidate_ids=candidate_ids,
+            )
 
     refresh_model = (
         materialized_candidates[0].model if materialized_candidates else "authoritative_refresh"
@@ -369,30 +438,38 @@ async def persist_reconciled_claims(
             )
             if identity in observed_any or identity in resolved_identities:
                 continue
-            await append_resolution(
+            tombstone = SourceClaim(
+                criterion_key=row["criterion_key"],
+                value=None,
+                confidence=Confidence.NOT_FOUND,
+                source_id=source_url,
+                model=refresh_model,
+                prompt_version=0,
+                target_scope=target_scope,
+                floor_plan_id=row["floor_plan_id"],
+                applicability=applicability,
+                claim_variant=row["claim_variant"],
+                claim_group_id=group_id,
+                resolution_rule="source_refresh_not_found",
+                candidate_claim_group_ids=[group_id],
+            )
+            if await _should_append_refresh_resolution(
                 conn,
                 property_id=property_id,
                 hunt_id=hunt_id,
-                claim=SourceClaim(
-                    criterion_key=row["criterion_key"],
-                    value=None,
-                    confidence=Confidence.NOT_FOUND,
-                    source_id=source_url,
-                    model=refresh_model,
-                    prompt_version=0,
-                    target_scope=target_scope,
-                    floor_plan_id=row["floor_plan_id"],
-                    applicability=applicability,
-                    claim_variant=row["claim_variant"],
-                    claim_group_id=group_id,
-                    resolution_rule="source_refresh_not_found",
-                    candidate_claim_group_ids=[group_id],
-                ),
+                claim=tombstone,
                 floor_plan_id=row["floor_plan_id"],
-                model=refresh_model,
-                job_id=job_id,
-                candidate_ids={group_id: [(target_scope, row["floor_plan_id"], tombstone_id)]},
-            )
+            ):
+                await append_resolution(
+                    conn,
+                    property_id=property_id,
+                    hunt_id=hunt_id,
+                    claim=tombstone,
+                    floor_plan_id=row["floor_plan_id"],
+                    model=refresh_model,
+                    job_id=job_id,
+                    candidate_ids={group_id: [(target_scope, row["floor_plan_id"], tombstone_id)]},
+                )
 
 
 async def persist_single_source_claims(
@@ -410,9 +487,10 @@ async def persist_single_source_claims(
     """Resolve response-local refs, validate target shape, and append facts.
 
     A complete successful Source refresh is authoritative for that Source's
-    prior claim identities. Any identity omitted by the new response gets an
-    explicit not-found version. Partial/failed work passes ``authoritative=False``
-    and therefore cannot retire truth by silence.
+    prior claim identities. Any identity omitted by the new response gets a
+    not-found candidate, while the refresh guard retains known resolved truth.
+    Partial/failed work passes ``authoritative=False`` and therefore cannot
+    retire truth by silence.
     """
     prior_rows = []
     if authoritative:
@@ -474,6 +552,7 @@ async def persist_single_source_claims(
             resolution_rule=claim.resolution_rule or "single_source",
             disputed=claim.disputed,
             claim_variant=variant,
+            preserve_known_on_refresh=authoritative,
         )
 
     if not authoritative:
@@ -510,6 +589,7 @@ async def persist_single_source_claims(
             job_id=job_id,
             resolution_rule="source_refresh_not_found",
             claim_variant=row["claim_variant"],
+            preserve_known_on_refresh=True,
         )
 
 

@@ -10,7 +10,6 @@ from manzil_shared.errors import ExtractionInvalid
 from manzil_shared.models import Confidence
 from manzil_worker.fetching.cleaner import clean_html
 from manzil_worker.llm.client import StructuredValidationError
-from manzil_worker.llm.config import model_for_stage
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.extract import extract_stage
 from manzil_worker.stages.schema_gen import build_extraction_schema, extractable_entries
@@ -89,15 +88,10 @@ def test_extract_populates_every_criterion_with_provenance() -> None:
         "flooring_materials",
         "is_renovated",
     }
-    beds = get_claim(state, "beds")
-    assert beds.value == 2
-    assert beds.source_id == state.sources[0].url
-    assert beds.model == model_for_stage("extract")
-    from manzil_worker.llm.prompt_loader import load_prompt
-
-    assert beds.prompt_version == load_prompt("extract").version  # provenance, not a pin
+    assert not any(claim.criterion_key == "beds" for claim in state.source_claims)
+    assert not any(claim.criterion_key == "sqft" for claim in state.source_claims)
     assert not any(claim.criterion_key == "private_entry" for claim in state.source_claims)
-    assert [p.plan_name for p in state.floor_plans] == ["The Maple"]
+    assert [(p.plan_name, p.beds, p.sqft_min) for p in state.floor_plans] == [("The Maple", 2, 950)]
 
 
 def test_extract_lands_property_identity_when_present() -> None:
@@ -176,16 +170,16 @@ def test_extract_leaves_pet_costs_and_utilities_none_when_absent() -> None:
 
 
 def test_invalid_first_response_gets_one_corrective_retry() -> None:
-    bad = extraction_payload(beds=field_payload("two"))  # not an integer
+    bad = extraction_payload(pool=field_payload("not-a-pool"))
     llm = FakeLLM({"extract": [bad, maple_extraction()]})
     state = make_state(cleaned_text=CLEANED)
     state = asyncio.run(extract_stage(state, StageCtx(call_structured=llm)))
 
-    assert get_claim(state, "beds").value == 2
+    assert state.floor_plans[0].beds == 2
     assert len(llm.calls) == 2
     retry_content = llm.calls[1][1]
     assert "failed schema validation" in retry_content
-    assert "beds" in retry_content  # the validation error travels back to the model
+    assert "pool" in retry_content  # the validation error travels back to the model
 
 
 def test_corrective_retry_includes_the_invalid_scoped_claim_fragment() -> None:
@@ -208,7 +202,7 @@ def test_corrective_retry_includes_the_invalid_scoped_claim_fragment() -> None:
         extract_stage(make_state(cleaned_text=CLEANED), StageCtx(call_structured=retrying_llm))
     )
 
-    assert get_claim(state, "beds").value == 2
+    assert state.floor_plans[0].beds == 2
     assert len(calls) == 2
     assert '"is_renovated"' in calls[1]
     assert calls[1].index("invalid portion") < calls[1].index("URL:")
@@ -254,7 +248,7 @@ def test_conflicting_laundry_none_and_on_site_canonicalizes_to_positive() -> Non
 
 
 def test_second_invalid_response_is_a_job_error_not_a_retry() -> None:
-    bad = extraction_payload(beds=field_payload("two"))
+    bad = extraction_payload(pool=field_payload("not-a-pool"))
     llm = FakeLLM({"extract": [bad, bad]})
     state = make_state(cleaned_text=CLEANED)
     with pytest.raises(ExtractionInvalid, match="twice"):
@@ -263,15 +257,14 @@ def test_second_invalid_response_is_a_job_error_not_a_retry() -> None:
 
 
 def test_available_now_sentinel_rewrites_to_run_date() -> None:
-    """Immediate-availability phrasing extracts as available_now; EXTRACT
-    rewrites criterion + floor-plan dates to ctx.today before VERIFY."""
+    """Immediate-availability phrasing rewrites Floor Plan dates to ctx.today
+    before VERIFY."""
     from datetime import date
 
     from manzil_worker.stages.extract import AVAILABLE_NOW_SENTINEL
 
     quote = "Available Now"
     payload = maple_extraction()
-    payload["availability_date"] = field_payload(AVAILABLE_NOW_SENTINEL, quote)
     payload["floor_plans"][0]["availability_date"] = AVAILABLE_NOW_SENTINEL
     payload["floor_plans"][0]["evidence_quote"] = quote
     llm = FakeLLM({"extract": payload})
@@ -279,8 +272,6 @@ def test_available_now_sentinel_rewrites_to_run_date() -> None:
     frozen = date(2026, 7, 16)
     state = asyncio.run(extract_stage(state, StageCtx(call_structured=llm, today=lambda: frozen)))
 
-    assert get_claim(state, "availability_date").value == "2026-07-16"
-    assert get_claim(state, "availability_date").evidence_quote == quote
     assert state.floor_plans[0].availability_date == "2026-07-16"
     assert state.floor_plans[0].evidence_quote == quote
 
@@ -294,7 +285,6 @@ def test_iso_availability_date_is_left_untouched() -> None:
         extract_stage(state, StageCtx(call_structured=llm, today=lambda: date(2026, 7, 16)))
     )
 
-    assert get_claim(state, "availability_date").value == "2026-08-01"
     assert state.floor_plans[0].availability_date == "2026-08-01"
 
 
