@@ -24,9 +24,12 @@ import base64
 import hashlib
 import json
 import os
+from collections.abc import Awaitable, Callable
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import TYPE_CHECKING, Any
 
 from manzil_shared.config import (
@@ -36,7 +39,7 @@ from manzil_shared.config import (
     DISCOVER_MAX_TOTAL_RESULTS,
     DISCOVER_WEB_SEARCH_REQUEST_USD,
 )
-from manzil_shared.errors import AgentBudgetExceeded
+from manzil_shared.errors import AgentBudgetExceeded, StageRetryable
 from pydantic import BaseModel, ValidationError
 
 # The tally lives outside the seam (AD-C) so tier-3 fetching can bill to it
@@ -45,6 +48,7 @@ from pydantic import BaseModel, ValidationError
 from manzil_worker.costs import CallUsage, active_tally
 from manzil_worker.costs import CostTally as CostTally  # re-export
 from manzil_worker.costs import cost_tally as cost_tally  # re-export
+from manzil_worker.llm.concurrency import openrouter_slot
 from manzil_worker.llm.config import (
     cost_usd,
     max_tokens_for_stage,
@@ -147,6 +151,52 @@ def _openrouter_client() -> Any:
         base_url=OPENROUTER_BASE_URL,
         default_headers=_openrouter_attribution_headers(),
     )
+
+
+def _retry_after_seconds(error: Exception) -> float | None:
+    """Parse OpenRouter's standard Retry-After header when it is present."""
+    response = getattr(error, "response", None)
+    headers = getattr(response, "headers", None)
+    value = headers.get("retry-after") if headers is not None else None
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        try:
+            retry_at = parsedate_to_datetime(value)
+        except (TypeError, ValueError):
+            return None
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=UTC)
+        return max(0.0, (retry_at - datetime.now(UTC)).total_seconds())
+
+
+def _is_transient_openrouter_error(error: Exception) -> bool:
+    """OpenAI SDK errors that a resumable pipeline Stage should retry."""
+    from openai import APIConnectionError, APITimeoutError
+
+    if isinstance(error, (APIConnectionError, APITimeoutError)):
+        return True
+    status = getattr(error, "status_code", None)
+    return isinstance(status, int) and (status in {408, 409, 425, 429} or status >= 500)
+
+
+async def _call_openrouter[T](model: str, request: Callable[[], Awaitable[T]]) -> T:
+    """Serialize a provider family across workers and normalize transience."""
+    async with openrouter_slot(model):
+        try:
+            return await request()
+        except Exception as error:
+            if _is_transient_openrouter_error(error):
+                status = getattr(error, "status_code", None)
+                retry_after = _retry_after_seconds(error)
+                detail = f"HTTP {status}" if isinstance(status, int) else type(error).__name__
+                raise StageRetryable(
+                    f"OpenRouter temporary upstream failure ({detail}); retrying",
+                    retry_after_seconds=retry_after,
+                ) from error
+            raise
 
 
 @dataclass(frozen=True)
@@ -320,7 +370,7 @@ def _tool_schema(schema: type[BaseModel]) -> dict[str, Any]:
 
 async def _live_call(plan: _CallPlan, schema: type[BaseModel]) -> ProviderResponse:
     """One real OpenRouter call: cached prefix + per-call system, forced tool."""
-    return await _live_call_openrouter(plan, schema)
+    return await _call_openrouter(plan.model, lambda: _live_call_openrouter(plan, schema))
 
 
 async def _live_call_openrouter(plan: _CallPlan, schema: type[BaseModel]) -> ProviderResponse:
@@ -509,7 +559,9 @@ async def _traced_live_vision_call(
             metadata=metadata,
         ) as generation,
     ):
-        response = await _live_call_openrouter_vision(plan, schema, images)
+        response = await _call_openrouter(
+            plan.model, lambda: _live_call_openrouter_vision(plan, schema, images)
+        )
         if response.reported_cost_usd is not None:
             generation.update(
                 metadata={**metadata, "openrouter_cost_usd": response.reported_cost_usd}
@@ -878,13 +930,16 @@ async def _traced_agent_turn(
             metadata=metadata,
         ) as generation,
     ):
-        raw = await _live_agent_turn_openrouter(
-            stage,
+        raw = await _call_openrouter(
             model,
-            prompt,
-            messages,
-            specs,
-            server_search_budget,
+            lambda: _live_agent_turn_openrouter(
+                stage,
+                model,
+                prompt,
+                messages,
+                specs,
+                server_search_budget,
+            ),
         )
         if raw.reported_cost_usd is not None:
             generation.update(metadata={**metadata, "openrouter_cost_usd": raw.reported_cost_usd})

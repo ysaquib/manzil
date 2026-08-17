@@ -62,6 +62,7 @@ from manzil_worker.enrich.contacts import (
 from manzil_worker.enrich.images import SupabaseImageStore
 from manzil_worker.fetching.registry import InMemoryRegistry, PostgresRegistry
 from manzil_worker.fetching.tiers import Fetcher, site_domain
+from manzil_worker.llm.concurrency import use_postgres_openrouter_gate
 from manzil_worker.llm.config import model_for_stage
 from manzil_worker.postgres_persistence import (
     HuntExecutionFrozen,
@@ -3102,7 +3103,11 @@ async def run_worker_loop(
                 if now - last_tick >= tick_interval:
                     last_tick = now
                     try:
-                        await scheduler_tick(pool)
+                        # Scheduler work includes the utility-baselines LLM
+                        # producer, so it shares the same process-spanning
+                        # provider gate as ordinary Jobs.
+                        async with use_postgres_openrouter_gate(pool):
+                            await scheduler_tick(pool)
                     except Exception as error:
                         log.warning("scheduler_tick_failed", error=str(error))
 
@@ -3142,7 +3147,11 @@ async def run_worker_loop(
             try:
                 async with pool.acquire() as conn:
                     await heartbeat(conn, job["id"])
-                await handler(pool, job)
+                # API replicas each host a worker loop.  The context installs
+                # a shared Postgres advisory-lock gate around each live model
+                # request, rather than multiplying traffic by replica count.
+                async with use_postgres_openrouter_gate(pool):
+                    await handler(pool, job)
                 if await _cancel_if_hunt_became_read_only(pool, job["id"]):
                     log.info("job_stopped_read_only", job_id=str(job["id"]), reason="post-dispatch")
                 if score_notifications_ready and await pool.fetchval(

@@ -154,7 +154,9 @@ async def _run_stage(name: str, stage: Stage, state: RunState, ctx: StageCtx) ->
         except StageRetryable as error:
             if attempt >= STAGE_RETRIES:
                 raise
-            delay = _backoff_seconds(attempt)
+            # An upstream Retry-After is a lower bound, not a replacement for
+            # our jittered exponential retry discipline.
+            delay = max(_backoff_seconds(attempt), error.retry_after_seconds or 0.0)
             log.warning(
                 "stage_retry",
                 job_id=str(state.job_id),
