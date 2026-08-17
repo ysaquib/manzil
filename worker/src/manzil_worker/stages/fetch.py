@@ -12,7 +12,12 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import structlog
-from manzil_shared.errors import FetchProviderError, StageFatal, StageRetryable
+from manzil_shared.errors import (
+    FetchProviderError,
+    FetchResponseTooLarge,
+    StageFatal,
+    StageRetryable,
+)
 from manzil_shared.models import FetchOutcome
 
 from manzil_worker.enrich.images import discover_images
@@ -58,6 +63,10 @@ async def _fetch_one(state: RunState, ctx: StageCtx, url: str) -> SourceState:
         raise StageFatal("fetch: no adapter registry in StageCtx")
     try:
         ladder = await fetch_with_ladder(url, ctx.registry, ctx.fetchers)
+    except FetchResponseTooLarge as error:
+        # The full page was deliberately rejected before cleaning.  Retrying
+        # cannot make a deterministic over-limit response smaller.
+        raise StageFatal(str(error)) from error
     except FetchProviderError as error:
         # The unblocker's API refused us; the target said nothing. Report it as
         # what it is (§20 2026-08-11) rather than as a status on the listing URL,

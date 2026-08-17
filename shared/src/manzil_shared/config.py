@@ -56,6 +56,12 @@ DISCOVER_MAX_TURNS = 6
 DISCOVER_MAX_SEARCHES = 3
 DISCOVER_MAX_RESULTS_PER_SEARCH = 5
 DISCOVER_MAX_TOTAL_RESULTS = 12
+# Local ``fetch_page`` calls are independent of the provider-hosted search
+# budget above.  DISCOVER only needs enough page evidence to disambiguate a
+# handful of candidates; these caps keep one model turn from becoming a crawl.
+DISCOVER_MAX_FETCH_PAGE_CALLS = 4
+DISCOVER_MAX_TIER3_FETCHES = 1
+DISCOVER_MAX_FETCH_PAGE_CHARS = 60_000
 # Anthropic native web search is $10 / 1,000 successful searches (2026-07-21).
 # Live OpenRouter calls prefer the provider-reported total; replay uses this
 # explicit price so jobs.cost_actual_usd does not silently omit search spend.
@@ -83,9 +89,11 @@ TIER3_FREE_MONTHLY_CREDITS = {
 # `tool_called` job event stores only a truncated summary — the full result still
 # goes back to the model in the loop.
 AGENT_TOOL_RESULT_SUMMARY_CAP = 2048
-# `fetch_page` tool: cleaned text handed back to an agent is capped so one fetch
-# cannot blow the turn's context budget (the full page still persists via FETCH).
+# `fetch_page` tool: DISCOVER gets a compact, structured page brief rather than
+# an arbitrary prefix of ``CleanedPage.text``.  Reserving half for embedded data
+# matters because JSON-LD/state blobs are appended after ordinary visible text.
 FETCH_PAGE_MAX_CHARS = 20_000
+FETCH_PAGE_EMBEDDED_MAX_CHARS = 10_000
 # Maps HTTP wrappers (enrich/maps.py): retry count + base backoff for quota
 # (HTTP 429 / Google OVER_QUERY_LIMIT) — small; Maps is inside the free credit.
 MAPS_MAX_RETRIES = 3
@@ -218,6 +226,16 @@ SHELL_SCRIPT_RATIO = 0.7
 # cleaned text is capped at this many chars
 EMBEDDED_SCRIPT_MIN_CHARS = 500
 EMBEDDED_DATA_MAX_CHARS = 100_000
+
+# Fetching is memory-bounded before HTML parsing.  Tier 3 first receives a
+# provider envelope, then unwraps the target page, so the two limits are
+# deliberately distinct.  A page over either limit is rejected whole: partial
+# HTML/JSON is not evidence.
+FETCH_PROVIDER_RESPONSE_MAX_BYTES = 16 * 1024 * 1024
+FETCH_TARGET_BODY_MAX_BYTES = 8 * 1024 * 1024
+# The cleaner reserves room for curated floor-plan/fee and embedded-data
+# sections, trimming generic prose first.
+CLEANED_PAGE_MAX_CHARS = 250_000
 
 # Tier-2 (browser) politeness: minimum seconds between fetches to one domain
 TIER2_MIN_DELAY_SECONDS = 3.0

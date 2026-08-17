@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from manzil_worker.discovery_sources import SOURCE_METADATA, source_metadata
 from manzil_worker.fetching.tiers import site_domain
-from manzil_worker.llm.tools import ToolContext, fetch_page, tool_context
+from manzil_worker.llm.tools import FetchPageBudget, ToolContext, fetch_page, tool_context
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.plan import rank_discovered_sources
 from manzil_worker.stages.validate_url import normalize_url
@@ -230,6 +230,7 @@ async def discover_stage(state: RunState, ctx: StageCtx) -> RunState:
                 fetchers=ctx.fetchers,
                 registry=ctx.registry,
                 event_sink=ctx.tool_event_sink,
+                fetch_page_budget=FetchPageBudget(),
             )
         ):
             result = await ctx.call_agent(
