@@ -7,7 +7,8 @@
 This runbook deploys the current Manzil architecture:
 
 - a Render Static Site for the React/Vite frontend;
-- one Render Web Service for FastAPI **and its in-process worker**;
+- one Render Web Service for FastAPI and, after the isolation cutover, one
+  Render Background Worker for the durable pipeline;
 - one hosted Supabase project for Postgres, Auth, Storage, Realtime, and RLS;
 - the pinned ONNX artifact packaged into the API build;
 - GitHub Actions as the pre-deploy quality and database-migration gate.
@@ -20,18 +21,23 @@ https://app.example.com             Render Static Site (frontend)
             +-- HTTPS --> https://api.example.com
             |                    Render Web Service
             |                    FastAPI + exactly one Uvicorn process
-            |                    + in-process durable Job worker
+            |
+            |                    Render Background Worker (after cutover)
+            |                    + durable Job worker + Playwright
             |
             +-- HTTPS/WSS --> https://<project-ref>.supabase.co
                                  Auth + PostgREST + Realtime + Storage
 
-Render API -- Supavisor session-mode :5432 --> Supabase Postgres
+Render API / Worker -- Supavisor session-mode :5432 --> Supabase Postgres
 ```
 
-Do not create a separate Render Background Worker yet. The repository has no
-standalone production worker entry point, and the current scheduler runs inside
-the API lifespan. `MANZIL_WORKER_INPROCESS=true` and one Uvicorn worker are
-therefore deployment invariants, not tuning suggestions.
+The repository provides the standalone `manzil-worker` process command, which
+runs the same dispatcher, scheduler, demo-publication priority tick, and
+Postgres heartbeat as the API lifespan loop. Until the controlled isolation
+cutover, `MANZIL_WORKER_INPROCESS=true` and one Uvicorn worker remain the
+production baseline. Never start the Background Worker while that API setting
+is true: the safe cutover intentionally has a short no-claimant interval, not
+two intentional claimants. See `docs/worker-isolation.md`.
 
 ## 1. What remains before production
 
@@ -39,11 +45,12 @@ The application features and PR-1 admin-only provisioning code have landed, but
 the following deployment work remains:
 
 1. Create separate hosted Supabase **staging** and **production** projects.
-2. Add a production API Dockerfile or prove the equivalent Render native-runtime
-   build. Docker is recommended because the worker needs Playwright Chromium,
-   ONNX Runtime, and their Linux system libraries. The repository currently has
-   no production API Dockerfile yet. The committed `render.yaml` owns the
-   frontend service, rewrite, and security headers only.
+2. Validate the committed production Dockerfile on staging. It packages the uv
+   workspace, Playwright Chromium, ONNX Runtime, and the verified artifact for
+   both API and worker commands. The committed `render.yaml` still owns only
+   the frontend service, rewrite, and security headers; create the API and
+   Background Worker in the Render Dashboard for the controlled cutover rather
+   than accidentally provisioning a second claimant from the live Blueprint.
 3. Put the 97 MB ONNX archive in a private, stable object/release store and make
    it available during the Render build. Render secret files cannot hold the
    archive (their combined limit is 1 MB), but **must** hold the small download
@@ -98,7 +105,7 @@ to the expected users. Give services unambiguous names, for example:
 Supabase: manzil-staging, manzil-production
 Render project: Manzil
 Render environments: staging, production
-Render services: manzil-web, manzil-api
+Render services: manzil-web, manzil-api, manzil-worker
 Domains: app.example.com, api.example.com
 ```
 
@@ -377,12 +384,13 @@ In Render:
 Use the connected-repository flow, not the public Git URL flow. Connected repos
 support automatic deploys and previews; public URL services do not.
 
-For the initial launch, configure the API service in the Dashboard. The
-committed `render.yaml` already owns the static frontend and its security
-headers; do not create a second frontend with divergent Dashboard settings.
-Once the API build is proven, extend the Blueprint to mirror it. Render
-Blueprints support `buildCommand`, `startCommand`, `healthCheckPath`, domains,
-build filters, and `autoDeployTrigger: checksPass`; see the
+Configure the API and worker services in the Dashboard for the initial
+cutover. The committed `render.yaml` owns the static frontend and its security
+headers; do not add the worker to that live Blueprint before the API claimant
+is disabled. The worker service uses the root Dockerfile/context and Docker
+command `/app/.venv/bin/manzil-worker`, with one instance and Render's
+five-minute maximum shutdown delay. Once the manual build and cutover are
+proven, a later change may mirror both services in the Blueprint. See the
 [Blueprint specification](https://render.com/docs/blueprint-spec).
 
 ## 6. Create the Render API Web Service
@@ -979,13 +987,13 @@ Dockerfile, GitHub workflow YAML, Supabase migration SQL, or Vite output.
 Before performing the production launch, add and review these repository-owned
 deployment inputs:
 
-1. a production multi-stage Dockerfile that installs the uv workspace,
-   `manzil-api[vision-onnx]`, Playwright Chromium/system libraries, and the
-   verified ONNX archive without retaining download credentials;
+1. a staging-validated production multi-stage Dockerfile that installs the uv
+   workspace, `manzil-api[vision-onnx]`, Playwright Chromium/system libraries,
+   and the verified ONNX archive without retaining download credentials;
 2. a `.dockerignore` that excludes `.env`, local/eval fixtures, caches, `.git`,
    and unrelated artifacts while retaining all required workspace packages;
-3. extend the existing frontend-only `render.yaml` with the API after its manual
-   service has proven the exact commands;
+3. after the controlled worker cutover, decide whether to migrate the manually
+   proven API and worker configuration into the existing frontend Blueprint;
 4. the protected production database deployment job shown above;
 5. paging-grade external monitoring for the implemented `/v1/ready` endpoint;
    the committed scheduled GitHub probe is the baseline, not the final pager;

@@ -142,9 +142,11 @@ Key env vars: `DATABASE_URL` (local Supabase Postgres), `MANZIL_WORKER_INPROCESS
 IMPLEMENTATION §1.
 
 The durable worker runs inside the API process by default, including Tier-2
-Playwright fetches. A separate worker service is optional; use the
-[worker-isolation runbook](docs/worker-isolation.md) only if the operational
-triggers in DESIGN §5 are observed.
+Playwright fetches. The standalone `manzil-worker` command is ready for the
+separate Render Background Worker path; follow the
+[worker-isolation runbook](docs/worker-isolation.md) for its one-claimant
+cutover order. Do not start it alongside an API whose
+`MANZIL_WORKER_INPROCESS` remains `true`.
 
 `MANZIL_FRONTEND_URL` is the public frontend base used for copy-link and email-
 invite redirects (`http://localhost:5173` locally). Supabase's local Mailpit

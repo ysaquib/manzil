@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1.7
-# Production API image: FastAPI + in-process worker (Render manzil-api).
-# Build context = monorepo root. ONNX archive fetched at build time via BuildKit
-# secret id=manzil_clip_archive_url (never ARG or env var).
+# Production API/worker image. Render runs its FastAPI or standalone worker
+# command from this same image; Build context = monorepo root. ONNX archive is
+# fetched at build time via BuildKit secret id=manzil_clip_archive_url (never
+# ARG or env var).
 FROM python:3.12-slim AS builder
 
 ENV UV_LINK_MODE=copy \

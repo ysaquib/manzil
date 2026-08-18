@@ -41,29 +41,28 @@ The migration must preserve these properties:
 
 ## 1. Add and test a standalone entry point
 
-There is currently no production worker command; the API imports the loop
-directly. Add a thin entry point in `manzil_worker` which:
+The standalone command is `manzil-worker` (`manzil_worker.service:main`). It:
 
 1. Loads the same root `.env`/environment configuration used by the worker.
 2. Creates an `asyncpg` pool from `DATABASE_URL`.
 3. Builds dispatch with `build_dispatch(pool, dsn=database_url)`.
 4. Installs SIGTERM/SIGINT handlers that set the loop's `asyncio.Event`.
-5. Calls `run_worker_loop(pool, stop=stop, dispatch=dispatch)`.
+5. Calls `run_worker_loop` with the production dispatcher, scheduler tick, and
+   demo-publication priority tick used by the API lifespan loop.
 6. Stops claiming new Jobs on shutdown, allows the current Job to drain, and
    closes the pool.
 
-Expose it as a package script such as `manzil-worker`. Do not duplicate queue or
-dispatch logic in the entry point.
+It is a package script and does not introduce a second queue or persistence
+implementation.
 
-Add tests that prove:
+Focused automated coverage proves the process wiring (Postgres dispatch rather
+than the Phase-0 in-memory fallback), SIGTERM drain request, and the API's
+no-claimant behavior when `MANZIL_WORKER_INPROCESS=false`. Keep the following
+database-backed checks in the cutover validation suite:
 
-- startup builds the Postgres registry rather than falling back to the
-  in-memory registry;
-- SIGTERM requests a clean drain;
 - an ingest Job and a rescore Job reach terminal states through the entry point;
 - an abrupt process exit leaves a running Job reclaimable after
   `JOB_ORPHAN_AFTER_SECONDS`;
-- the API with `MANZIL_WORKER_INPROCESS=false` does not start a claimant.
 
 Local validation should use two terminals:
 
@@ -72,7 +71,7 @@ Local validation should use two terminals:
 MANZIL_WORKER_INPROCESS=false \
   uv run --package manzil-api uvicorn manzil_api.main:app --port 8000
 
-# Terminal 2: standalone worker (after the entry point is implemented)
+# Terminal 2: standalone worker
 uv run --package manzil-worker manzil-worker
 ```
 
@@ -81,17 +80,44 @@ only by Terminal 2.
 
 ## 2. Build the worker image/service
 
-Add the deployment definition only after the standalone entry point is green.
-For Render, create one background worker using the same repository revision as
-the API. Its build must:
+For Render, create one background worker using the same repository revision and
+the existing root `Dockerfile` image as the API. Do **not** add it to the live
+Blueprint or create the Render service until the API has been deployed with
+`MANZIL_WORKER_INPROCESS=false`; otherwise both processes would intentionally
+claim Jobs. Its build must:
 
-1. Install the uv workspace with `uv sync --all-packages --frozen`.
+1. Install the frozen root workspace, including `manzil-api`, its
+   `manzil-worker` dependency, and the vision extra (the current root Dockerfile
+   already does this).
 2. Install Chromium and the OS libraries required by the pinned Playwright
    version. Prefer Playwright's supported image/base or its dependency installer
    rather than maintaining an incomplete library list manually.
-3. Start only the standalone worker command—never Uvicorn.
+3. Override the image command with `/app/.venv/bin/manzil-worker`—never
+   Uvicorn.
 4. Use a single worker-loop process initially. Increase concurrency only after
    measuring provider limits, browser memory, and `SKIP LOCKED` behavior.
+
+The worker configuration to enter in Render after the API claimant has been
+disabled is:
+
+```yaml
+- type: worker
+  name: manzil-worker
+  runtime: docker
+  plan: standard
+  dockerfilePath: ./Dockerfile
+  dockerContext: .
+  dockerCommand: /app/.venv/bin/manzil-worker
+  maxShutdownDelaySeconds: 300
+  autoDeployTrigger: checksPass
+```
+
+Keep this definition out of an already-live `render.yaml` until the cutover
+step below. Applying it early would provision a second claimant while the API
+still runs one. In the Render Dashboard, use the same repository/branch and
+region as the API, then add the worker-only secrets listed below. Do not add a
+web health-check path: a Background Worker receives no incoming traffic;
+`worker_heartbeats` is its durable liveness signal.
 
 The API image may continue containing the worker dependency because
 `manzil_api.worker_loop` is the rollback path. Removing Playwright or the
@@ -105,7 +131,8 @@ Configure these worker secrets/settings to match the API where applicable:
 - `OPENROUTER_API_KEY`
 - `LANGFUSE_*`
 - fetch-tier provider keys and `MANZIL_TIER3_PROVIDER`
-- Google Maps credentials once those Stages exist
+- `GOOGLE_MAPS_API_KEY`
+- `MANZIL_IMAGE_CLASSIFY_ONNX_DIR` and the verified ONNX artifact
 - `MANZIL_MODE`, `MANZIL_LLM_MODE`, Job retry/orphan timing, and model settings
 
 Do not expose `SUPABASE_SECRET_KEY` to the frontend. The standalone worker
