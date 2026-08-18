@@ -10,7 +10,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from manzil_shared.errors import FetchProviderError
+from manzil_shared.errors import FetchProviderError, FetchResponseTooLarge
 from manzil_shared.models import FetchOutcome
 from manzil_worker.fetching.census import run_census
 from manzil_worker.fetching.ladder import fetch_with_ladder
@@ -261,6 +261,38 @@ def test_vendor_network_failure_is_a_fetch_error_not_a_crash(
     assert result.status_code == 0
     assert result.error is not None
     assert result.body == ""
+
+
+def test_tier3_rejects_oversized_provider_envelope_before_json_parse(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("MANZIL_TIER3_PROVIDER", raising=False)
+    monkeypatch.setenv("BRIGHTDATA_API_KEY", "bd-key")
+    monkeypatch.setenv("BRIGHTDATA_ZONE", "my_zone")
+    monkeypatch.setattr("manzil_worker.fetching.tier3.FETCH_PROVIDER_RESPONSE_MAX_BYTES", 10)
+    fetcher = Tier3Fetcher(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, content=b"x" * 11)),
+        resolver=_public_resolver,
+    )
+
+    with pytest.raises(FetchResponseTooLarge, match="provider response"):
+        asyncio.run(fetcher.fetch("https://www.zillow.com/x"))
+
+
+def test_tier3_rejects_oversized_unwrapped_target_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("MANZIL_TIER3_PROVIDER", raising=False)
+    monkeypatch.setenv("BRIGHTDATA_API_KEY", "bd-key")
+    monkeypatch.setenv("BRIGHTDATA_ZONE", "my_zone")
+    monkeypatch.setattr("manzil_worker.fetching.tier3.FETCH_TARGET_BODY_MAX_BYTES", 10)
+    fetcher = Tier3Fetcher(
+        transport=httpx.MockTransport(lambda _: _envelope(200, "x" * 11)),
+        resolver=_public_resolver,
+    )
+
+    with pytest.raises(FetchResponseTooLarge, match="unwrapped target body"):
+        asyncio.run(fetcher.fetch("https://www.zillow.com/x"))
 
 
 # ── ladder + registry with three rungs ───────────────────────────────────────

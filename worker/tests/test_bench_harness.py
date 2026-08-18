@@ -30,6 +30,7 @@ from manzil_worker.fetching.cleaner import clean_html
 from manzil_worker.phase0_rubric import phase0_rubric
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.extract import AVAILABLE_NOW_SENTINEL
+from manzil_worker.stages.schema_gen import extractable_entries
 from manzil_worker.state import RunState, SourceClaim
 from worker_helpers import PAGES, FakeLLM, field_payload, maple_extraction
 
@@ -72,11 +73,11 @@ def truth_label(**overrides: Any) -> BenchLabel:
     non-null values become criteria, not_found keys become unknown."""
     payload = maple_extraction()
     # Non-catalog blocks carry no {value, ...} wrapper — they are not criteria.
-    non_catalog = {"floor_plans", "property_identity"}
+    extractable_keys = {entry.key for entry in extractable_entries()}
     criteria = {
         key: field["value"]
         for key, field in payload.items()
-        if key not in non_catalog
+        if key in extractable_keys
         and isinstance(field, dict)
         and "value" in field
         and field["value"] is not None
@@ -84,7 +85,7 @@ def truth_label(**overrides: Any) -> BenchLabel:
     unknown = [
         key
         for key, field in payload.items()
-        if key not in non_catalog
+        if key in extractable_keys
         and isinstance(field, dict)
         and "value" in field
         and field["value"] is None
@@ -192,33 +193,35 @@ def test_perfect_extraction_grades_perfectly(tmp_path: Path) -> None:
 
 
 def test_wrong_value_and_invented_unknown_both_lose_points(tmp_path: Path) -> None:
-    # Truth disagrees with the model on beds (label says 3) and claims the
-    # page doesn't state pets_policy (model extracted a value -> invented).
+    # Truth disagrees with the model on a Floor Plan's beds (label says 3) and
+    # claims the page doesn't state pets_policy (model extracted a value ->
+    # invented).
     label = truth_label()
-    label.criteria["beds"] = 3
+    label.floor_plans[0].beds = 3
     label.unknown.append("pets_policy")
     del label.criteria["pets_policy"]
 
     report = run([label], make_corpus(tmp_path), perfect_ctx())
     [listing] = report.listings
-    assert listing.criteria["beds"].ok is False
-    assert listing.criteria["beds"].got == 2
+    assert listing.plans is not None
+    assert listing.plans.field_ok < listing.plans.field_checks
     assert listing.criteria["pets_policy"].kind == "unknown"
     assert listing.criteria["pets_policy"].ok is False  # value where truth says none
-    # beds and pets_policy are both gate keys under the Phase 0 rubric.
+    # pets_policy is a gate key under the Phase 0 rubric.
     assert listing.gate_accuracy is not None and listing.gate_accuracy < 1.0
 
 
 def test_not_found_where_truth_has_value_is_wrong_not_crash(tmp_path: Path) -> None:
     payload = maple_extraction()
-    payload["beds"] = {"value": None, "confidence": "not_found", "evidence_quote": None}
+    payload["floor_plans"][0]["beds"] = None
     ctx = StageCtx(
         call_structured=FakeLLM({"extract": payload, "verify": {"contradictions": []}}),
         rubric=phase0_rubric(),
     )
     report = run([truth_label()], make_corpus(tmp_path), ctx)
-    assert report.listings[0].criteria["beds"].ok is False
-    assert report.listings[0].criteria["beds"].got is None
+    plans = report.listings[0].plans
+    assert plans is not None
+    assert plans.field_ok == plans.field_checks - 1
 
 
 def test_plan_grading_flags_missing_and_extra_plans(tmp_path: Path) -> None:
@@ -239,7 +242,11 @@ def test_plan_grading_flags_missing_and_extra_plans(tmp_path: Path) -> None:
 def test_skipped_labels_are_reported_and_excluded_from_results(tmp_path: Path) -> None:
     """Unfinished-skeleton labels the loader partitioned out ride in the report
     as `skipped` (counted, warned) but never touch the graded results."""
-    skipped = [SkippedLabel(slug="rent.com--skel", reason="label 'skel': criteria.beds is null")]
+    skipped = [
+        SkippedLabel(
+            slug="rent.com--skel", reason="label 'skel': criteria.min_lease_months is null"
+        )
+    ]
     report = asyncio.run(
         run_bench(
             [truth_label()],
@@ -270,7 +277,7 @@ def test_missing_corpus_page_fails_that_listing_only(tmp_path: Path) -> None:
 
 
 def test_verify_checkpoint_listing_is_graded_not_dropped(tmp_path: Path) -> None:
-    """A gate-relevant VERIFY contradiction demotes beds below min_confidence,
+    """A gate-relevant VERIFY contradiction demotes pets_policy below min_confidence,
     which raises a confirm_value checkpoint (§10.10). The bench has no human to
     answer it, so the listing must still be graded (accept-at-low-confidence) —
     its extracted values against the label, the flag recorded — never dropped as
@@ -282,7 +289,7 @@ def test_verify_checkpoint_listing_is_graded_not_dropped(tmp_path: Path) -> None
                 "extract": maple_extraction(),
                 "verify": {
                     "contradictions": [
-                        {"criterion_key": "beds", "note": "single unit type vs range"}
+                        {"criterion_key": "pets_policy", "note": "page policy is ambiguous"}
                     ]
                 },
             }
@@ -294,7 +301,7 @@ def test_verify_checkpoint_listing_is_graded_not_dropped(tmp_path: Path) -> None
     [listing] = report.listings
     assert listing.error is None  # graded, not dropped as a failure
     assert report.summary["failed"] == 0
-    assert listing.criteria["beds"].ok is True  # extracted value still graded vs label
+    assert listing.criteria["pets_policy"].ok is True  # extracted value still graded vs label
     assert listing.verify_flags >= 1  # the flag survives into the report
     assert report.summary["criterion_accuracy"] == 1.0
 
@@ -312,15 +319,12 @@ def test_available_now_label_matches_corpus_saved_at_not_wall_clock(tmp_path: Pa
         today=lambda: date(2026, 7, 16),
     )
     label = truth_label()
-    label.criteria["availability_date"] = AVAILABLE_NOW_SENTINEL
     label.floor_plans[0].availability_date = AVAILABLE_NOW_SENTINEL
 
     report = run([label], make_corpus(tmp_path, saved_at=CORPUS_SAVED_AT), ctx)
     [listing] = report.listings
     assert listing.error is None
     assert listing.as_of_date == CORPUS_AS_OF
-    assert listing.criteria["availability_date"].ok is True
-    assert listing.criteria["availability_date"].got == CORPUS_AS_OF
     assert listing.plans is not None
     assert listing.plans.field_ok == listing.plans.field_checks
 
@@ -337,8 +341,8 @@ def test_explicit_iso_availability_is_not_replaced_by_saved_at(tmp_path: Path) -
     report = run([truth_label()], make_corpus(tmp_path, saved_at=CORPUS_SAVED_AT), ctx)
     [listing] = report.listings
     assert listing.error is None
-    assert listing.criteria["availability_date"].got == "2026-08-01"
-    assert listing.criteria["availability_date"].ok is True
+    assert listing.plans is not None
+    assert listing.plans.field_ok == listing.plans.field_checks
     assert listing.as_of_date == CORPUS_AS_OF  # clock still pinned, but unused for ISO
 
 
@@ -360,10 +364,8 @@ def test_per_listing_saved_at_clocks_do_not_leak(tmp_path: Path) -> None:
         today=lambda: date(2099, 1, 1),
     )
     label_a = truth_label(slug=slug_a)
-    label_a.criteria["availability_date"] = AVAILABLE_NOW_SENTINEL
     label_a.floor_plans[0].availability_date = AVAILABLE_NOW_SENTINEL
     label_b = truth_label(slug=slug_b)
-    label_b.criteria["availability_date"] = AVAILABLE_NOW_SENTINEL
     label_b.floor_plans[0].availability_date = AVAILABLE_NOW_SENTINEL
 
     report = run([label_a, label_b], corpus, ctx)
@@ -371,10 +373,9 @@ def test_per_listing_saved_at_clocks_do_not_leak(tmp_path: Path) -> None:
     assert a.error is None and b.error is None
     assert a.as_of_date == "2026-07-01"
     assert b.as_of_date == "2026-07-10"
-    assert a.criteria["availability_date"].got == "2026-07-01"
-    assert b.criteria["availability_date"].got == "2026-07-10"
-    assert a.criteria["availability_date"].ok is True
-    assert b.criteria["availability_date"].ok is True
+    assert a.plans is not None and b.plans is not None
+    assert a.plans.field_ok == a.plans.field_checks
+    assert b.plans.field_ok == b.plans.field_checks
 
 
 @pytest.mark.parametrize(
@@ -426,7 +427,7 @@ def test_compare_table_lines_up_reports_side_by_side(tmp_path: Path) -> None:
     good = run([truth_label()], corpus, perfect_ctx())
 
     label = truth_label()
-    label.criteria["beds"] = 3  # degrade one answer for a visible delta
+    label.floor_plans[0].beds = 3  # degrade one answer for a visible delta
     worse = run([label], corpus, perfect_ctx())
 
     table = compare_table({"haiku": good, "flash-lite": worse})

@@ -94,6 +94,23 @@ def test_retryable_stage_is_retried_with_backoff_then_succeeds() -> None:
     assert sleeps[1] > sleeps[0] * 0.5  # exponential shape survives jitter
 
 
+def test_retryable_stage_honors_upstream_retry_after() -> None:
+    attempts: list[int] = []
+
+    async def throttled(state: RunState, ctx: StageCtx) -> RunState:
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise StageRetryable("provider limited", retry_after_seconds=60)
+        return state
+
+    persistence = RecordingPersistence()
+    ctx = make_ctx(persistence)
+    state = asyncio.run(run_job(make_state(), ctx, [("throttled", throttled)]))
+
+    assert state.status is JobState.DONE
+    assert ctx.sleeps == [60]  # type: ignore[attr-defined]
+
+
 def test_retry_exhaustion_fails_the_job() -> None:
     async def always_failing(state: RunState, ctx: StageCtx) -> RunState:
         raise StageRetryable("still down")

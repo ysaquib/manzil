@@ -119,4 +119,17 @@ describe("extractionForFloorPlan", () => {
       ),
     ).toBeUndefined();
   });
+
+  it("does not repeat a legacy generalized Floor Plan value for every Unit Group", () => {
+    const legacyBeds: Extraction = {
+      ...base,
+      id: "e-legacy-beds",
+      criterion_key: "beds",
+      applicability: null,
+      value: 2,
+      disputed: true,
+    };
+    expect(extractionForFloorPlan([legacyBeds], "beds", "fp-1")).toBeUndefined();
+    expect(extractionForFloorPlan([legacyBeds], "beds", "fp-2")).toBeUndefined();
+  });
 });

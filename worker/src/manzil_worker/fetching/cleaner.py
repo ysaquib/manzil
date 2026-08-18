@@ -39,6 +39,7 @@ import re
 
 import lxml.html
 import trafilatura
+from manzil_shared.config import CLEANED_PAGE_MAX_CHARS
 from readability import Document
 
 from manzil_worker.fetching.results import CleanedPage
@@ -290,32 +291,52 @@ def clean_html(html: str) -> CleanedPage:
         text = _extract_fallback(html)
         if not text.strip() or not _keeps_prices(text, rendered_prices):
             text = visible
-    text = _normalize(text)
+    prose_text = _normalize(text)
 
     fee_lines = _fee_table_lines(html)
     # Only append rows the extractor actually lost — no duplication.
-    missing = [line for line in fee_lines if line not in text]
+    missing = [line for line in fee_lines if line not in prose_text]
+    fee_section = ""
     if missing:
-        text = (
-            f"{text}\n\n{FEE_TABLE_MARKER}\n" + "\n".join(missing)
-            if text
-            else (f"{FEE_TABLE_MARKER}\n" + "\n".join(missing))
-        )
+        fee_section = f"{FEE_TABLE_MARKER}\n" + "\n".join(missing)
 
     floor_plan_lines = _floor_plan_lines(html)
-    missing_plans = [block for name, block in floor_plan_lines if name not in text]
+    missing_plans = [block for name, block in floor_plan_lines if name not in prose_text]
+    floor_plan_section = ""
     if missing_plans:
-        section = f"{FLOOR_PLAN_MARKER}\n" + "\n".join(missing_plans)
-        text = f"{text}\n\n{section}" if text else section
+        floor_plan_section = f"{FLOOR_PLAN_MARKER}\n" + "\n".join(missing_plans)
 
     digest, embedded_blobs = extract_embedded_data(html)
-    if digest:
-        section = f"{EMBEDDED_DATA_MARKER}\n{digest}"
-        text = f"{text}\n\n{section}" if text else section
+    embedded_section = f"{EMBEDDED_DATA_MARKER}\n{digest}" if digest else ""
+
+    def bounded(section: str, limit: int) -> str:
+        if len(section) <= limit:
+            return section
+        suffix = "\n…[cleaned text truncated]"
+        return section[: max(0, limit - len(suffix))] + suffix if limit else ""
+
+    # Generic prose is the least reliable/valuable component once the cleaner
+    # has recovered explicit fee and Floor Plan blocks. Preserve embedded JSON,
+    # then Floor Plans and fees, before allocating the remaining page budget to
+    # prose. The final combined text is always bounded.
+    embedded_section = bounded(embedded_section, CLEANED_PAGE_MAX_CHARS)
+    remaining = CLEANED_PAGE_MAX_CHARS - len(embedded_section)
+    floor_plan_section = bounded(floor_plan_section, remaining)
+    remaining -= len(floor_plan_section)
+    fee_section = bounded(fee_section, remaining)
+    remaining -= len(fee_section)
+    prose_text = bounded(prose_text, remaining)
+    content_sections = [
+        section for section in (prose_text, fee_section, floor_plan_section) if section
+    ]
+    content_text = "\n\n".join(content_sections)
+    text = "\n\n".join(section for section in (content_text, embedded_section) if section)
 
     return CleanedPage(
         text=text,
         text_hash=hashlib.sha256(text.encode()).hexdigest(),
+        content_text=content_text,
+        embedded_data=digest,
         fee_tables_found=len(fee_lines),
         used_fallback=used_fallback,
         embedded_blobs=embedded_blobs,

@@ -50,10 +50,13 @@ from manzil_worker.state import (
 
 # Composed by the pipeline, never extracted from the page (§9.5).
 COMPOSED_KEYS = frozenset({"all_in_monthly", "estimated_move_in_cost"})
-# `unit_types` remains a Catalog Criterion, but its effective Floor Plan value
-# already comes from the Floor Plan block. Do not request a second generalized
-# claim that could disagree with that canonical input.
-FLOOR_PLAN_DERIVED_KEYS = frozenset({"unit_types"})
+# These Catalog Criteria take their effective value directly from the Floor
+# Plan block. Asking EXTRACT for a second generalized claim lets one layout's
+# value masquerade as a Listing-wide fact (and, in turn, a dispute on every
+# Unit Group). Floor Plans are the canonical input for these values.
+FLOOR_PLAN_DERIVED_KEYS = frozenset(
+    {"beds", "baths", "sqft", "security_deposit", "availability_date", "unit_types"}
+)
 log = structlog.get_logger()
 _SELECT_SCOPE_RE = re.compile(
     r"\b(select(?:ed)?|some|certain|var(?:y|ies) by)\b",
@@ -132,9 +135,11 @@ def _normalize_top_level(cls: type[BaseModel], data: Any) -> Any:
     """
     if isinstance(data, dict):
         normalized = {key: _maybe_decode_container(value) for key, value in data.items()}
-        # v3.48 derives this from the Floor Plan block. Keep pre-v3.48 response
-        # recordings replayable without permitting unknown fields generally.
-        normalized.pop("unit_types", None)
+        # These values are derived from the Floor Plan block. Keep recordings
+        # made before that contract replayable without accepting unknown fields
+        # generally.
+        for key in FLOOR_PLAN_DERIVED_KEYS:
+            normalized.pop(key, None)
         criterion_keys = {entry.key for entry in extractable_entries()}
         for key in criterion_keys & normalized.keys():
             if normalized[key] is None:
