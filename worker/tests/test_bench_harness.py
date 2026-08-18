@@ -243,7 +243,9 @@ def test_skipped_labels_are_reported_and_excluded_from_results(tmp_path: Path) -
     """Unfinished-skeleton labels the loader partitioned out ride in the report
     as `skipped` (counted, warned) but never touch the graded results."""
     skipped = [
-        SkippedLabel(slug="rent.com--skel", reason="label 'skel': criteria.min_lease_months is null")
+        SkippedLabel(
+            slug="rent.com--skel", reason="label 'skel': criteria.min_lease_months is null"
+        )
     ]
     report = asyncio.run(
         run_bench(
