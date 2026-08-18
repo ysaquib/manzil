@@ -41,6 +41,7 @@ vision-bench = [
 
 [project.scripts]
 manzil = "manzil_worker.cli:app"
+manzil-worker = "manzil_worker.service:main"
 
 [tool.uv.sources]
 manzil-shared = { workspace = true }

@@ -20,13 +20,14 @@ EmailMode = Literal["disabled", "resend"]
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", populate_by_name=True)
 
-    # Supabase — anon key is RLS-safe; service role is held ONLY for the
-    # in-process worker loop (Phase 1 budget option, §1.5), never exposed.
+    # Supabase — anon key is RLS-safe; service-role access stays server-side
+    # for trusted API/worker operations and is never exposed to the frontend.
     supabase_url: str = Field(alias="SUPABASE_URL")
     supabase_anon_key: str = Field(alias="SUPABASE_ANON_KEY")
     supabase_secret_key: str = Field(alias="SUPABASE_SECRET_KEY")
 
-    # Direct Postgres — the in-process worker loop's asyncpg pool.
+    # Direct Postgres — the API's asyncpg pool; the standalone worker creates
+    # its own pool from this same DSN.
     database_url: str = Field(alias="DATABASE_URL")
 
     # Demo Mode (DM-5, DESIGN §16). The project's JWT signing secret, used to
@@ -66,7 +67,7 @@ class Settings(BaseSettings):
     mail_from_name: str = Field(default="Manzil", alias="MANZIL_MAIL_FROM_NAME")
 
     # In-process worker loop toggle (DESIGN §5 default). Set false only after a
-    # separate worker process is deployed and validated per IMPLEMENTATION §8.
+    # separate worker process is deployed and validated per worker-isolation.md.
     worker_inprocess: bool = Field(default=True, alias="MANZIL_WORKER_INPROCESS")
 
     @property
