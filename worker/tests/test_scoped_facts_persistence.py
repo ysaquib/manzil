@@ -599,7 +599,7 @@ async def test_foreign_floor_plan_target_is_rejected(pg_pool: asyncpg.Pool) -> N
         )
 
 
-async def test_only_authoritative_refresh_retires_omitted_source_claim(
+async def test_authoritative_refresh_keeps_known_resolution_when_source_omits_it(
     pg_pool: asyncpg.Pool,
 ) -> None:
     property_id, source_id = await _seed_property_source(pg_pool)
@@ -658,14 +658,192 @@ async def test_only_authoritative_refresh_retires_omitted_source_claim(
                 floor_plan_ids_by_ref={},
                 authoritative=True,
             )
-        retired = await pg_pool.fetchrow(
+        retained = await pg_pool.fetchrow(
             "select value, confidence, resolution_rule from current_extractions "
             "where property_id = $1 and criterion_key = 'utilities_included'",
             property_id,
         )
-        assert retired["value"] == "null"
-        assert retired["confidence"] == "not_found"
-        assert retired["resolution_rule"] == "source_refresh_not_found"
+        assert retained["value"] == '["water"]'
+        assert retained["confidence"] == "high"
+        assert retained["resolution_rule"] == "single_source"
+        candidate = await pg_pool.fetchrow(
+            "select value, confidence from current_extraction_candidates "
+            "where property_id = $1 and criterion_key = 'utilities_included'",
+            property_id,
+        )
+        assert candidate["value"] == "null"
+        assert candidate["confidence"] == "not_found"
+    finally:
+        await pg_pool.execute("delete from properties where id = $1", property_id)
+
+
+async def test_authoritative_refresh_replaces_a_known_value_only_with_a_changed_known_value(
+    pg_pool: asyncpg.Pool,
+) -> None:
+    property_id, source_id = await _seed_property_source(pg_pool)
+    source_url = await pg_pool.fetchval("select url from property_sources where id = $1", source_id)
+    initial = SourceClaim(
+        criterion_key="utilities_included",
+        value=["water"],
+        confidence=Confidence.HIGH,
+        source_id=source_url,
+        model="fixture",
+        prompt_version=1,
+    )
+    updated = initial.model_copy(update={"value": ["water", "trash"]})
+    try:
+        async with pg_pool.acquire() as conn, conn.transaction():
+            await persist_single_source_claims(
+                conn,
+                property_id=property_id,
+                hunt_id=None,
+                source_id=source_id,
+                source_url=source_url,
+                job_id=None,
+                claims=[initial],
+                floor_plan_ids_by_ref={},
+                authoritative=True,
+            )
+            await persist_single_source_claims(
+                conn,
+                property_id=property_id,
+                hunt_id=None,
+                source_id=source_id,
+                source_url=source_url,
+                job_id=None,
+                claims=[updated],
+                floor_plan_ids_by_ref={},
+                authoritative=True,
+            )
+
+        assert (
+            await pg_pool.fetchval(
+                "select value from current_extractions "
+                "where property_id = $1 and criterion_key = 'utilities_included'",
+                property_id,
+            )
+            == '["water", "trash"]'
+        )
+    finally:
+        await pg_pool.execute("delete from properties where id = $1", property_id)
+
+
+async def test_authoritative_refresh_fills_a_preexisting_unknown_resolution(
+    pg_pool: asyncpg.Pool,
+) -> None:
+    property_id, source_id = await _seed_property_source(pg_pool)
+    source_url = await pg_pool.fetchval("select url from property_sources where id = $1", source_id)
+    unknown = SourceClaim(
+        criterion_key="utilities_included",
+        value=None,
+        confidence=Confidence.NOT_FOUND,
+        source_id=source_url,
+        model="fixture",
+        prompt_version=1,
+    )
+    known = unknown.model_copy(update={"value": ["water"], "confidence": Confidence.HIGH})
+    try:
+        async with pg_pool.acquire() as conn, conn.transaction():
+            await persist_single_source_claims(
+                conn,
+                property_id=property_id,
+                hunt_id=None,
+                source_id=source_id,
+                source_url=source_url,
+                job_id=None,
+                claims=[unknown],
+                floor_plan_ids_by_ref={},
+            )
+            await persist_single_source_claims(
+                conn,
+                property_id=property_id,
+                hunt_id=None,
+                source_id=source_id,
+                source_url=source_url,
+                job_id=None,
+                claims=[known],
+                floor_plan_ids_by_ref={},
+                authoritative=True,
+            )
+
+        assert (
+            await pg_pool.fetchval(
+                "select value from current_extractions "
+                "where property_id = $1 and criterion_key = 'utilities_included'",
+                property_id,
+            )
+            == '["water"]'
+        )
+    finally:
+        await pg_pool.execute("delete from properties where id = $1", property_id)
+
+
+async def test_floor_plan_refresh_keeps_known_columns_when_new_values_are_missing(
+    pg_pool: asyncpg.Pool,
+) -> None:
+    property_id, source_id = await _seed_property_source(pg_pool)
+    source_url = await pg_pool.fetchval("select url from property_sources where id = $1", source_id)
+    initial = RunState(
+        job_id=uuid4(),
+        job_type=JobType.INGEST,
+        url=source_url,
+        sources=[SourceState(url=source_url, authoritative_extraction=True)],
+        floor_plans=[
+            FloorPlanIn(
+                response_key="a1",
+                source_native_id="a1",
+                plan_name="A1",
+                beds=1,
+                baths=1,
+                unit_types=["apartment"],
+                sqft_min=700,
+                sqft_max=725,
+                rent_min=1500,
+                rent_max=1550,
+                deposit=500,
+                availability_date="2026-09-01",
+            )
+        ],
+    )
+    refreshed = RunState(
+        job_id=uuid4(),
+        job_type=JobType.REFRESH,
+        url=source_url,
+        sources=[SourceState(url=source_url, authoritative_extraction=True)],
+        floor_plans=[
+            FloorPlanIn(
+                response_key="a1",
+                source_native_id="a1",
+                plan_name="A1",
+                beds=1,
+                baths=1,
+            )
+        ],
+    )
+    try:
+        async with pg_pool.acquire() as conn, conn.transaction():
+            await _upsert_floor_plans(
+                conn,
+                property_id=property_id,
+                source_id=source_id,
+                state=initial,
+            )
+            _, floor_plan_ids, _ = await _upsert_floor_plans(
+                conn,
+                property_id=property_id,
+                source_id=source_id,
+                state=refreshed,
+            )
+        row = await pg_pool.fetchrow(
+            "select unit_types, sqft_min, sqft_max, rent_min, rent_max, deposit, availability_date "
+            "from floor_plans where id = $1",
+            floor_plan_ids[0],
+        )
+        assert row["unit_types"] == '["apartment"]'
+        assert (row["sqft_min"], row["sqft_max"]) == (700, 725)
+        assert (float(row["rent_min"]), float(row["rent_max"])) == (1500, 1550)
+        assert float(row["deposit"]) == 500
+        assert row["availability_date"].isoformat() == "2026-09-01"
     finally:
         await pg_pool.execute("delete from properties where id = $1", property_id)
 

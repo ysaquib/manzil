@@ -1,4 +1,14 @@
+import dayjs from "dayjs";
+
 import type { Job } from "./api";
+
+export function jobStartTime(job: Pick<Job, "started_at" | "created_at">): string | null {
+  const iso = job.started_at ?? job.created_at ?? null;
+  if (!iso) return null;
+  const start = dayjs(iso);
+  if (!start.isValid()) return null;
+  return start.format("MMM D, h:mm A");
+}
 
 export function jobDuration(job: Job): string | null {
   if (!job.created_at || !job.finished_at) return null;
@@ -9,6 +19,17 @@ export function jobDuration(job: Job): string | null {
   const minutes = Math.floor(seconds / 60);
   const remainder = seconds % 60;
   return remainder ? `${minutes}m ${remainder}s` : `${minutes}m`;
+}
+
+export function jobMeta(job: Job, memberName: string): string {
+  const parts = [memberName];
+  if (job.attempts > 1) parts.push(`attempt ${job.attempts}`);
+  const start = jobStartTime(job);
+  if (start) parts.push(start);
+  const duration = jobDuration(job);
+  if (duration) parts.push(duration);
+  parts.push(formatJobCostUsd(job.cost_actual_usd));
+  return parts.join(" · ");
 }
 
 export function filterHistoryJobs(

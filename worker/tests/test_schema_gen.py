@@ -13,15 +13,10 @@ from pydantic import ValidationError
 from worker_helpers import extraction_payload, field_payload, maple_extraction
 
 EXPECTED_KEYS = {
-    "beds",
-    "baths",
-    "sqft",
     "patio_balcony",
     "private_entry",
     "in_unit_laundry",
     "pets_policy",
-    "security_deposit",
-    "availability_date",
     "parking",
     "cooling",
     "dishwasher",
@@ -75,17 +70,42 @@ def test_schema_has_one_field_per_criterion_plus_floor_plans() -> None:
     }
 
 
-def test_unit_types_derive_from_floor_plans_and_legacy_top_level_is_ignored() -> None:
+def test_floor_plan_values_derive_from_floor_plans_and_legacy_top_level_is_ignored() -> None:
     schema = build_extraction_schema()
     assert "unit_types" not in schema.model_fields
+    assert "beds" not in schema.model_fields
+    assert "baths" not in schema.model_fields
+    assert "sqft" not in schema.model_fields
+    assert "security_deposit" not in schema.model_fields
+    assert "availability_date" not in schema.model_fields
 
     parsed = schema.model_validate(
         extraction_payload(
+            beds=field_payload(1, "Legacy generalized claim"),
+            baths=field_payload(1, "Legacy generalized claim"),
+            sqft=field_payload(500, "Legacy generalized claim"),
+            security_deposit=field_payload(100, "Legacy generalized claim"),
+            availability_date=field_payload("2026-08-01", "Legacy generalized claim"),
             unit_types=field_payload(["apartment"], "Legacy generalized claim"),
-            floor_plans=[{"response_key": "a1", "unit_types": ["loft"]}],
+            floor_plans=[
+                {
+                    "response_key": "a1",
+                    "beds": 2,
+                    "baths": 1,
+                    "sqft_min": 700,
+                    "deposit": 500,
+                    "availability_date": "2026-09-01",
+                    "unit_types": ["loft"],
+                }
+            ],
         )
     )
 
+    assert parsed.floor_plans[0].beds == 2
+    assert parsed.floor_plans[0].baths == 1
+    assert parsed.floor_plans[0].sqft_min == 700
+    assert parsed.floor_plans[0].deposit == 500
+    assert parsed.floor_plans[0].availability_date == "2026-09-01"
     assert parsed.floor_plans[0].unit_types == ["loft"]
 
 
@@ -181,14 +201,14 @@ def test_every_criterion_field_is_value_confidence_evidence() -> None:
 def test_full_realistic_payload_validates() -> None:
     schema = build_extraction_schema()
     parsed = schema.model_validate(maple_extraction())
-    assert parsed.beds.value == 2
     assert parsed.floor_plans[0].plan_name == "The Maple"
+    assert parsed.floor_plans[0].beds == 2
 
 
 def test_missing_criterion_field_is_a_schema_violation() -> None:
     payload = extraction_payload()
-    del payload["beds"]
-    with pytest.raises(ValidationError, match="beds"):
+    del payload["pets_policy"]
+    with pytest.raises(ValidationError, match="pets_policy"):
         build_extraction_schema().model_validate(payload)
 
 
@@ -204,8 +224,8 @@ def test_enum_and_bounds_are_enforced() -> None:
     bad_enum = extraction_payload(parking=field_payload("valet"))
     with pytest.raises(ValidationError, match="parking"):
         schema.model_validate(bad_enum)
-    out_of_bounds = extraction_payload(beds=field_payload(7))  # catalog max is 5
-    with pytest.raises(ValidationError, match="beds"):
+    out_of_bounds = extraction_payload(year_built=field_payload(1600))
+    with pytest.raises(ValidationError, match="year_built"):
         schema.model_validate(out_of_bounds)
 
 
@@ -266,23 +286,23 @@ def test_availability_date_hint_states_explicit_date_precedence() -> None:
 
 def test_stringified_field_object_is_coerced() -> None:
     """Some models emit a nested field as a JSON string instead of an object
-    (observed on availability_date with haiku); the schema parses it back rather
+    (observed on year_built with haiku); the schema parses it back rather
     than failing the whole extraction."""
     import json
 
     schema = build_extraction_schema()
-    stringified = json.dumps(field_payload("2026-07-02", quote="Available July 2"))
-    parsed = schema.model_validate(extraction_payload(availability_date=stringified))
-    assert parsed.availability_date.value == "2026-07-02"
-    assert parsed.availability_date.confidence == "high"
+    stringified = json.dumps(field_payload(1995, quote="Built in 1995"))
+    parsed = schema.model_validate(extraction_payload(year_built=stringified))
+    assert parsed.year_built.value == 1995
+    assert parsed.year_built.confidence == "high"
 
 
 def test_non_json_string_field_is_still_rejected() -> None:
     """The coercion only rescues a stringified object — real garbage still fails
     loudly rather than being swallowed."""
     schema = build_extraction_schema()
-    with pytest.raises(ValidationError, match="availability_date"):
-        schema.model_validate(extraction_payload(availability_date="not json at all"))
+    with pytest.raises(ValidationError, match="year_built"):
+        schema.model_validate(extraction_payload(year_built="not json at all"))
 
 
 def test_malformed_stringified_field_is_rejected_not_swallowed() -> None:
@@ -290,11 +310,10 @@ def test_malformed_stringified_field_is_rejected_not_swallowed() -> None:
     with unescaped quotes inside the evidence. No parser can salvage it — it
     must fail loudly so the corrective retry (and prompt rule 8) handle it."""
     malformed = (
-        '{\n  "value": "2026-07-02",\n  "confidence": "high",\n'
-        '  "evidence_quote": "dateAvailable":"2026-07-02T00:00:00.000Z"\n}'
+        '{\n  "value": 1995,\n  "confidence": "high",\n  "evidence_quote": "built":"1995"\n}'
     )
-    with pytest.raises(ValidationError, match="availability_date"):
-        build_extraction_schema().model_validate(extraction_payload(availability_date=malformed))
+    with pytest.raises(ValidationError, match="year_built"):
+        build_extraction_schema().model_validate(extraction_payload(year_built=malformed))
 
 
 def test_stringified_floor_plans_array_is_coerced() -> None:
@@ -333,8 +352,8 @@ def test_object_not_string_instruction_rides_in_the_tool_schema() -> None:
     """The anti-stringification nudge must reach the model inside the (cached)
     tool schema, not just the prompt."""
     schema = build_extraction_schema().model_json_schema()
-    beds_ref = schema["properties"]["beds"]["$ref"].rsplit("/", 1)[-1]
-    description = schema["$defs"][beds_ref]["description"]
+    year_built_ref = schema["properties"]["year_built"]["$ref"].rsplit("/", 1)[-1]
+    description = schema["$defs"][year_built_ref]["description"]
     assert "NEVER as a JSON-encoded string" in description
 
 

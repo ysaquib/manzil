@@ -62,6 +62,7 @@ from manzil_worker.enrich.contacts import (
 from manzil_worker.enrich.images import SupabaseImageStore
 from manzil_worker.fetching.registry import InMemoryRegistry, PostgresRegistry
 from manzil_worker.fetching.tiers import Fetcher, site_domain
+from manzil_worker.llm.concurrency import use_postgres_openrouter_gate
 from manzil_worker.llm.config import model_for_stage
 from manzil_worker.postgres_persistence import (
     HuntExecutionFrozen,
@@ -600,13 +601,18 @@ async def _upsert_floor_plans(
                     now(), true, $15::jsonb)
             on conflict {conflict} do update set
                 detail_url = coalesce(excluded.detail_url, floor_plans.detail_url),
-                unit_types = excluded.unit_types,
-                sqft_min = excluded.sqft_min,
-                sqft_max = excluded.sqft_max,
-                rent_min = excluded.rent_min,
-                rent_max = excluded.rent_max,
-                deposit = excluded.deposit,
-                availability_date = excluded.availability_date,
+                unit_types = case
+                    when jsonb_array_length(excluded.unit_types) > 0 then excluded.unit_types
+                    else floor_plans.unit_types
+                end,
+                sqft_min = coalesce(excluded.sqft_min, floor_plans.sqft_min),
+                sqft_max = coalesce(excluded.sqft_max, floor_plans.sqft_max),
+                rent_min = coalesce(excluded.rent_min, floor_plans.rent_min),
+                rent_max = coalesce(excluded.rent_max, floor_plans.rent_max),
+                deposit = coalesce(excluded.deposit, floor_plans.deposit),
+                availability_date = coalesce(
+                    excluded.availability_date, floor_plans.availability_date
+                ),
                 last_seen_at = now(),
                 is_current = true,
                 raw = excluded.raw
@@ -2148,10 +2154,6 @@ async def _mark_refresh_classes_current(
     fields: list[str],
 ) -> None:
     classes = set(fields)
-    # A complete page check uses the full Catalog whenever bytes changed, so
-    # either text class proves both text classes current.
-    if classes & {"pricing", "listing_details", "images"}:
-        classes.update({"pricing", "listing_details"})
     for refresh_class in sorted(classes):
         await conn.execute(
             """
@@ -2181,13 +2183,6 @@ def _successful_refresh_fields(state: RunState, fields: list[str]) -> list[str]:
     if partial_images:
         failed_classes.add("images")
     successful = [field for field in fields if field not in failed_classes]
-    # Image discovery re-fetched and successfully projected the complete text
-    # Catalog even when one image download was partial. Keep those independent
-    # text success markers honest while leaving only `images` due for retry.
-    if partial_images:
-        successful.extend(
-            field for field in ("pricing", "listing_details") if field not in successful
-        )
     return successful
 
 
@@ -3102,7 +3097,11 @@ async def run_worker_loop(
                 if now - last_tick >= tick_interval:
                     last_tick = now
                     try:
-                        await scheduler_tick(pool)
+                        # Scheduler work includes the utility-baselines LLM
+                        # producer, so it shares the same process-spanning
+                        # provider gate as ordinary Jobs.
+                        async with use_postgres_openrouter_gate(pool):
+                            await scheduler_tick(pool)
                     except Exception as error:
                         log.warning("scheduler_tick_failed", error=str(error))
 
@@ -3142,7 +3141,11 @@ async def run_worker_loop(
             try:
                 async with pool.acquire() as conn:
                     await heartbeat(conn, job["id"])
-                await handler(pool, job)
+                # API replicas each host a worker loop.  The context installs
+                # a shared Postgres advisory-lock gate around each live model
+                # request, rather than multiplying traffic by replica count.
+                async with use_postgres_openrouter_gate(pool):
+                    await handler(pool, job)
                 if await _cancel_if_hunt_became_read_only(pool, job["id"]):
                     log.info("job_stopped_read_only", job_id=str(job["id"]), reason="post-dispatch")
                 if score_notifications_ready and await pool.fetchval(

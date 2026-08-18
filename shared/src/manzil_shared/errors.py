@@ -16,6 +16,10 @@ class ManzilError(Exception):
 class StageRetryable(ManzilError):
     """Transient stage failure: runner retries with backoff."""
 
+    def __init__(self, message: str, *, retry_after_seconds: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after_seconds = retry_after_seconds
+
 
 class StageFatal(ManzilError):
     """Unrecoverable stage failure: job -> failed."""
@@ -61,6 +65,25 @@ class FetchProviderError(ManzilError):
         self.status = status
         self.reason = reason
         self.retryable = retryable
+
+
+class FetchResponseTooLarge(ManzilError):
+    """A complete provider response or target page exceeded its safe limit.
+
+    This is deterministic rather than retryable.  The fetch layer never keeps a
+    partial document because truncated HTML or a cut JSON state blob is not safe
+    evidence for an Extraction.
+    """
+
+    def __init__(self, url: str, *, layer: str, observed_bytes: int, limit_bytes: int) -> None:
+        super().__init__(
+            f"fetch response too large for {url}: {layer} is at least "
+            f"{observed_bytes:,} bytes (limit {limit_bytes:,})"
+        )
+        self.url = url
+        self.layer = layer
+        self.observed_bytes = observed_bytes
+        self.limit_bytes = limit_bytes
 
 
 class FetchBlocked(ManzilError):

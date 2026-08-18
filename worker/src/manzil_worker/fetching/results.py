@@ -36,6 +36,10 @@ class CleanedPage(BaseModel):
 
     text: str
     text_hash: str
+    # Kept separately for bounded tool results.  ``text`` remains the canonical
+    # persisted/extraction input and still includes this digest under its marker.
+    content_text: str = ""
+    embedded_data: str = ""
     fee_tables_found: int = 0
     used_fallback: bool = False
     embedded_blobs: int = 0

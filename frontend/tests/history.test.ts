@@ -1,12 +1,50 @@
 import { describe, expect, it } from "vitest";
 
+import dayjs from "dayjs";
+
 import {
   filterHistoryJobs,
   formatJobCostUsd,
   historySpendLabel,
   historySpendSummary,
   jobDuration,
+  jobMeta,
+  jobStartTime,
 } from "../src/features/jobs/history";
+
+describe("jobStartTime", () => {
+  it("formats started_at as a local calendar time", () => {
+    const iso = "2026-07-11T15:42:00Z";
+    expect(jobStartTime({ started_at: iso, created_at: "2026-07-11T15:00:00Z" })).toBe(
+      dayjs(iso).format("MMM D, h:mm A"),
+    );
+  });
+
+  it("falls back to created_at when the Job never started", () => {
+    const iso = "2026-07-11T15:00:00Z";
+    expect(jobStartTime({ started_at: null, created_at: iso })).toBe(
+      dayjs(iso).format("MMM D, h:mm A"),
+    );
+  });
+
+  it("returns null when neither timestamp is present", () => {
+    expect(jobStartTime({ started_at: null, created_at: null })).toBeNull();
+  });
+});
+
+describe("jobMeta", () => {
+  it("places start time immediately before duration", () => {
+    const job = {
+      started_at: "2026-07-11T15:42:00Z",
+      created_at: "2026-07-11T15:40:00Z",
+      finished_at: "2026-07-11T15:42:05Z",
+      attempts: 1,
+      cost_actual_usd: 0.0123,
+    } as never;
+    const start = jobStartTime(job);
+    expect(jobMeta(job, "Yusuf")).toBe(`Yusuf · ${start} · 2m 5s · $0.0123`);
+  });
+});
 
 describe("jobDuration", () => {
   it("formats persisted wall-clock duration", () => {

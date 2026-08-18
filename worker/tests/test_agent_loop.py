@@ -218,7 +218,8 @@ async def test_executed_tool_writes_a_tool_called_job_event(pg_pool: asyncpg.Poo
 
         summary = json.loads(detail["result"])
         assert summary["outcome"] == "fetched"
-        assert summary["chars"] > 0
+        assert summary["text_chars"] > 0
+        assert summary["structured_data_chars"] >= 0
         assert len(summary["sha256"]) == 64
     finally:
         await pg_pool.execute("delete from jobs where id = $1", job_id)

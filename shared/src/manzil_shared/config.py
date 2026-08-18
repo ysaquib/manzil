@@ -29,6 +29,12 @@ DEPOSIT_MAX_RENT_MULTIPLIER = 2.0
 STAGE_RETRIES = 3
 STAGE_BACKOFF_BASE_SECONDS = 10
 
+# OpenRouter shared-pool protection.  The advisory-lock gate is per upstream
+# model family and spans every worker/API replica sharing the production DB.
+# One concurrent request is deliberately conservative for Gemini's shared pool.
+OPENROUTER_MAX_CONCURRENT_CALLS = 1
+OPENROUTER_CONCURRENCY_POLL_SECONDS = 0.25
+
 # Queue reclaim: a running job without a heartbeat this long is orphaned
 JOB_ORPHAN_AFTER_SECONDS = 5 * 60
 
@@ -50,6 +56,12 @@ DISCOVER_MAX_TURNS = 6
 DISCOVER_MAX_SEARCHES = 3
 DISCOVER_MAX_RESULTS_PER_SEARCH = 5
 DISCOVER_MAX_TOTAL_RESULTS = 12
+# Local ``fetch_page`` calls are independent of the provider-hosted search
+# budget above.  DISCOVER only needs enough page evidence to disambiguate a
+# handful of candidates; these caps keep one model turn from becoming a crawl.
+DISCOVER_MAX_FETCH_PAGE_CALLS = 4
+DISCOVER_MAX_TIER3_FETCHES = 1
+DISCOVER_MAX_FETCH_PAGE_CHARS = 60_000
 # Anthropic native web search is $10 / 1,000 successful searches (2026-07-21).
 # Live OpenRouter calls prefer the provider-reported total; replay uses this
 # explicit price so jobs.cost_actual_usd does not silently omit search spend.
@@ -77,9 +89,11 @@ TIER3_FREE_MONTHLY_CREDITS = {
 # `tool_called` job event stores only a truncated summary — the full result still
 # goes back to the model in the loop.
 AGENT_TOOL_RESULT_SUMMARY_CAP = 2048
-# `fetch_page` tool: cleaned text handed back to an agent is capped so one fetch
-# cannot blow the turn's context budget (the full page still persists via FETCH).
+# `fetch_page` tool: DISCOVER gets a compact, structured page brief rather than
+# an arbitrary prefix of ``CleanedPage.text``.  Reserving half for embedded data
+# matters because JSON-LD/state blobs are appended after ordinary visible text.
 FETCH_PAGE_MAX_CHARS = 20_000
+FETCH_PAGE_EMBEDDED_MAX_CHARS = 10_000
 # Maps HTTP wrappers (enrich/maps.py): retry count + base backoff for quota
 # (HTTP 429 / Google OVER_QUERY_LIMIT) — small; Maps is inside the free credit.
 MAPS_MAX_RETRIES = 3
@@ -131,12 +145,12 @@ CHECKPOINT_TIMEOUT_HOURS = 24
 
 # Scheduler tick (P3-9 lands the scaffold; P3-11/P3-12 add duties): how often
 # the worker loop runs its scheduled duties. The first duty is the
-# utility-baselines sweep (§9.5, §14: 120-day metro TTL).
+# utility-baselines sweep (§9.5, §14: 180-day regional TTL).
 SCHEDULER_TICK_SECONDS = 300.0
 REFRESH_TTL_HOURS = {
-    "pricing": 24,
-    "listing_details": 14 * 24,
-    "images": 30 * 24,
+    "pricing": 10 * 24,
+    "listing_details": 30 * 24,
+    "images": 60 * 24,
     "reviews": 30 * 24,
 }
 # A partial/failed image attempt stays due, but must not be retried on every
@@ -148,7 +162,7 @@ IMAGE_REFRESH_RETRY_COOLDOWN_HOURS = 3
 # and manual retries remain available because only the scheduler reads this.
 REFRESH_FAILURE_BACKOFF_BASE_HOURS = 1
 REFRESH_FAILURE_BACKOFF_MAX_HOURS = 24
-UTILITY_BASELINE_TTL_DAYS = 120
+UTILITY_BASELINE_TTL_DAYS = 180
 # A metro whose baselines pass failed is not retried before this cooldown —
 # without it a persistently failing pass would fire one live LLM call per tick.
 UTILITY_BASELINE_RETRY_SECONDS = 3600.0
@@ -212,6 +226,16 @@ SHELL_SCRIPT_RATIO = 0.7
 # cleaned text is capped at this many chars
 EMBEDDED_SCRIPT_MIN_CHARS = 500
 EMBEDDED_DATA_MAX_CHARS = 100_000
+
+# Fetching is memory-bounded before HTML parsing.  Tier 3 first receives a
+# provider envelope, then unwraps the target page, so the two limits are
+# deliberately distinct.  A page over either limit is rejected whole: partial
+# HTML/JSON is not evidence.
+FETCH_PROVIDER_RESPONSE_MAX_BYTES = 16 * 1024 * 1024
+FETCH_TARGET_BODY_MAX_BYTES = 8 * 1024 * 1024
+# The cleaner reserves room for curated floor-plan/fee and embedded-data
+# sections, trimming generic prose first.
+CLEANED_PAGE_MAX_CHARS = 250_000
 
 # Tier-2 (browser) politeness: minimum seconds between fetches to one domain
 TIER2_MIN_DELAY_SECONDS = 3.0

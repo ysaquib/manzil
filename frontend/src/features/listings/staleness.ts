@@ -1,9 +1,9 @@
 import type { RefreshClass, RefreshStatus } from "./types";
 
 export const REFRESH_TTL_MS: Record<Exclude<RefreshClass, "location">, number> = {
-  pricing: 24 * 60 * 60 * 1000,
-  listing_details: 14 * 24 * 60 * 60 * 1000,
-  images: 30 * 24 * 60 * 60 * 1000,
+  pricing: 10 * 24 * 60 * 60 * 1000,
+  listing_details: 30 * 24 * 60 * 60 * 1000,
+  images: 60 * 24 * 60 * 60 * 1000,
   reviews: 30 * 24 * 60 * 60 * 1000,
 };
 
@@ -20,7 +20,7 @@ export function staleRefreshClasses(
   });
 }
 
-/** True when the Listing has no images marker or the 30-day images TTL has elapsed. */
+/** True when the Listing has no images marker or the 60-day images TTL has elapsed. */
 export function listingNeedsImageRefresh(
   statuses: RefreshStatus[],
   listingId: string,

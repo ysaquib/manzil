@@ -11,8 +11,10 @@ import asyncio
 import hashlib
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
+from manzil_shared.errors import StageRetryable
 from manzil_worker.llm import client as client_mod
 from manzil_worker.llm.client import (
     ProviderResponse,
@@ -166,7 +168,7 @@ def test_record_then_replay_round_trip(monkeypatch: pytest.MonkeyPatch, tmp_path
     assert tally.cache_read_tokens == 50
     assert tally.cost_usd == pytest.approx(
         cost_usd(
-            WORKHORSE_MODEL,
+            model_for_stage("smoke"),
             input_tokens=100,
             output_tokens=20,
             cache_read_tokens=50,
@@ -340,6 +342,21 @@ def test_live_call_routes_all_models_through_openrouter(
         )
         asyncio.run(client_mod._live_call(plan, SmokeResult))
     assert calls == ["openrouter", "openrouter"]
+
+
+def test_openrouter_rate_limit_becomes_retryable_and_keeps_retry_after() -> None:
+    class RateLimited(Exception):
+        status_code = 429
+        response = SimpleNamespace(headers={"retry-after": "17"})
+
+    async def rate_limited() -> None:
+        raise RateLimited("shared upstream pool exhausted")
+
+    with pytest.raises(StageRetryable) as raised:
+        asyncio.run(client_mod._call_openrouter(WORKHORSE_MODEL, rate_limited))
+
+    assert "HTTP 429" in str(raised.value)
+    assert raised.value.retry_after_seconds == 17
 
 
 def test_tool_schema_inlines_nested_pydantic_refs() -> None:

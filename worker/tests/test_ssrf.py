@@ -11,7 +11,7 @@ import ipaddress
 
 import httpx
 import pytest
-from manzil_shared.errors import PrivateAddressRefused
+from manzil_shared.errors import FetchResponseTooLarge, PrivateAddressRefused
 from manzil_worker.fetching.registry import InMemoryRegistry
 from manzil_worker.fetching.ssrf import (
     is_blocked_ip_literal,
@@ -408,9 +408,24 @@ async def test_fetch_page_public_dns_still_fetches() -> None:
     fetcher = Tier1Fetcher(resolver=one("93.184.216.34"), transport=rec._mock)
     ctx = ToolContext(fetchers={1: fetcher}, registry=InMemoryRegistry())
     with tool_context(ctx):
-        text = await fetch_page("https://host.example/listing")
-    assert isinstance(text, str) and text
+        page = await fetch_page("https://host.example/listing")
+    assert page["outcome"] == "fetched" and page["text"]
     assert rec.dialed_hosts == ["93.184.216.34"]
+
+
+async def test_tier1_rejects_declared_oversize_response_before_reading(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("manzil_worker.fetching.tiers.FETCH_TARGET_BODY_MAX_BYTES", 10)
+    fetcher = Tier1Fetcher(
+        resolver=one("93.184.216.34"),
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, headers={"content-length": "11"}, content=b"x" * 11)
+        ),
+    )
+
+    with pytest.raises(FetchResponseTooLarge, match="target response"):
+        await fetcher.fetch("https://host.example/large")
 
 
 def test_smoke_asyncio_entrypoint() -> None:

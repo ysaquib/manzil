@@ -26,6 +26,18 @@ const SCOPED_UNIT_CRITERIA = new Set([
   "flooring_materials",
 ]);
 
+// These values are canonical Floor Plan columns. A legacy Property extraction
+// is not evidence for every Unit Group, but Property-level overrides remain
+// valid so they intentionally use a separate fallback rule.
+const FLOOR_PLAN_COLUMN_CRITERIA = new Set([
+  "beds",
+  "baths",
+  "sqft",
+  "security_deposit",
+  "availability_date",
+  "unit_types",
+]);
+
 /** Latest non-tombstone override per criterion key. `overrides` must be
  * newest-first, which is how useOverrides orders them. */
 export function activeOverrides(
@@ -54,7 +66,8 @@ export function extractionForFloorPlan(
   floorPlanId: string | null,
 ): Extraction | undefined {
   const rows = extractions.filter((row) => row.criterion_key === criterionKey);
-  const legacyPropertyFact = SCOPED_UNIT_CRITERIA.has(criterionKey)
+  const legacyPropertyFact =
+    SCOPED_UNIT_CRITERIA.has(criterionKey) || FLOOR_PLAN_COLUMN_CRITERIA.has(criterionKey)
     ? undefined
     : rows.find((row) => row.target_scope === "property" && row.applicability === null);
   return (
