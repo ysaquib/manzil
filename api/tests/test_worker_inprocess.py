@@ -88,6 +88,50 @@ async def _seed_one_ingest_job(pool: asyncpg.Pool, hunt_id, listing_id) -> None:
     )
 
 
+async def test_api_with_isolation_enabled_starts_no_worker_claimant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The API retains only request/email ownership after worker cutover."""
+    from manzil_api import main as main_mod
+    from manzil_api.config import get_settings
+
+    class _Pool:
+        closed = False
+
+        async def close(self) -> None:
+            self.closed = True
+
+    pool = _Pool()
+
+    async def create_pool(_settings: object) -> _Pool:
+        return pool
+
+    async def model_ready(_settings: object) -> bool:
+        return True
+
+    async def email_dispatcher(_pool: _Pool, _settings: object, stop: asyncio.Event) -> None:
+        await stop.wait()
+
+    async def unexpected_worker(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("API must not start an in-process worker when isolation is enabled")
+
+    monkeypatch.setenv("MANZIL_WORKER_INPROCESS", "false")
+    monkeypatch.setattr(main_mod, "create_db_pool", create_pool)
+    monkeypatch.setattr(main_mod, "_model_artifact_ready", model_ready)
+    monkeypatch.setattr(main_mod, "run_email_dispatcher", email_dispatcher)
+    monkeypatch.setattr(main_mod, "run_inprocess_worker", unexpected_worker)
+    get_settings.cache_clear()
+    try:
+        app = main_mod.create_app()
+        async with main_mod.lifespan(app):
+            assert app.state.worker_task is None
+            assert app.state.worker_heartbeat_at is None
+    finally:
+        get_settings.cache_clear()
+
+    assert pool.closed is True
+
+
 def test_create_app_exports_dotenv_for_the_inprocess_worker(monkeypatch, tmp_path) -> None:  # type: ignore[no-untyped-def]
     """The in-process worker reads its keys straight from os.environ (tier-3
     provider, OpenRouter, Langfuse), but pydantic-settings parses .env without

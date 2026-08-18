@@ -2,9 +2,9 @@
 
 Two independent strategies live side by side, matching the two processes:
 
-- **asyncpg pool** — the in-process worker loop's direct, service-role Postgres
-  access (the worker's own pattern, `FOR UPDATE SKIP LOCKED` etc.). Held on
-  `app.state.db_pool`, created/closed by the lifespan.
+- **asyncpg pool** — the API's direct Postgres access. When enabled, its
+  in-process worker uses the same pool; the standalone worker creates an
+  independent pool with the same service-level DSN and queue pattern.
 - **supabase-py clients** — how the API performs user-context mutations: a
   request-scoped client authenticated with the *caller's* JWT, so PostgREST
   evaluates RLS with the real identity (what makes turning RLS on in Phase 2 a
@@ -33,7 +33,7 @@ def _create_client(url: str, key: str, *, key_name: str) -> Client:
 
 
 async def create_db_pool(settings: Settings) -> asyncpg.Pool:
-    """Direct Postgres pool for the in-process worker loop (service-level)."""
+    """Direct Postgres pool for API lifecycle work (service-level)."""
     return await asyncpg.create_pool(settings.database_url)
 
 
