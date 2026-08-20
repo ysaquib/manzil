@@ -47,6 +47,14 @@ MANZIL_JOB_MAX_ATTEMPTS = 5
 # (the loop wakes early on a clean-shutdown signal, so this only bounds idle poll rate)
 WORKER_IDLE_BACKOFF_SECONDS = 1.0
 
+# Direct asyncpg pools back the persistent API and optional standalone worker.
+# Supavisor session mode grants one database connection per client connection;
+# two Render generations overlap during a rolling deploy, so the 1/4 bounds
+# peak at eight Manzil connections rather than asyncpg's default twenty. That
+# leaves headroom below the hosted project's 15-client session-pool limit.
+POSTGRES_POOL_MIN_SIZE = 1
+POSTGRES_POOL_MAX_SIZE = 4
+
 # P3 bounded tool loops
 AGENT_MAX_TURNS = 8
 # DISCOVER has its own tighter budgets because each turn uses the judgment-tier

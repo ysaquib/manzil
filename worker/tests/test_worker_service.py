@@ -35,8 +35,10 @@ async def test_standalone_service_uses_postgres_dispatch_and_production_duties(
     pool = _Pool()
     seen: dict[str, object] = {}
 
-    async def create_pool(dsn: str) -> _Pool:
+    async def create_pool(dsn: str, *, min_size: int, max_size: int) -> _Pool:
         seen["pool_dsn"] = dsn
+        seen["min_size"] = min_size
+        seen["max_size"] = max_size
         return pool
 
     def dispatch_builder(actual_pool: _Pool, *, dsn: str) -> dict[str, str]:
@@ -58,6 +60,8 @@ async def test_standalone_service_uses_postgres_dispatch_and_production_duties(
     await service.run_worker_service("postgresql://worker", stop=stop)
 
     assert seen["pool_dsn"] == "postgresql://worker"
+    assert seen["min_size"] == 1
+    assert seen["max_size"] == 4
     assert seen["dispatch_pool"] is pool
     assert seen["dispatch_dsn"] == "postgresql://worker"
     assert seen["loop_pool"] is pool

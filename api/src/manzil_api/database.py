@@ -16,6 +16,7 @@ The API never hand-simulates permissions it can hand to the database.
 from __future__ import annotations
 
 import asyncpg
+from manzil_shared.config import POSTGRES_POOL_MAX_SIZE, POSTGRES_POOL_MIN_SIZE
 from supabase._sync.client import SupabaseException
 
 from manzil_api.config import Settings
@@ -33,8 +34,12 @@ def _create_client(url: str, key: str, *, key_name: str) -> Client:
 
 
 async def create_db_pool(settings: Settings) -> asyncpg.Pool:
-    """Direct Postgres pool for API lifecycle work (service-level)."""
-    return await asyncpg.create_pool(settings.database_url)
+    """Direct Postgres pool for API lifecycle work, sized for Supavisor."""
+    return await asyncpg.create_pool(
+        settings.database_url,
+        min_size=POSTGRES_POOL_MIN_SIZE,
+        max_size=POSTGRES_POOL_MAX_SIZE,
+    )
 
 
 def create_anon_client(settings: Settings) -> Client:

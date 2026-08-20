@@ -16,6 +16,7 @@ import signal
 import asyncpg
 import structlog
 from dotenv import load_dotenv
+from manzil_shared.config import POSTGRES_POOL_MAX_SIZE, POSTGRES_POOL_MIN_SIZE
 
 from manzil_worker.ops.demo_publication import process_next_demo_publication
 from manzil_worker.queue import build_dispatch, run_worker_loop, scheduler_tick
@@ -60,7 +61,11 @@ async def run_worker_service(
 ) -> None:
     """Run one durable worker loop until ``stop`` requests a clean drain."""
     stop = stop or asyncio.Event()
-    pool = await asyncpg.create_pool(database_url)
+    pool = await asyncpg.create_pool(
+        database_url,
+        min_size=POSTGRES_POOL_MIN_SIZE,
+        max_size=POSTGRES_POOL_MAX_SIZE,
+    )
     try:
         # Supplying the DSN is required: build_dispatch otherwise intentionally
         # falls back to InMemoryRegistry for the Phase-0 CLI without a database.

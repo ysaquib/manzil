@@ -164,6 +164,13 @@ Do not use:
   behavior and the long-lived worker pool make session mode the safer contract;
 - the public Supabase API URL as `DATABASE_URL`.
 
+Manzil intentionally opens only **1–4** direct `asyncpg` connections per API
+or worker process. Render briefly overlaps old and new instances during a
+rolling deploy, so this caps two API generations at eight session-pool clients
+instead of asyncpg's default twenty; the hosted project's session-mode limit is
+currently 15. Do not restore asyncpg's default pool size without increasing and
+budgeting the Supavisor client limit first.
+
 Supabase documents the connection modes and Render's IPv4 limitation in
 [Connect to your database](https://supabase.com/docs/guides/database/connecting-to-postgres)
 and [IPv4/IPv6 compatibility](https://supabase.com/docs/guides/troubleshooting/supabase--your-network-ipv4-and-ipv6-compatibility-cHe3BP).
