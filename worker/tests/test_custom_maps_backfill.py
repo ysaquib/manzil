@@ -154,7 +154,8 @@ async def test_maps_backfill_reuses_geocode_persists_hunt_truth_and_rescores(
         job = await pg_pool.fetchrow("select state, plan from jobs where id=$1", job_id)
         plan = json.loads(job["plan"]) if isinstance(job["plan"], str) else job["plan"]
         assert job["state"] == "done"
-        assert plan["stages"] == ["PLAN", "CUSTOM_MATCH", "SCORE"]
+        # Refresh SCORE is persistence-backed after projection, not a RunState stage.
+        assert plan["stages"] == ["PLAN", "CUSTOM_MATCH"]
         assert calls and len(calls) == 1
         assert not await pg_pool.fetchval(
             "select exists(select 1 from job_events where job_id=$1 and stage='FETCH')", job_id

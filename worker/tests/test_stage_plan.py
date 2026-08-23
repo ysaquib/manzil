@@ -179,7 +179,7 @@ def test_refresh_pricing_manifest_uses_contributing_sources() -> None:
     ]
     out = asyncio.run(plan_stage(state, StageCtx(refresh_source_lookup=_refresh_lookup(sources))))
     assert out.plan is not None
-    assert out.plan.stages == ["PLAN", "FETCH", "EXTRACT", "VERIFY", "RECONCILE", "SCORE"]
+    assert out.plan.stages == ["PLAN", "FETCH", "EXTRACT", "VERIFY", "RECONCILE"]
     assert [source.url for source in out.plan.sources] == [source.url for source in sources]
     assert out.prior_source_hashes == {URL: "old-a", sources[1].url: "old-b"}
 
@@ -217,7 +217,7 @@ def test_custom_backfill_uses_cached_evidence_without_fetching() -> None:
     out = asyncio.run(plan_stage(state, StageCtx(refresh_source_lookup=_refresh_lookup([source]))))
 
     assert out.plan is not None
-    assert out.plan.stages == ["PLAN", "CUSTOM_MATCH", "SCORE"]
+    assert out.plan.stages == ["PLAN", "CUSTOM_MATCH"]
     assert out.plan.sources[0].action == "skip"
     assert out.plan.sources[0].why == "custom_match_uses_cached_evidence"
     assert out.sources == [cached]
@@ -270,7 +270,6 @@ def test_unchanged_pricing_fetch_hash_gates_paid_stages() -> None:
         "VERIFY": "content_hash_unchanged",
         "RECONCILE": "content_hash_unchanged",
         "CUSTOM_MATCH": "content_hash_unchanged",
-        "SCORE": "content_hash_unchanged",
     }
 
 

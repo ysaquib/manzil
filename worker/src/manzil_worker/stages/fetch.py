@@ -281,6 +281,4 @@ async def fetch_stage(state: RunState, ctx: StageCtx) -> RunState:
                 "CUSTOM_MATCH": "content_hash_unchanged",
             }
         )
-        if not set(state.refresh_fields) & {"images", "reviews", "location"}:
-            state.plan.skipped["SCORE"] = "content_hash_unchanged"
     return state

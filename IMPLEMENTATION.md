@@ -2,14 +2,14 @@
 
 | | |
 |---|---|
-| **Version** | 2.0.190 |
+| **Version** | 2.0.191 |
 | **Status** | Living — churns freely, no ceremony required. **v2.0 is the implementation-start baseline**: further changes should come from code reality, not further pre-code polishing |
 | **Sibling** | `DESIGN.md` (intent + contracts; wins all conflicts about *what* and *why*) |
 | **Repo location** | `/IMPLEMENTATION.md` |
 
 **Division of authority:** DESIGN.md owns intent, requirements, and cross-component contracts. This document owns *current mechanics* — how things are actually built right now. Code and docstrings win on exact interfaces; this doc points at modules rather than duplicating signatures once they exist. If this doc and DESIGN.md disagree, stop and flag it (CLAUDE.md rule) — do not silently pick a side. Update protocol here is deliberately lightweight: edit in place, add a line to the [Changelog](#9-changelog). No decision-log ceremony; that lives in DESIGN.md §20 for *design* changes only.
 
-`docs/scoped-criteria-and-amenities.md` is the supplementary decision workbook for the P3-SC series. DESIGN (currently v3.102) and this document supersede it wherever wording or mechanics differ. `docs/onnx-image-classification.md` is the retained operating guide for the unused local ONNX `IMAGE_CLASSIFY` backend (DESIGN v3.102: LLM is live; ONNX is not loaded).
+`docs/scoped-criteria-and-amenities.md` is the supplementary decision workbook for the P3-SC series. DESIGN (currently v3.103) and this document supersede it wherever wording or mechanics differ. `docs/onnx-image-classification.md` is the retained operating guide for the unused local ONNX `IMAGE_CLASSIFY` backend (DESIGN v3.102: LLM is live; ONNX is not loaded).
 
 **Status labels.** Every section below carries one, so nobody — human or agent — has to guess how binding a given detail is:
 
@@ -977,6 +977,7 @@ history. Version and date, rather than row position, define chronology.
 
 | Version | Date | Change |
 |---|---|---|
+| 2.0.191 | 2026-08-22 | **Sibling fallback, Tier-3 carrier recovery, and refresh-safe scores.** FETCH persists and bounds sibling attempts, selecting ranked policy/family-valid replacements after failures. Tier 3 reads raw bounded carrier bytes with identity encoding, normalizes valid compression, retries malformed carrier decoding once, and optionally fails over to a configured distinct provider. Page-class refreshes omit state-local SCORE and instead call a Listing-only persisted-fact rescore after projection; Realtime score events now also invalidate extraction views. |
 | 2.0.190 | 2026-08-21 | **IMAGE_CLASSIFY LLM path honors `IMAGE_CLASSIFY_BATCH_SIZE = 30`.** The workflow classifier now chunks pending thumbnails the same way the retained ONNX path does, reconciles each `call_vision` independently, and combines assessments, missing/disputed markers, and warnings. DESIGN §10.8 already specified batches of 30; the LLM rewrite had been sending the whole pending set in one prompt. |
 | 2.0.189 | 2026-08-21 | **IMAGE_CLASSIFY returns to LLM; ONNX unwired (DESIGN v3.102).** Workflow classification is `call_vision` to `openai/gpt-5.6-luna`; quality VISION is `anthropic/claude-sonnet-5` (cost-only pins). The live selector is the structured LLM contract again. ONNX code (`vision_onnx.py`, `_image_classify_onnx_stage`, `_configured_image_classify_onnx`) stays but `StageCtx` no longer injects it, `/v1/ready` no longer hashes the artifact, and there is no shadow or fallback. Cached ONNX rows are reclassified and kept as `classification_onnx_legacy`. Gallery projection prefers LLM `primary_scene`. |
 | 2.0.188 | 2026-08-21 | **Quiet successful Hunt poller access lines (DESIGN v3.101).** The existing `uvicorn.access` filter now also drops 2xx/3xx `GET`s whose path ends in `/jobs` or `/attention` (Hunt, Ghost View, and Admin list), matching the health-probe rule: a 4xx/5xx still logs, and `MANZIL_LOG_PROBE_REQUESTS=true` restores every line. Ordinary traffic is unchanged. |
