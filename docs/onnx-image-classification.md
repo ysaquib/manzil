@@ -1,39 +1,42 @@
 # ONNX image classification: architecture and operation
 
-**Status:** ONNX is the exclusive authoritative `IMAGE_CLASSIFY` backend (DESIGN v3.52)
+**Status:** retained unused implementation. Live `IMAGE_CLASSIFY` is an LLM
+(`openai/gpt-5.6-luna`, DESIGN v3.102). Do not load this
+artifact on Render's starter instance.
 
-**Last updated:** 2026-08-03
+**Last updated:** 2026-08-21
 
-This guide is the operational reference for Manzil's local ONNX
-`IMAGE_CLASSIFY` backend. It covers the model and classification logic, the
-canonical runtime path, local development, production deployment, and the
-accepted limitations of the narrowed selector contract. The benchmark evidence
+This guide is the operational reference for Manzil's **retained** local ONNX
+`IMAGE_CLASSIFY` backend. It is not the workflow path. Use it only when
+reverting onto a host with enough RAM. The live classifier and quality VISION
+pins live in `worker/src/manzil_worker/llm/config.py`. The benchmark evidence
 and model comparison remain in
 [`image-classification-ml-analysis.md`](image-classification-ml-analysis.md).
 
 ## 1. What is implemented now
 
-The selected ONNX model is the only workflow classifier. The former structured
-VISION-seam classifier remains in code as a disabled legacy function; no
-production path invokes or falls back to it:
+DESIGN v3.102 restored the structured LLM classifier as the workflow path and
+left this ONNX stack unwired — not deleted:
 
 ```text
 normalized Property image
           |
-          +--> ONNX subprocess --> vision_assessment.classification
-                                      |
-                                      +--> diagram kind promotion
-                                      +--> top-three kitchen_score selector
-                                      +--> anchored quality VISION
+          +--> call_vision(image_classify) --> vision_assessment.classification
+          |                                      |
+          |                                      +--> diagram kind promotion
+          |                                      +--> LLM kitchen selector
+          |                                      +--> anchored quality VISION
+          |
+          +--> ONNX subprocess   (retained; not called)
 ```
 
-ONNX may promote a visually detected diagram but never demotes deterministic
-diagram evidence. Its `kitchen_score` orders quality targets; it does not rate
-kitchen quality. Failure is fatal to the Stage and follows ordinary Job retry
-policy—there is no LLM fallback. No database migration is needed because
-`property_images` already persists the complete `vision_assessment` JSON object.
+`image_classify_stage` never invokes `ctx.image_classify_onnx`, never writes
+`classification_shadow`, and does not fall back to ONNX on LLM failure. The
+ONNX stage function is `_image_classify_onnx_stage`. `StageCtx` defaults the
+seam to `None`; `_configured_image_classify_onnx` still builds it from
+`MANZIL_IMAGE_CLASSIFY_ONNX_DIR` for a revert.
 
-Implementation:
+Implementation (retained):
 
 - `worker/src/manzil_worker/vision_onnx.py` owns artifact verification,
   preprocessing, ONNX Runtime inference, subprocess transport, and telemetry.
@@ -271,30 +274,31 @@ cannot be inferred from scene identity alone.
 
 ### 7.2 Runtime configuration
 
-`MANZIL_IMAGE_CLASSIFY_ONNX_DIR` names the required artifact. There is no backend
-mode switch: DESIGN v3.52 makes ONNX authoritative in code, so artifact presence
-cannot select LLM behavior. `MANZIL_IMAGE_CLASSIFY_ONNX_SHADOW_DIR` is accepted
-only as a bounded path alias for installations created before promotion.
+`MANZIL_IMAGE_CLASSIFY_ONNX_DIR` is unused on the workflow path (DESIGN v3.102).
+Leave it unset on Render's $7 starter instance. Setting it does nothing unless
+you restore `_configured_image_classify_onnx` as the `StageCtx` default and
+point `image_classify_stage` at `_image_classify_onnx_stage`.
+`MANZIL_IMAGE_CLASSIFY_ONNX_SHADOW_DIR` remains a path alias inside that unused
+factory only.
 
 ### 7.3 Persistence, migration, and rollback
 
-The implemented path:
+The live path (DESIGN v3.102):
 
-1. requires a configured artifact before classifying a non-empty gallery;
-2. verifies the pinned digest in the ONNX subprocess before selection;
-3. persist a versioned canonical `classification` record with backend,
-   artifact digest, prototype version, thresholds, and normalized assessment;
-4. run image-kind changes and target selection only from that canonical record;
-5. never invokes `call_vision("image_classify", ...)` on the workflow path;
-6. make runtime inference failure retryable or fail closed with no targets;
-   never silently fall back unless fallback is an explicit backend policy;
-7. promotes old shadow records without re-inference and retains replaced LLM
-   records under `classification_llm_legacy`.
+1. classifies through `call_vision("image_classify", …)`;
+2. never constructs or calls the ONNX subprocess;
+3. persists a versioned LLM `classification` record (`model:prompt-<version>`);
+4. treats an ONNX-shaped incumbent as stale, reclassifies, and keeps it as
+   `classification_onnx_legacy`;
+5. selects kitchen targets from the structured LLM fields;
+6. fails closed on a malformed LLM batch past `IMAGE_CLASSIFY_ANOMALY_TOLERANCE`.
 
-Existing image rows migrate through an image-scoped refresh; they do not wait for
-the 30-day TTL. Rollback is a code decision, not an environment flip: restore the
-retained legacy function as the workflow entry point, issue a new DESIGN ruling,
-and refresh affected images. Stored legacy evidence remains available for audit.
+To restore ONNX as authority: restore `image_classify_stage` to
+`_image_classify_onnx_stage`, wire `StageCtx.image_classify_onnx` with
+`_configured_image_classify_onnx`, require the artifact on a host with enough
+RAM (not Render starter), issue a new DESIGN ruling, and refresh affected
+images. Dual-running ONNX as shadow or fallback is not a rollback option on
+the current host — it reintroduces the OOM.
 
 ### 7.4 Owed evidence
 

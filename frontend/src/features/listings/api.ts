@@ -487,7 +487,7 @@ export interface PropertyImage {
   kind?: "listing_photo" | "floor_plan_diagram" | "other";
   classification?: {
     primaryScene: string;
-    kitchenProbability: number;
+    kitchenProbability?: number;
   };
   kitchenAssessment?: {
     visibility: "visible" | "not_visible";
@@ -512,12 +512,17 @@ export function projectImageClassifications(
   visionAssessment: unknown,
 ): Pick<PropertyImage, "classification" | "kitchenAssessment"> {
   const canonical = assessmentRecord(visionAssessment, "classification");
-  // Migration compatibility: rows classified during shadow rollout become
-  // visible as ONNX immediately and are promoted on their next image refresh.
-  const legacyShadow = assessmentRecord(visionAssessment, "classification_shadow");
-  const onnx = typeof canonical?.predicted_scene === "string" ? canonical : legacyShadow;
-  const predictedScene = onnx?.predicted_scene;
-  const kitchenScore = onnx?.kitchen_score;
+  const llmScene = typeof canonical?.primary_scene === "string" ? canonical.primary_scene : null;
+  // Un-refreshed ONNX rows (and pre-promotion shadow rows) stay visible until
+  // IMAGE_CLASSIFY rewrites canonical classification to the LLM contract.
+  const onnx =
+    typeof canonical?.predicted_scene === "string"
+      ? canonical
+      : assessmentRecord(visionAssessment, "classification_shadow");
+  const predictedScene =
+    llmScene ?? (typeof onnx?.predicted_scene === "string" ? onnx.predicted_scene : null);
+  const kitchenScore =
+    llmScene == null && typeof onnx?.kitchen_score === "number" ? onnx.kitchen_score : undefined;
   const kitchenQuality = (visionAssessment as Record<string, unknown> | null)?.kitchen_quality;
   const kitchenAssessment = kitchenQuality && typeof kitchenQuality === "object"
     ? (kitchenQuality as Record<string, unknown>).assessment
@@ -538,12 +543,13 @@ export function projectImageClassifications(
   const validConfidence = confidence === "high" || confidence === "medium" || confidence === "low";
 
   return {
-    classification: typeof predictedScene === "string" && typeof kitchenScore === "number"
-      ? {
-          primaryScene: predictedScene,
-          kitchenProbability: kitchenScore,
-        }
-      : undefined,
+    classification:
+      typeof predictedScene === "string"
+        ? {
+            primaryScene: predictedScene,
+            ...(typeof kitchenScore === "number" ? { kitchenProbability: kitchenScore } : {}),
+          }
+        : undefined,
     kitchenAssessment: validVisibility
       && validConfidence
       && typeof rationale === "string"

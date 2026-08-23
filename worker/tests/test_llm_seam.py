@@ -252,11 +252,13 @@ def test_unknown_stage_has_no_silent_fallback() -> None:
         model_for_stage("brand-new-stage")
 
 
-def test_image_classify_uses_owner_selected_taste_pin(
+def test_image_classify_uses_cost_only_vision_pins(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("MANZIL_MODEL_IMAGE_CLASSIFY", raising=False)
-    assert model_for_stage("image_classify") == "anthropic/claude-sonnet-4.6"
+    monkeypatch.delenv("MANZIL_MODEL_VISION", raising=False)
+    assert model_for_stage("image_classify") == "openai/gpt-5.6-luna"
+    assert model_for_stage("vision") == "anthropic/claude-sonnet-5"
 
 
 # ── OpenRouter routing + cache economics ─────────────────────────────────────
@@ -301,21 +303,24 @@ def test_openrouter_attribution_headers_fall_back_to_frontend_url(
 def test_model_override_env_swaps_the_pin(monkeypatch: pytest.MonkeyPatch) -> None:
     """P0-13 bench runs sweep models via MANZIL_MODEL_<STAGE> without editing
     pins; an unpriced override is refused so cost accounting never guesses."""
-    monkeypatch.setenv("MANZIL_MODEL_SMOKE", "google/gemini-2.5-flash-lite")
-    assert model_for_stage("smoke") == "google/gemini-2.5-flash-lite"
+    monkeypatch.setenv("MANZIL_MODEL_SMOKE", "google/gemini-3-flash-preview")
+    assert model_for_stage("smoke") == "google/gemini-3-flash-preview"
     monkeypatch.setenv("MANZIL_MODEL_SMOKE", "google/gemini-9.9-imaginary")
     with pytest.raises(KeyError, match="not in MODEL_PRICES"):
         model_for_stage("smoke")
 
 
 def test_gemini_pricing_uses_google_cache_economics() -> None:
-    # 1M uncached in + 1M out at (0.10, 0.40); cache reads at 25%, no write premium.
+    # 1M uncached in + 1M out at (0.50, 3.00); cache reads at 25%, no write premium.
     assert cost_usd(
-        "google/gemini-2.5-flash-lite", input_tokens=1_000_000, output_tokens=1_000_000
-    ) == pytest.approx(0.50)
+        "google/gemini-3-flash-preview", input_tokens=1_000_000, output_tokens=1_000_000
+    ) == pytest.approx(3.50)
     assert cost_usd(
-        "google/gemini-2.5-flash-lite", input_tokens=0, output_tokens=0, cache_read_tokens=1_000_000
-    ) == pytest.approx(0.025)
+        "google/gemini-3-flash-preview",
+        input_tokens=0,
+        output_tokens=0,
+        cache_read_tokens=1_000_000,
+    ) == pytest.approx(0.125)
 
 
 def test_live_call_routes_all_models_through_openrouter(
@@ -332,7 +337,7 @@ def test_live_call_routes_all_models_through_openrouter(
 
     monkeypatch.setattr(client_mod, "_live_call_openrouter", fake_openrouter)
 
-    for model in ("google/gemini-2.5-flash-lite", WORKHORSE_MODEL):
+    for model in ("openai/gpt-5.6-luna", WORKHORSE_MODEL):
         plan = client_mod._CallPlan(
             stage="smoke",
             model=model,
