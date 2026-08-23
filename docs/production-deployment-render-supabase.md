@@ -962,8 +962,9 @@ check on `/v1/health` to avoid an external database incident causing restart
 loops; monitor and alert on `/v1/ready` separately. Render sets the probe
 interval and does not expose it as a setting, so the log volume — not the
 cadence — is what we control: successful probe access lines are filtered out of
-`uvicorn.access`, failing ones always survive, and `MANZIL_LOG_PROBE_REQUESTS=true`
-restores every line (DESIGN §20 v3.79). Also alert on stale Jobs,
+`uvicorn.access`, as are successful Hunt `GET .../jobs` and `GET .../attention`
+polls (DESIGN §20 v3.101). Failing ones always survive, and
+`MANZIL_LOG_PROBE_REQUESTS=true` restores every line (DESIGN §20 v3.79). Also alert on stale Jobs,
 because a legitimate long Stage may exceed the coarse process heartbeat.
 
 ## 13. Secret-placement summary
