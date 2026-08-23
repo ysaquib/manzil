@@ -85,7 +85,7 @@ from manzil_worker.scoped_facts import (
 )
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.pet_costs import slot_for_fee, slot_for_one_time_fee
-from manzil_worker.stages.rescore import rescore_hunt
+from manzil_worker.stages.rescore import rescore_hunt, rescore_listing
 from manzil_worker.state import (
     DedupeCandidate,
     FloorPlanIn,
@@ -148,11 +148,15 @@ async def run_worker_heartbeat(
     started_at = datetime.now(UTC)
     while not stop.is_set():
         try:
+            # Bind both timestamps from the process clock. Mixing Python
+            # `datetime.now` with Postgres `now()` fails `last_seen_at >=
+            # started_at` when the Docker DB clock lags the host by tens of ms.
+            seen_at = max(datetime.now(UTC), started_at)
             async with pool.acquire() as conn, conn.transaction():
                 await conn.execute(
                     """
                     insert into worker_heartbeats (worker_id, mode, started_at, last_seen_at)
-                    values ($1, $2, $3, now())
+                    values ($1, $2, $3, $4)
                     on conflict (worker_id) do update
                        set mode = excluded.mode,
                            started_at = excluded.started_at,
@@ -161,6 +165,7 @@ async def run_worker_heartbeat(
                     worker_id,
                     mode,
                     started_at,
+                    seen_at,
                 )
                 await conn.execute(
                     """
@@ -1342,6 +1347,12 @@ async def _persist_ingest_results(
             job_id=persisted_job_id,
             fields=initialized_classes,
         )
+    # Refresh runs persist only source/fact projections here. Its deterministic
+    # score projection follows from the database's *complete* current fact set,
+    # not this intentionally partial RunState (for example a pricing refresh
+    # does not carry the persisted Maps grocery value).
+    if state.job_type is JobType.REFRESH:
+        return
     if not scorable:
         # No available floor plans, even after extraction/cross-validation — a
         # legitimate "no availability" result (§8.2), not an error. The source and
@@ -2170,6 +2181,30 @@ async def _mark_refresh_classes_current(
         )
 
 
+async def _rescore_persisted_listing(
+    conn: asyncpg.Connection,
+    *,
+    hunt_listing_id: UUID,
+    rubric: list[RubricCriterion],
+    rubric_version: int,
+    settings: dict[str, Any],
+) -> int:
+    """Project scores from the complete persisted truth for one refreshed Listing."""
+    return await rescore_listing(
+        conn,
+        hunt_listing_id=hunt_listing_id,
+        rubric=rubric,
+        rubric_version=rubric_version,
+        min_confidence=Confidence(settings.get("min_confidence", "medium")),
+        min_vision_confidence=Confidence(settings.get("min_vision_confidence", "low")),
+        cats=int(settings.get("cats", 0)),
+        dogs=int(settings.get("dogs", 0)),
+        cost_estimate_mode=str(settings.get("cost_estimate_mode", "conservative")),
+        generalized_vision_policy=str(settings.get("generalized_vision_policy", "full_rubric")),
+        occupants=int(settings.get("occupants", 1)),
+    )
+
+
 def _successful_refresh_fields(state: RunState, fields: list[str]) -> list[str]:
     failed_codes = {warning.code for warning in state.warnings if warning.stage == "ENRICH"}
     failed_classes: set[str] = set()
@@ -2212,12 +2247,6 @@ async def _persist_unchanged_text_refresh(
             json.dumps(source.image_urls),
             source.fetched_at,
         )
-    await _mark_refresh_classes_current(
-        conn,
-        hunt_listing_id=hunt_listing_id,
-        job_id=job_id,
-        fields=_successful_refresh_fields(state, state.refresh_fields),
-    )
 
 
 async def _persist_enrich_only_refresh(
@@ -2262,24 +2291,12 @@ async def _persist_enrich_only_refresh(
             source_is_official=False,
             state=state,
         )
-    await rescore_hunt(
+    await _rescore_persisted_listing(
         conn,
-        hunt_id=UUID(
-            str(
-                await conn.fetchval(
-                    "select hunt_id from hunt_listings where id = $1", hunt_listing_id
-                )
-            )
-        ),
+        hunt_listing_id=hunt_listing_id,
         rubric=rubric,
         rubric_version=rubric_version,
-        min_confidence=Confidence(settings.get("min_confidence", "medium")),
-        min_vision_confidence=Confidence(settings.get("min_vision_confidence", "low")),
-        cats=int(settings.get("cats", 0)),
-        dogs=int(settings.get("dogs", 0)),
-        cost_estimate_mode=str(settings.get("cost_estimate_mode", "conservative")),
-        generalized_vision_policy=str(settings.get("generalized_vision_policy", "full_rubric")),
-        occupants=int(settings.get("occupants", 1)),
+        settings=settings,
     )
     await _mark_refresh_classes_current(
         conn,
@@ -2343,18 +2360,12 @@ async def _persist_custom_only_refresh(
             job_id=job_id,
             resolution_rule=claim.resolution_rule or "custom_match",
         )
-    await rescore_hunt(
+    await _rescore_persisted_listing(
         conn,
-        hunt_id=hunt_id,
+        hunt_listing_id=hunt_listing_id,
         rubric=rubric,
         rubric_version=rubric_version,
-        min_confidence=Confidence(settings.get("min_confidence", "medium")),
-        min_vision_confidence=Confidence(settings.get("min_vision_confidence", "low")),
-        cats=int(settings.get("cats", 0)),
-        dogs=int(settings.get("dogs", 0)),
-        cost_estimate_mode=str(settings.get("cost_estimate_mode", "conservative")),
-        generalized_vision_policy=str(settings.get("generalized_vision_policy", "full_rubric")),
-        occupants=int(settings.get("occupants", 1)),
+        settings=settings,
     )
 
 
@@ -2532,6 +2543,19 @@ def make_class_refresh_dispatcher(
                     job_id=job_id,
                     state=done_state,
                 )
+                await _rescore_persisted_listing(
+                    conn,
+                    hunt_listing_id=job["hunt_listing_id"],
+                    rubric=rubric,
+                    rubric_version=listing["rubric_version"],
+                    settings=settings,
+                )
+                await _mark_refresh_classes_current(
+                    conn,
+                    hunt_listing_id=job["hunt_listing_id"],
+                    job_id=job_id,
+                    fields=_successful_refresh_fields(done_state, done_state.refresh_fields),
+                )
                 return
             await _persist_ingest_results(
                 conn,
@@ -2539,6 +2563,13 @@ def make_class_refresh_dispatcher(
                 property_id=listing["property_id"],
                 rubric_version=listing["rubric_version"],
                 state=done_state,
+            )
+            await _rescore_persisted_listing(
+                conn,
+                hunt_listing_id=job["hunt_listing_id"],
+                rubric=rubric,
+                rubric_version=listing["rubric_version"],
+                settings=settings,
             )
             await _mark_refresh_classes_current(
                 conn,

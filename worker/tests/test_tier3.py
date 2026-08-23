@@ -5,6 +5,7 @@ MockTransport plays the vendor."""
 from __future__ import annotations
 
 import asyncio
+import gzip
 import json
 from pathlib import Path
 
@@ -30,6 +31,23 @@ def _envelope(status: int, body: str, headers: dict[str, str] | None = None) -> 
     """What Bright Data's `format: "json"` returns: the TARGET's response,
     wrapped, so its status never collides with the API's own."""
     return httpx.Response(200, json={"status": status, "headers": headers or {}, "body": body})
+
+
+class _RawStream(httpx.AsyncByteStream):
+    """A transport-level stream that lets the adapter inspect a bad encoding."""
+
+    def __init__(self, content: bytes) -> None:
+        self.content = content
+
+    async def __aiter__(self):  # type: ignore[override]
+        yield self.content
+
+    async def aclose(self) -> None:
+        return None
+
+
+def _raw_response(*, headers: dict[str, str], content: bytes) -> httpx.Response:
+    return httpx.Response(200, headers=headers, stream=_RawStream(content))
 
 
 LISTING_HTML = (
@@ -216,6 +234,74 @@ def test_a_non_envelope_200_still_reads_as_the_page(monkeypatch: pytest.MonkeyPa
     )
     result = asyncio.run(fetcher.fetch("https://www.zillow.com/x/"))
     assert result.status_code == 200 and result.body == LISTING_HTML
+
+
+def test_tier3_decodes_a_valid_gzip_provider_envelope(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MANZIL_TIER3_PROVIDER", raising=False)
+    monkeypatch.setenv("BRIGHTDATA_API_KEY", "bd-key")
+    monkeypatch.setenv("BRIGHTDATA_ZONE", "my_zone")
+    payload = json.dumps({"status": 200, "headers": {}, "body": LISTING_HTML}).encode()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["accept-encoding"] == "identity"
+        return _raw_response(
+            headers={"content-encoding": "gzip"},
+            content=gzip.compress(payload),
+        )
+
+    result = asyncio.run(
+        Tier3Fetcher(transport=httpx.MockTransport(handler), resolver=_public_resolver).fetch(
+            "https://www.zillow.com/x/"
+        )
+    )
+    assert result.status_code == 200 and result.body == LISTING_HTML
+
+
+def test_tier3_uses_plain_json_when_the_provider_lies_about_gzip(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("MANZIL_TIER3_PROVIDER", raising=False)
+    monkeypatch.setenv("BRIGHTDATA_API_KEY", "bd-key")
+    monkeypatch.setenv("BRIGHTDATA_ZONE", "my_zone")
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return _raw_response(
+            headers={"content-encoding": "gzip"},
+            content=json.dumps({"status": 200, "headers": {}, "body": LISTING_HTML}).encode(),
+        )
+
+    result = asyncio.run(
+        Tier3Fetcher(transport=httpx.MockTransport(handler), resolver=_public_resolver).fetch(
+            "https://www.zillow.com/x/"
+        )
+    )
+    assert result.status_code == 200 and result.body == LISTING_HTML
+
+
+def test_tier3_retries_primary_then_fails_over_after_bad_carrier_encoding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("MANZIL_TIER3_PROVIDER", raising=False)
+    monkeypatch.setenv("MANZIL_TIER3_FALLBACK_PROVIDER", "scrapingbee")
+    monkeypatch.setenv("BRIGHTDATA_API_KEY", "bd-key")
+    monkeypatch.setenv("BRIGHTDATA_ZONE", "my_zone")
+    monkeypatch.setenv("SCRAPINGBEE_API_KEY", "sb-key")
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.host)
+        if request.url.host == "api.brightdata.com":
+            return _raw_response(headers={"content-encoding": "gzip"}, content=b"not-gzip")
+        return httpx.Response(200, text=LISTING_HTML)
+
+    result = asyncio.run(
+        Tier3Fetcher(transport=httpx.MockTransport(handler), resolver=_public_resolver).fetch(
+            "https://www.zillow.com/x/"
+        )
+    )
+    assert calls == ["api.brightdata.com", "api.brightdata.com", "app.scrapingbee.com"]
+    assert result.provider == "scrapingbee"
+    assert result.status_code == 200
 
 
 def test_provider_configured_names_the_whole_requirement(

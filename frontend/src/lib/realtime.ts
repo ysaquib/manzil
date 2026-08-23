@@ -31,7 +31,7 @@ export function invalidationKeysForRealtime(
       return [["hunt_members", huntId], ["hunt_contributors", huntId], ["hunts"]];
     case "hunt_listings":
     case "scores":
-      return [["hunt_listings", huntId]];
+      return [["hunt_listings", huntId], ["extractions"]];
     case "comments":
       return [["comments"], ["hunt_listings", huntId]];
     case "ratings":

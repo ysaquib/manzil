@@ -2,10 +2,10 @@
 
 P3-7a2 engineering and kitchen-quality scoring are live. Yusuf explicitly
 overrode the external quality-benchmark gate on 2026-07-28: the approved
-reference profile v1, VISION prompt v1, and `anthropic/claude-sonnet-4.6` are
-released for scoring. The external quality benchmark remains owed and the
-current release is not described as bench-validated. Flooring and bathroom are
-disabled.
+reference profile v1, VISION prompt v1, and `anthropic/claude-sonnet-5` are
+released for scoring (cost-only pin, DESIGN v3.102). The external quality
+benchmark remains owed and the current release is not described as
+bench-validated. Flooring and bathroom are disabled.
 
 ## Pipeline and caching
 
@@ -23,30 +23,21 @@ diagram, map, and unrelated assets consume no visible slot. A partial download
 is additive and cannot retire prior images. A complete refresh marks missing
 assets non-current.
 
-IMAGE_CLASSIFY classifies up to 120 unstored ≤384 px WebP thumbnails locally in
-deterministic batches of 30 with the pinned unsigned-int8 CLIP ONNX artifact. The canonical result is
-cached per normalized image hash plus artifact/cache-key version under
-`vision_assessment.classification`; it contains scene probabilities,
-`kitchen_score`/`kitchen_predicted`, and diagram score/verdict. It makes no LLM
-call. Missing configuration, artifact/inference failure, or a response whose
-hashes do not exactly equal the request fails the Stage through the ordinary
-Job retry policy; there is no LLM fallback.
+IMAGE_CLASSIFY classifies up to 120 unstored ≤384 px WebP thumbnails in
+deterministic batches of 30 through `call_vision` to
+`openai/gpt-5.6-luna`. The canonical result is cached per
+normalized image hash plus `model:prompt-<version>` under
+`vision_assessment.classification`; it contains `primary_scene`, visibility,
+framing, confidence, `irrelevant`, and `diagram`. An ONNX-shaped incumbent is
+not a cache hit; it is rewritten and kept as `classification_onnx_legacy`.
+The CLIP ONNX stack remains in tree but is not loaded, shadowed, or used as
+fallback (DESIGN v3.102).
 
-The former Gemini classifier implementation, lossy-batch reconciliation, and
-bench remain in code for audit and rollback reference, but are disabled on the
-workflow path. A prior `classification_shadow` record is promoted on refresh,
-and a replaced LLM record is retained as `classification_llm_legacy`.
-
-Quality selection is deterministic and deliberately narrow: exclude
-deterministic `other` and Floor Plan kinds plus ONNX-predicted diagrams; rank
-the remaining canonical ONNX-classified photos by descending `kitchen_score`,
-with stable Source/page/hash tie-breakers; take at most three. Selection does
-not require the kitchen threshold to pass. The anchored quality VISION call is
+Quality selection uses those structured fields: high-confidence, assessable
+kitchen, usable framing, not diagram/irrelevant; skip near-duplicates; cover
+exact Floor Plan refs; take at most three. The anchored quality VISION call is
 responsible for returning `not_visible` when none of the best available images
-shows a rateable kitchen. ONNX does not synthesize the former assessability,
-framing, irrelevant, or general-confidence fields, and the selector no longer
-clusters near-duplicates or prioritizes Floor Plan coverage. Those omissions
-are explicit Owner-accepted debt in DESIGN v3.52.
+shows a rateable kitchen.
 
 Quality caching keys the selected target/association digest, quality
 model/prompt, and reference version independently from classification.
@@ -76,7 +67,7 @@ The manifest is criterion-specific:
       "status": "approved",
       "quality_status": "approved",
       "quality_benchmark_status": "deferred_owner_override",
-      "quality_model": "anthropic/claude-sonnet-4.6",
+      "quality_model": "anthropic/claude-sonnet-5",
       "approved_by": "Yusuf",
       "approved_at": "YYYY-MM-DD",
       "anchors": [

@@ -18,6 +18,32 @@ from __future__ import annotations
 
 import os
 
+# List $ / MTok (input, output) — §11.2 table, mid-2026. The Gemini rows are
+# the P0-13 bench candidates; pricing a model here is what makes it callable
+# (cost accounting never guesses). Used for the RunState cost tally; the
+# Langfuse-side cost comes from these same figures so there is one source.
+# OpenRouter's reported `usage.cost` is logged as a cross-check in traces.
+#
+# Pruned 2026-07-21 (P0-13): the P0-13 sweep found six priced slugs unusable —
+# deepseek-v4-flash, claude-3-haiku, qwen3.5-flash, minimax-m3 do not route on
+# OpenRouter (404/400), and gemini-3.1-pro-preview / gemini-3.5-flash route but
+# return no tool_calls under forced tool_choice, so they cannot serve any
+# structured stage. Re-add a row only once its slug is confirmed to route AND
+# honor forced tool use (`manzil llm-smoke` with MANZIL_MODEL_SMOKE).
+MODEL_PRICES: dict[str, tuple[float, float]] = {
+    "anthropic/claude-haiku-4.5": (1.00, 5.00),
+    "anthropic/claude-sonnet-4.6": (3.00, 15.00),
+    "anthropic/claude-sonnet-5": (2.00, 10.00),
+    "google/gemini-3-flash-preview": (0.50, 3.00),
+    # "openai/gpt-5.6-luna": (1.00, 6.00),
+    "openai/gpt-5.6-luna": (0.20, 1.20),
+    "openai/gpt-5.6-luna-pro": (0.20, 1.20),
+    "openai/gpt-5.6-terra": (2.00, 12.00),
+    "deepseek/deepseek-v4-flash-vision-exp": (0.22, 0.66),
+    "deepseek/deepseek-v4-pro-0813": (0.66, 1.98),
+    "minimax/minimax-m3": (0.23, 0.96),
+}
+
 # Baseline pins (§11.2) as OpenRouter slugs.
 #
 # 2026-07-28 (DESIGN §20 v3.23): the workhorse tier collapsed onto one model.
@@ -28,7 +54,12 @@ import os
 # and remember that every recording re-keys when it moves.
 LIGHTWEIGHT_MODEL = "openai/gpt-5.6-luna"
 WORKHORSE_MODEL = "google/gemini-3-flash-preview"
-TASTE_MODEL = "anthropic/claude-sonnet-4.6"
+
+# Cost-only Owner pins (DESIGN §20 v3.102). Not a bench result. IMAGE_CLASSIFY
+# reuses the lightweight Luna slug so 120-thumbnail batches stay affordable;
+# quality VISION stays a stronger (still cheaper-than-4.6) Sonnet.
+VISION_MODEL = "anthropic/claude-sonnet-5"
+CLASSIFICATION_MODEL = "openai/gpt-5.6-luna"
 
 # P0-14 model-pin (DESIGN §20 2026-07-21). The 10-listing bench (P0-13) ranked
 # gemini-3-flash-preview first for the EXTRACT/VERIFY pair: criterion accuracy
@@ -62,10 +93,10 @@ STAGE_MODELS: dict[str, str] = {
     "enrich_reviews": LIGHTWEIGHT_MODEL,  # P3-8 ratings stage 1 review synthesis
     "utility_baselines": WORKHORSE_MODEL,  # P3-9 metro baselines pass (scheduler tick)
     "plan_assist": LIGHTWEIGHT_MODEL,
-    # Owner-selected shadow classifier pin (DESIGN §20 2026-07-28).
-    "image_classify": TASTE_MODEL,
+    # Cost-only Owner pins (DESIGN §20 v3.102): not a bench result.
+    "image_classify": CLASSIFICATION_MODEL,
     # taste tier
-    "vision": TASTE_MODEL,
+    "vision": VISION_MODEL,
     # discover
     "discover": DISCOVER_MODEL,
 }
@@ -108,31 +139,6 @@ STAGE_MAX_TOKENS: dict[str, int] = {
     "smoke": 256,
     "extract": 8192,  # full catalog-wide extraction is the largest output
     "image_classify": 8192,
-}
-
-# List $ / MTok (input, output) — §11.2 table, mid-2026. The Gemini rows are
-# the P0-13 bench candidates; pricing a model here is what makes it callable
-# (cost accounting never guesses). Used for the RunState cost tally; the
-# Langfuse-side cost comes from these same figures so there is one source.
-# OpenRouter's reported `usage.cost` is logged as a cross-check in traces.
-#
-# Pruned 2026-07-21 (P0-13): the P0-13 sweep found six priced slugs unusable —
-# deepseek-v4-flash, claude-3-haiku, qwen3.5-flash, minimax-m3 do not route on
-# OpenRouter (404/400), and gemini-3.1-pro-preview / gemini-3.5-flash route but
-# return no tool_calls under forced tool_choice, so they cannot serve any
-# structured stage. Re-add a row only once its slug is confirmed to route AND
-# honor forced tool use (`manzil llm-smoke` with MANZIL_MODEL_SMOKE).
-MODEL_PRICES: dict[str, tuple[float, float]] = {
-    "anthropic/claude-haiku-4.5": (1.00, 5.00),
-    "anthropic/claude-sonnet-4.6": (3.00, 15.00),
-    "google/gemini-2.5-flash-lite": (0.10, 0.40),
-    "openai/gpt-5.4-nano": (0.20, 1.25),
-    "google/gemini-3.1-flash-lite": (0.25, 1.50),
-    "google/gemini-2.5-flash": (0.30, 2.50),
-    "google/gemini-3-flash-preview": (0.50, 3.00),
-    # "openai/gpt-5.6-luna": (1.00, 6.00),
-    "openai/gpt-5.6-luna": (0.20, 1.20),
-    "openai/gpt-5.6-luna-pro": (0.20, 1.20),
 }
 
 # Cache economics differ per upstream family: Anthropic bills explicit cache

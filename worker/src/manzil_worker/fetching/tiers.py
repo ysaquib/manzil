@@ -81,6 +81,57 @@ async def read_response_limited(
     return b"".join(chunks)
 
 
+async def read_raw_response_limited(
+    response: httpx.Response,
+    *,
+    url: str,
+    layer: str,
+    limit_bytes: int,
+) -> bytes:
+    """Bound carrier bytes without invoking httpx content decoders.
+
+    Managed unblockers occasionally send a body whose ``Content-Encoding`` is
+    stale or malformed. Their adapter must inspect the wire bytes itself;
+    ``aiter_bytes`` would raise before it can decide whether the bytes are an
+    uncompressed provider envelope with a bad header.
+    """
+    content_length = response.headers.get("content-length")
+    try:
+        declared = int(content_length) if content_length is not None else None
+    except ValueError:
+        declared = None
+    if declared is not None and declared > limit_bytes:
+        raise FetchResponseTooLarge(
+            url, layer=layer, observed_bytes=declared, limit_bytes=limit_bytes
+        )
+
+    # MockTransport (and a few custom test transports) hand httpx a response
+    # with preloaded content. It is already raw at that boundary; aiter_raw
+    # correctly refuses a second stream iteration, so use the retained bytes.
+    if response.is_stream_consumed:
+        data = getattr(response, "_content", None)
+        if not isinstance(data, bytes):
+            # This is only a compatibility path for preloaded responses. A
+            # normal streamed response always takes the raw iterator below.
+            data = response.content
+        if len(data) > limit_bytes:
+            raise FetchResponseTooLarge(
+                url, layer=layer, observed_bytes=len(data), limit_bytes=limit_bytes
+            )
+        return data
+
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in response.aiter_raw():
+        total += len(chunk)
+        if total > limit_bytes:
+            raise FetchResponseTooLarge(
+                url, layer=layer, observed_bytes=total, limit_bytes=limit_bytes
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 def decode_response_body(data: bytes, response: httpx.Response) -> str:
     """Decode bounded page bytes once, with a safe fallback for bad headers."""
     encoding = response.encoding or "utf-8"

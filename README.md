@@ -448,7 +448,7 @@ choice permanent and invisible — prefix them onto the one command instead.
 | `MANZIL_MODE=agents` | Selects the learning track | Not usable yet — `manzil ingest` exits 2 until L1 lands |
 | `DATABASE_URL` | Also read directly by the CLI | `ingest` uses `PostgresRegistry` when set and an in-memory one when not; `split-property` **requires** it (service-role, below RLS) |
 | `MANZIL_TIER3_PROVIDER` | `brightdata` (default) \| `scrapingbee` | Switching unblocker vendors; the selected provider's settings still gate the tier |
-| `MANZIL_LOG_PROBE_REQUESTS=true` | Keeps `GET /v1/health` and `/v1/ready` access lines | Debugging a probe Render reports failing while the service reports fine — otherwise successful probe lines are filtered out of `uvicorn.access` so real traffic stays legible |
+| `MANZIL_LOG_PROBE_REQUESTS=true` | Keeps `GET /v1/health`, `/v1/ready`, `.../jobs`, and `.../attention` access lines | Debugging a probe Render reports failing while the service reports fine, or a poller that 401s in a loop — otherwise successful probe and Hunt-poller lines are filtered out of `uvicorn.access` so real traffic stays legible |
 
 One thing that looks like an env var but isn't: **`MANZIL_JOB_MAX_ATTEMPTS`** is a constant
 in `shared/src/manzil_shared/config.py` (the dead-letter threshold — change it in code,

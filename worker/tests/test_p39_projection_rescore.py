@@ -19,7 +19,7 @@ from manzil_shared.models import (
     RubricOption,
 )
 from manzil_worker.queue import _persist_ingest_results
-from manzil_worker.stages.rescore import rescore_hunt
+from manzil_worker.stages.rescore import rescore_hunt, rescore_listing
 from manzil_worker.state import (
     FloorPlanIn,
     HeatingIn,
@@ -213,6 +213,48 @@ async def test_projection_persists_p39_blocks_and_composition(pg_pool: asyncpg.P
             "select all_in_components from scores where hunt_listing_id = $1", listing_id
         )
         assert json.loads(per_plan)["components"][0]["amount"] == 1500.0
+    finally:
+        await _cleanup(pg_pool, hunt_id, property_id, metro)
+
+
+async def test_listing_rescore_reads_persisted_facts_not_partial_run_state(
+    pg_pool: asyncpg.Pool,
+) -> None:
+    metro = f"ListingRescoreVille-{uuid4().hex[:6]}"
+    hunt_id, property_id, listing_id = await _seed(pg_pool, city=metro)
+    rubric = [
+        RubricCriterion(
+            hunt_id=hunt_id,
+            catalog_key="all_in_monthly",
+            options=[RubricOption(match=OptionMatch(op=MatchOp.LT, value=2500), delta=0.5)],
+            unknown_delta=-1.0,
+            position=0,
+        )
+    ]
+    try:
+        async with pg_pool.acquire() as conn, conn.transaction():
+            await _persist_ingest_results(
+                conn,
+                hunt_listing_id=listing_id,
+                property_id=property_id,
+                rubric_version=1,
+                state=_state(),
+            )
+            rows = await rescore_listing(
+                conn,
+                hunt_listing_id=listing_id,
+                rubric=rubric,
+                rubric_version=2,
+                min_confidence=Confidence.MEDIUM,
+            )
+        assert rows == 1
+        breakdown = json.loads(
+            await pg_pool.fetchval(
+                "select breakdown from scores where hunt_listing_id = $1", listing_id
+            )
+        )
+        entry = next(item for item in breakdown["criteria"] if item["key"] == "all_in_monthly")
+        assert entry["value"] == 1905.0
     finally:
         await _cleanup(pg_pool, hunt_id, property_id, metro)
 
