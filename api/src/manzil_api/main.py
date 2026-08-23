@@ -9,18 +9,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from manzil_worker.vision_onnx import ONNX_SHADOW_ARTIFACT_SHA256, artifact_digest
 
 from manzil_api.admin.demo import router as admin_demo_router
 from manzil_api.admin.hunt_operations import router as admin_hunt_operations_router
@@ -113,16 +110,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await pool.close()
 
 
-async def _model_artifact_ready(settings: Settings) -> bool:
-    raw_path = os.environ.get("MANZIL_IMAGE_CLASSIFY_ONNX_DIR", "").strip()
-    if not raw_path:
-        return settings.environment == "local"
-    path = Path(raw_path)
-    try:
-        actual = await asyncio.to_thread(artifact_digest, path)
-    except OSError:
-        return False
-    return actual == ONNX_SHADOW_ARTIFACT_SHA256
+async def _model_artifact_ready(_settings: Settings) -> bool:
+    """ONNX is retained in-tree but not a runtime dependency (DESIGN v3.102).
+
+    IMAGE_CLASSIFY calls a remote LLM, so readiness must not hash or load the
+    97 MB CLIP artifact — that was exhausting Render's starter RAM envelope.
+    The check stays in the ready payload as `model: ok` so existing monitors
+    do not see a missing key.
+    """
+    return True
 
 
 async def _database_ready(app: FastAPI) -> bool:

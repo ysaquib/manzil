@@ -103,7 +103,11 @@ async def _no_existing_image_classifications(
 
 
 def _configured_image_classify_onnx() -> ImageClassifyONNX | None:
-    """Build the canonical ONNX seam without importing ONNX Runtime in-process."""
+    """Build the retained ONNX seam without importing ONNX Runtime in-process.
+
+    Unused on the workflow path. Kept so a revert can restore
+    `StageCtx.image_classify_onnx = field(default_factory=_configured_image_classify_onnx)`.
+    """
     model_dir = os.getenv("MANZIL_IMAGE_CLASSIFY_ONNX_DIR", "").strip()
     if not model_dir:
         # Bounded compatibility alias for installations configured while ONNX
@@ -234,11 +238,10 @@ class StageCtx:
     existing_image_classifications: ExistingImageClassifications = (
         _no_existing_image_classifications
     )
-    # Canonical ONNX classifier. It runs out-of-process; absence is a deployment
-    # error when IMAGE_CLASSIFY has images rather than permission to call an LLM.
-    image_classify_onnx: ImageClassifyONNX | None = field(
-        default_factory=_configured_image_classify_onnx
-    )
+    # Retained ONNX classifier. Absence is not a deployment error: the workflow
+    # path classifies with an LLM and never invokes this seam. Wire it with
+    # `_configured_image_classify_onnx` only when reverting to local inference.
+    image_classify_onnx: ImageClassifyONNX | None = None
     # DISCOVER's bounded loop writes every local/server tool use through this
     # sink. Queue mode wires Postgres; CLI/tests may leave it null (log-only).
     tool_event_sink: Any = None

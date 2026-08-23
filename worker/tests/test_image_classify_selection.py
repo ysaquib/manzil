@@ -11,14 +11,17 @@ from manzil_shared.config import (
     IMAGE_CLASSIFY_BATCH_SIZE,
 )
 from manzil_shared.models import JobState, JobType
+from manzil_worker.llm.config import model_for_stage
+from manzil_worker.llm.prompt_loader import load_prompt
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.image_classify import (
     ImageClassification,
     ImageClassificationBatch,
-    _image_classify_llm_stage,
+    _image_classify_onnx_stage,
     image_classify_stage,
     reconcile_classification_batch,
     select_kitchen_targets,
+    select_kitchen_targets_onnx,
 )
 from manzil_worker.stages.vision import KitchenAssessment, aggregate_kitchen
 from manzil_worker.state import PropertyImageIn, RunState, StageWarning
@@ -134,13 +137,25 @@ def _onnx_image(
 
 def test_selector_excludes_diagrams_and_near_duplicates_and_covers_plans() -> None:
     images = [
+        _image("a" * 64, phash="0000000000000000", plan="p1", order=0),
+        _image("b" * 64, phash="0000000000000001", plan="p1", order=1),
+        _image("c" * 64, phash="ffffffffffffffff", plan="p2", order=2),
+        _image("d" * 64, phash="0f0f0f0f0f0f0f0f", diagram=True),
+        _image("e" * 64, phash="f0f0f0f0f0f0f0f0", visibility="not_visible", order=4),
+    ]
+    selected = select_kitchen_targets(images)
+    assert [image.content_hash for image in selected] == ["a" * 64, "c" * 64]
+
+
+def test_onnx_selector_ranks_by_kitchen_score() -> None:
+    images = [
         _onnx_image("a" * 64, phash="0000000000000000", kitchen_score=0.7, order=0),
         _onnx_image("b" * 64, phash="0000000000000001", kitchen_score=0.95, order=1),
         _onnx_image("c" * 64, phash="ffffffffffffffff", kitchen_score=0.8, order=2),
         _onnx_image("d" * 64, phash="0f0f0f0f0f0f0f0f", kitchen_score=0.99, diagram_score=0.99),
         _onnx_image("e" * 64, phash="f0f0f0f0f0f0f0f0", kitchen_score=0.6, order=4),
     ]
-    selected = select_kitchen_targets(images)
+    selected = select_kitchen_targets_onnx(images)
     assert [image.content_hash for image in selected] == ["b" * 64, "c" * 64, "a" * 64]
 
 
@@ -192,9 +207,12 @@ def test_kitchen_rationale_is_trimmed_to_the_hard_cap() -> None:
 
 
 def test_unchanged_classifier_cache_makes_zero_calls_and_reads() -> None:
-    image = _onnx_image("a" * 64, phash="0" * 16)
+    image = _image("a" * 64, phash="0" * 16)
+    assert image.vision_assessment is not None
+    image.vision_assessment["classification"]["cache_key"] = (
+        f"{model_for_stage('image_classify')}:prompt-{load_prompt('image_classify').version}"
+    )
     cached = image.vision_assessment
-    assert cached is not None
     image.vision_assessment = None
     state = RunState(
         job_id=uuid4(),
@@ -223,8 +241,8 @@ def test_unchanged_classifier_cache_makes_zero_calls_and_reads() -> None:
             StageCtx(
                 image_store=Store(),
                 existing_image_classifications=existing,
-                image_classify_onnx=call,
                 call_vision=call,
+                image_classify_onnx=call,
             ),
         )
     )
@@ -266,7 +284,7 @@ def test_onnx_classifier_persists_the_property_image_hash_without_calling_the_ll
         property_images=[image],
     )
     out = asyncio.run(
-        image_classify_stage(
+        _image_classify_onnx_stage(
             state,
             StageCtx(image_store=Store(), image_classify_onnx=onnx, call_vision=llm),
         )
@@ -356,7 +374,7 @@ def test_diagram_found_only_by_the_classifier_is_restored_at_the_diagram_profile
             state,
             StageCtx(
                 image_store=store,
-                image_classify_onnx=_classify_onnx_batch(diagram=True),
+                call_vision=_classify_batch(diagram=True),
                 download_image=fetch,
             ),
         )
@@ -397,7 +415,7 @@ def test_failed_renormalization_keeps_the_photo_profile_copy() -> None:
             state,
             StageCtx(
                 image_store=Store(),
-                image_classify_onnx=_classify_onnx_batch(diagram=True),
+                call_vision=_classify_batch(diagram=True),
                 download_image=fetch,
             ),
         )
@@ -435,7 +453,7 @@ def test_non_diagram_images_are_never_renormalized() -> None:
             state,
             StageCtx(
                 image_store=Store(),
-                image_classify_onnx=_classify_onnx_batch(diagram=False),
+                call_vision=_classify_batch(diagram=False),
                 download_image=fetch,
             ),
         )
@@ -581,9 +599,7 @@ def test_stage_marks_skipped_and_disputed_images_and_warns_without_halting() -> 
         )
 
     out = asyncio.run(
-        _image_classify_llm_stage(
-            _stage_state(images), StageCtx(image_store=Store(), call_vision=call)
-        )
+        image_classify_stage(_stage_state(images), StageCtx(image_store=Store(), call_vision=call))
     )
 
     stored = {
@@ -595,8 +611,7 @@ def test_stage_marks_skipped_and_disputed_images_and_warns_without_halting() -> 
     assert stored[disputed]["status"] == "disputed"
     # Neither marker is cache-keyed, so the next run asks about them again.
     assert "cache_key" not in stored[skipped] and "cache_key" not in stored[disputed]
-    # The retained legacy path cannot produce canonical ONNX quality targets.
-    assert out.vision_targets == {"kitchen_quality": []}
+    assert out.vision_targets == {"kitchen_quality": [answered]}
     assert out.status is JobState.RUNNING and out.error is None
 
     codes = {warning.code: warning for warning in out.warnings}
@@ -629,7 +644,7 @@ def test_a_clean_batch_leaves_no_warnings_and_a_rerun_replaces_them() -> None:
         StageWarning(stage="FETCH", code="other_stage", message="kept"),
     ]
     out = asyncio.run(
-        _image_classify_llm_stage(
+        image_classify_stage(
             state, StageCtx(image_store=Store(), call_vision=_classify_batch(diagram=False))
         )
     )
@@ -658,7 +673,7 @@ def test_a_skipped_image_keeps_the_classification_an_earlier_run_earned() -> Non
         return ImageClassificationBatch(assessments=[])  # answered nothing
 
     out = asyncio.run(
-        _image_classify_llm_stage(
+        image_classify_stage(
             _stage_state([image]),
             StageCtx(
                 image_store=Store(), existing_image_classifications=existing, call_vision=call
@@ -669,7 +684,7 @@ def test_a_skipped_image_keeps_the_classification_an_earlier_run_earned() -> Non
     assert stored["status"] == "missing"
     assert stored["assessment"] == prior["assessment"]  # evidence survives the skip
     assert stored["cache_key"] == prior["cache_key"]  # ...and re-asks next run
-    assert out.vision_targets == {"kitchen_quality": []}
+    assert out.vision_targets == {"kitchen_quality": [image.content_hash]}
     assert [warning.code for warning in out.warnings] == ["classification_missing"]
 
 
@@ -727,7 +742,7 @@ def test_existing_onnx_shadow_is_promoted_to_canonical_without_an_llm_call() -> 
         raise AssertionError("a cached ONNX result must make no classifier call")
 
     out = asyncio.run(
-        image_classify_stage(
+        _image_classify_onnx_stage(
             _stage_state([image]),
             StageCtx(
                 image_store=Store(),
@@ -764,7 +779,7 @@ def test_canonical_onnx_cache_avoids_storage_read_and_inference() -> None:
         raise AssertionError("fresh caches must avoid inference")
 
     out = asyncio.run(
-        image_classify_stage(
+        _image_classify_onnx_stage(
             _stage_state([image]),
             StageCtx(
                 image_store=Store(),
@@ -801,7 +816,7 @@ def test_canonical_onnx_failure_fails_closed_without_llm_fallback() -> None:
 
     with pytest.raises(RuntimeError, match="canonical backend unavailable"):
         asyncio.run(
-            image_classify_stage(
+            _image_classify_onnx_stage(
                 _stage_state([image]),
                 StageCtx(image_store=Store(), call_vision=llm, image_classify_onnx=onnx),
             )
@@ -848,7 +863,7 @@ def test_canonical_onnx_classifies_a_wider_gallery_in_bounded_batches() -> None:
         )
 
     out = asyncio.run(
-        image_classify_stage(
+        _image_classify_onnx_stage(
             _stage_state(images),
             StageCtx(image_store=Store(), image_classify_onnx=onnx),
         )
@@ -856,3 +871,123 @@ def test_canonical_onnx_classifies_a_wider_gallery_in_bounded_batches() -> None:
 
     assert batch_sizes == [IMAGE_CLASSIFY_BATCH_SIZE, IMAGE_CLASSIFY_BATCH_SIZE, 1]
     assert all(image.vision_assessment.get("classification") for image in out.property_images)
+
+
+def test_onnx_factory_stays_available_for_revert(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MANZIL_IMAGE_CLASSIFY_ONNX_DIR", raising=False)
+    monkeypatch.delenv("MANZIL_IMAGE_CLASSIFY_ONNX_SHADOW_DIR", raising=False)
+    from manzil_worker.stages.base import _configured_image_classify_onnx
+
+    assert _configured_image_classify_onnx() is None
+
+
+def test_workflow_classifier_classifies_a_wider_gallery_in_bounded_batches() -> None:
+    count = IMAGE_CLASSIFY_BATCH_SIZE * 2 + 1
+    images = [
+        _image(f"{index:064x}", phash=f"{index:016x}", order=index) for index in range(1, count + 1)
+    ]
+    for image in images:
+        image.vision_assessment = None
+    batch_sizes: list[int] = []
+    inner = _classify_batch(diagram=False)
+
+    class Store:
+        async def get(self, path: str) -> bytes:
+            output = io.BytesIO()
+            # High-contrast unique pattern so WebP q70 thumbnails still hash distinctly.
+            n = int(path.rsplit("/", 1)[-1].removesuffix(".webp"), 16)
+            image = Image.new("RGB", (64, 64), (255, 255, 255))
+            for bit in range(16):
+                color = (0, 0, 0) if (n >> bit) & 1 else (255, 255, 255)
+                x = bit * 4
+                for y in range(64):
+                    image.putpixel((x, y), color)
+                    image.putpixel((x + 1, y), color)
+            image.save(output, format="PNG")
+            return output.getvalue()
+
+        async def put(self, path: str, content: bytes) -> None:
+            raise AssertionError("classifier never writes derivatives")
+
+    async def call(stage, schema, blocks):  # type: ignore[no-untyped-def]
+        batch_sizes.append(len(blocks))
+        return await inner(stage, schema, blocks)
+
+    out = asyncio.run(
+        image_classify_stage(_stage_state(images), StageCtx(image_store=Store(), call_vision=call))
+    )
+
+    assert batch_sizes == [IMAGE_CLASSIFY_BATCH_SIZE, IMAGE_CLASSIFY_BATCH_SIZE, 1]
+    assert all(
+        image.vision_assessment["classification"]["assessment"]["primary_scene"] == "kitchen"
+        for image in out.property_images
+    )
+
+
+def test_workflow_classifier_never_invokes_onnx_even_when_the_seam_is_wired() -> None:
+    image = _image("a" * 64, phash="0" * 16)
+    image.vision_assessment = None
+    raw = _thumb()
+
+    class Store:
+        async def get(self, path: str) -> bytes:
+            return raw
+
+        async def put(self, path: str, content: bytes) -> None:
+            raise AssertionError("classifier never writes derivatives")
+
+    async def onnx(images):  # type: ignore[no-untyped-def]
+        raise AssertionError("workflow IMAGE_CLASSIFY must not invoke ONNX")
+
+    out = asyncio.run(
+        image_classify_stage(
+            _stage_state([image]),
+            StageCtx(
+                image_store=Store(),
+                call_vision=_classify_batch(diagram=False),
+                image_classify_onnx=onnx,
+            ),
+        )
+    )
+    stored = out.property_images[0].vision_assessment["classification"]
+    assert stored["assessment"]["primary_scene"] == "kitchen"
+    assert "classification_shadow" not in out.property_images[0].vision_assessment
+    assert out.vision_targets == {"kitchen_quality": [image.content_hash]}
+
+
+def test_cached_onnx_rows_are_reclassified_and_retained_as_legacy() -> None:
+    image = _onnx_image("a" * 64, phash="0" * 16)
+    cached = image.vision_assessment
+    assert cached is not None
+    onnx_record = cached["classification"]
+    image.vision_assessment = None
+    raw = _thumb()
+
+    class Store:
+        async def get(self, path: str) -> bytes:
+            return raw
+
+        async def put(self, path: str, content: bytes) -> None:
+            raise AssertionError("classifier never writes derivatives")
+
+    async def existing(property_id):  # type: ignore[no-untyped-def]
+        return {image.content_hash: cached}
+
+    async def onnx(images):  # type: ignore[no-untyped-def]
+        raise AssertionError("a cached ONNX row must not re-run ONNX")
+
+    out = asyncio.run(
+        image_classify_stage(
+            _stage_state([image]),
+            StageCtx(
+                image_store=Store(),
+                existing_image_classifications=existing,
+                call_vision=_classify_batch(diagram=False),
+                image_classify_onnx=onnx,
+            ),
+        )
+    )
+    stored = out.property_images[0].vision_assessment
+    assert stored["classification"]["assessment"]["primary_scene"] == "kitchen"
+    assert stored["classification_onnx_legacy"] == onnx_record
+    assert stored["classification"]["cache_key"] != ONNX_SHADOW_CACHE_KEY

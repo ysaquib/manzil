@@ -316,10 +316,13 @@ join auth.users u on u.id = sa.user_id;
 The first/primordial admin is immutable. Subsequent accounts must be provisioned
 through Manzil Admin → People, not the SQL editor.
 
-## 4. Package the ONNX artifact
+## 4. Package the ONNX artifact (optional; unused at runtime)
 
-The required artifact is deliberately gitignored. Create the release archive
-from the verified local model:
+DESIGN v3.102 moved IMAGE_CLASSIFY back to a remote LLM. Do **not** set
+`MANZIL_IMAGE_CLASSIFY_ONNX_DIR` on Render's $7 starter instance, and do not
+run the CLIP subprocess there — that load is what OOM-killed the API. The
+steps below remain the recipe for a later revert onto a larger host. Current
+deploys may skip this section.
 
 ```bash
 tar -C worker/tests/fixtures/vision_benchmark/models/clip-vision-onnx-uint8 \
@@ -468,8 +471,8 @@ in Render, never committed. See [Render environment variables and secrets](https
 | `MANZIL_MAIL_FROM_NAME` | `Manzil` | no | optional |
 | `MANZIL_MODE` | `workflow` | no | yes |
 | `MANZIL_LLM_MODE` | `live` | no | yes |
-| `MANZIL_IMAGE_CLASSIFY_ONNX_DIR` | `.manzil/models/clip-vision-uint8` | no | yes |
-| Render secret file `manzil_clip_archive_url` | authenticated stable model archive URL | **yes** | build-time yes |
+| `MANZIL_IMAGE_CLASSIFY_ONNX_DIR` | unset | no | **no** — leave unset on starter; ONNX is unused (DESIGN v3.102) |
+| Render secret file `manzil_clip_archive_url` | authenticated stable model archive URL | **yes** only if packaging ONNX for revert | build-time optional |
 | `OPENROUTER_API_KEY` | production-scoped OpenRouter key | **yes** | yes |
 | `OPENROUTER_HTTP_REFERER` | `https://manzil.yusufsaquib.com` (or same as `MANZIL_FRONTEND_URL`) | no | yes |
 | `OPENROUTER_APP_TITLE` | `Manzil` (default when unset) | no | yes |
@@ -806,11 +809,12 @@ Verify in this order:
 10. Confirm Langfuse receives every LLM call and OpenRouter usage is charged to
    the production/staging-scoped key as expected.
 11. Confirm images land in the private `property-images` Storage bucket.
-12. Confirm IMAGE_CLASSIFY emits `image_classify_onnx_complete`, makes no LLM
-    classifier call, and persists the expected artifact digest.
-13. Confirm the gallery displays ONNX scene and kitchen probability.
-14. Confirm the three highest `kitchen_score` eligible images become kitchen
-    VISION targets and the anchored VISION result appears.
+12. Confirm IMAGE_CLASSIFY emits an LLM classification (`call_vision` /
+    `image_classify`) and does **not** spawn an ONNX subprocess or log
+    `image_classify_onnx_complete`.
+13. Confirm the gallery displays the LLM `primary_scene`.
+14. Confirm high-confidence assessable kitchens become VISION targets and the
+    anchored VISION result appears.
 15. Exercise a Tier-2 Playwright fetch. This proves Chromium and its Linux
     dependencies were actually packaged.
 16. Exercise Google Maps ENRICH and the frontend map with the two separate keys.

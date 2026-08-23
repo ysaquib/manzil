@@ -15,10 +15,10 @@ describe("invitationLinkForCurrentOrigin", () => {
 });
 
 describe("projectImageClassifications", () => {
-  it("projects the canonical ONNX assessment into the gallery API shape", () => {
+  it("projects the canonical LLM assessment into the gallery API shape", () => {
     expect(projectImageClassifications({
       classification: {
-        assessment: { predicted_scene: "residential_kitchen", kitchen_score: 0.72 },
+        assessment: { primary_scene: "kitchen" },
       },
       kitchen_quality: {
         assessment: {
@@ -29,7 +29,7 @@ describe("projectImageClassifications", () => {
         },
       },
     })).toEqual({
-      classification: { primaryScene: "residential_kitchen", kitchenProbability: 0.72 },
+      classification: { primaryScene: "kitchen" },
       kitchenAssessment: {
         visibility: "visible",
         rating: 4,
@@ -39,9 +39,18 @@ describe("projectImageClassifications", () => {
     });
   });
 
-  it("uses a rollout shadow until the backend promotes it on refresh", () => {
+  it("keeps an un-refreshed ONNX row visible until the LLM rewrite", () => {
     expect(projectImageClassifications({
-      classification: { assessment: { primary_scene: "living" } },
+      classification: {
+        assessment: { predicted_scene: "residential_kitchen", kitchen_score: 0.72 },
+      },
+    })).toEqual({
+      classification: { primaryScene: "residential_kitchen", kitchenProbability: 0.72 },
+    });
+  });
+
+  it("uses a leftover ONNX shadow only when canonical classification is absent", () => {
+    expect(projectImageClassifications({
       classification_shadow: {
         assessment: { predicted_scene: "livingroom", kitchen_score: 0.08 },
       },
@@ -50,9 +59,14 @@ describe("projectImageClassifications", () => {
     });
   });
 
-  it("does not present a legacy LLM-only assessment as canonical", () => {
+  it("prefers the LLM canonical scene over a leftover ONNX shadow", () => {
     expect(projectImageClassifications({
       classification: { assessment: { primary_scene: "living" } },
-    })).toEqual({ classification: undefined });
+      classification_shadow: {
+        assessment: { predicted_scene: "livingroom", kitchen_score: 0.08 },
+      },
+    })).toEqual({
+      classification: { primaryScene: "living" },
+    });
   });
 });
