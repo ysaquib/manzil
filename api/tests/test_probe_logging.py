@@ -1,8 +1,10 @@
-"""Probe access lines are dropped, everything else survives.
+"""Probe and poller access lines are dropped, everything else survives.
 
 Render sets the health-check cadence and does not expose it as a setting, so
 the fix for a log full of `GET /v1/health` is on our side of the wire: filter
-the successful ones out of `uvicorn.access` (§20 2026-08-11).
+the successful ones out of `uvicorn.access` (§20 2026-08-11). The Hunt UI's
+`GET .../jobs` and `GET .../attention` pollers get the same treatment
+(§20 2026-08-21): a 200 is noise, a 4xx/5xx is the event.
 """
 
 from __future__ import annotations
@@ -12,8 +14,10 @@ import logging
 import pytest
 from manzil_api.probe_logging import SuccessfulProbeFilter, quiet_probe_access_logs
 
+_HUNT = "83f58cd2-e2b5-42a8-87ed-bcdf309f13cf"
 
-def _access_record(path: str, status: int) -> logging.LogRecord:
+
+def _access_record(path: str, status: int, method: str = "GET") -> logging.LogRecord:
     """The shape uvicorn.access emits: '%s - "%s %s HTTP/%s" %d'."""
     return logging.LogRecord(
         name="uvicorn.access",
@@ -21,24 +25,36 @@ def _access_record(path: str, status: int) -> logging.LogRecord:
         pathname=__file__,
         lineno=1,
         msg='%s - "%s %s HTTP/%s" %d',
-        args=("10.0.0.1:443", "GET", path, "1.1", status),
+        args=("10.0.0.1:443", method, path, "1.1", status),
         exc_info=None,
     )
 
 
 @pytest.mark.parametrize(
-    ("path", "status", "kept"),
+    ("path", "status", "method", "kept"),
     [
-        ("/v1/health", 200, False),
-        ("/v1/ready", 200, False),
-        ("/v1/ready?verbose=1", 200, False),  # query strings do not smuggle it through
-        ("/v1/health", 500, True),  # a failing probe is the whole point of the probe
-        ("/v1/ready", 503, True),
-        ("/v1/hunts", 200, True),  # ordinary traffic is untouched
+        ("/v1/health", 200, "GET", False),
+        ("/v1/ready", 200, "GET", False),
+        ("/v1/ready?verbose=1", 200, "GET", False),  # query strings do not smuggle it through
+        ("/v1/health", 500, "GET", True),  # a failing probe is the whole point of the probe
+        ("/v1/ready", 503, "GET", True),
+        (f"/v1/hunts/{_HUNT}/jobs", 200, "GET", False),
+        (f"/v1/hunts/{_HUNT}/jobs?state=queued,running,waiting_user", 200, "GET", False),
+        (f"/v1/hunts/{_HUNT}/attention", 200, "GET", False),
+        (f"/v1/admin/ghost/hunts/{_HUNT}/jobs", 200, "GET", False),
+        (f"/v1/admin/ghost/hunts/{_HUNT}/attention", 200, "GET", False),
+        ("/v1/admin/jobs", 200, "GET", False),
+        (f"/v1/hunts/{_HUNT}/jobs", 401, "GET", True),
+        (f"/v1/hunts/{_HUNT}/attention", 500, "GET", True),
+        (f"/v1/hunts/{_HUNT}/jobs", 200, "POST", True),  # mutations are never quieted by suffix
+        ("/v1/hunts", 200, "GET", True),  # ordinary traffic is untouched
+        (f"/v1/hunts/{_HUNT}/listings", 200, "GET", True),
     ],
 )
-def test_only_successful_probes_are_dropped(path: str, status: int, kept: bool) -> None:
-    assert SuccessfulProbeFilter().filter(_access_record(path, status)) is kept
+def test_only_successful_probes_and_pollers_are_dropped(
+    path: str, status: int, method: str, kept: bool
+) -> None:
+    assert SuccessfulProbeFilter().filter(_access_record(path, status, method)) is kept
 
 
 def test_an_unexpected_record_shape_is_kept() -> None:

@@ -27,7 +27,9 @@ no way to tell whose status the HTTP layer is carrying.
 
 from __future__ import annotations
 
+import gzip
 import json
+import zlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -43,7 +45,7 @@ from manzil_shared.errors import FetchProviderError, FetchResponseTooLarge, Priv
 from manzil_worker.costs import record_fetch
 from manzil_worker.fetching.results import FetchResult
 from manzil_worker.fetching.ssrf import Resolver, screen_url
-from manzil_worker.fetching.tiers import read_response_limited
+from manzil_worker.fetching.tiers import read_raw_response_limited
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -61,6 +63,16 @@ PROVIDER_ERROR_MAX_CHARS = 400
 # Everything here is deterministic — the same call will be refused again — so
 # FETCH fails fatally rather than paying for three more identical answers.
 _FATAL_PROVIDER_STATUSES = frozenset({400, 401, 402, 403, 404, 422})
+
+
+class _ProviderDecodeError(Exception):
+    """A carrier response arrived but could not be safely decoded."""
+
+    def __init__(self, *, provider: str, encoding: str, size: int, error: Exception) -> None:
+        super().__init__(f"{provider} carrier decoding failed for {encoding!r}: {error}")
+        self.provider = provider
+        self.encoding = encoding
+        self.size = size
 
 
 @dataclass(frozen=True)
@@ -153,7 +165,11 @@ def _brightdata(url: str) -> _Request:
     return _Request(
         method="POST",
         url="https://api.brightdata.com/request",
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            "Accept-Encoding": "identity",
+        },
         json={"zone": zone, "url": url, "format": "json"},
     )
 
@@ -199,7 +215,7 @@ def _scrapingbee(url: str) -> _Request:
     return _Request(
         method="GET",
         url="https://app.scrapingbee.com/api/v1/",
-        headers={},
+        headers={"Accept-Encoding": "identity"},
         params={"api_key": key, "url": url, "render_js": "true"},
     )
 
@@ -242,6 +258,38 @@ def tier3_provider() -> _Provider:
         raise KeyError(
             f"MANZIL_TIER3_PROVIDER={name!r}: known providers are {sorted(PROVIDERS)}"
         ) from None
+
+
+def tier3_fallback_provider(primary: _Provider) -> _Provider | None:
+    """Configured secondary provider for carrier decode failures only.
+
+    The fallback is intentionally opt-in: a valid primary response (including a
+    blocked target page) must not spend a second vendor credit. An invalid name
+    remains an operator-visible configuration error instead of silently
+    disabling recovery.
+    """
+    name = os.environ.get("MANZIL_TIER3_FALLBACK_PROVIDER", "").strip()
+    if not name:
+        return None
+    try:
+        fallback = PROVIDERS[name]
+    except KeyError:
+        raise KeyError(
+            f"MANZIL_TIER3_FALLBACK_PROVIDER={name!r}: known providers are {sorted(PROVIDERS)}"
+        ) from None
+    if fallback.name == primary.name:
+        log.warning("tier3_fallback_unavailable", provider=primary.name, reason="same_as_primary")
+        return None
+    missing = missing_provider_env(fallback)
+    if missing:
+        log.warning(
+            "tier3_fallback_unavailable",
+            provider=fallback.name,
+            reason="missing_configuration",
+            missing=missing,
+        )
+        return None
+    return fallback
 
 
 def missing_provider_env(provider: _Provider) -> list[str]:
@@ -298,17 +346,50 @@ class Tier3Fetcher:
         self._transport = transport
         self._resolver = resolver
 
-    async def fetch(self, url: str, *, capture_screenshot: bool = False) -> FetchResult:
-        provider = tier3_provider()
+    @staticmethod
+    def _decode_carrier_body(response: httpx.Response, data: bytes, provider: _Provider) -> bytes:
+        """Decode a provider envelope exactly once, tolerating a lying header.
+
+        ``Accept-Encoding: identity`` is the normal path. If a vendor still
+        labels already-plain JSON/HTML as compressed, retain the plainly textual
+        bytes rather than treating the target as unavailable. Truly malformed or
+        unsupported encodings take the bounded retry/failover path.
+        """
+        encoding = response.headers.get("content-encoding", "identity").lower().strip()
+        if not encoding or encoding == "identity":
+            return data
         try:
-            # Defense-in-depth screen (§16). The unblocker fetches from *its*
-            # network, so a private target is unreachable-from-there rather than an
-            # SSRF against us (a provider fetching 169.254.169.254 returns THEIR
-            # metadata, not ours); we screen anyway for consistency across tiers.
-            # PrivateAddressRefused propagates (refusal, not a retryable error); a
-            # DNS OSError is caught below → retryable, like any tier.
-            await screen_url(url, resolver=self._resolver)
-            request = provider.build(url)  # may raise FetchProviderError (config)
+            if encoding == "gzip":
+                return gzip.decompress(data)
+            if encoding == "deflate":
+                try:
+                    return zlib.decompress(data)
+                except zlib.error:
+                    return zlib.decompress(data, -zlib.MAX_WBITS)
+            raise ValueError(f"unsupported content encoding {encoding!r}")
+        except (OSError, ValueError, zlib.error) as error:
+            # Bright Data's JSON envelope and an HTML target have unmistakable
+            # UTF-8 prefixes. A false compression label must not make a usable
+            # source disappear, which is the production failure this repairs.
+            if data.lstrip().startswith((b"{", b"[", b"<")):
+                log.warning(
+                    "tier3_encoding_header_ignored",
+                    provider=provider.name,
+                    api_status=response.status_code,
+                    content_encoding=encoding,
+                    response_bytes=len(data),
+                )
+                return data
+            raise _ProviderDecodeError(
+                provider=provider.name,
+                encoding=encoding,
+                size=len(data),
+                error=error,
+            ) from error
+
+    async def _fetch_from_provider(self, provider: _Provider, url: str) -> FetchResult:
+        request = provider.build(url)  # may raise FetchProviderError (config)
+        try:
             async with (
                 httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client,
                 client.stream(
@@ -319,23 +400,34 @@ class Tier3Fetcher:
                     params=request.params,
                 ) as streamed,
             ):
-                # Bright Data's envelope is a second response layer.  Bound it
-                # independently before JSON parsing so a huge vendor payload
-                # cannot coexist with a parsed envelope and HTML.
-                data = await read_response_limited(
+                data = await read_raw_response_limited(
                     streamed,
                     url=url,
                     layer="provider response",
                     limit_bytes=FETCH_PROVIDER_RESPONSE_MAX_BYTES,
                 )
+                try:
+                    decoded = self._decode_carrier_body(streamed, data, provider)
+                except _ProviderDecodeError:
+                    # A carrier response normally represents a vendor request
+                    # that consumed credit. The malformed body prevents target
+                    # classification, but must not erase that observed spend.
+                    if streamed.status_code < 400:
+                        record_fetch(provider.name)
+                    raise
+                headers = {
+                    key: value
+                    for key, value in streamed.headers.items()
+                    if key.lower() not in {"content-encoding", "content-length"}
+                }
                 response = httpx.Response(
                     streamed.status_code,
-                    headers=streamed.headers,
-                    content=data,
+                    headers=headers,
+                    content=decoded,
                     request=streamed.request,
                 )
-        except (PrivateAddressRefused, FetchProviderError):
-            raise  # a refusal and a misconfiguration are never retryable fetch errors
+        except (FetchResponseTooLarge, FetchProviderError, _ProviderDecodeError):
+            raise
         except (httpx.HTTPError, OSError) as exc:
             log.warning("tier3_fetch_failed", url=url, provider=provider.name, error=repr(exc))
             return FetchResult(
@@ -349,10 +441,6 @@ class Tier3Fetcher:
 
         target = provider.unwrap(response)
         if target is None:
-            # The provider refused *us*. No target request happened, so nothing
-            # was fetched and (unlike a target 403) nothing is billable — the
-            # credit meter has to stay trustworthy precisely when an operator is
-            # asking it whether the plan ran out.
             reason = response.text.strip()[:PROVIDER_ERROR_MAX_CHARS] or "no reason given"
             log.error(
                 "tier3_provider_rejected",
@@ -375,12 +463,6 @@ class Tier3Fetcher:
             )
 
         target = _target_within_limit(target, url=url)
-
-        # Billed on a RESPONSE FROM THE TARGET, not on a happy one (AD-C): the
-        # provider ran the request and charged for it whatever status the page
-        # handed back — a 403 from the target still costs a credit. Transport
-        # failures and provider-API rejections never reach here, so neither a
-        # request that never landed nor one the vendor refused is billed.
         record_fetch(provider.name)
         log.info(
             "tier3_fetched",
@@ -391,10 +473,84 @@ class Tier3Fetcher:
         )
         return FetchResult(
             url=url,
-            final_url=url,  # unblockers don't expose the redirect chain
+            final_url=url,
             status_code=target.status_code,
             headers=target.headers,
             body=target.body,
             tier=self.tier,
             provider=provider.name,
         )
+
+    async def fetch(self, url: str, *, capture_screenshot: bool = False) -> FetchResult:
+        provider = tier3_provider()
+        try:
+            # Defense-in-depth screen (§16). The unblocker fetches from *its*
+            # network, so a private target is unreachable-from-there rather than an
+            # SSRF against us (a provider fetching 169.254.169.254 returns THEIR
+            # metadata, not ours); we screen anyway for consistency across tiers.
+            # PrivateAddressRefused propagates (refusal, not a retryable error); a
+            # DNS OSError is caught below → retryable, like any tier.
+            await screen_url(url, resolver=self._resolver)
+        except (PrivateAddressRefused, FetchProviderError):
+            raise  # a refusal and a misconfiguration are never retryable fetch errors
+        except (httpx.HTTPError, OSError) as exc:
+            log.warning("tier3_fetch_failed", url=url, provider=provider.name, error=repr(exc))
+            return FetchResult(
+                url=url,
+                final_url=url,
+                status_code=0,
+                tier=self.tier,
+                provider=provider.name,
+                error=repr(exc),
+            )
+
+        for attempt in (1, 2):
+            try:
+                return await self._fetch_from_provider(provider, url)
+            except _ProviderDecodeError as error:
+                log.warning(
+                    "tier3_carrier_decode_failed",
+                    url=url,
+                    provider=provider.name,
+                    attempt=attempt,
+                    content_encoding=error.encoding,
+                    response_bytes=error.size,
+                )
+                if attempt == 1:
+                    continue
+                fallback = tier3_fallback_provider(provider)
+                if fallback is None:
+                    return FetchResult(
+                        url=url,
+                        final_url=url,
+                        status_code=0,
+                        tier=self.tier,
+                        provider=provider.name,
+                        error=str(error),
+                    )
+                log.info(
+                    "tier3_provider_failover",
+                    url=url,
+                    provider=provider.name,
+                    fallback_provider=fallback.name,
+                )
+                try:
+                    return await self._fetch_from_provider(fallback, url)
+                except _ProviderDecodeError as fallback_error:
+                    log.warning(
+                        "tier3_carrier_decode_failed",
+                        url=url,
+                        provider=fallback.name,
+                        attempt=1,
+                        content_encoding=fallback_error.encoding,
+                        response_bytes=fallback_error.size,
+                    )
+                    return FetchResult(
+                        url=url,
+                        final_url=url,
+                        status_code=0,
+                        tier=self.tier,
+                        provider=fallback.name,
+                        error=str(fallback_error),
+                    )
+        raise AssertionError("unreachable")

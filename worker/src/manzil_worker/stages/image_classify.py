@@ -231,7 +231,7 @@ def _classification(image: PropertyImageIn) -> ImageClassification | None:
 
 
 def eligible_quality_images(images: list[PropertyImageIn]) -> list[PropertyImageIn]:
-    """Canonical ONNX-classified photos that may feed quality VISION.
+    """LLM-classified photos that may feed quality VISION.
 
     Floor Plan diagrams are excluded **categorically** (§7.2, workbook): a
     layout drawing says nothing about finish quality, and letting one through
@@ -239,10 +239,21 @@ def eligible_quality_images(images: list[PropertyImageIn]) -> list[PropertyImage
     lives here rather than in one criterion's selector so `flooring_quality`
     and every later target inherit it instead of re-deriving it.
 
-    `kind` carries deterministic page evidence; ONNX's diagram result is a
-    second categorical exclusion. The promoted narrow contract deliberately
-    has no invented assessability, framing, relevance, or confidence fields.
+    `kind` carries deterministic page evidence; the classifier's `diagram`
+    flag is a second categorical exclusion.
     """
+    return [
+        image
+        for image in images
+        if image.kind == "listing_photo"
+        and (assessment := _classification(image)) is not None
+        and not assessment.diagram
+        and not assessment.irrelevant
+    ]
+
+
+def eligible_quality_images_onnx(images: list[PropertyImageIn]) -> list[PropertyImageIn]:
+    """Retained ONNX eligibility gate (unused on the workflow path)."""
     return [
         image
         for image in images
@@ -253,28 +264,11 @@ def eligible_quality_images(images: list[PropertyImageIn]) -> list[PropertyImage
 
 
 def select_kitchen_targets(images: list[PropertyImageIn]) -> list[PropertyImageIn]:
-    """Select up to three photos by descending ONNX kitchen probability."""
-    eligible = eligible_quality_images(images)
-    eligible.sort(
-        key=lambda image: (
-            -_onnx_classification(image).kitchen_score,  # type: ignore[union-attr]
-            image.source_url_page or "",
-            image.source_page_order if image.source_page_order is not None else 10**9,
-            image.content_hash,
-        )
-    )
-    return eligible[: VISION_TARGET_QUOTAS["kitchen_quality"]]
-
-
-def select_kitchen_targets_llm_legacy(images: list[PropertyImageIn]) -> list[PropertyImageIn]:
-    """Disabled pre-v3.52 selector retained for the historical LLM benchmark."""
+    """Select up to three high-confidence assessable kitchens, covering plans."""
     eligible = [
         image
-        for image in images
-        if image.kind != "floor_plan_diagram"
-        and (assessment := _classification(image)) is not None
-        and not assessment.diagram
-        and not assessment.irrelevant
+        for image in eligible_quality_images(images)
+        if (assessment := _classification(image)) is not None
         and assessment.framing != "unusable"
         and assessment.confidence == "high"
         and assessment.kitchen_visibility == "assessable"
@@ -315,6 +309,24 @@ def select_kitchen_targets_llm_legacy(images: list[PropertyImageIn]) -> list[Pro
         if len(selected) >= VISION_TARGET_QUOTAS["kitchen_quality"]:
             break
     return selected
+
+
+# Historical name kept so the classifier bench keeps importing a stable symbol.
+select_kitchen_targets_llm_legacy = select_kitchen_targets
+
+
+def select_kitchen_targets_onnx(images: list[PropertyImageIn]) -> list[PropertyImageIn]:
+    """Retained ONNX selector (unused on the workflow path)."""
+    eligible = eligible_quality_images_onnx(images)
+    eligible.sort(
+        key=lambda image: (
+            -_onnx_classification(image).kitchen_score,  # type: ignore[union-attr]
+            image.source_url_page or "",
+            image.source_page_order if image.source_page_order is not None else 10**9,
+            image.content_hash,
+        )
+    )
+    return eligible[: VISION_TARGET_QUOTAS["kitchen_quality"]]
 
 
 def _onnx_classification(image: PropertyImageIn) -> ONNXShadowPrediction | None:
@@ -402,7 +414,7 @@ async def _apply_onnx_shadow(
     ctx: StageCtx,
     cached: dict[str, dict],
 ) -> None:
-    """Persist observational ONNX readings without influencing pipeline truth."""
+    """Retained observational ONNX path. Not called from the workflow stage."""
     if ctx.image_classify_onnx is None or ctx.image_store is None:
         return
 
@@ -479,8 +491,20 @@ async def _apply_onnx_shadow(
     )
 
 
-async def _image_classify_llm_stage(state: RunState, ctx: StageCtx) -> RunState:
-    """Disabled legacy LLM classifier retained for rollback/reference."""
+def _onnx_legacy_payload(analysis: dict[str, object] | None) -> dict[str, object] | None:
+    """Keep a replaced ONNX record for audit; it is never a cache hit or selector input."""
+    if not isinstance(analysis, dict):
+        return None
+    for key in ("classification", "classification_shadow"):
+        candidate = analysis.get(key)
+        if _valid_cached_shadow(candidate) and isinstance(candidate, dict):
+            return candidate
+    legacy = analysis.get("classification_onnx_legacy")
+    return legacy if isinstance(legacy, dict) else None
+
+
+async def image_classify_stage(state: RunState, ctx: StageCtx) -> RunState:
+    """Classify gallery images with the pinned LLM classifier. ONNX is not invoked."""
     if not state.property_images or state.property_id is None or ctx.image_store is None:
         state.vision_targets["kitchen_quality"] = []
         if state.plan is not None:
@@ -499,6 +523,9 @@ async def _image_classify_llm_stage(state: RunState, ctx: StageCtx) -> RunState:
     for image in state.property_images[:MAX_IMAGE_CLASSIFY_IMAGES]:
         prior_analysis = cached.get(image.content_hash)
         prior = prior_analysis.get("classification") if isinstance(prior_analysis, dict) else None
+        onnx_legacy = _onnx_legacy_payload(
+            prior_analysis if isinstance(prior_analysis, dict) else None
+        )
         if isinstance(prior, dict) and prior.get("cache_key") != cache_key:
             try:
                 ImageClassification.model_validate(prior.get("assessment"))
@@ -506,7 +533,11 @@ async def _image_classify_llm_stage(state: RunState, ctx: StageCtx) -> RunState:
                 pass
             else:
                 superseded[image.content_hash] = prior
-        if isinstance(prior, dict) and prior.get("cache_key") == cache_key:
+        if (
+            isinstance(prior, dict)
+            and prior.get("cache_key") == cache_key
+            and not _valid_cached_shadow(prior)
+        ):
             image.vision_assessment = dict(prior_analysis)
             cached_assessment = ImageClassification.model_validate(prior.get("assessment"))
             if cached_assessment.diagram:
@@ -514,85 +545,97 @@ async def _image_classify_llm_stage(state: RunState, ctx: StageCtx) -> RunState:
             elif cached_assessment.irrelevant:
                 image.kind = "other"
             continue
+        if onnx_legacy is not None:
+            image.vision_assessment = {
+                **(image.vision_assessment or {}),
+                "classification_onnx_legacy": onnx_legacy,
+            }
         normalized = await ctx.image_store.get(image.storage_path)
         pending.append((image, classification_thumbnail(normalized)))
 
     warnings: list[StageWarning] = []
     if pending:
-        blocks = [
-            VisionImage(
-                content_hash=hashlib.sha256(thumbnail).hexdigest(),
-                data=thumbnail,
-                label=f"target:{image.content_hash}",
-            )
-            for image, thumbnail in pending
-        ]
-        result = await ctx.call_vision("image_classify", ImageClassificationBatch, blocks)
-        batch = reconcile_classification_batch(
-            [block.content_hash for block in blocks], result.assessments
-        )
         unanswered: list[str] = []
         disputed: list[str] = []
-        for (image, _), block in zip(pending, blocks, strict=True):
-            resolved = batch.resolved.get(block.content_hash)
-            if resolved is None:
-                # Unanswered or disputed. Recorded as exactly that — an image the
-                # classifier failed on reads differently from one it looked at
-                # and found nothing in — and deliberately left un-cache-keyed so
-                # the next run asks about it again.
-                unresolved = "disputed" if block.content_hash in batch.disputed else "missing"
-                (disputed if unresolved == "disputed" else unanswered).append(image.content_hash)
-                # A skipped image keeps an older run's classification (this call
-                # said nothing about it, so nothing is contradicted) with the
-                # skip recorded beside it — the retained assessment's own
-                # model/prompt provenance stays intact. A disputed image does
-                # not: two current readings conflict, and that is the one case
-                # where stale evidence must not settle it. With no `assessment`,
-                # every quality path skips it (`eligible_quality_images`).
-                prior = superseded.get(image.content_hash) if unresolved == "missing" else None
-                classification = (
-                    {**prior, "status": unresolved, "unanswered_by": model}
-                    if prior is not None
-                    else {
-                        "status": unresolved,
-                        "model": model,
-                        "prompt_version": prompt.version,
-                    }
+        unknown = 0
+        repeats = 0
+        for offset in range(0, len(pending), IMAGE_CLASSIFY_BATCH_SIZE):
+            chunk = pending[offset : offset + IMAGE_CLASSIFY_BATCH_SIZE]
+            blocks = [
+                VisionImage(
+                    content_hash=hashlib.sha256(thumbnail).hexdigest(),
+                    data=thumbnail,
+                    label=f"target:{image.content_hash}",
                 )
+                for image, thumbnail in chunk
+            ]
+            result = await ctx.call_vision("image_classify", ImageClassificationBatch, blocks)
+            batch = reconcile_classification_batch(
+                [block.content_hash for block in blocks], result.assessments
+            )
+            for (image, _), block in zip(chunk, blocks, strict=True):
+                resolved = batch.resolved.get(block.content_hash)
+                if resolved is None:
+                    # Unanswered or disputed. Recorded as exactly that — an image the
+                    # classifier failed on reads differently from one it looked at
+                    # and found nothing in — and deliberately left un-cache-keyed so
+                    # the next run asks about it again.
+                    unresolved = "disputed" if block.content_hash in batch.disputed else "missing"
+                    (disputed if unresolved == "disputed" else unanswered).append(
+                        image.content_hash
+                    )
+                    # A skipped image keeps an older run's classification (this call
+                    # said nothing about it, so nothing is contradicted) with the
+                    # skip recorded beside it — the retained assessment's own
+                    # model/prompt provenance stays intact. A disputed image does
+                    # not: two current readings conflict, and that is the one case
+                    # where stale evidence must not settle it. With no `assessment`,
+                    # every quality path skips it (`eligible_quality_images`).
+                    prior = superseded.get(image.content_hash) if unresolved == "missing" else None
+                    classification = (
+                        {**prior, "status": unresolved, "unanswered_by": model}
+                        if prior is not None
+                        else {
+                            "status": unresolved,
+                            "model": model,
+                            "prompt_version": prompt.version,
+                        }
+                    )
+                    image.vision_assessment = {
+                        **(image.vision_assessment or {}),
+                        "classification": classification,
+                    }
+                    continue
+                # The transport hash authenticates the in-memory thumbnail bytes;
+                # cache and selection remain keyed to the normalized Property image.
+                assessment = resolved.model_copy(update={"content_hash": image.content_hash})
+                if assessment.diagram:
+                    image.kind = "floor_plan_diagram"
+                elif assessment.irrelevant:
+                    image.kind = "other"
                 image.vision_assessment = {
                     **(image.vision_assessment or {}),
-                    "classification": classification,
+                    "classification": {
+                        "cache_key": cache_key,
+                        "model": model,
+                        "prompt_version": prompt.version,
+                        "assessment": assessment.model_dump(),
+                    },
                 }
-                continue
-            # The transport hash authenticates the in-memory thumbnail bytes;
-            # cache and selection remain keyed to the normalized Property image.
-            assessment = resolved.model_copy(update={"content_hash": image.content_hash})
-            if assessment.diagram:
-                image.kind = "floor_plan_diagram"
-            elif assessment.irrelevant:
-                image.kind = "other"
-            image.vision_assessment = {
-                **(image.vision_assessment or {}),
-                "classification": {
-                    "cache_key": cache_key,
-                    "model": model,
-                    "prompt_version": prompt.version,
-                    "assessment": assessment.model_dump(),
-                },
-            }
+            unknown += len(batch.unknown)
+            repeats += batch.repeats
         warnings.extend(
             _classification_warnings(
-                requested=len(blocks),
+                requested=len(pending),
                 unanswered=unanswered,
                 disputed=disputed,
-                unknown=len(batch.unknown),
-                repeats=batch.repeats,
+                unknown=unknown,
+                repeats=repeats,
             )
         )
     state.replace_warnings("IMAGE_CLASSIFY", warnings)
 
     await _renormalize_late_diagrams(state, ctx)
-    await _apply_onnx_shadow(state, ctx, cached)
 
     selected = select_kitchen_targets(state.property_images)
     state.vision_targets["kitchen_quality"] = [image.content_hash for image in selected]
@@ -667,8 +710,8 @@ def _promote_cached_onnx(
         image.kind = "listing_photo"
 
 
-async def image_classify_stage(state: RunState, ctx: StageCtx) -> RunState:
-    """Classify gallery images exclusively with the canonical ONNX backend."""
+async def _image_classify_onnx_stage(state: RunState, ctx: StageCtx) -> RunState:
+    """Retained ONNX classifier. Unused on the workflow path; kept for revert."""
     if not state.property_images or state.property_id is None or ctx.image_store is None:
         state.vision_targets["kitchen_quality"] = []
         if state.plan is not None:
@@ -676,7 +719,7 @@ async def image_classify_stage(state: RunState, ctx: StageCtx) -> RunState:
         return state
     if ctx.image_classify_onnx is None:
         raise RuntimeError(
-            "IMAGE_CLASSIFY requires MANZIL_IMAGE_CLASSIFY_ONNX_DIR "
+            "IMAGE_CLASSIFY ONNX path requires MANZIL_IMAGE_CLASSIFY_ONNX_DIR "
             "(legacy alias MANZIL_IMAGE_CLASSIFY_ONNX_SHADOW_DIR is also accepted)"
         )
 
@@ -748,7 +791,7 @@ async def image_classify_stage(state: RunState, ctx: StageCtx) -> RunState:
 
     state.replace_warnings("IMAGE_CLASSIFY", [])
     await _renormalize_late_diagrams(state, ctx)
-    selected = select_kitchen_targets(state.property_images)
+    selected = select_kitchen_targets_onnx(state.property_images)
     state.vision_targets["kitchen_quality"] = [image.content_hash for image in selected]
     if not selected and state.plan is not None:
         state.plan.skipped["VISION"] = "no_classified_kitchen_targets"

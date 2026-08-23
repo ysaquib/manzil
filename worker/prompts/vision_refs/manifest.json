@@ -9,7 +9,7 @@
       "quality_benchmark_status": "deferred_owner_override",
       "quality_enabled_by": "Yusuf",
       "quality_enabled_at": "2026-07-28",
-      "quality_model": "anthropic/claude-sonnet-4.6",
+      "quality_model": "anthropic/claude-sonnet-5",
       "approved_by": "Yusuf",
       "approved_at": "2026-07-27",
       "anchors": [

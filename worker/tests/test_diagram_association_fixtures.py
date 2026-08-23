@@ -22,7 +22,11 @@ from uuid import uuid4
 
 from manzil_shared.models import JobType
 from manzil_worker.stages.base import StageCtx
-from manzil_worker.stages.image_classify import eligible_quality_images, select_kitchen_targets
+from manzil_worker.stages.image_classify import (
+    eligible_quality_images,
+    eligible_quality_images_onnx,
+    select_kitchen_targets,
+)
 from manzil_worker.stages.image_fetch import image_fetch_stage
 from manzil_worker.state import FloorPlanIn, PlanManifest, PropertyImageIn, RunState, SourceState
 from manzil_worker.vision_onnx import (
@@ -180,6 +184,34 @@ def _stored(kind: str, *, diagram_flag: bool) -> PropertyImageIn:
         kind=kind,  # type: ignore[arg-type]
         vision_assessment={
             "classification": {
+                "cache_key": "model:prompt-1",
+                "assessment": {
+                    "content_hash": "x" * 64,
+                    "primary_scene": "diagram" if diagram_flag else "kitchen",
+                    "kitchen_visibility": "not_visible" if diagram_flag else "assessable",
+                    "flooring_assessability": "not_visible",
+                    "bathroom_visibility": "not_visible",
+                    "framing": "full_room",
+                    "confidence": "high",
+                    "irrelevant": False,
+                    "diagram": diagram_flag,
+                },
+            }
+        },
+    )
+
+
+def _stored_onnx(kind: str, *, diagram_flag: bool) -> PropertyImageIn:
+    return PropertyImageIn(
+        source_url="https://img.test/x.png",
+        storage_path="p/x.webp",
+        content_hash="x" * 64,
+        width=1024,
+        height=768,
+        byte_size=10,
+        kind=kind,  # type: ignore[arg-type]
+        vision_assessment={
+            "classification": {
                 "cache_key": ONNX_SHADOW_CACHE_KEY,
                 "backend": ONNX_SHADOW_BACKEND,
                 "artifact_sha256": ONNX_SHADOW_ARTIFACT_SHA256,
@@ -211,6 +243,17 @@ def test_diagrams_never_reach_quality_vision_by_either_signal() -> None:
     eligible = eligible_quality_images([by_kind, by_assessment, photo])
     assert eligible == [photo]
     assert select_kitchen_targets([by_kind, by_assessment]) == []
+
+    onnx_eligible = eligible_quality_images_onnx(
+        [
+            _stored_onnx("floor_plan_diagram", diagram_flag=False),
+            _stored_onnx("listing_photo", diagram_flag=True),
+            _stored_onnx("listing_photo", diagram_flag=False),
+        ]
+    )
+    assert [image.kind for image in onnx_eligible] == ["listing_photo"]
+    predicted = onnx_eligible[0].vision_assessment["classification"]["assessment"]
+    assert predicted["diagram_predicted"] is False
 
 
 # --- Real pages name the plan in the diagram's own alt text (§7.2 label rule) ---

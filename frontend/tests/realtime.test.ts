@@ -7,8 +7,8 @@ describe("Realtime invalidation map", () => {
 
   it.each([
     ["hunt_members", [["hunt_members", huntId], ["hunt_contributors", huntId], ["hunts"]]],
-    ["hunt_listings", [["hunt_listings", huntId]]],
-    ["scores", [["hunt_listings", huntId]]],
+    ["hunt_listings", [["hunt_listings", huntId], ["extractions"]]],
+    ["scores", [["hunt_listings", huntId], ["extractions"]]],
     ["comments", [["comments"], ["hunt_listings", huntId]]],
     ["ratings", [["ratings"]]],
     ["listing_unit_group_states", [["listing_unit_group_states", huntId]]],

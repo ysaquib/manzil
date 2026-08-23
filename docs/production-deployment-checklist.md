@@ -191,7 +191,10 @@ Only after staging is working:
 
 
 
-## Phase 2 — Package the ONNX model
+## Phase 2 — Package the ONNX model (optional; unused at runtime)
+
+Skip on Render starter. DESIGN v3.102 classifies with an LLM; this archive is
+only for a later revert onto a larger host.
 
 
 
@@ -304,6 +307,7 @@ Do **not** increase Uvicorn workers or Render instances.
 | `LANGFUSE_HOST`                          | e.g. `https://us.cloud.langfuse.com` | no              |
 | `GOOGLE_MAPS_API_KEY`                    | Server-side key                      | **yes**         |
 | `MANZIL_TIER3_PROVIDER`                  | `brightdata` or `scrapingbee`        | no              |
+| `MANZIL_TIER3_FALLBACK_PROVIDER`         | Optional distinct configured provider; decode failures only | no |
 | `BRIGHTDATA_API_KEY` / `BRIGHTDATA_ZONE` | If Bright Data — zone name, **not** the key's name | yes / yes |
 | `SCRAPINGBEE_API_KEY`                    | If ScrapingBee                       | **yes**         |
 
@@ -486,9 +490,9 @@ Run in order. All must pass before production.
 - [ ] 8. One Job claimed and progresses; no duplicate claimant
 - [ ] 9. Langfuse receives every LLM call; OpenRouter charges staging-scoped key
 - [ ] 10. Images land in private `property-images` Storage bucket
-- [ ] 11. IMAGE_CLASSIFY emits `image_classify_onnx_complete`, correct digest, no LLM classifier call
-- [ ] 12. Gallery displays ONNX scene and kitchen probability
-- [ ] 13. Top three `kitchen_score` eligible images become VISION targets; anchored VISION result appears
+- [ ] 11. IMAGE_CLASSIFY emits an LLM classification; no ONNX subprocess / `image_classify_onnx_complete`
+- [ ] 12. Gallery displays LLM `primary_scene`
+- [ ] 13. High-confidence assessable kitchens become VISION targets; anchored VISION result appears
 - [ ] 14. Tier-2 Playwright fetch works (Chromium and Linux deps packaged)
 - [ ] 15. Google Maps ENRICH and frontend map work with separate keys
 - [ ] 16. Realtime and Visit Presence work with two browsers

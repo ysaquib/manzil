@@ -191,7 +191,7 @@ async def _plan_refresh(state: RunState, ctx: StageCtx) -> RunState:
         ]
         if not state.sources:
             state.sources = [SourceState(url=sources[0].url)]
-        stages = ["PLAN", "CUSTOM_MATCH", "SCORE"]
+        stages = ["PLAN", "CUSTOM_MATCH"]
         state.plan = PlanManifest(
             job_type=state.job_type.value,
             trigger=ctx.plan_trigger,
@@ -255,8 +255,9 @@ async def _plan_refresh(state: RunState, ctx: StageCtx) -> RunState:
     )
     if custom_count:
         stages.append("CUSTOM_MATCH")
-    if text or images or enrich:
-        stages.append("SCORE")
+    # Refresh SCORE is deliberately terminal/persistence-backed: page-class
+    # RunState contains only the facts the refresh produced, while the Listing
+    # score must preserve current Maps, VISION, fee, and Override facts.
 
     plan_sources = [
         PlanSource(

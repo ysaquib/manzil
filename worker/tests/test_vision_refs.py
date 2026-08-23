@@ -44,7 +44,7 @@ def _write_complete_set(root):  # type: ignore[no-untyped-def]
                 "prompt_version": 1,
                 "status": "approved",
                 "quality_status": "approved",
-                "quality_model": "anthropic/claude-sonnet-4.6",
+                "quality_model": "anthropic/claude-sonnet-5",
                 "anchors": anchors,
                 "sheets": {},
             }
@@ -75,7 +75,7 @@ def test_repository_kitchen_profile_is_released() -> None:
     profile = manifest["profiles"]["kitchen_quality"]
     assert profile["quality_status"] == "approved"
     assert profile["quality_benchmark_status"] == "deferred_owner_override"
-    assert profile["quality_model"] == "anthropic/claude-sonnet-4.6"
+    assert profile["quality_model"] == "anthropic/claude-sonnet-5"
     assert vision_references_ready()
 
 

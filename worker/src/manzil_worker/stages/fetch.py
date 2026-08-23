@@ -26,6 +26,7 @@ from manzil_worker.fetching.registry import MAX_TIER
 from manzil_worker.fetching.slug_hint import search_hint
 from manzil_worker.fetching.tier3 import missing_provider_env, tier3_provider
 from manzil_worker.stages.base import StageCtx
+from manzil_worker.stages.discover import select_sibling_replacement
 from manzil_worker.state import RunState, SourceState
 
 log = structlog.get_logger()
@@ -181,23 +182,89 @@ async def fetch_stage(state: RunState, ctx: StageCtx) -> RunState:
     without it. Sibling/arbiter failures are isolated and retained as Source
     outcomes so one hostile page cannot discard otherwise usable evidence.
     """
-    for url in _target_urls(state):
+    urls = _target_urls(state)
+    index = 0
+    while index < len(urls):
+        url = urls[index]
+        index += 1
         existing = next((source for source in state.sources if source.url == url), None)
         if existing is not None and existing.outcome in _PROCEED and existing.cleaned_text:
             continue
+        is_sibling = url != state.url
+        # An interrupted run may have persisted the intent to fetch a sibling
+        # just before its provider call.  Do not spend again on resume; the
+        # replacement loop below will use a fresh Family if capacity remains.
+        if is_sibling and url in state.sibling_fetch_attempted_urls:
+            continue
+        if is_sibling:
+            state.sibling_fetch_attempted_urls.append(url)
+            await ctx.persistence.save(state)
         try:
             fetched = await _fetch_one(state, ctx, url)
         except (StageFatal, StageRetryable):
             if url == state.url:
                 raise
             log.warning("source_fetch_skipped", job_id=str(state.job_id), url=url)
+            replacement = select_sibling_replacement(
+                state,
+                tier3_available=3 in ctx.fetchers,
+                preferred_tier=next(
+                    (
+                        candidate.required_tier
+                        for candidate in state.discovered_sources
+                        if candidate.url == url
+                    ),
+                    None,
+                ),
+            )
+            if replacement is not None:
+                log.info(
+                    "source_fetch_replaced",
+                    job_id=str(state.job_id),
+                    failed_url=url,
+                    replacement_url=replacement.url,
+                    attempt=len(state.sibling_fetch_attempted_urls),
+                )
+                urls.append(replacement.url)
             continue
         if existing is None:
             state.sources.append(fetched)
         else:
             state.sources[state.sources.index(existing)] = fetched
+        # A static Slate can be exhausted by an interrupted/previously failed
+        # sibling without taking this exception path.  Fill only the remaining
+        # corroboration slots, never more than the bounded attempt budget.
+        usable_siblings = sum(
+            bool(source.url != state.url and source.outcome in _PROCEED and source.cleaned_text)
+            for source in state.sources
+        )
+        has_pending_sibling = any(
+            pending != state.url and pending not in state.sibling_fetch_attempted_urls
+            for pending in urls[index:]
+        )
+        if usable_siblings < state.sibling_target_count and not has_pending_sibling:
+            replacement = select_sibling_replacement(
+                state,
+                tier3_available=3 in ctx.fetchers,
+            )
+            if replacement is not None:
+                log.info(
+                    "source_fetch_replaced",
+                    job_id=str(state.job_id),
+                    failed_url=None,
+                    replacement_url=replacement.url,
+                    attempt=len(state.sibling_fetch_attempted_urls),
+                )
+                urls.append(replacement.url)
     if not any(source.outcome in _PROCEED and source.cleaned_text for source in state.sources):
         raise StageFatal("no Source in the slate was fetchable")
+    if state.source_policy != "trust_link":
+        has_usable_sibling = any(
+            source.url != state.url and source.outcome in _PROCEED and source.cleaned_text
+            for source in state.sources
+        )
+        if not has_usable_sibling and state.sibling_target_count:
+            state.single_source_reason = "discover_exhausted"
     if (
         state.job_type.value == "refresh"
         and state.plan is not None
@@ -214,6 +281,4 @@ async def fetch_stage(state: RunState, ctx: StageCtx) -> RunState:
                 "CUSTOM_MATCH": "content_hash_unchanged",
             }
         )
-        if not set(state.refresh_fields) & {"images", "reviews", "location"}:
-            state.plan.skipped["SCORE"] = "content_hash_unchanged"
     return state
