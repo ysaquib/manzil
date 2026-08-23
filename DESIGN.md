@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| **Version** | 3.100 |
+| **Version** | 3.101 |
 | **Status** | Living document — this is the source of truth during implementation |
 | **Supersedes** | `apartment-hunt-dashboard-design.md` draft v0.4 |
 | **Owner** | Yusuf |
@@ -1428,6 +1428,8 @@ A door's identity across Visits is its **human-typed label** within the Listing 
 | 2026-08-17 | **v3.99: fetching and DISCOVER are explicitly memory-bounded.** Tier 1 and tier 3 stream bounded responses before decoding; Bright Data's provider envelope (16 MiB) and target page (8 MiB) are capped independently. Over-limit pages are rejected whole and never retried or used as partial evidence. Cleaner output is capped at 250,000 characters while preserving embedded JSON/state data and curated Floor Plan/fee blocks ahead of generic prose. DISCOVER's local `fetch_page` tool is capped at four calls, one tier-3 reach, 20,000 characters per result and 60,000 across the Stage; it receives structured ordinary-text and embedded-data fields so appended JSON remains available. | A complete bounded document is trustworthy evidence; a partial document is not. The production OOM occurred during DISCOVER after a tier-3 response, while the old front-prefix tool cap could omit exactly the JSON state data needed for identity. Fixed response, cleaned-text, call, tier, and transcript budgets make peak memory and agent context finite without weakening the durable Stage contract. | §10.1–§10.2, §10.7, §20; `shared/config.py`, `worker/fetching`, `worker/llm/tools.py` |
 
 | 2026-08-17 | **v3.100: refreshes use longer class TTLs and preserve known resolved facts against unknown output.** Pricing/availability/deposits/fees refresh every 10 days; listing details every 30; images/VISION every 60; utility baselines every 180. Refreshes retain every Source candidate observation, but only advance the resolved value for a new known, different value (or to fill an unknown); `unknown`/`not_found` never erase known truth. Floor Plan-native beds, baths, sqft, deposit, availability, and unit types no longer emit duplicate generalized Listing claims, so a disagreement is not painted onto unrelated Unit Groups. Cross-Source Floor Plan matching remains deferred. | The former cadence spent too often for the expected rate of meaningful change, while a refresh saying “not found” should be evidence to review rather than permission to erase a known fact. Duplicate generalized plan facts violated the Unit Group honesty boundary and produced the reported listing-wide beds disagreement. | header, §8.2, §9.5, §9.4, §14, §20; `shared/config.py`, `worker`, `frontend`, `IMPLEMENTATION.md` |
+
+| 2026-08-21 | **v3.101: successful Hunt `jobs`/`attention` polls leave the access log, same rule as uptime probes.** `GET /v1/hunts/{id}/jobs`, `GET /v1/hunts/{id}/attention`, and the Ghost/Admin list equivalents join `/v1/health` and `/v1/ready` in the `uvicorn.access` filter: a success is dropped, a 4xx/5xx always logs, and `MANZIL_LOG_PROBE_REQUESTS=true` restores every line. Ordinary traffic is still logged. | Realtime invalidates those two queries on every Job and `job_events` change, so a live ingest fills Render's API log with 200s that carry no operational signal — the same “the cadence is not ours, the log volume is” problem v3.79 solved for health checks. Filtering only successes keeps a looping 401 or a 500 visible; dropping the polls themselves would hide the Tasks badge and Active tab. | §20 v3.79; `api/probe_logging.py`, `README.md`, `IMPLEMENTATION.md` |
 
 ## 21. Open Questions
 

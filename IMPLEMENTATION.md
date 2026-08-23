@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Version** | 2.0.171 |
+| **Version** | 2.0.188 |
 | **Status** | Living — churns freely, no ceremony required. **v2.0 is the implementation-start baseline**: further changes should come from code reality, not further pre-code polishing |
 | **Sibling** | `DESIGN.md` (intent + contracts; wins all conflicts about *what* and *why*) |
 | **Repo location** | `/IMPLEMENTATION.md` |
@@ -65,7 +65,7 @@ ln -s CLAUDE.md AGENTS.md
 | `SUPABASE_URL` / `SUPABASE_ANON_KEY` | frontend, api | anon key is RLS-safe by design |
 | `SUPABASE_SECRET_KEY` | worker, api | opaque `sb_secret_...` in hosted environments; the local CLI's legacy service-role JWT may occupy this variable for local-only compatibility. Worker always; API also needs it for narrowly privileged operations while hosting the in-process worker — never in frontend env |
 | `MANZIL_WORKER_INPROCESS` | api | `true` by default (DESIGN §5); set to `false` only after a separate worker process is deployed and validated per §8 |
-| `MANZIL_LOG_PROBE_REQUESTS` | api | unset by default: successful `/v1/health` and `/v1/ready` access lines are filtered out of `uvicorn.access` (failing ones always log). `true` restores every line (DESIGN §20 v3.79) |
+| `MANZIL_LOG_PROBE_REQUESTS` | api | unset by default: successful `/v1/health`, `/v1/ready`, `GET .../jobs`, and `GET .../attention` access lines are filtered out of `uvicorn.access` (failing ones always log). `true` restores every line (DESIGN §20 v3.79/v3.101) |
 | `MANZIL_IMAGE_CLASSIFY_ONNX_DIR` | worker, api in-process loop | required canonical IMAGE_CLASSIFY artifact directory containing pinned `model.onnx` + `manifest.json`; deployed package needs the `vision-onnx` extra. Missing configuration fails a non-empty IMAGE_CLASSIFY Stage; there is no LLM fallback. The former `MANZIL_IMAGE_CLASSIFY_ONNX_SHADOW_DIR` is accepted temporarily as a path alias |
 | `API_CORS_ORIGINS` | api | frontend dev origin(s), comma-separated |
 | `API_ENVIRONMENT` | api | `local` \| `staging` \| `production` — gates OpenAPI docs exposure |
@@ -979,6 +979,7 @@ history. Version and date, rather than row position, define chronology.
 
 | Version | Date | Change |
 |---|---|---|
+| 2.0.188 | 2026-08-21 | **Quiet successful Hunt poller access lines (DESIGN v3.101).** The existing `uvicorn.access` filter now also drops 2xx/3xx `GET`s whose path ends in `/jobs` or `/attention` (Hunt, Ghost View, and Admin list), matching the health-probe rule: a 4xx/5xx still logs, and `MANZIL_LOG_PROBE_REQUESTS=true` restores every line. Ordinary traffic is unchanged. |
 | 2.0.187 | 2026-08-20 | **Render/Supavisor connection cap.** The API and standalone worker now create asyncpg pools at `min_size=1`, `max_size=4`, from shared tunables. Asyncpg's default ten eager connections made a rolling Render deploy overlap two generations at twenty clients, exceeding the hosted Supavisor session-mode limit of 15 and preventing the new API from starting (`EMAXCONNSESSION`). The cap peaks at eight Manzil clients while retaining room for Supabase services; API and worker startup tests pin both bounds. |
 | 2.0.186 | 2026-08-17 | **Standalone Render-worker substrate.** `manzil-worker` is a thin process entry point: it loads the root environment, requires `DATABASE_URL`, opens an asyncpg pool, builds the durable Postgres dispatch explicitly with that DSN, and runs the same queue loop, scheduler, demo-publication priority tick, heartbeats, and workflow/agents-mode selection as the API lifespan loop. SIGTERM/SIGINT stop future claims and let the active Job drain before the pool closes. Focused unit coverage pins the Postgres dispatch (never Phase-0 in-memory fallback), production duties, signal drain, and API-disabled-no-claimant contract. The root Docker image is now documented as a multipurpose API/worker image; the isolation and production runbooks carry the exact Render Background Worker command, 300-second shutdown allowance, ONNX/Maps requirements, and strict no-two-claimants cutover order. The active frontend-only Blueprint remains intentionally unchanged so this commit cannot accidentally provision a second production claimant. |
 | 2.0.185 | 2026-08-17 | **History Job card shows start time before duration.** The Tasks History footer now inserts the Job's local start time (`started_at`, falling back to `created_at`) immediately before the existing wall-clock duration, so a past run is dated at a glance without opening the timeline. |
