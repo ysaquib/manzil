@@ -307,6 +307,7 @@ Do **not** increase Uvicorn workers or Render instances.
 | `LANGFUSE_HOST`                          | e.g. `https://us.cloud.langfuse.com` | no              |
 | `GOOGLE_MAPS_API_KEY`                    | Server-side key                      | **yes**         |
 | `MANZIL_TIER3_PROVIDER`                  | `brightdata` or `scrapingbee`        | no              |
+| `MANZIL_TIER3_FALLBACK_PROVIDER`         | Optional distinct configured provider; decode failures only | no |
 | `BRIGHTDATA_API_KEY` / `BRIGHTDATA_ZONE` | If Bright Data — zone name, **not** the key's name | yes / yes |
 | `SCRAPINGBEE_API_KEY`                    | If ScrapingBee                       | **yes**         |
 
