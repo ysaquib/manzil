@@ -39,6 +39,12 @@ _POLICY_CAP = {
     "tiers_1_2_3": 3,
 }
 
+# This is deliberately a source-attempt ceiling, not a tier-3-call ceiling:
+# every sibling fetch can climb its own ladder.  It bounds an adversarial
+# discovery pool while still giving the baseline two independent observations a
+# meaningful chance to land when one provider/source is hostile.
+_MAX_SIBLING_FETCH_ATTEMPTS = 4
+
 
 class _CandidateFinding(BaseModel):
     url: str
@@ -115,6 +121,8 @@ def _reset_discovery(state: RunState) -> None:
     state.discovered_sources = []
     state.official_source_url = None
     state.slate_urls = [state.url]
+    state.sibling_fetch_attempted_urls = []
+    state.sibling_target_count = 0
     state.discover_error = None
     if state.plan is not None:
         submitted_key = _url_key(state.url)
@@ -210,7 +218,80 @@ def _select_slate(
         state.url,
         *[candidate.url for candidate in candidates if candidate.selected_for_slate],
     ]
+    state.sibling_target_count = len(selected)
     state.single_source_reason = None if selected else "discover_exhausted"
+
+
+def select_sibling_replacement(
+    state: RunState,
+    *,
+    tier3_available: bool,
+    preferred_tier: int | None = None,
+) -> DiscoveredSource | None:
+    """Select and durably add one replacement for a failed sibling fetch.
+
+    DISCOVER owns the same policy/family rules for the initial Slate and every
+    later replacement.  A Family already attempted in this run remains spent:
+    another URL from the same upstream feed adds cost but no independent
+    corroboration.  Candidates are already in deterministic rank order.
+    """
+    if state.sibling_target_count <= 0:
+        return None
+    attempted = set(state.sibling_fetch_attempted_urls)
+    if len(attempted) >= _MAX_SIBLING_FETCH_ATTEMPTS:
+        return None
+    cap = _POLICY_CAP[state.source_policy]
+    submitted = next((source for source in state.sources if source.url == state.url), None)
+    used_families = {
+        candidate.syndication_family
+        for candidate in state.discovered_sources
+        if candidate.url in attempted
+    }
+    if submitted is not None and submitted.syndication_family:
+        used_families.add(submitted.syndication_family)
+
+    tiers: list[int] = []
+    if preferred_tier is not None:
+        tiers.extend(range(min(preferred_tier, cap), 0, -1))
+    tiers.extend(tier for tier in range(cap, 0, -1) if tier not in tiers)
+    for tier in tiers:
+        choice = next(
+            (
+                candidate
+                for candidate in state.discovered_sources
+                if not candidate.is_official
+                and candidate.url not in attempted
+                and candidate.url not in state.slate_urls
+                and candidate.required_tier == tier
+                and candidate.syndication_family not in used_families
+                and (candidate.required_tier != 3 or tier3_available)
+            ),
+            None,
+        )
+        if choice is None:
+            continue
+        choice.selected_for_slate = True
+        choice.selection_reason = f"replacement_for_tier_{preferred_tier or tier}"
+        state.slate_urls.append(choice.url)
+        if state.plan is not None:
+            planned = next(
+                (source for source in state.plan.sources if source.url == choice.url), None
+            )
+            if planned is None:
+                state.plan.sources.append(
+                    PlanSource(
+                        url=choice.url,
+                        action="fetch",
+                        tier=choice.required_tier,
+                        why=choice.selection_reason,
+                    )
+                )
+            else:
+                planned.action = "fetch"
+                planned.tier = choice.required_tier
+                planned.why = choice.selection_reason
+        return choice
+    return None
 
 
 async def discover_stage(state: RunState, ctx: StageCtx) -> RunState:

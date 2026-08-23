@@ -19,7 +19,7 @@ from manzil_worker.fetching.registry import InMemoryRegistry
 from manzil_worker.fetching.results import FetchResult
 from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.fetch import fetch_stage
-from manzil_worker.state import RunState
+from manzil_worker.state import DiscoveredSource, PlanManifest, PlanSource, RunState
 from worker_helpers import PAGES, FakeFetcher
 
 URL = "https://www.zillow.com/apartments/ypsilanti-mi/willow-ridge/5Xn8qQ/"
@@ -94,6 +94,56 @@ def test_a_refused_sibling_never_sinks_a_usable_submission() -> None:
 
     assert [source.url for source in out.sources] == [URL]
     assert out.sources[0].cleaned_text
+
+
+def test_a_failed_sibling_is_replaced_from_the_discovery_pool() -> None:
+    failed = "https://blocked.test/maple-court"
+    replacement = "https://replacement.test/maple-court"
+
+    class SelectiveFetcher:
+        tier = 1
+
+        async def fetch(self, url: str, *, capture_screenshot: bool = False) -> FetchResult:
+            if url == failed:
+                return FetchResult(url=url, final_url=url, status_code=500, tier=1, body="down")
+            return FetchResult(url=url, final_url=url, status_code=200, tier=1, body=LISTING)
+
+    state = _state()
+    state.slate_urls = [state.url, failed]
+    state.sibling_target_count = 1
+    state.discovered_sources = [
+        DiscoveredSource(
+            url=failed,
+            site_domain="blocked.test",
+            required_tier=1,
+            syndication_family="blocked-feed",
+            selected_for_slate=True,
+        ),
+        DiscoveredSource(
+            url=replacement,
+            site_domain="replacement.test",
+            required_tier=1,
+            syndication_family="replacement-feed",
+        ),
+    ]
+    state.plan = PlanManifest(
+        job_type="ingest",
+        trigger="user:submit",
+        source_policy="tiers_1_2_3",
+        sources=[PlanSource(url=state.url, action="fetch", tier=1)],
+        stages=["FETCH"],
+        skipped={},
+        est_cost_usd=0,
+    )
+
+    out = asyncio.run(fetch_stage(state, _ctx({1: SelectiveFetcher()})))
+
+    assert [source.url for source in out.sources] == [URL, replacement]
+    assert out.sibling_fetch_attempted_urls == [failed, replacement]
+    assert replacement in out.slate_urls
+    assert any(
+        source.url == replacement and source.action == "fetch" for source in out.plan.sources
+    )
 
 
 def test_a_target_error_still_names_the_page_and_the_rung() -> None:
