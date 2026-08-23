@@ -315,10 +315,11 @@ async def _move_in_charges(
     return charges
 
 
-async def rescore_hunt(
+async def _rescore_listings(
     conn: asyncpg.Connection,
     *,
     hunt_id: UUID,
+    listings: list[asyncpg.Record],
     rubric: list[RubricCriterion],
     rubric_version: int,
     min_confidence: Confidence,
@@ -329,15 +330,7 @@ async def rescore_hunt(
     occupants: int = 1,
     generalized_vision_policy: str = "full_rubric",
 ) -> int:
-    """Rescore every active listing on the hunt. Returns the number of score rows upserted."""
-    listings = await conn.fetch(
-        """
-        select hl.id, hl.property_id, p.city, p.state, p.county from hunt_listings hl
-        join properties p on p.id = hl.property_id
-        where hl.hunt_id = $1 and hl.status = 'active'
-        """,
-        hunt_id,
-    )
+    """Rescore the supplied active Listings from persisted current facts."""
     upserted = 0
     for listing in listings:
         listing_id: UUID = listing["id"]
@@ -574,5 +567,86 @@ async def rescore_hunt(
                 json.dumps(display) if display is not None else None,
                 json.dumps(move_in_jsons[display_index]),
             )
+    return upserted
+
+
+async def rescore_listing(
+    conn: asyncpg.Connection,
+    *,
+    hunt_listing_id: UUID,
+    rubric: list[RubricCriterion],
+    rubric_version: int,
+    min_confidence: Confidence,
+    min_vision_confidence: Confidence = Confidence.LOW,
+    cats: int = 0,
+    dogs: int = 0,
+    cost_estimate_mode: str = "conservative",
+    occupants: int = 1,
+    generalized_vision_policy: str = "full_rubric",
+) -> int:
+    """Rescore one active Listing from canonical persisted facts and Overrides."""
+    listing = await conn.fetchrow(
+        """
+        select hl.id, hl.property_id, hl.hunt_id, p.city, p.state, p.county
+        from hunt_listings hl join properties p on p.id = hl.property_id
+        where hl.id = $1 and hl.status = 'active'
+        """,
+        hunt_listing_id,
+    )
+    if listing is None:
+        return 0
+    return await _rescore_listings(
+        conn,
+        hunt_id=listing["hunt_id"],
+        listings=[listing],
+        rubric=rubric,
+        rubric_version=rubric_version,
+        min_confidence=min_confidence,
+        min_vision_confidence=min_vision_confidence,
+        cats=cats,
+        dogs=dogs,
+        cost_estimate_mode=cost_estimate_mode,
+        occupants=occupants,
+        generalized_vision_policy=generalized_vision_policy,
+    )
+
+
+async def rescore_hunt(
+    conn: asyncpg.Connection,
+    *,
+    hunt_id: UUID,
+    rubric: list[RubricCriterion],
+    rubric_version: int,
+    min_confidence: Confidence,
+    min_vision_confidence: Confidence = Confidence.LOW,
+    cats: int = 0,
+    dogs: int = 0,
+    cost_estimate_mode: str = "conservative",
+    occupants: int = 1,
+    generalized_vision_policy: str = "full_rubric",
+) -> int:
+    """Rescore every active Listing on the Hunt from persisted current facts."""
+    listings = await conn.fetch(
+        """
+        select hl.id, hl.property_id, p.city, p.state, p.county from hunt_listings hl
+        join properties p on p.id = hl.property_id
+        where hl.hunt_id = $1 and hl.status = 'active'
+        """,
+        hunt_id,
+    )
+    upserted = await _rescore_listings(
+        conn,
+        hunt_id=hunt_id,
+        listings=list(listings),
+        rubric=rubric,
+        rubric_version=rubric_version,
+        min_confidence=min_confidence,
+        min_vision_confidence=min_vision_confidence,
+        cats=cats,
+        dogs=dogs,
+        cost_estimate_mode=cost_estimate_mode,
+        occupants=occupants,
+        generalized_vision_policy=generalized_vision_policy,
+    )
     log.info("rescore_hunt_complete", hunt_id=str(hunt_id), score_rows=upserted)
     return upserted
