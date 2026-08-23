@@ -550,6 +550,11 @@ class RunState(BaseModel):
     discovered_sources: list[DiscoveredSource] = Field(default_factory=list)
     official_source_url: str | None = None
     slate_urls: list[str] = Field(default_factory=list)
+    # DISCOVER's initial Slate is only the first bounded attempt at corroboration.
+    # FETCH records sibling URLs before spending on them, so a resumed Job never
+    # silently re-buys a failed source and can select the next candidate instead.
+    sibling_fetch_attempted_urls: list[str] = Field(default_factory=list)
+    sibling_target_count: int = 0
     single_source_reason: Literal["trust_link", "discover_exhausted", "discover_failed"] | None = (
         None
     )
