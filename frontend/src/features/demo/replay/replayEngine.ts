@@ -87,7 +87,11 @@ function paint(count: number) {
   qc.setQueryData<JobEvent[]>(["job_events", job.id], events);
 }
 
-/** The finished Listing joins the Overview, as it would after a real run. */
+/**
+ * The captured Listing joins the Overview, under its real Property name --
+ * idempotent, so calling it again at the end of the run (once every event has
+ * applied) is a harmless no-op once `startReplay` has already published it.
+ */
 function publish() {
   if (!active) return;
   const { qc, huntId, capture } = active;
@@ -131,6 +135,14 @@ export function startReplay(
     cursor: 0,
   };
   emit({ running: true, finished: false });
+  // A real submission's Listing row appears on the Overview immediately
+  // (a placeholder created at submit time, filled in as the pipeline runs),
+  // not only once the run finishes. `publish()` here matches that: the
+  // recorded Listing joins the Overview, under its real Property name, as
+  // soon as the replay starts rather than only once it completes — the
+  // concession being that it shows the finished capture, not a true
+  // in-progress placeholder, since that is the only shape the capture holds.
+  publish();
   paint(0);
   // A chain of one-shot timeouts, not an interval: the gaps are deliberately
   // uneven and an interval would quantise them back onto a grid.

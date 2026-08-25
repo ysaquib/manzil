@@ -64,15 +64,15 @@ export function ReplayDisclosureModal({
         <Alert color="ochre" title="What you'll see instead">
           <List size="sm" spacing={4}>
             <List.Item>
-              A recording of a real ingest{propertyName ? ` — ${propertyName}` : ""}. Every value
-              in it was genuinely extracted from a real page.
+              A recording of a real ingest{propertyName ? `: ${propertyName}` : ""}. Every value
+              in it was extracted from a real page during an actual run.
             </List.Item>
             <List.Item>
               {realText
                 ? `That run took ${realText}. This plays in about ${Math.round(playbackMs / 1000)} seconds`
                 : `It plays in about ${Math.round(playbackMs / 1000)} seconds`}
-              {speedup && speedup > 1.5 ? ` — roughly ${Math.round(speedup)}× faster than it happened` : ""}
-              . The timings are the only staged part.
+              {speedup && speedup > 1.5 ? `, roughly ${Math.round(speedup)}× faster than it happened` : ""}
+              . The timing is the only staged part.
             </List.Item>
             {runNumber && runTotal ? (
               <List.Item>
