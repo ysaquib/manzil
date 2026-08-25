@@ -171,9 +171,23 @@ REFRESH_TTL_HOURS = {
 # image-retry cooldown; the 72h cap is a full three-day upper bound so the
 # scheduler never re-runs the exact same non-result on every five-minute tick,
 # while still checking back well inside any class's shortest TTL (pricing,
-# 10 days).
+# 10 days). `images` has its own flat-cooldown/attempt-cap scheme below
+# (§20 2026-08-25) instead of this exponential one, since a gallery stuck on
+# a handful of permanently-broken candidate URLs was retrying every few hours
+# forever without ever reaching the 72h cap's relief.
 REFRESH_STALL_BACKOFF_BASE_HOURS = 3
 REFRESH_STALL_BACKOFF_MAX_HOURS = 72
+# `images` stalls (a partial IMAGE_FETCH pass that never saturates the storage
+# cap) get a flat cooldown instead of the exponential curve above: retry at
+# most IMAGE_REFRESH_STALL_MAX_ATTEMPTS times, IMAGE_REFRESH_STALL_COOLDOWN_HOURS
+# apart, then stop claiming the class is due until the ordinary 60-day images
+# TTL elapses (REFRESH_TTL_HOURS["images"]) — a gallery that has stopped
+# growing is not worth re-checking every few hours. A manual refresh request
+# (the drawer's "Refresh images" button) always bypasses this and, if it also
+# stalls, resets the attempt count so the Listing gets a fresh three-attempt
+# budget at the flat cooldown rather than staying parked on the 60-day TTL.
+IMAGE_REFRESH_STALL_COOLDOWN_HOURS = 8
+IMAGE_REFRESH_STALL_MAX_ATTEMPTS = 3
 UTILITY_BASELINE_TTL_DAYS = 180
 # A metro whose baselines pass failed is not retried before this cooldown —
 # without it a persistently failing pass would fire one live LLM call per tick.

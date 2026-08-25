@@ -7,9 +7,15 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import asyncpg
+from manzil_shared.config import (
+    IMAGE_REFRESH_STALL_COOLDOWN_HOURS,
+    IMAGE_REFRESH_STALL_MAX_ATTEMPTS,
+    REFRESH_TTL_HOURS,
+)
 from manzil_shared.models import JobType
 from manzil_worker.queue import (
     _clear_refresh_stall,
+    _image_stall_next_eligible,
     _reconcile_refresh_classes,
     _record_refresh_stall,
     _stall_backoff_hours,
@@ -45,6 +51,22 @@ def test_stall_backoff_hours_is_exponential_and_capped_at_72() -> None:
     assert _stall_backoff_hours(6) == 72
     assert _stall_backoff_hours(7) == 72
     assert _stall_backoff_hours(99) == 72
+
+
+def test_image_stall_next_eligible_flat_cooldown_then_ttl_fallback() -> None:
+    now = datetime(2026, 1, 1, tzinfo=UTC)
+    for attempt in range(1, IMAGE_REFRESH_STALL_MAX_ATTEMPTS):
+        assert _image_stall_next_eligible(attempt, now) == now + timedelta(
+            hours=IMAGE_REFRESH_STALL_COOLDOWN_HOURS
+        )
+    # The Nth consecutive stall (and every one after) falls back to the
+    # ordinary 60-day images TTL instead of another short-cooldown retry.
+    assert _image_stall_next_eligible(
+        IMAGE_REFRESH_STALL_MAX_ATTEMPTS, now
+    ) == now + timedelta(hours=REFRESH_TTL_HOURS["images"])
+    assert _image_stall_next_eligible(
+        IMAGE_REFRESH_STALL_MAX_ATTEMPTS + 5, now
+    ) == now + timedelta(hours=REFRESH_TTL_HOURS["images"])
 
 
 def test_stall_outcome_for_images_reports_photo_count_and_partial_detail() -> None:
@@ -165,6 +187,94 @@ async def test_record_refresh_stall_resets_streak_on_image_progress(
                 listing_id,
             )
             assert row is None
+    finally:
+        await pg_pool.execute("delete from hunts where id = $1", hunt_id)
+        await pg_pool.execute("delete from properties where id = $1", property_id)
+
+
+async def test_record_refresh_stall_images_flat_cooldown_then_manual_reset(
+    pg_pool: asyncpg.Pool,
+) -> None:
+    """Images stalls use a flat cooldown capped at `IMAGE_REFRESH_STALL_MAX_ATTEMPTS`
+    attempts, then fall back to the 60-day images TTL; a manual attempt that
+    still stalls resets the budget instead of extending that fallback."""
+    hunt_id, property_id, listing_id, owner_id = uuid4(), uuid4(), uuid4(), uuid4()
+    await pg_pool.execute(
+        "insert into hunts (id, name, owner_id) values ($1, 'Image cooldown', $2)",
+        hunt_id,
+        owner_id,
+    )
+    await pg_pool.execute(
+        "insert into properties (id, name, canonical_address) values ($1, 'P', '1 St')",
+        property_id,
+    )
+    await pg_pool.execute(
+        "insert into hunt_listings (id, hunt_id, property_id, added_by) values ($1, $2, $3, $4)",
+        listing_id,
+        hunt_id,
+        property_id,
+        owner_id,
+    )
+    try:
+        async with pg_pool.acquire() as conn:
+            for _ in range(IMAGE_REFRESH_STALL_MAX_ATTEMPTS - 1):
+                await _record_refresh_stall(
+                    conn,
+                    hunt_listing_id=listing_id,
+                    refresh_class="images",
+                    outcome_code="images_partial",
+                    detail={"photo_count": 30},
+                )
+            row = await conn.fetchrow(
+                "select consecutive_stalls, next_eligible_at from hunt_listing_refresh_stalls "
+                "where hunt_listing_id = $1 and refresh_class = 'images'",
+                listing_id,
+            )
+            assert row["consecutive_stalls"] == IMAGE_REFRESH_STALL_MAX_ATTEMPTS - 1
+            wait = row["next_eligible_at"] - datetime.now(UTC)
+            assert timedelta(hours=IMAGE_REFRESH_STALL_COOLDOWN_HOURS - 1) < wait <= timedelta(
+                hours=IMAGE_REFRESH_STALL_COOLDOWN_HOURS
+            )
+
+            # The Nth consecutive stall (gallery still stuck at 30) falls back
+            # to the images TTL instead of another flat-cooldown retry.
+            await _record_refresh_stall(
+                conn,
+                hunt_listing_id=listing_id,
+                refresh_class="images",
+                outcome_code="images_partial",
+                detail={"photo_count": 30},
+            )
+            row = await conn.fetchrow(
+                "select consecutive_stalls, next_eligible_at from hunt_listing_refresh_stalls "
+                "where hunt_listing_id = $1 and refresh_class = 'images'",
+                listing_id,
+            )
+            assert row["consecutive_stalls"] == IMAGE_REFRESH_STALL_MAX_ATTEMPTS
+            wait = row["next_eligible_at"] - datetime.now(UTC)
+            assert wait > timedelta(days=59)
+
+            # A manual retry (the drawer's refresh button) that still stalls
+            # resets the streak to a fresh flat-cooldown attempt rather than
+            # leaving the Listing parked on the 60-day fallback.
+            await _record_refresh_stall(
+                conn,
+                hunt_listing_id=listing_id,
+                refresh_class="images",
+                outcome_code="images_partial",
+                detail={"photo_count": 30},
+                manual=True,
+            )
+            row = await conn.fetchrow(
+                "select consecutive_stalls, next_eligible_at from hunt_listing_refresh_stalls "
+                "where hunt_listing_id = $1 and refresh_class = 'images'",
+                listing_id,
+            )
+            assert row["consecutive_stalls"] == 1
+            wait = row["next_eligible_at"] - datetime.now(UTC)
+            assert timedelta(hours=IMAGE_REFRESH_STALL_COOLDOWN_HOURS - 1) < wait <= timedelta(
+                hours=IMAGE_REFRESH_STALL_COOLDOWN_HOURS
+            )
     finally:
         await pg_pool.execute("delete from hunts where id = $1", hunt_id)
         await pg_pool.execute("delete from properties where id = $1", property_id)

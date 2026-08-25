@@ -441,6 +441,28 @@ describe("the replay writes nothing", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("publishes the Listing to the Overview as soon as the run starts, under its real Property name", () => {
+    // A real submission creates its placeholder Listing row immediately
+    // (`create_listing`/`submit_listing`), not only once the pipeline
+    // finishes -- so the Overview and the Tasks card should show something
+    // the moment a replay starts too, not just at the end. The concession is
+    // that this is the *finished* capture, published early, rather than a
+    // true in-progress placeholder; the capture holds no other shape.
+    const bundle = capture();
+    startReplay(qc, "hunt-1", bundle, { targetMs: 10_000, variance: 0 });
+
+    const listings = qc.getQueryData(["hunt_listings", "hunt-1"]) as {
+      id: string;
+      property: { name: string };
+    }[];
+    expect(listings.map((l) => l.id)).toEqual(["listing-1"]);
+    expect(listings[0].property.name).toBe("Maple Court");
+
+    // The Job is already visible as a running task too, not just the Listing.
+    const active = qc.getQueryData(["jobs", "hunt-1", "active"]) as { id: string }[];
+    expect(active.map((j) => j.id)).toEqual(["job-1"]);
+  });
+
   it("runs to completion even when the capture recorded a checkpoint", () => {
     // A capture exported from a Job that genuinely parked is still usable —
     // the checkpoint events just animate through rather than stopping the
