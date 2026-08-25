@@ -199,6 +199,16 @@ async def test_reconcile_refresh_classes_marks_success_and_records_stall(
         """,
         listing_id,
     )
+    # _mark_refresh_classes_current's producer_job_id is FK'd to jobs.
+    await pg_pool.execute(
+        """
+        insert into jobs (id, hunt_id, hunt_listing_id, type, state)
+        values ($1, $2, $3, 'refresh', 'running')
+        """,
+        job_id,
+        hunt_id,
+        listing_id,
+    )
     try:
         state = RunState(job_id=job_id, job_type=JobType.REFRESH, url="https://example.test")
         state.refresh_fields = ["pricing", "reviews"]
