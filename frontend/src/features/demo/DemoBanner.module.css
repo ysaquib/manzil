@@ -1,22 +1,33 @@
 /* Clay: the established "informational / waiting on you" hue (UI_DESIGN §1),
    never the primary and never red. A demo is not an error state, and colouring
    it like one would tell the visitor they had done something wrong. */
+/* Lives inside AppShell.Header (DESIGN v3.93 pattern, the same fix applied to
+   GhostBanner) rather than as a sibling above the shell: the Header is itself
+   fixed to the viewport top, so a banner rendered outside it would overlay
+   instead of offset — covering the mobile Burger nav toggle. Occupying a row
+   inside the header, with that row's height folded into the shell's own
+   `header.height`, keeps the message pinned without covering anything. */
 .bar {
   background: var(--mantine-color-dusky-light);
   color: var(--mantine-color-dusky-light-color);
   border-bottom: 1px solid var(--mantine-color-default-border);
-  padding: 0.375rem 1rem;
+  padding: 6px var(--mantine-spacing-md);
+  min-height: 34px;
   text-align: center;
-  /* Above the shell's own sticky header, so it never scrolls out of reach:
-     the one message that must not be dismissible by scrolling. */
-  position: sticky;
-  top: 0;
-  z-index: 300;
+}
+
+.detail {
+  opacity: 0.9;
 }
 
 @media (max-width: 48em) {
   .bar {
-    padding: 0.375rem 0.5rem;
-    text-align: left;
+    padding: 6px var(--mantine-spacing-sm);
+  }
+
+  /* Three things share a phone-width header row (label, Reset, Leave); the
+     full sentence would force the nowrap Group to overflow the viewport. */
+  .detail {
+    display: none;
   }
 }

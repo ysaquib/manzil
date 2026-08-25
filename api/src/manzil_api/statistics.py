@@ -9,9 +9,9 @@ from fastapi import APIRouter, Query, status
 from pydantic import BaseModel, Field
 
 from manzil_api.analytics import calendar_window
-from manzil_api.dependencies import CurrentUser, DbPool
+from manzil_api.dependencies import DbPool
 from manzil_api.exceptions import ManzilAPIError
-from manzil_api.hunts.exceptions import HuntNotFound
+from manzil_api.hunts.dependencies import ValidHunt
 
 router = APIRouter(tags=["statistics"])
 STATISTICS_WINDOWS = frozenset({7, 14, 30, 90, 365})
@@ -57,28 +57,19 @@ class HuntStatisticsReport(BaseModel):
 )
 async def hunt_statistics(
     hunt_id: UUID,
-    user: CurrentUser,
+    hunt: ValidHunt,
     pool: DbPool,
     days: int = Query(30),
     timezone: str = Query("UTC", min_length=1, max_length=100),
 ) -> HuntStatisticsReport:
     if days not in STATISTICS_WINDOWS:
         raise InvalidStatisticsWindow("days must be one of 7, 14, 30, 90, or 365")
-    # Deliberately explicit rather than leaning on the direct pool's privileges:
-    # every member reads their Hunt; a Site Admin may read it in Ghost View.
-    authorized = await pool.fetchval(
-        """
-        select exists (select 1 from hunts where id = $1)
-           and (
-               exists (select 1 from hunt_members where hunt_id = $1 and user_id = $2)
-               or exists (select 1 from site_admins where user_id = $2)
-           )
-        """,
-        hunt_id,
-        UUID(user.id),
-    )
-    if user.is_demo or not authorized:
-        raise HuntNotFound("Hunt not found")
+    # `ValidHunt` reads the Hunt row through the caller's own RLS-scoped client
+    # (404s otherwise), so authorization is `hunts_member_select` -- ordinary
+    # membership, Site Admin Ghost View, or a demo-scoped token, exactly like
+    # every other Hunt-scoped read (§16 control 1). No hand-rolled membership
+    # query, and no demo carve-out: §13.2 promises Statistics to every Hunt
+    # member, and the Demo Account is a member (Curator) of the Demo Hunt.
 
     start, end, labels = calendar_window(days, timezone)
     job_rows = await pool.fetch(

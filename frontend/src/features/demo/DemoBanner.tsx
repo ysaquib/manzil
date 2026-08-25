@@ -24,9 +24,12 @@ export function DemoBanner() {
     <div className={classes.bar} role="status">
       <Group gap="xs" wrap="nowrap" justify="center">
         <IconEye size={15} aria-hidden />
-        <Text size="sm" span>
-          <strong>Demo</strong> — you're exploring a real apartment hunt. Change anything
-          you like; nothing is saved, and a reload puts it all back.
+        <Text size="sm" span fw={700}>
+          Demo
+        </Text>
+        <Text size="sm" span className={classes.detail}>
+          — you're exploring a real apartment hunt. Change anything you like; nothing is
+          saved, and a reload puts it all back.
         </Text>
         <Anchor component="button" type="button" size="sm" onClick={resetDemo}>
           Reset
