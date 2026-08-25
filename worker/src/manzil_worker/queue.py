@@ -2272,9 +2272,7 @@ async def _record_refresh_stall(
             progressed = True
     manual_reset = manual and refresh_class == "images"
     consecutive_stalls = (
-        1
-        if existing is None or progressed or manual_reset
-        else existing["consecutive_stalls"] + 1
+        1 if existing is None or progressed or manual_reset else existing["consecutive_stalls"] + 1
     )
     now = datetime.now(UTC)
     if refresh_class == "images":
