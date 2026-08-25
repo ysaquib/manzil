@@ -58,6 +58,22 @@ export interface RefreshStatus {
   producer_job_id: string | null;
 }
 
+// A row exists only while the scheduler is withholding this class from an
+// otherwise-due refresh: `_record_refresh_stall` writes it on every
+// class-scoped attempt that finishes without advancing `RefreshStatus`
+// (a hard failure, or a completed job that still left the class excluded —
+// an underfilled image gallery, a failed reviews/location ENRICH), and
+// `_clear_refresh_stall` deletes it the moment that class next succeeds.
+export interface RefreshStall {
+  hunt_listing_id: string;
+  refresh_class: RefreshClass;
+  consecutive_stalls: number;
+  last_attempt_at: string;
+  last_outcome_code: string;
+  last_outcome_detail: Record<string, unknown>;
+  next_eligible_at: string;
+}
+
 export interface FloorPlan {
   id: string;
   property_id: string;
