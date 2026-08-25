@@ -161,15 +161,19 @@ REFRESH_TTL_HOURS = {
     "images": 60 * 24,
     "reviews": 30 * 24,
 }
-# A partial/failed image attempt stays due, but must not be retried on every
-# five-minute scheduler tick. The durable Job history supplies the attempt
-# timestamp so the backoff survives worker restarts.
-IMAGE_REFRESH_RETRY_COOLDOWN_HOURS = 3
-# A failed class-scoped refresh is retried with durable exponential backoff.
-# Job history is the state store: a successful class marker resets the count,
-# and manual retries remain available because only the scheduler reads this.
-REFRESH_FAILURE_BACKOFF_BASE_HOURS = 1
-REFRESH_FAILURE_BACKOFF_MAX_HOURS = 24
+# A "stall" is any class-scoped refresh attempt that finishes without
+# advancing that class's freshness marker — a hard job failure, or a job that
+# completes but the class stays excluded (an images gallery still short of
+# usable candidates, a reviews/location ENRICH failure, unchanged-but-still-
+# incomplete). `hunt_listing_refresh_stalls` (2026-08-25) is the durable
+# record: a successful class projection deletes the row, so it is present only
+# while a class is genuinely being withheld. Base 3h matches the old fixed
+# image-retry cooldown; the 72h cap is a full three-day upper bound so the
+# scheduler never re-runs the exact same non-result on every five-minute tick,
+# while still checking back well inside any class's shortest TTL (pricing,
+# 10 days).
+REFRESH_STALL_BACKOFF_BASE_HOURS = 3
+REFRESH_STALL_BACKOFF_MAX_HOURS = 72
 UTILITY_BASELINE_TTL_DAYS = 180
 # A metro whose baselines pass failed is not retried before this cooldown —
 # without it a persistently failing pass would fire one live LLM call per tick.
