@@ -14,6 +14,7 @@ import type {
   Listing,
   Override,
   RefreshClass,
+  RefreshStall,
   RefreshStatus,
   ResolutionCandidate,
   UnitGroupState,
@@ -72,6 +73,24 @@ export function useRefreshStatuses(huntId: string) {
   });
 }
 
+export function useRefreshStalls(huntId: string) {
+  return useQuery({
+    queryKey: ["hunt_listing_refresh_stalls", huntId],
+    queryFn: async (): Promise<RefreshStall[]> => {
+      const { data, error } = await supabase
+        .from("hunt_listing_refresh_stalls")
+        .select("*, hunt_listing:hunt_listings!inner(hunt_id)")
+        .eq("hunt_listing.hunt_id", huntId);
+      if (error) throw error;
+      return (data ?? []).map((record) => {
+        const row = { ...record };
+        Reflect.deleteProperty(row, "hunt_listing");
+        return row;
+      }) as RefreshStall[];
+    },
+  });
+}
+
 export function useRefreshListing(huntId: string) {
   const qc = useQueryClient();
   const mutationPath = useGhostMutationPath(huntId);
@@ -84,6 +103,7 @@ export function useRefreshListing(huntId: string) {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["jobs", huntId] });
       void qc.invalidateQueries({ queryKey: ["hunt_listing_refresh_status", huntId] });
+      void qc.invalidateQueries({ queryKey: ["hunt_listing_refresh_stalls", huntId] });
     },
   });
 }

@@ -25,7 +25,7 @@ import { IconMapPin, IconMessage2 } from "@tabler/icons-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { SectionCard } from "../../components/SectionCard";
-import { ProblematicBadge } from "../../components/badges/ListingBadges";
+import { ProblematicBadge, RefreshStalledBadge } from "../../components/badges/ListingBadges";
 import { CommentsSection } from "../collaboration/CommentsSection";
 import { RatingControl } from "../collaboration/RatingControl";
 import { useCurrentMember, useHuntContributors, useMembers } from "../collaboration/api";
@@ -53,7 +53,13 @@ import { PropertyContactRow } from "./PropertyContact";
 import { extractedFeeOriginals, parseOneTimeFees } from "./oneTimeFees";
 import { SourcesList } from "./SourcesList";
 import {
-  useExtractions, useFees, useListings, useOverrides, usePropertyImages, useUtilityOverrides,
+  useExtractions,
+  useFees,
+  useListings,
+  useOverrides,
+  usePropertyImages,
+  useRefreshStalls,
+  useUtilityOverrides,
 } from "./api";
 import { resolveRow, resolveRowWithDraft, unitGroupLabel } from "./unitGroups";
 import {
@@ -287,6 +293,7 @@ function DrawerShell({
   // Figures confirmed on a tour and offered to this Listing (VC-7).
   const { data: feeProposals } = useListingFeeProposals(listing?.id);
   const { data: hunt } = useHunt(huntId);
+  const { data: refreshStalls = [] } = useRefreshStalls(huntId);
   const openFeedback = useFeedbackOptional();
   // Household settings drive the per-person / per-pet move-in estimate (§9.5).
   const household = {
@@ -388,6 +395,9 @@ function DrawerShell({
                 extraction.disputed &&
                 extraction.resolution_rule === "conservative_disputed",
             ) && <ProblematicBadge />}
+            <RefreshStalledBadge
+              stalls={refreshStalls.filter((stall) => stall.hunt_listing_id === listing?.id)}
+            />
           </Group>
           <Group gap={7} wrap="nowrap" className={drawerClasses.addr}>
             <IconMapPin size={13} stroke={2} />

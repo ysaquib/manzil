@@ -32,11 +32,10 @@ from uuid import UUID, uuid4
 import structlog
 from manzil_shared.config import (
     CHECKPOINT_TIMEOUT_HOURS,
-    IMAGE_REFRESH_RETRY_COOLDOWN_HOURS,
     JOB_ORPHAN_AFTER_SECONDS,
     MANZIL_JOB_MAX_ATTEMPTS,
-    REFRESH_FAILURE_BACKOFF_BASE_HOURS,
-    REFRESH_FAILURE_BACKOFF_MAX_HOURS,
+    REFRESH_STALL_BACKOFF_BASE_HOURS,
+    REFRESH_STALL_BACKOFF_MAX_HOURS,
     REFRESH_TTL_HOURS,
     SCHEDULER_TICK_SECONDS,
     UTILITY_BASELINE_RETRY_SECONDS,
@@ -2181,6 +2180,110 @@ async def _mark_refresh_classes_current(
         )
 
 
+def _stall_backoff_hours(consecutive_stalls: int) -> float:
+    """`3h * 2^(n-1)`, capped at `REFRESH_STALL_BACKOFF_MAX_HOURS` (72h)."""
+    exponent = min(consecutive_stalls - 1, 16)
+    return min(
+        REFRESH_STALL_BACKOFF_BASE_HOURS * (2**exponent),
+        REFRESH_STALL_BACKOFF_MAX_HOURS,
+    )
+
+
+async def _clear_refresh_stall(
+    conn: asyncpg.Connection, *, hunt_listing_id: UUID, refresh_class: str
+) -> None:
+    """A class just advanced; any backoff withholding it no longer applies."""
+    result = await conn.execute(
+        "delete from hunt_listing_refresh_stalls where hunt_listing_id = $1 and refresh_class = $2",
+        hunt_listing_id,
+        refresh_class,
+    )
+    if result != "DELETE 0":
+        log.info(
+            "refresh_stall_cleared",
+            hunt_listing_id=str(hunt_listing_id),
+            refresh_class=refresh_class,
+        )
+
+
+async def _record_refresh_stall(
+    conn: asyncpg.Connection,
+    *,
+    hunt_listing_id: UUID,
+    refresh_class: str,
+    outcome_code: str,
+    detail: dict[str, Any],
+) -> None:
+    """A class-scoped refresh attempt finished without advancing that class.
+
+    `consecutive_stalls` only resets on genuine progress (currently: a growing
+    `images` photo count), never merely on retrying — so a listing that fails
+    or comes back unchanged five-minute tick after five-minute tick backs off
+    exponentially instead of being retried every tick forever. This is the
+    single durable record behind both the scheduler's retry gate and the
+    Listing-drawer observability badge; a row exists only while a class is
+    actually being withheld.
+    """
+    existing = await conn.fetchrow(
+        """
+        select consecutive_stalls, last_outcome_detail
+        from hunt_listing_refresh_stalls
+        where hunt_listing_id = $1 and refresh_class = $2
+        """,
+        hunt_listing_id,
+        refresh_class,
+    )
+    progressed = False
+    if existing is not None and refresh_class == "images":
+        prior_detail = (
+            json.loads(existing["last_outcome_detail"])
+            if isinstance(existing["last_outcome_detail"], str)
+            else dict(existing["last_outcome_detail"] or {})
+        )
+        prior_count = prior_detail.get("photo_count")
+        current_count = detail.get("photo_count")
+        if (
+            isinstance(prior_count, int)
+            and isinstance(current_count, int)
+            and current_count > prior_count
+        ):
+            progressed = True
+    consecutive_stalls = 1 if existing is None or progressed else existing["consecutive_stalls"] + 1
+    backoff_hours = _stall_backoff_hours(consecutive_stalls)
+    next_eligible_at = datetime.now(UTC) + timedelta(hours=backoff_hours)
+    full_detail = {**detail, "progressed": progressed}
+    await conn.execute(
+        """
+        insert into hunt_listing_refresh_stalls
+            (hunt_listing_id, refresh_class, consecutive_stalls, last_attempt_at,
+             last_outcome_code, last_outcome_detail, next_eligible_at)
+        values ($1, $2, $3, now(), $4, $5::jsonb, $6)
+        on conflict (hunt_listing_id, refresh_class) do update set
+            consecutive_stalls = excluded.consecutive_stalls,
+            last_attempt_at = excluded.last_attempt_at,
+            last_outcome_code = excluded.last_outcome_code,
+            last_outcome_detail = excluded.last_outcome_detail,
+            next_eligible_at = excluded.next_eligible_at
+        """,
+        hunt_listing_id,
+        refresh_class,
+        consecutive_stalls,
+        outcome_code,
+        json.dumps(full_detail),
+        next_eligible_at,
+    )
+    log.warning(
+        "refresh_stall_recorded",
+        hunt_listing_id=str(hunt_listing_id),
+        refresh_class=refresh_class,
+        consecutive_stalls=consecutive_stalls,
+        outcome_code=outcome_code,
+        detail=full_detail,
+        backoff_hours=backoff_hours,
+        next_eligible_at=next_eligible_at.isoformat(),
+    )
+
+
 async def _rescore_persisted_listing(
     conn: asyncpg.Connection,
     *,
@@ -2218,6 +2321,79 @@ def _successful_refresh_fields(state: RunState, fields: list[str]) -> list[str]:
     if partial_images:
         failed_classes.add("images")
     successful = [field for field in fields if field not in failed_classes]
+    return successful
+
+
+_ENRICH_STALL_CODES = {"enrich_no_geocode", "location_refresh_failed", "reviews_refresh_failed"}
+
+
+def _stall_outcome_for_class(state: RunState, refresh_class: str) -> tuple[str, dict[str, Any]]:
+    """Why one requested class did not advance on a job that otherwise completed.
+
+    `pricing`/`listing_details` are never excluded by `_successful_refresh_fields`
+    (an unchanged hash still advances them), so only `images`/`reviews`/`location`
+    can stall here; a hard job failure is handled separately in the dispatcher.
+    """
+    if refresh_class == "images":
+        photo_count = sum(
+            1 for image in state.property_images if image.kind != "floor_plan_diagram"
+        )
+        partial = next(
+            (
+                warning
+                for warning in state.warnings
+                if warning.stage == "IMAGE_FETCH" and warning.code == "image_fetch_partial"
+            ),
+            None,
+        )
+        detail: dict[str, Any] = {"photo_count": photo_count}
+        if partial is not None:
+            detail.update(partial.detail)
+        return "images_partial", detail
+    warning = next(
+        (
+            warning
+            for warning in state.warnings
+            if warning.stage == "ENRICH" and warning.code in _ENRICH_STALL_CODES
+        ),
+        None,
+    )
+    if warning is not None:
+        return warning.code, {"message": warning.message, **warning.detail}
+    return "unmarked", {}
+
+
+async def _reconcile_refresh_classes(
+    conn: asyncpg.Connection,
+    *,
+    hunt_listing_id: UUID,
+    job_id: UUID,
+    state: RunState,
+    requested_fields: list[str],
+) -> list[str]:
+    """Mark the classes a completed refresh job actually advanced, and record
+    or clear backoff state for every requested class accordingly. Returns the
+    successful subset (the value `_mark_refresh_classes_current` used to take
+    directly) so existing call sites need only swap which function they call."""
+    successful = _successful_refresh_fields(state, requested_fields)
+    await _mark_refresh_classes_current(
+        conn, hunt_listing_id=hunt_listing_id, job_id=job_id, fields=successful
+    )
+    for refresh_class in successful:
+        await _clear_refresh_stall(
+            conn, hunt_listing_id=hunt_listing_id, refresh_class=refresh_class
+        )
+    for refresh_class in requested_fields:
+        if refresh_class in successful:
+            continue
+        outcome_code, detail = _stall_outcome_for_class(state, refresh_class)
+        await _record_refresh_stall(
+            conn,
+            hunt_listing_id=hunt_listing_id,
+            refresh_class=refresh_class,
+            outcome_code=outcome_code,
+            detail=detail,
+        )
     return successful
 
 
@@ -2298,11 +2474,12 @@ async def _persist_enrich_only_refresh(
         rubric_version=rubric_version,
         settings=settings,
     )
-    await _mark_refresh_classes_current(
+    await _reconcile_refresh_classes(
         conn,
         hunt_listing_id=hunt_listing_id,
         job_id=job_id,
-        fields=_successful_refresh_fields(state, state.refresh_fields),
+        state=state,
+        requested_fields=state.refresh_fields,
     )
 
 
@@ -2550,11 +2727,12 @@ def make_class_refresh_dispatcher(
                     rubric_version=listing["rubric_version"],
                     settings=settings,
                 )
-                await _mark_refresh_classes_current(
+                await _reconcile_refresh_classes(
                     conn,
                     hunt_listing_id=job["hunt_listing_id"],
                     job_id=job_id,
-                    fields=_successful_refresh_fields(done_state, done_state.refresh_fields),
+                    state=done_state,
+                    requested_fields=done_state.refresh_fields,
                 )
                 return
             await _persist_ingest_results(
@@ -2571,11 +2749,12 @@ def make_class_refresh_dispatcher(
                 rubric_version=listing["rubric_version"],
                 settings=settings,
             )
-            await _mark_refresh_classes_current(
+            await _reconcile_refresh_classes(
                 conn,
                 hunt_listing_id=job["hunt_listing_id"],
                 job_id=job_id,
-                fields=_successful_refresh_fields(done_state, done_state.refresh_fields),
+                state=done_state,
+                requested_fields=done_state.refresh_fields,
             )
 
         stage_names = list(state.plan.stages) if state.plan is not None else REFRESH_STAGE_NAMES
@@ -2615,7 +2794,40 @@ def make_class_refresh_dispatcher(
             **({} if call_structured is None else {"call_structured": call_structured}),
             **({} if call_agent is None else {"call_agent": call_agent}),
         )
-        await run_job(state, ctx, REFRESH_STAGES)
+        # `run_job` maps ordinary stage failures to a returned FAILED state
+        # rather than raising (runner.py) — `project()`/`on_done` never fires
+        # for those, so the successful/stalled reconciliation above never sees
+        # them. Catch both outcomes here so a hard failure backs off exactly
+        # like a completed-but-stalled class, instead of being retried on
+        # every scheduler tick forever.
+        try:
+            final_state = await run_job(state, ctx, REFRESH_STAGES)
+        except HuntExecutionFrozen:
+            # The Hunt itself paused this run, not the refresh target — no
+            # class here failed or came back unchanged, so it is not a stall.
+            raise
+        except Exception as error:
+            if not custom_scope:
+                async with pool.acquire() as conn:
+                    for refresh_class in state.refresh_fields:
+                        await _record_refresh_stall(
+                            conn,
+                            hunt_listing_id=job["hunt_listing_id"],
+                            refresh_class=refresh_class,
+                            outcome_code="job_dispatch_error",
+                            detail={"error": str(error)[:500]},
+                        )
+            raise
+        if not custom_scope and final_state.status is JobState.FAILED:
+            async with pool.acquire() as conn:
+                for refresh_class in final_state.refresh_fields:
+                    await _record_refresh_stall(
+                        conn,
+                        hunt_listing_id=job["hunt_listing_id"],
+                        refresh_class=refresh_class,
+                        outcome_code="job_failed",
+                        detail={"error": (final_state.error or "")[:500]},
+                    )
 
     return dispatch
 
@@ -2878,38 +3090,16 @@ async def checkpoint_timeout_tick(pool: asyncpg.Pool) -> None:
             )
 
 
-def _refresh_failure_backoff_active(
-    failure: dict[str, Any] | None,
-    *,
-    now: datetime,
-) -> bool:
-    """Whether the scheduler must still wait after repeated class failures.
-
-    The aggregate contains failures newer than that class's last successful
-    marker, so a success resets the exponent without mutable retry metadata.
-    """
-    if not failure:
-        return False
-    count = failure.get("failure_count")
-    last_failed_at = failure.get("last_failed_at")
-    if not isinstance(count, int) or count < 1 or last_failed_at is None:
-        return False
-    if isinstance(last_failed_at, str):
-        last_failed_at = datetime.fromisoformat(last_failed_at.replace("Z", "+00:00"))
-    if not isinstance(last_failed_at, datetime):
-        return False
-    if last_failed_at.tzinfo is None:
-        last_failed_at = last_failed_at.replace(tzinfo=UTC)
-    exponent = min(count - 1, 16)
-    hours = min(
-        REFRESH_FAILURE_BACKOFF_BASE_HOURS * (2**exponent),
-        REFRESH_FAILURE_BACKOFF_MAX_HOURS,
-    )
-    return last_failed_at > now - timedelta(hours=hours)
-
-
 async def refresh_ttl_tick(pool: asyncpg.Pool) -> None:
-    """Enqueue one class-combined refresh per due active Listing."""
+    """Enqueue one class-combined refresh per due active Listing.
+
+    A class due by TTL is withheld when `hunt_listing_refresh_stalls` still
+    holds a future `next_eligible_at` for it — the durable exponential-backoff
+    record `_record_refresh_stall` writes on every non-advancing attempt. Every
+    withheld class logs to the server console (structured, one line per tick
+    per withheld class) so a Listing stuck in backoff is observable without
+    reading the drawer badge.
+    """
     async with pool.acquire() as conn, conn.transaction():
         locked = await conn.fetchval(
             "select pg_try_advisory_xact_lock(hashtext('manzil:p3-12:ttl-refresh'))"
@@ -2938,54 +3128,20 @@ async def refresh_ttl_tick(pool: asyncpg.Pool) -> None:
                        and cc.refresh_class = 'reviews'
                    ) as needs_reviews,
                    (
-                     select max(j.finished_at)
-                     from jobs j
-                     where j.hunt_listing_id = hl.id
-                       and j.finished_at is not null
-                       and j.state in ('done', 'failed')
-                       and (
-                         (j.type = 'ingest' and (j.plan -> 'stages') ? 'IMAGE_FETCH')
-                         or
-                         (j.type = 'refresh' and (j.payload -> 'fields') ? 'images')
-                       )
-                   ) as last_image_attempt_at,
-                   (
                      select coalesce(
                        jsonb_object_agg(
-                         failed.refresh_class,
+                         st.refresh_class,
                          jsonb_build_object(
-                           'failure_count', failed.failure_count,
-                           'last_failed_at', failed.last_failed_at
+                           'next_eligible_at', st.next_eligible_at,
+                           'consecutive_stalls', st.consecutive_stalls,
+                           'last_outcome_code', st.last_outcome_code
                          )
                        ),
                        '{}'::jsonb
                      )
-                     from (
-                       select field.value as refresh_class,
-                              count(*) as failure_count,
-                              max(j.finished_at) as last_failed_at
-                       from jobs j
-                       cross join lateral jsonb_array_elements_text(
-                         case
-                           when jsonb_typeof(j.payload -> 'fields') = 'array'
-                             then j.payload -> 'fields'
-                           else '[]'::jsonb
-                         end
-                       ) field
-                       left join hunt_listing_refresh_status success
-                         on success.hunt_listing_id = hl.id
-                        and success.refresh_class = field.value
-                       where j.hunt_listing_id = hl.id
-                         and j.type = 'refresh'
-                         and j.state = 'failed'
-                         and j.finished_at is not null
-                         and (
-                           success.last_success_at is null
-                           or j.finished_at > success.last_success_at
-                         )
-                       group by field.value
-                     ) failed
-                   ) as refresh_failures
+                     from hunt_listing_refresh_stalls st
+                     where st.hunt_listing_id = hl.id
+                   ) as stalls
             from hunt_listings hl
             join property_sources ps on ps.id = hl.submitted_source_id
             left join hunt_listing_refresh_status hrs on hrs.hunt_listing_id = hl.id
@@ -3007,11 +3163,9 @@ async def refresh_ttl_tick(pool: asyncpg.Pool) -> None:
         for row in rows:
             raw = row["freshness"]
             freshness = json.loads(raw) if isinstance(raw, str) else dict(raw or {})
-            raw_failures = row["refresh_failures"]
-            refresh_failures = (
-                json.loads(raw_failures)
-                if isinstance(raw_failures, str)
-                else dict(raw_failures or {})
+            raw_stalls = row["stalls"]
+            stalls = (
+                json.loads(raw_stalls) if isinstance(raw_stalls, str) else dict(raw_stalls or {})
             )
             relevant = ["pricing", "listing_details"]
             if row["needs_images"]:
@@ -3025,15 +3179,22 @@ async def refresh_ttl_tick(pool: asyncpg.Pool) -> None:
                     last = datetime.fromisoformat(last.replace("Z", "+00:00"))
                 ttl = timedelta(hours=REFRESH_TTL_HOURS[refresh_class])
                 if last is None or last <= now - ttl:
-                    if _refresh_failure_backoff_active(
-                        refresh_failures.get(refresh_class), now=now
-                    ):
+                    stall = stalls.get(refresh_class)
+                    next_eligible_at = stall.get("next_eligible_at") if stall else None
+                    if isinstance(next_eligible_at, str):
+                        next_eligible_at = datetime.fromisoformat(
+                            next_eligible_at.replace("Z", "+00:00")
+                        )
+                    if isinstance(next_eligible_at, datetime) and next_eligible_at > now:
+                        log.info(
+                            "refresh_scheduler_backoff_withheld",
+                            hunt_listing_id=str(row["id"]),
+                            refresh_class=refresh_class,
+                            consecutive_stalls=stall.get("consecutive_stalls"),
+                            last_outcome_code=stall.get("last_outcome_code"),
+                            next_eligible_at=next_eligible_at.isoformat(),
+                        )
                         continue
-                    if refresh_class == "images":
-                        last_attempt = row["last_image_attempt_at"]
-                        cooldown = timedelta(hours=IMAGE_REFRESH_RETRY_COOLDOWN_HOURS)
-                        if last_attempt is not None and last_attempt > now - cooldown:
-                            continue
                     due.append(refresh_class)
             if not due:
                 continue

@@ -33,6 +33,7 @@ vi.mock("../src/features/listings/api", () => {
     usePatchSourcePolicy: mut,
     useRefreshListing: mut,
     useRefreshStatuses: () => ({ data: [] }),
+    useRefreshStalls: () => ({ data: [] }),
   };
 });
 

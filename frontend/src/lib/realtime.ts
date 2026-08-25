@@ -13,6 +13,7 @@ export type HuntRealtimeTable =
   | "ratings"
   | "listing_unit_group_states"
   | "hunt_listing_refresh_status"
+  | "hunt_listing_refresh_stalls"
   | "jobs"
   | "job_events"
   | "visits"
@@ -40,6 +41,8 @@ export function invalidationKeysForRealtime(
       return [["listing_unit_group_states", huntId]];
     case "hunt_listing_refresh_status":
       return [["hunt_listing_refresh_status", huntId]];
+    case "hunt_listing_refresh_stalls":
+      return [["hunt_listing_refresh_stalls", huntId]];
     case "jobs":
     case "job_events":
       return [["jobs", huntId], ["attention", huntId]];
@@ -125,6 +128,11 @@ export function useHuntRealtime(huntId: string | undefined): void {
         "postgres_changes",
         { event: "*", schema: "public", table: "hunt_listing_refresh_status" },
         () => invalidate("hunt_listing_refresh_status"),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "hunt_listing_refresh_stalls" },
+        () => invalidate("hunt_listing_refresh_stalls"),
       )
       .on(
         "postgres_changes",
