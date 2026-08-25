@@ -121,15 +121,20 @@ export function AppLayout() {
   const { data: ghostHunt } = useHunt(huntId ?? "");
   const access = useHuntAccess(huntId ?? "");
 
+  const demo = isDemo();
+  // Both banners live in the AppShell's own header row (DESIGN v3.93 pattern)
+  // so they offset the header, navbar, and content instead of overlaying them
+  // on mobile, where the header also carries the Burger nav toggle.
+  const headerHeight = 56 + (demo ? 34 : 0) + (isGhost === true ? 34 : 0);
+
   return (
-    <>
-      {isDemo() && <DemoBanner />}
     <AppShell
-      header={{ height: isGhost === true ? 90 : 56 }}
+      header={{ height: headerHeight }}
       navbar={{ width: 224, breakpoint: "sm", collapsed: { mobile: !navOpened } }}
       padding="md"
     >
       <AppShell.Header>
+        {demo && <DemoBanner />}
         {isGhost === true && <GhostBanner huntName={ghostHunt?.name} />}
         <div className={classes.header}>
           <Group gap="sm" wrap="nowrap">
@@ -223,6 +228,5 @@ export function AppLayout() {
 
       <FeedbackModal opened={feedbackOpened} onClose={closeFeedback} />
     </AppShell>
-    </>
   );
 }
