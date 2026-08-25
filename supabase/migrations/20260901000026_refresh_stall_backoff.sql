@@ -40,6 +40,8 @@ create policy hunt_listing_refresh_stalls_member_select
 
 alter publication supabase_realtime add table hunt_listing_refresh_stalls;
 
+select private.attach_demo_guards('public.hunt_listing_refresh_stalls');
+
 -- Worker/service-role only writes, same posture as hunt_listing_refresh_status:
 -- the API creates Jobs; it never declares a refresh stalled or recovered.
 comment on table hunt_listing_refresh_stalls is
