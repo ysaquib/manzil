@@ -260,9 +260,11 @@ async def test_hunt_statistics_visible_to_a_demo_session(db_pool, collab_hunt) -
 
         # A demo session is confined to the one selected Demo Hunt, same as
         # every other Hunt-scoped read -- statistics must not leak a second.
+        # Owned by an unrelated id, never the demo subject itself: a demo
+        # principal may not hold a stored Hunt membership (ownership included).
         other_hunt_id = await db_pool.fetchval(
             "insert into hunts (name, owner_id) values ('Not the Demo Hunt', $1) returning id",
-            demo_subject,
+            uuid4(),
         )
         try:
             async with await _client_with_bearer(db_pool, token) as demo_client:
