@@ -32,6 +32,8 @@ from uuid import UUID, uuid4
 import structlog
 from manzil_shared.config import (
     CHECKPOINT_TIMEOUT_HOURS,
+    IMAGE_REFRESH_STALL_COOLDOWN_HOURS,
+    IMAGE_REFRESH_STALL_MAX_ATTEMPTS,
     JOB_ORPHAN_AFTER_SECONDS,
     MANZIL_JOB_MAX_ATTEMPTS,
     REFRESH_STALL_BACKOFF_BASE_HOURS,
@@ -2189,6 +2191,17 @@ def _stall_backoff_hours(consecutive_stalls: int) -> float:
     )
 
 
+def _image_stall_next_eligible(consecutive_stalls: int, now: datetime) -> datetime:
+    """Flat `IMAGE_REFRESH_STALL_COOLDOWN_HOURS` cooldown for the first
+    `IMAGE_REFRESH_STALL_MAX_ATTEMPTS` consecutive stalls; once a gallery has
+    stalled that many times in a row without growing, further automatic
+    retries fall back to the ordinary 60-day images TTL instead of continuing
+    to check back every few hours against candidates that keep failing."""
+    if consecutive_stalls < IMAGE_REFRESH_STALL_MAX_ATTEMPTS:
+        return now + timedelta(hours=IMAGE_REFRESH_STALL_COOLDOWN_HOURS)
+    return now + timedelta(hours=REFRESH_TTL_HOURS["images"])
+
+
 async def _clear_refresh_stall(
     conn: asyncpg.Connection, *, hunt_listing_id: UUID, refresh_class: str
 ) -> None:
@@ -2213,16 +2226,25 @@ async def _record_refresh_stall(
     refresh_class: str,
     outcome_code: str,
     detail: dict[str, Any],
+    manual: bool = False,
 ) -> None:
     """A class-scoped refresh attempt finished without advancing that class.
 
     `consecutive_stalls` only resets on genuine progress (currently: a growing
     `images` photo count), never merely on retrying — so a listing that fails
     or comes back unchanged five-minute tick after five-minute tick backs off
-    exponentially instead of being retried every tick forever. This is the
-    single durable record behind both the scheduler's retry gate and the
-    Listing-drawer observability badge; a row exists only while a class is
-    actually being withheld.
+    instead of being retried every tick forever. This is the single durable
+    record behind both the scheduler's retry gate and the Listing-drawer
+    observability badge; a row exists only while a class is actually being
+    withheld.
+
+    `images` follows the flat cooldown/attempt-cap scheme in
+    `_image_stall_next_eligible` instead of the exponential one every other
+    class uses. A `manual` attempt (the drawer's "Refresh images" button,
+    which already bypasses the scheduler's `next_eligible_at` gate to run at
+    all) also resets `consecutive_stalls` to 1 when it still stalls, so a
+    Listing that had fallen back to the 60-day images TTL gets a fresh
+    three-attempt budget at the flat cooldown rather than staying parked.
     """
     existing = await conn.fetchrow(
         """
@@ -2248,9 +2270,17 @@ async def _record_refresh_stall(
             and current_count > prior_count
         ):
             progressed = True
-    consecutive_stalls = 1 if existing is None or progressed else existing["consecutive_stalls"] + 1
-    backoff_hours = _stall_backoff_hours(consecutive_stalls)
-    next_eligible_at = datetime.now(UTC) + timedelta(hours=backoff_hours)
+    manual_reset = manual and refresh_class == "images"
+    consecutive_stalls = (
+        1
+        if existing is None or progressed or manual_reset
+        else existing["consecutive_stalls"] + 1
+    )
+    now = datetime.now(UTC)
+    if refresh_class == "images":
+        next_eligible_at = _image_stall_next_eligible(consecutive_stalls, now)
+    else:
+        next_eligible_at = now + timedelta(hours=_stall_backoff_hours(consecutive_stalls))
     full_detail = {**detail, "progressed": progressed}
     await conn.execute(
         """
@@ -2279,7 +2309,7 @@ async def _record_refresh_stall(
         consecutive_stalls=consecutive_stalls,
         outcome_code=outcome_code,
         detail=full_detail,
-        backoff_hours=backoff_hours,
+        manual=manual,
         next_eligible_at=next_eligible_at.isoformat(),
     )
 
@@ -2370,11 +2400,18 @@ async def _reconcile_refresh_classes(
     job_id: UUID,
     state: RunState,
     requested_fields: list[str],
+    manual: bool = False,
 ) -> list[str]:
     """Mark the classes a completed refresh job actually advanced, and record
     or clear backoff state for every requested class accordingly. Returns the
     successful subset (the value `_mark_refresh_classes_current` used to take
-    directly) so existing call sites need only swap which function they call."""
+    directly) so existing call sites need only swap which function they call.
+
+    `manual` marks a job that ran off a direct user request (the drawer's
+    refresh button) rather than the TTL scheduler, so an `images` stall it
+    records resets the attempt budget instead of continuing to count toward
+    the 60-day fallback — see `_record_refresh_stall`.
+    """
     successful = _successful_refresh_fields(state, requested_fields)
     await _mark_refresh_classes_current(
         conn, hunt_listing_id=hunt_listing_id, job_id=job_id, fields=successful
@@ -2393,6 +2430,7 @@ async def _reconcile_refresh_classes(
             refresh_class=refresh_class,
             outcome_code=outcome_code,
             detail=detail,
+            manual=manual,
         )
     return successful
 
@@ -2562,6 +2600,11 @@ def make_class_refresh_dispatcher(
             return
         payload = json.loads(job["payload"])
         fields = payload.get("fields")
+        # The scheduler tags its own TTL-driven jobs "ttl:<classes>"; anything
+        # else (default "user", "user:hunt") came from a direct request via
+        # the drawer's refresh button, so an images stall it records resets
+        # the flat-cooldown attempt budget instead of extending a fallback.
+        manual = not str(payload.get("trigger") or "").startswith("ttl:")
         custom_scope = payload.get("scope") == "custom_match"
         custom_keys = payload.get("custom_criterion_keys")
         if not custom_scope and (
@@ -2733,6 +2776,7 @@ def make_class_refresh_dispatcher(
                     job_id=job_id,
                     state=done_state,
                     requested_fields=done_state.refresh_fields,
+                    manual=manual,
                 )
                 return
             await _persist_ingest_results(
@@ -2755,6 +2799,7 @@ def make_class_refresh_dispatcher(
                 job_id=job_id,
                 state=done_state,
                 requested_fields=done_state.refresh_fields,
+                manual=manual,
             )
 
         stage_names = list(state.plan.stages) if state.plan is not None else REFRESH_STAGE_NAMES
