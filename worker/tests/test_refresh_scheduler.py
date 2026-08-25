@@ -61,12 +61,12 @@ def test_image_stall_next_eligible_flat_cooldown_then_ttl_fallback() -> None:
         )
     # The Nth consecutive stall (and every one after) falls back to the
     # ordinary 60-day images TTL instead of another short-cooldown retry.
-    assert _image_stall_next_eligible(
-        IMAGE_REFRESH_STALL_MAX_ATTEMPTS, now
-    ) == now + timedelta(hours=REFRESH_TTL_HOURS["images"])
-    assert _image_stall_next_eligible(
-        IMAGE_REFRESH_STALL_MAX_ATTEMPTS + 5, now
-    ) == now + timedelta(hours=REFRESH_TTL_HOURS["images"])
+    assert _image_stall_next_eligible(IMAGE_REFRESH_STALL_MAX_ATTEMPTS, now) == now + timedelta(
+        hours=REFRESH_TTL_HOURS["images"]
+    )
+    assert _image_stall_next_eligible(IMAGE_REFRESH_STALL_MAX_ATTEMPTS + 5, now) == now + timedelta(
+        hours=REFRESH_TTL_HOURS["images"]
+    )
 
 
 def test_stall_outcome_for_images_reports_photo_count_and_partial_detail() -> None:
@@ -232,8 +232,10 @@ async def test_record_refresh_stall_images_flat_cooldown_then_manual_reset(
             )
             assert row["consecutive_stalls"] == IMAGE_REFRESH_STALL_MAX_ATTEMPTS - 1
             wait = row["next_eligible_at"] - datetime.now(UTC)
-            assert timedelta(hours=IMAGE_REFRESH_STALL_COOLDOWN_HOURS - 1) < wait <= timedelta(
-                hours=IMAGE_REFRESH_STALL_COOLDOWN_HOURS
+            assert (
+                timedelta(hours=IMAGE_REFRESH_STALL_COOLDOWN_HOURS - 1)
+                < wait
+                <= timedelta(hours=IMAGE_REFRESH_STALL_COOLDOWN_HOURS)
             )
 
             # The Nth consecutive stall (gallery still stuck at 30) falls back
@@ -272,8 +274,10 @@ async def test_record_refresh_stall_images_flat_cooldown_then_manual_reset(
             )
             assert row["consecutive_stalls"] == 1
             wait = row["next_eligible_at"] - datetime.now(UTC)
-            assert timedelta(hours=IMAGE_REFRESH_STALL_COOLDOWN_HOURS - 1) < wait <= timedelta(
-                hours=IMAGE_REFRESH_STALL_COOLDOWN_HOURS
+            assert (
+                timedelta(hours=IMAGE_REFRESH_STALL_COOLDOWN_HOURS - 1)
+                < wait
+                <= timedelta(hours=IMAGE_REFRESH_STALL_COOLDOWN_HOURS)
             )
     finally:
         await pg_pool.execute("delete from hunts where id = $1", hunt_id)
