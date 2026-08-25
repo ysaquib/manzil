@@ -169,6 +169,50 @@ async def test_hunt_statistics_zero_fill_detroit_days_and_retain_deleted_usage(
         await db_pool.execute("delete from jobs where id=any($1::uuid[])", [visible_id, deleted_id])
 
 
+async def _promote_demo_release(db_pool, hunt_id: UUID) -> UUID:
+    """Give the demo session the complete release configuration
+    `private.demo_identity()` requires: a display name on every Hunt member,
+    Site Admin ownership, and a 'ready' `demo_publications` row -- otherwise
+    identity resolves to 'dark', not 'scoped', and every Hunt-scoped read
+    404s regardless of `demo_hunt_id`.
+
+    Mirrors `test_demo_guard._select_demo_hunt`, duplicated locally per this
+    file's own no-cross-module-imports convention (see `_demo_bearer_token`).
+    Returns the Hunt's owner id so the caller can undo the Site Admin grant.
+    """
+    owner = await db_pool.fetchval("select owner_id from hunts where id = $1", hunt_id)
+    await db_pool.execute(
+        """
+        update hunt_members
+           set display_name = coalesce(display_name, 'Demo collaborator')
+         where hunt_id = $1
+        """,
+        hunt_id,
+    )
+    await db_pool.execute(
+        "insert into site_admins (user_id) values ($1) on conflict do nothing", owner
+    )
+    generation = await db_pool.fetchval("select demo_generation from site_settings")
+    release = await db_pool.fetchval(
+        """
+        insert into private.demo_publications
+            (hunt_id, requested_by, state, expected_generation, source_fingerprint,
+             published_at, finished_at)
+        values ($1, $2, 'ready', $3, 'statistics-test', now(), now())
+        returning id
+        """,
+        hunt_id,
+        owner,
+        generation,
+    )
+    await db_pool.execute(
+        "update site_settings set demo_enabled = true, demo_hunt_id = $1, demo_release_id = $2",
+        hunt_id,
+        release,
+    )
+    return owner
+
+
 async def test_hunt_statistics_visible_to_a_demo_session(db_pool, collab_hunt) -> None:
     """DESIGN §13.2 promises Statistics to every Hunt member with no demo
     carve-out, and the Demo Account is a member (Curator) of the Demo Hunt.
@@ -198,15 +242,14 @@ async def test_hunt_statistics_visible_to_a_demo_session(db_pool, collab_hunt) -
         dict(row)
         for row in await db_pool.fetch("select user_id, created_by, note from demo_accounts")
     ]
+    owner_id: UUID | None = None
     try:
         await db_pool.execute("delete from demo_accounts")
         await db_pool.execute(
             "insert into demo_accounts (user_id, note) values ($1, 'statistics test')",
             demo_subject,
         )
-        await db_pool.execute(
-            "update site_settings set demo_enabled = true, demo_hunt_id = $1", hunt_id
-        )
+        owner_id = await _promote_demo_release(db_pool, hunt_id)
         generation = await db_pool.fetchval("select demo_generation from site_settings")
         token = _demo_bearer_token(demo_subject, generation)
 
@@ -217,9 +260,11 @@ async def test_hunt_statistics_visible_to_a_demo_session(db_pool, collab_hunt) -
 
         # A demo session is confined to the one selected Demo Hunt, same as
         # every other Hunt-scoped read -- statistics must not leak a second.
+        # Owned by an unrelated id, never the demo subject itself: a demo
+        # principal may not hold a stored Hunt membership (ownership included).
         other_hunt_id = await db_pool.fetchval(
             "insert into hunts (name, owner_id) values ('Not the Demo Hunt', $1) returning id",
-            demo_subject,
+            uuid4(),
         )
         try:
             async with await _client_with_bearer(db_pool, token) as demo_client:
@@ -230,10 +275,13 @@ async def test_hunt_statistics_visible_to_a_demo_session(db_pool, collab_hunt) -
     finally:
         await db_pool.execute("delete from jobs where id=$1", job_id)
         await db_pool.execute(
-            "update site_settings set demo_enabled = false, demo_hunt_id = null"
-            " where demo_hunt_id = $1",
+            "update site_settings set demo_enabled = false, demo_hunt_id = null,"
+            " demo_release_id = null where demo_hunt_id = $1",
             hunt_id,
         )
+        await db_pool.execute("delete from private.demo_publications where hunt_id = $1", hunt_id)
+        if owner_id is not None:
+            await db_pool.execute("delete from site_admins where user_id = $1", owner_id)
         await db_pool.execute("delete from demo_accounts")
         for marker in markers:
             await db_pool.execute(
