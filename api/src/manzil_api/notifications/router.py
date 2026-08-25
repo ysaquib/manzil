@@ -9,6 +9,7 @@ from svix.webhooks import Webhook, WebhookVerificationError
 from manzil_api.dependencies import CurrentUser, DbPool, SettingsDep, UserClient
 from manzil_api.email.dispatcher import apply_resend_webhook
 from manzil_api.hunts.dependencies import MemberHunt, WritableMemberHunt
+from manzil_api.notifications.attention import fetch_hunt_attention
 from manzil_api.notifications.schemas import (
     AccountNotificationPreferences,
     AttentionResponse,
@@ -139,24 +140,7 @@ async def get_attention(
 ) -> AttentionResponse:
     if user.is_demo:
         return AttentionResponse(waiting_checkpoint_count=0)
-    counts = await pool.fetchrow(
-        """select count(*) filter (where state='failed') as failed,
-                  count(*) filter (where state='waiting_user') as waiting_user,
-                  count(*) filter (where state='running') as running
-             from jobs where hunt_id=$1""",
-        hunt_id,
-    )
-    failed, waiting, running = (int(counts[key]) for key in ("failed", "waiting_user", "running"))
-    task_status = (
-        "failed" if failed else "waiting_user" if waiting else "running" if running else None
-    )
-    return AttentionResponse(
-        waiting_checkpoint_count=waiting,
-        failed=failed,
-        waiting_user=waiting,
-        running=running,
-        task_status=task_status,
-    )
+    return await fetch_hunt_attention(pool, hunt_id)
 
 
 @router.post("/webhooks/resend", status_code=status.HTTP_204_NO_CONTENT)
