@@ -1,7 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSyncExternalStore } from "react";
 
 import { apiFetch } from "../../lib/apiClient";
+import { isDemo } from "../../lib/demo";
 import { useGhostMutationPath } from "../admin/useGhostMode";
+import { replaySnapshot, subscribeToReplay } from "../demo/replay/replayEngine";
 
 export const NOTIFICATION_EVENTS = [
   "checkpoint_waiting",
@@ -92,18 +95,39 @@ export function useSaveHuntNotificationPreferences(huntId: string) {
   });
 }
 
+export interface AttentionResponse {
+  waiting_checkpoint_count: number;
+  failed: number;
+  waiting_user: number;
+  running: number;
+  task_status: "failed" | "waiting_user" | "running" | null;
+}
+
+/**
+ * A demo session never enqueues a real Job, so the server's `/attention`
+ * always reports nothing running for it (`user.is_demo`, `notifications/
+ * router.py`). A playing Replay Capture is real activity from the visitor's
+ * point of view, though, so while one is running this reports it as the
+ * Tasks navbar dot would for an ordinary running Job — read straight from the
+ * replay engine's own state rather than the network, since nothing about a
+ * replay ever reaches the database for the server to see.
+ */
 export function useAttention(huntId: string) {
   const mutationPath = useGhostMutationPath(huntId);
+  const demo = isDemo();
+  const replaying = useSyncExternalStore(subscribeToReplay, replaySnapshot, replaySnapshot).running;
   return useQuery({
-    queryKey: ["attention", huntId],
-    queryFn: () =>
-      apiFetch<{
-        waiting_checkpoint_count: number;
-        failed: number;
-        waiting_user: number;
-        running: number;
-        task_status: "failed" | "waiting_user" | "running" | null;
-      }>(mutationPath(`/v1/hunts/${huntId}/attention`)),
+    queryKey: demo ? ["attention", huntId, "demo", replaying] : ["attention", huntId],
+    queryFn: (): Promise<AttentionResponse> | AttentionResponse =>
+      demo
+        ? {
+            waiting_checkpoint_count: 0,
+            failed: 0,
+            waiting_user: 0,
+            running: replaying ? 1 : 0,
+            task_status: replaying ? "running" : null,
+          }
+        : apiFetch<AttentionResponse>(mutationPath(`/v1/hunts/${huntId}/attention`)),
     enabled: Boolean(huntId),
   });
 }

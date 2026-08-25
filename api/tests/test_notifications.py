@@ -332,6 +332,62 @@ async def test_attention_reports_hunt_wide_job_severity(
     assert member.json() == expected
 
 
+def test_attention_window_scales_with_listings_and_clamps() -> None:
+    """`ATTENTION_WINDOW_PER_LISTING` (2) per active Listing, clamped to
+    [`ATTENTION_WINDOW_MIN`, `ATTENTION_WINDOW_MAX`] = [8, 64] (DESIGN §20
+    2026-08-25)."""
+    from manzil_api.notifications.attention import (
+        ATTENTION_WINDOW_MAX,
+        ATTENTION_WINDOW_MIN,
+        attention_window,
+    )
+
+    assert attention_window(0) == ATTENTION_WINDOW_MIN
+    assert attention_window(1) == ATTENTION_WINDOW_MIN  # 2 < floor
+    assert attention_window(4) == ATTENTION_WINDOW_MIN  # 8 == floor exactly
+    assert attention_window(10) == 20
+    assert attention_window(32) == ATTENTION_WINDOW_MAX  # 64 == ceiling exactly
+    assert attention_window(100) == ATTENTION_WINDOW_MAX
+
+
+@pytest.mark.asyncio
+async def test_attention_windows_out_failures_older_than_recent_job_count(
+    collab_hunt, as_owner: AsyncClient, db_pool
+) -> None:
+    """The failed indicator looks back only over the Hunt's most recent Jobs,
+    not its entire history (DESIGN §20 2026-08-25), so a failure old enough to
+    have scrolled out of that window stops turning the navbar red once enough
+    newer Jobs have run -- and a fresh failure inside the window still does.
+    """
+    hunt_id = UUID(collab_hunt["hunt_id"])
+    listing_id = UUID(collab_hunt["owner_listing_id"])
+    base = datetime.now(UTC) - timedelta(days=1)
+
+    async def insert_job(state: str, offset_seconds: int) -> None:
+        await db_pool.execute(
+            """insert into jobs (hunt_id, hunt_listing_id, type, state, created_at)
+               values ($1, $2, 'ingest', $3, $4)""",
+            hunt_id,
+            listing_id,
+            state,
+            base + timedelta(seconds=offset_seconds),
+        )
+
+    # collab_hunt has 2 active Listings -> window = max(8, min(2*2, 64)) = 8.
+    await insert_job("failed", 0)
+    for offset in range(1, 9):
+        await insert_job("done", offset)
+
+    windowed_out = await as_owner.get(f"/v1/hunts/{collab_hunt['hunt_id']}/attention")
+    assert windowed_out.json()["failed"] == 0
+    assert windowed_out.json()["task_status"] is None
+
+    await insert_job("failed", 9)
+    still_flagged = await as_owner.get(f"/v1/hunts/{collab_hunt['hunt_id']}/attention")
+    assert still_flagged.json()["failed"] == 1
+    assert still_flagged.json()["task_status"] == "failed"
+
+
 @pytest.mark.asyncio
 async def test_dispatcher_uses_bare_invite_and_stable_idempotency_key(
     collab_hunt, as_owner: AsyncClient, db_pool
