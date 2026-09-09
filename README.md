@@ -8,6 +8,8 @@ The LLM produces **facts**; only the deterministic rubric engine produces **poin
 
 Manzil is also deliberately dual-purpose: a real tool on a real deadline, and a vehicle for learning multi-agent architectures — the critical path stays boring, the ambition lives in a flag-isolated agents mode judged by evals.
 
+**Live demo:** [manzil.yusufsaquib.com](https://manzil.yusufsaquib.com) — a read-only Demo Mode session over one curated Hunt. There is no public signup; visitors cannot submit their own listings.
+
 ## Documents
 
 | Document | Role |
@@ -16,6 +18,9 @@ Manzil is also deliberately dual-purpose: a real tool on a real deadline, and a 
 | [`IMPLEMENTATION.md`](IMPLEMENTATION.md) | Current mechanics: environment, conventions, phase work plans, runbooks. |
 | [`AGENTS.md`](AGENTS.md) | Instructions for coding agents (`CLAUDE.md` imports it). |
 | [`CHANGELOG.md`](CHANGELOG.md) | What has landed in the code, by task. |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | How (and whether) to send a patch. This is a portfolio repo; PRs are not expected. |
+| [`SECURITY.md`](SECURITY.md) | How to report a vulnerability privately, and what the hosted demo is allowed to do. |
+| [`LICENSE.md`](LICENSE.md) | GNU Affero GPL v3. |
 
 **Current phase: Phase 3 ∥ the Phase 0 tail** — Phases 1 and 2 have exited
 (2026-07-10 and 2026-07-18); the spreadsheet is retired and collaboration ships.
