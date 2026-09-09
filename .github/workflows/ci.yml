@@ -3,6 +3,9 @@
 # Phase 1 frontend job (eslint + vitest + build against the committed API types).
 name: CI
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main, master]
