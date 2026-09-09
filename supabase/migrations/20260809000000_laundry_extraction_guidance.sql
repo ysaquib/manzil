@@ -1,5 +1,5 @@
 -- Generated Catalog sync from shared/src/manzil_shared/catalog.py.
--- Clarify mutually exclusive laundry extraction semantics after the  regression. Idempotent on hosted/local DBs.
+-- Clarify mutually exclusive laundry extraction semantics after the laundry-scope regression. Idempotent on hosted/local DBs.
 
 insert into criteria_catalog
   (key, label, category, domain, fact_scope, value_schema, claim_value_schema, default_options, extraction_hint, requires_tool, refresh_class, escalation_policy, conflict_policy)

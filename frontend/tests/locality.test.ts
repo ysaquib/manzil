@@ -25,10 +25,14 @@ describe("cityFilterMatches", () => {
 
   it("matches legacy bare city tokens", () => {
     expect(cityFilterMatches(property, "Detroit")).toBe(true);
-    expect(cityFilterMatches(property, "Detroit")).toBe(false);
+    expect(cityFilterMatches(property, "Chicago")).toBe(false);
   });
 
   it("matches disambiguated City, ST tokens exactly", () => {
+    // Same city name, different state must not collide (e.g. Springfield, IL vs OH).
+    const springfield = { city: "Springfield", state: "IL", county: null };
+    expect(cityFilterMatches(springfield, "Springfield, IL")).toBe(true);
+    expect(cityFilterMatches(springfield, "Springfield, OH")).toBe(false);
     expect(cityFilterMatches(property, "Detroit, MI")).toBe(true);
     expect(cityFilterMatches(property, "Detroit, OH")).toBe(false);
   });

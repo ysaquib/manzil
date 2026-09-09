@@ -179,7 +179,7 @@ LEGACY_LAUNDRY_HINT = (
 )
 LAUNDRY_GUIDANCE_HEADER = (
     "-- Clarify mutually exclusive laundry extraction semantics after the "
-    " regression. Idempotent on hosted/local DBs."
+    "laundry-scope regression. Idempotent on hosted/local DBs."
 )
 
 
