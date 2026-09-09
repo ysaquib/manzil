@@ -26,8 +26,19 @@ async def maple_recorded_llm(stage: str, schema: type[Any], content: str) -> Any
 
     These tests cover API/queue integration, not prompt-version hashing. Pinning
     their EXTRACT result keeps prompt changes gated by the worker bench instead
-    of breaking unrelated database and lifespan coverage.
+    of breaking unrelated database and lifespan coverage. VALIDATE and VERIFY
+    are likewise pinned here so a cleaner/content-hash drift cannot fail the
+    queue/lifespan coverage (seed VALIDATE fixtures remain the replay path for
+    `scripts/dev_seed.py`).
     """
+    if stage == "validate":
+        return schema.model_validate(
+            {
+                "is_listing": True,
+                "property_name": "Maple Court Apartments",
+                "reason": "single property advertised with plans and rent",
+            }
+        )
     if stage == "verify":
         return schema.model_validate({"contradictions": []})
     if stage != "extract":

@@ -33,9 +33,52 @@ _SEED_EXTRACT_RECORDINGS = {
     "https://willow-bend.seed.example/apartments": "extract--2ffad86017282b67.json",
 }
 
+# VALIDATE fixtures are hash-keyed to cleaned page text. Keep the committed
+# filenames here so a cleaner drift fails the seed guard test at the desk.
+_SEED_VALIDATE_RECORDINGS = (
+    "validate--00b35a7d16a02e88.json",  # e2e_listing.html (Maple Court)
+    "validate--5597dcd9cd5fa47a.json",  # success_text.html (Birch Run)
+    "validate--01e1247a25586880.json",  # injection_listing.html (Willow Bend)
+)
+
+_SEED_VALIDATE_BY_NAME = {
+    "Maple Court Apartments": {
+        "is_listing": True,
+        "property_name": "Maple Court Apartments",
+        "reason": (
+            "This page advertises one named apartment community with a specific "
+            "two-bedroom floor plan, rent, availability date, amenities, and leasing terms."
+        ),
+    },
+    "Birch Run Apartments": {
+        "is_listing": True,
+        "property_name": "Birch Run Apartments",
+        "reason": (
+            "It advertises one named apartment property with a specific rent, "
+            "address, unit details, and amenities."
+        ),
+    },
+    "Willow Bend Flats": {
+        "is_listing": True,
+        "property_name": "Willow Bend Flats",
+        "reason": (
+            "This page advertises one named apartment property with a specific "
+            "unit type, rent, availability, and amenities."
+        ),
+    },
+}
+
 
 async def seed_recorded_llm(stage: str, schema: type[Any], content: str) -> Any:
-    """Pin legacy seed EXTRACT and VERIFY outputs at the synthetic-test seam."""
+    """Pin legacy seed VALIDATE/EXTRACT/VERIFY outputs at the synthetic-test seam."""
+    if stage == "validate":
+        # Same rationale as VERIFY below: keep the three synthetic pages
+        # deterministic for DB/queue coverage. `scripts/dev_seed.py` without an
+        # override still replays the committed hash-keyed VALIDATE fixtures.
+        for name, payload in _SEED_VALIDATE_BY_NAME.items():
+            if name in content:
+                return schema.model_validate(payload)
+        return await call_structured(stage, schema, content)
     if stage == "verify":
         # Adding Catalog fields changes the serialized VERIFY input and therefore
         # its recording hash even though the three synthetic seed pages remain

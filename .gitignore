@@ -56,13 +56,15 @@ worker/tests/fixtures/recorded/*
 # (e2e_listing / success_text / injection_listing; validate+extract+verify each).
 # These are repo content, so committing them is repo-safe (DESIGN §20 v2.8
 # excludes only corpus-keyed artifacts). Per-file, keyed by content hash.
-# Re-keyed 2026-08-17 when VALIDATE moved to the Luna lightweight pin. The
-# three `extract--{5c2ab4,e4eff3,2ffad8}` files below are the older
-# haiku-keyed ones `_SEED_EXTRACT_RECORDINGS` still loads *by filename* to pin
-# legacy seed EXTRACT output in tests — they are not replayed by hash.
-!worker/tests/fixtures/recorded/validate--39eb37d82e879e1b.json
-!worker/tests/fixtures/recorded/validate--482657b9108bedbb.json
-!worker/tests/fixtures/recorded/validate--959339453b9737e9.json
+# Re-keyed 2026-09-09 to the current cleaned-text hashes of the three synthetic
+# seed pages (previous Luna-pin filenames no longer matched `clean_html` output,
+# so VALIDATE replay-missed in API e2e / in-process worker / dev-seed). The
+# three `extract--{5c2ab4,e4eff3,2ffad8}` files below are the older haiku-keyed
+# ones `_SEED_EXTRACT_RECORDINGS` still loads *by filename* to pin legacy seed
+# EXTRACT output in tests — they are not replayed by hash.
+!worker/tests/fixtures/recorded/validate--00b35a7d16a02e88.json
+!worker/tests/fixtures/recorded/validate--5597dcd9cd5fa47a.json
+!worker/tests/fixtures/recorded/validate--01e1247a25586880.json
 !worker/tests/fixtures/recorded/extract--33e30ecc6fba22ad.json
 !worker/tests/fixtures/recorded/extract--6cf6960a7fed2628.json
 !worker/tests/fixtures/recorded/extract--ca4dcd118e550d26.json

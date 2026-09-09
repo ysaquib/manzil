@@ -14,7 +14,13 @@ from pathlib import Path
 
 import asyncpg
 import pytest
-from worker_helpers import _SEED_EXTRACT_RECORDINGS, RECORDED, seed_recorded_llm
+from worker_helpers import (
+    _SEED_EXTRACT_RECORDINGS,
+    _SEED_VALIDATE_RECORDINGS,
+    PAGES,
+    RECORDED,
+    seed_recorded_llm,
+)
 
 # Inline (not imported from conftest) to avoid a same-named sibling conftest
 # shadowing it during full-suite collection — see test_migration_0002_schema.py.
@@ -42,7 +48,10 @@ def test_seed_extract_recordings_are_committed() -> None:
     import subprocess
 
     repo_root = Path(__file__).resolve().parents[2]
-    for filename in _SEED_EXTRACT_RECORDINGS.values():
+    for filename in (
+        *_SEED_EXTRACT_RECORDINGS.values(),
+        *_SEED_VALIDATE_RECORDINGS,
+    ):
         path = RECORDED / filename
         assert path.exists(), f"missing seed recording {filename} — re-record it"
         try:
@@ -59,6 +68,31 @@ def test_seed_extract_recordings_are_committed() -> None:
             f"!worker/tests/fixtures/recorded/{filename} exception to .gitignore "
             "and `git add` it, or CI's checkout will fail the seed pipeline"
         )
+
+
+def test_seed_validate_recordings_match_current_cleaned_pages() -> None:
+    """VALIDATE fixtures are keyed to cleaned text. A quieter cleaner drift
+    leaves stale committed hashes that still exist on disk, so CI fails with a
+    replay miss rather than an obvious missing-file error — pin the expected
+    digests to the three synthetic seed pages here."""
+    from manzil_worker.fetching.cleaner import clean_html
+    from manzil_worker.llm.config import model_for_stage
+    from manzil_worker.llm.prompt_loader import load_prompt
+    from manzil_worker.llm.recording import request_hash
+
+    pages = (
+        "e2e_listing.html",
+        "success_text.html",
+        "injection_listing.html",
+    )
+    model = model_for_stage("validate")
+    prompt = load_prompt("validate")
+    expected = set()
+    for page in pages:
+        cleaned = clean_html((PAGES / page).read_text()).text
+        digest = request_hash("validate", model, prompt.version, cleaned)[:16]
+        expected.add(f"validate--{digest}.json")
+    assert expected == set(_SEED_VALIDATE_RECORDINGS)
 
 
 async def test_dev_seed_leaves_one_hunt_three_listings_nonzero_scores() -> None:
