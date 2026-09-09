@@ -26,7 +26,9 @@ from manzil_worker.stages.image_fetch import image_fetch_stage
 from manzil_worker.state import FloorPlanIn, PlanManifest, RunState, SourceState
 from PIL import Image
 
-PAGE = Path(__file__).parent / "fixtures" / "corpus" / "realtor.com--springs-at-detroit" / "raw.html"
+PAGE = (
+    Path(__file__).parent / "fixtures" / "corpus" / "realtor.com--springs-at-detroit" / "raw.html"
+)
 
 # Exactly as EXTRACT names them for this Property.
 PLAN_NAMES = [

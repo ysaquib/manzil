@@ -173,7 +173,8 @@ def test_floor_plan_cards_survive_when_unit_prices_mask_primary_loss(monkeypatch
         cleaner_module,
         "_extract_primary",
         lambda html: (
-            "Apartments in Detroit. Unit price $1,320. Unit price $1,480. Advertised minimum $1,395."
+            "Apartments in Detroit. Unit price $1,320. Unit price $1,480. "
+            "Advertised minimum $1,395."
         ),
     )
 
