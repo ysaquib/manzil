@@ -20,9 +20,9 @@ import os
 
 # List $ / MTok (input, output) — §11.2 table, mid-2026. The Gemini rows are
 # the P0-13 bench candidates; pricing a model here is what makes it callable
-# (cost accounting never guesses). Used for the RunState cost tally; the
-# Langfuse-side cost comes from these same figures so there is one source.
-# OpenRouter's reported `usage.cost` is logged as a cross-check in traces.
+# (cost accounting never guesses). Since DESIGN §20 v3.111 the cost tally and
+# Langfuse record OpenRouter's billed `usage.cost`; these list prices are the
+# fallback for a response without it and the recorded cross-check beside it.
 #
 # Pruned 2026-07-21 (P0-13): the P0-13 sweep found six priced slugs unusable —
 # deepseek-v4-flash, claude-3-haiku, qwen3.5-flash, minimax-m3 do not route on
@@ -243,8 +243,10 @@ def cost_usd(
     cache_read_tokens: int = 0,
     cache_write_tokens: int = 0,
 ) -> float:
-    """List-price cost of one call. `input_tokens` is uncached input only —
-    the OpenRouter adapter normalizes usage fields to that convention."""
+    """List-price cost of one call — the estimate beside billed spend, and the
+    fallback when a response reports none (v3.111). `input_tokens` is uncached
+    input only — the OpenRouter adapter normalizes usage fields to that
+    convention."""
     in_price, out_price = MODEL_PRICES[model]
     provider = provider_for_model(model)
     return (

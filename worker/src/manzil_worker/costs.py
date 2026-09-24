@@ -7,8 +7,12 @@ must be able to record it without importing the LLM seam.
 
 Two channels, deliberately kept apart:
 
-- **token cost** (`cost_usd`, via `add`) — what the model call billed. Owned by
-  `llm/client.py`, which is the only caller of `add`.
+- **token cost** (`cost_usd`, via `add`) — what the model call billed: OpenRouter's
+  reported `usage.cost`, or the `MODEL_PRICES` list-price estimate only for a call
+  whose response omitted it (counted in `list_price_fallback_calls`). The list-price
+  estimate of every call is kept beside it in `list_price_cost_usd` as a
+  cross-check (DESIGN §20 v3.111). Owned by `llm/client.py`, the only caller of
+  `add`.
 - **fetch cost** (`fetch_cost_usd`, via `record_fetch`) — what a managed
   unblocker billed. Owned by `fetching/tier3.py`.
 
@@ -45,7 +49,13 @@ class CallUsage:
     output_tokens: int
     cache_read_tokens: int
     cache_write_tokens: int
-    cost_usd: float
+    cost_usd: float  # billed; the list-price estimate only when `billed` is False
+    list_price_cost_usd: float | None = None  # None: same as `cost_usd`
+    billed: bool = False  # True when `cost_usd` is OpenRouter's reported spend
+
+    @property
+    def list_price(self) -> float:
+        return self.cost_usd if self.list_price_cost_usd is None else self.list_price_cost_usd
 
 
 @dataclass
@@ -70,6 +80,10 @@ class CostTally:
     # provider name -> calls. Kept per provider because the price is per
     # provider, so a blended count could not be re-priced after the fact.
     fetch_calls_by_provider: dict[str, int] = field(default_factory=dict)
+    # List-price estimate of the same calls, and how many calls had no reported
+    # spend so `cost_usd` had to use that estimate (DESIGN §20 v3.111).
+    list_price_cost_usd: float = 0.0
+    list_price_fallback_calls: int = 0
 
     @property
     def total_cost_usd(self) -> float:
@@ -83,6 +97,9 @@ class CostTally:
         self.cache_read_tokens += usage.cache_read_tokens
         self.cache_write_tokens += usage.cache_write_tokens
         self.cost_usd += usage.cost_usd
+        self.list_price_cost_usd += usage.list_price
+        if not usage.billed:
+            self.list_price_fallback_calls += 1
 
     def add_fetch(self, provider: str, *, calls: int = 1) -> None:
         """Bill `calls` requests to `provider`. An unpriced provider still
@@ -105,6 +122,8 @@ class CostTally:
         self.cache_read_tokens += other.cache_read_tokens
         self.cache_write_tokens += other.cache_write_tokens
         self.cost_usd += other.cost_usd
+        self.list_price_cost_usd += other.list_price_cost_usd
+        self.list_price_fallback_calls += other.list_price_fallback_calls
         self.fetch_calls += other.fetch_calls
         self.fetch_cost_usd += other.fetch_cost_usd
         for provider, calls in other.fetch_calls_by_provider.items():

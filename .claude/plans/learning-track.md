@@ -33,7 +33,7 @@ Checking it against the code turned up factual errors and gaps in method:
 | 1 | **The harness only grades one page per label.** `evals/harness.py::_run_listing` builds one `SourceState` from one corpus page and runs `extract_stage` → `verify_stage`. It never runs DISCOVER, FETCH, multi-Source RECONCILE or SCORE. | L2's orchestrator is about *choosing Sources*, and today's harness can't see that. The earlier "done when" (a workflow-vs-agents table over the same ten labels) couldn't measure what L2 claims to test. Added: **the Slate Bench (L0.3)**. |
 | 2 | **The OpenRouter gate only applies under the queue.** `openrouter_slot` does nothing unless `use_postgres_openrouter_gate` is installed (`queue.py`). CLI and bench runs are ungated. Slots are per **provider family** (`provider_for_model`), not global. | Bench latency numbers are ungated, so they measure provider limits, not the semaphore. The one-slot gate matters for production and for queue-driven runs. §3.5 and §11.4 are rewritten to match. |
 | 3 | **`investigate` already exists** in the `job_type` enum (`20260708000000_hunt_and_pipeline_tables.sql:13`; `JobType.INVESTIGATE` in `shared/`). | L4 doesn't need an enum migration. It needs a table for the brief, RLS on it, and a guarded enqueue path. Migrations dated after 2026-09-01 use real timestamps (`supabase migration new`). |
-| 4 | **The harness measured cost in-process** (`cost_tally()`), not from Langfuse as IMPLEMENTATION §6 claimed. Langfuse was also costed at the same list-price estimate. | **Resolved 2026-09-24 (DESIGN v3.110).** Langfuse generations are now costed at OpenRouter's billed `usage.cost`. `bench-run` reads each session's total back as its cost of record, with `list_price_cost_usd` alongside and `cost_source` labeling any fallback. Latency stays in-process wall clock. |
+| 4 | **The harness measured cost in-process** (`cost_tally()`), not from Langfuse as IMPLEMENTATION §6 claimed. Langfuse was also costed at the same list-price estimate. | **Resolved 2026-09-24 (DESIGN v3.111).** The in-process tally now records OpenRouter's billed `usage.cost` for every call. That same tally feeds Job cost, stage cost, Langfuse and the bench. Recordings store the billed figure, so replay reports it too. `list_price_cost_usd` and `list_price_fallback_calls` sit alongside it. The bench uses Langfuse only to check that every call was traced (`traced`, `untraced_listings`). Latency stays in-process wall clock. |
 | 5 | **Model pins in `llm/config.py` differed from DESIGN §11.2.** In code, `discover`, `validate`, `reconcile_equivalence`, `plan_assist` and `enrich_reviews` use `LIGHTWEIGHT_MODEL = openai/gpt-5.6-luna`. | **Resolved 2026-09-24 (DESIGN v3.110):** the code is the source of truth, and §11.2 now has a current-pins table that mirrors it. Triage has three real tiers to choose between (§6.4). |
 | 6 | **Ten labels give little statistical power.** Per-listing numbers like "0.904 vs 0.862" can't separate a real effect from run-to-run variance. | Added: **the statistics protocol (L0.2)**, with paired criterion-level tests, repeated runs and pre-registered thresholds. |
 | 7 | **Framework model wrappers would bypass the seam.** LangGraph is fine. LangChain chat-model classes inside a node would call a provider around `call_structured`, which breaks the seam rule, tracing and cost accounting. | Now an explicit rule (§3.2). |
@@ -330,9 +330,10 @@ the finding.
 **Done when** `docs/learning/l1-critic.md` exists with the arms table, the paired stats,
 cost, and a keep/kill verdict for each arm.
 
-**Cost figures** come from Langfuse (billed spend), so the critic's $ is what OpenRouter
-charged. Replay runs report the labeled list-price fallback, and those must not be mixed
-with live figures in one verdict.
+**Cost figures** are billed spend (what OpenRouter charged), replayed exactly from
+recordings. Before trusting a $ figure, check the report's `list_price_fallback_calls` is
+0. Recordings made before v3.111 have no billed figure and fall back to list price. Also
+treat any `untraced_listings` > 0 as a bug to fix before the verdict.
 
 **Concepts learned:** proposer–critic, evaluator–optimizer, self-consistency, set-difference
 evaluation, full vs windowed context cost.

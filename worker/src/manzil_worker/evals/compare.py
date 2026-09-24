@@ -25,8 +25,9 @@ _ROWS: list[tuple[str, str]] = [
     ("wrong_exact_associations", "wrong exact associations"),
     ("evidence_flag_rate", "evidence flag rate"),
     ("total_cost_usd", "total cost $"),
-    ("cost_source", "cost source"),
     ("total_list_price_cost_usd", "list-price cost $"),
+    ("list_price_fallback_calls", "list-price fallback calls"),
+    ("untraced_listings", "untraced listings"),
     ("mean_latency_s", "mean latency s"),
     ("failed", "failed listings"),
 ]

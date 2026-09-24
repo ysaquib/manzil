@@ -844,8 +844,8 @@ def bench_run(
     MANZIL_MODEL_EXTRACT / MANZIL_MODEL_VERIFY and give each run a --name,
     then `manzil bench-compare` the reports.
 
-    Live/record runs report actual spend read back from Langfuse (the report's
-    `cost_source`); replay runs are untraced and report the list-price tally.
+    Cost is billed spend (OpenRouter-reported, replayed from recordings);
+    live/record runs also check that every call reached Langfuse.
     """
     from datetime import UTC, datetime
 
@@ -854,7 +854,7 @@ def bench_run(
     from manzil_worker.fetching.corpus import CORPUS_DIR
     from manzil_worker.llm.client import llm_mode
     from manzil_worker.llm.config import model_for_stage
-    from manzil_worker.llm.traces import session_cost
+    from manzil_worker.llm.traces import session_generations
     from manzil_worker.phase0_rubric import phase0_rubric
     from manzil_worker.stages.base import StageCtx
 
@@ -881,7 +881,7 @@ def bench_run(
             ctx=ctx,
             gate_keys=gate_keys_from(rubric),
             skipped=skipped,
-            cost_reader=None if llm_mode() == "replay" else session_cost,
+            trace_checker=None if llm_mode() == "replay" else session_generations,
         )
     )
 
