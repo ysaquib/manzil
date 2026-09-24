@@ -49,9 +49,12 @@ MODEL_PRICES: dict[str, tuple[float, float]] = {
 # 2026-07-28 (DESIGN §20 v3.23): the workhorse tier collapsed onto one model.
 # EXTRACT/VERIFY had been on Gemini since P0-14 while everything else stayed on
 # `anthropic/claude-haiku-4.5`; the Owner moved the remaining workhorse stages
-# across. DISCOVER (below) and the taste tier are deliberately exempt. This is a
-# pin decision, not a bench result — do not change it without bench evidence,
-# and remember that every recording re-keys when it moves.
+# across. This is a pin decision, not a bench result — do not change it without
+# bench evidence, and remember that every recording re-keys when it moves.
+#
+# 2026-08-17 (DESIGN §20 v3.110): the cheapest judgments — VALIDATE, equivalence,
+# plan-assist, review synthesis, the smoke check — moved to a lightweight tier.
+# Owner cost pin, not a bench result.
 LIGHTWEIGHT_MODEL = "openai/gpt-5.6-luna"
 WORKHORSE_MODEL = "google/gemini-3-flash-preview"
 
@@ -72,16 +75,15 @@ CLASSIFICATION_MODEL = "openai/gpt-5.6-luna"
 # this pair specifically, and a future split must not have to rediscover that.
 EXTRACT_VERIFY_MODEL = WORKHORSE_MODEL
 
-# 2026-07-22: claude-haiku-4.5 is now the default for discover since trying to
-# use gemini-3-flash-preview for discover was causing issues with the web search
-# tool.
-# DISCOVER_MODEL = "anthropic/claude-haiku-4.5"
+# DISCOVER landed on claude-haiku-4.5 (2026-07-22) because gemini-3-flash-preview
+# misbehaved with the native web-search tool; it moved to the lightweight Luna
+# slug on 2026-08-01 (Owner cost pin, recorded in DESIGN §20 v3.110).
 DISCOVER_MODEL = "openai/gpt-5.6-luna"
 
 # Stage -> model. Unknown stage is an error, not a fallback: a new stage must
 # be assigned a tier deliberately (and get a prompt file) before it can call.
 STAGE_MODELS: dict[str, str] = {
-    # workhorse tier
+    # lightweight + workhorse tiers (DESIGN §11.2 current-pins table mirrors this)
     "smoke": LIGHTWEIGHT_MODEL,  # P0-7 seam check; cheapest tier on purpose
     "validate": LIGHTWEIGHT_MODEL,
     "extract": EXTRACT_VERIFY_MODEL,  # P0-14 pin (DESIGN §20 2026-07-21)

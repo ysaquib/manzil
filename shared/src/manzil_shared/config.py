@@ -35,6 +35,13 @@ STAGE_BACKOFF_BASE_SECONDS = 10
 OPENROUTER_MAX_CONCURRENT_CALLS = 1
 OPENROUTER_CONCURRENCY_POLL_SECONDS = 0.25
 
+# Eval harness cost read-back (IMPLEMENTATION §6): Langfuse ingests traces
+# asynchronously, so the harness polls a session until every generation it
+# made is costed, and gives up (falling back to the in-process tally, labeled
+# as such) after the timeout.
+LANGFUSE_COST_READ_TIMEOUT_SECONDS = 90
+LANGFUSE_COST_POLL_SECONDS = 3.0
+
 # Queue reclaim: a running job without a heartbeat this long is orphaned
 JOB_ORPHAN_AFTER_SECONDS = 5 * 60
 

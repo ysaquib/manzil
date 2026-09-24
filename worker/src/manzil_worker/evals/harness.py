@@ -5,9 +5,15 @@ extraction, not networking), run EXTRACT → VERIFY through the real stages,
 and grade against the hand label. Emits a JSON report plus a printable
 summary. Trace identity per IMPLEMENTATION §6: job_type "bench", session =
 job_id, `listing_slug` metadata on every span; the report carries each
-listing's job_id so spend/latency can be audited in Langfuse (replay runs are
-untraced by design and carry tally figures only — same price table either
-way, `llm/config.py`).
+listing's job_id so spend can be audited in Langfuse.
+
+Cost of record is **actual** spend read back from Langfuse (IMPLEMENTATION §6):
+each generation is costed at OpenRouter's reported `usage.cost`, and
+`run_bench` sums a listing's session once every call is ingested. The
+in-process list-price tally is kept beside it as `list_price_cost_usd` — a
+cross-check, and the fallback (labeled `cost_source="in_process"`) for replay
+runs, which are untraced by design, and for a Langfuse read that times out.
+Latency stays an in-process wall-clock measure of the whole listing.
 
 Phrase-only `available_now` normalizes against the corpus page's
 `meta.json.saved_at` (UTC date), not the wall-clock bench run day — DESIGN
@@ -24,9 +30,9 @@ import contextlib
 import dataclasses
 import json
 import time
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
 import structlog
@@ -49,7 +55,18 @@ from manzil_worker.stages.extract import AVAILABLE_NOW_SENTINEL, extract_stage
 from manzil_worker.stages.verify import verify_stage
 from manzil_worker.state import FloorPlanIn, RunState, SourceState
 
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
+    from manzil_worker.llm.traces import SessionCost
+
+    # (session_id, *, expected_generations, since) -> SessionCost | None;
+    # `llm.traces.session_cost` in live/record runs, a fake in tests.
+    CostReader = Callable[..., Awaitable[SessionCost | None]]
+
 log = structlog.get_logger()
+
+CostSource = Literal["langfuse", "in_process"]
 
 BENCH_STAGES = ("extract", "verify")
 
@@ -100,7 +117,11 @@ class ListingResult(BaseModel):
     calls: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
+    # Cost of record: actual spend from Langfuse when `cost_source` is
+    # "langfuse", else the in-process list-price tally (replay / read timeout).
     cost_usd: float = 0.0
+    cost_source: CostSource = "in_process"
+    list_price_cost_usd: float = 0.0  # MODEL_PRICES estimate, always recorded
     latency_s: float = 0.0
 
 
@@ -349,6 +370,7 @@ async def _run_listing(
     result.input_tokens = tally.input_tokens + tally.cache_read_tokens + tally.cache_write_tokens
     result.output_tokens = tally.output_tokens
     result.cost_usd = tally.cost_usd
+    result.list_price_cost_usd = tally.cost_usd
     return result
 
 
@@ -368,6 +390,9 @@ def _summarize(listings: list[ListingResult], skipped: list[SkippedLabel]) -> di
     def rate(ok: int, total: int) -> float | None:
         return round(ok / total, 4) if total else None
 
+    sources = {r.cost_source for r in graded}
+    cost_source = sources.pop() if len(sources) == 1 else ("mixed" if sources else None)
+
     return {
         "listings": len(listings),
         "failed": len(listings) - len(graded),
@@ -381,6 +406,8 @@ def _summarize(listings: list[ListingResult], skipped: list[SkippedLabel]) -> di
         "exact_target_recall": rate(correct_exact, expected_exact),
         "wrong_exact_associations": wrong_exact,
         "total_cost_usd": round(sum(r.cost_usd for r in graded), 6),
+        "cost_source": cost_source,
+        "total_list_price_cost_usd": round(sum(r.list_price_cost_usd for r in graded), 6),
         "total_input_tokens": sum(r.input_tokens for r in graded),
         "total_output_tokens": sum(r.output_tokens for r in graded),
         "mean_latency_s": (
@@ -396,6 +423,7 @@ async def run_bench(
     ctx: StageCtx,
     gate_keys: list[str],
     skipped: list[SkippedLabel] | None = None,
+    cost_reader: CostReader | None = None,
 ) -> BenchReport:
     """One harness run. Per-listing failures (replay miss, missing corpus
     page, stage error) are recorded on the listing and never abort the run —
@@ -403,8 +431,16 @@ async def run_bench(
     checkpoint is NOT a failure: with no human to answer it the listing is
     graded accept-at-low-confidence (see `_run_listing`), so every model is
     graded over the same listings. `skipped` carries unfinished-skeleton
-    labels the loader partitioned out: reported and counted, never graded."""
+    labels the loader partitioned out: reported and counted, never graded.
+
+    `cost_reader` (the CLI passes `llm.traces.session_cost` for live/record
+    runs) replaces each listing's in-process cost with actual spend read back
+    from Langfuse after every listing has run, which gives ingestion the whole
+    run to catch up. Without it, or when a read times out, the listing keeps
+    the in-process figure and says so in `cost_source`."""
     skipped = skipped or []
+    # Bound the Langfuse query; a minute of slack absorbs clock skew.
+    started_at = datetime.now(UTC) - timedelta(minutes=1)
     validate_labels(labels)
     for s in skipped:
         log.warning("bench_label_skipped", slug=s.slug, reason=s.reason)
@@ -444,6 +480,9 @@ async def run_bench(
             listings.append(ListingResult(slug=label.slug, job_id="", error=str(error)))
         log.info("bench_listing", slug=label.slug, error=listings[-1].error)
 
+    if cost_reader is not None:
+        await _read_actual_costs(listings, cost_reader, since=started_at)
+
     return BenchReport(
         run_at=datetime.now(UTC).isoformat(),
         llm_mode=llm_mode(),
@@ -455,10 +494,31 @@ async def run_bench(
     )
 
 
+async def _read_actual_costs(
+    listings: list[ListingResult], cost_reader: CostReader, *, since: datetime
+) -> None:
+    """Swap each graded listing's cost for its Langfuse session total."""
+    for result in listings:
+        if result.error is not None:
+            continue
+        read = await cost_reader(result.job_id, expected_generations=result.calls, since=since)
+        if read is None:
+            log.warning(
+                "bench_cost_read_timeout",
+                slug=result.slug,
+                job_id=result.job_id,
+                expected_generations=result.calls,
+            )
+            continue
+        result.cost_usd = round(read.cost_usd, 6)
+        result.cost_source = "langfuse"
+
+
 def report_text(report: BenchReport) -> str:
     """Human-readable summary (also what bench-run prints)."""
     lines = [
         f"bench run {report.run_at} — mode {report.llm_mode}, "
+        f"cost source {report.summary.get('cost_source') or '—'}, "
         + ", ".join(f"{s}={m}" for s, m in report.models.items()),
         "",
         "| slug | crit acc | gate acc | ev flags | cost $ | latency s |",
