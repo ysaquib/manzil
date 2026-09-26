@@ -35,6 +35,13 @@ STAGE_BACKOFF_BASE_SECONDS = 10
 OPENROUTER_MAX_CONCURRENT_CALLS = 1
 OPENROUTER_CONCURRENCY_POLL_SECONDS = 0.25
 
+# Eval harness trace-completeness check (NFR6, IMPLEMENTATION §6): Langfuse
+# ingests traces asynchronously, so the harness polls a session until every
+# call it made appears as a generation, and reports the listing as incompletely
+# traced after the timeout.
+LANGFUSE_TRACE_CHECK_TIMEOUT_SECONDS = 90
+LANGFUSE_TRACE_CHECK_POLL_SECONDS = 3.0
+
 # Queue reclaim: a running job without a heartbeat this long is orphaned
 JOB_ORPHAN_AFTER_SECONDS = 5 * 60
 
