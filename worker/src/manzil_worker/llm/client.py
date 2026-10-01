@@ -562,10 +562,8 @@ async def _traced_live_vision_call(
         response = await _call_openrouter(
             plan.model, lambda: _live_call_openrouter_vision(plan, schema, images)
         )
-        if response.reported_cost_usd is not None:
-            generation.update(
-                metadata={**metadata, "openrouter_cost_usd": response.reported_cost_usd}
-            )
+        list_price = _list_price_usd(plan.model, response)
+        generation.update(metadata=_cost_metadata(metadata, list_price, response.reported_cost_usd))
         generation.update(
             output=response.output,
             usage_details={
@@ -574,7 +572,7 @@ async def _traced_live_vision_call(
                 "cache_read_input_tokens": response.cache_read_tokens,
                 "cache_creation_input_tokens": response.cache_write_tokens,
             },
-            cost_details={"total": _usage_from(plan.model, response).cost_usd},
+            cost_details={"total": _actual_cost_usd(list_price, response.reported_cost_usd)},
         )
     lf.flush()
     return response
@@ -609,10 +607,8 @@ async def _traced_live_call(plan: _CallPlan, schema: type[BaseModel]) -> Provide
         ) as generation,
     ):
         response = await _live_call(plan, schema)
-        if response.reported_cost_usd is not None:
-            generation.update(
-                metadata={**metadata, "openrouter_cost_usd": response.reported_cost_usd}
-            )
+        list_price = _list_price_usd(plan.model, response)
+        generation.update(metadata=_cost_metadata(metadata, list_price, response.reported_cost_usd))
         generation.update(
             output=response.output,
             usage_details={
@@ -621,26 +617,57 @@ async def _traced_live_call(plan: _CallPlan, schema: type[BaseModel]) -> Provide
                 "cache_read_input_tokens": response.cache_read_tokens,
                 "cache_creation_input_tokens": response.cache_write_tokens,
             },
-            cost_details={"total": _usage_from(plan.model, response).cost_usd},
+            cost_details={"total": _actual_cost_usd(list_price, response.reported_cost_usd)},
         )
     lf.flush()  # Phase 0 is CLI-driven and low-volume; never lose a trace to exit
     return response
 
 
+def _actual_cost_usd(list_price_usd: float, reported_cost_usd: float | None) -> float:
+    """What the call actually billed: OpenRouter's reported `usage.cost` when the
+    response carries it, else the `MODEL_PRICES` list-price estimate. This is
+    what the cost tally (hence Job and stage cost) and each Langfuse generation
+    record (DESIGN §20 v3.111; IMPL §6)."""
+    return reported_cost_usd if reported_cost_usd is not None else list_price_usd
+
+
+def _cost_metadata(
+    metadata: dict[str, Any], list_price_usd: float, reported_cost_usd: float | None
+) -> dict[str, Any]:
+    """Trace metadata recording both cost figures and which one the generation
+    was costed at, so a Langfuse total is never ambiguous about its source."""
+    extra: dict[str, Any] = {
+        "list_price_cost_usd": list_price_usd,
+        "cost_source": "openrouter" if reported_cost_usd is not None else "list_price",
+    }
+    if reported_cost_usd is not None:
+        extra["openrouter_cost_usd"] = reported_cost_usd
+    return {**metadata, **extra}
+
+
+def _list_price_usd(model: str, response: ProviderResponse) -> float:
+    return cost_usd(
+        model,
+        input_tokens=response.input_tokens,
+        output_tokens=response.output_tokens,
+        cache_read_tokens=response.cache_read_tokens,
+        cache_write_tokens=response.cache_write_tokens,
+    )
+
+
 def _usage_from(model: str, response: ProviderResponse) -> CallUsage:
+    """Billed usage of one call (DESIGN §20 v3.111): OpenRouter's reported spend,
+    with the list-price estimate kept beside it and used only as a fallback."""
+    list_price = _list_price_usd(model, response)
     return CallUsage(
         model=model,
         input_tokens=response.input_tokens,
         output_tokens=response.output_tokens,
         cache_read_tokens=response.cache_read_tokens,
         cache_write_tokens=response.cache_write_tokens,
-        cost_usd=cost_usd(
-            model,
-            input_tokens=response.input_tokens,
-            output_tokens=response.output_tokens,
-            cache_read_tokens=response.cache_read_tokens,
-            cache_write_tokens=response.cache_write_tokens,
-        ),
+        cost_usd=_actual_cost_usd(list_price, response.reported_cost_usd),
+        list_price_cost_usd=list_price,
+        billed=response.reported_cost_usd is not None,
     )
 
 
@@ -669,6 +696,7 @@ async def call_structured[T: BaseModel](stage: str, schema: type[T], content: st
             output_tokens=recording.output_tokens,
             cache_read_tokens=recording.cache_read_tokens,
             cache_write_tokens=recording.cache_write_tokens,
+            reported_cost_usd=recording.reported_cost_usd,
         )
     else:
         response = await _traced_live_call(plan, schema)
@@ -686,6 +714,7 @@ async def call_structured[T: BaseModel](stage: str, schema: type[T], content: st
                     cache_read_tokens=response.cache_read_tokens,
                     cache_write_tokens=response.cache_write_tokens,
                     recorded_at=now_iso(),
+                    reported_cost_usd=response.reported_cost_usd,
                 ),
             )
 
@@ -721,7 +750,9 @@ def _optional_prompt(stage: str) -> Prompt | None:
         return None
 
 
-def _agent_usage(model: str, raw: _AgentTurnRaw) -> CallUsage:
+def _agent_list_price(model: str, raw: _AgentTurnRaw) -> float:
+    """List-price estimate of one agent turn: tokens at `MODEL_PRICES` plus the
+    published $0.01/search price for native web searches."""
     token_cost = cost_usd(
         model,
         input_tokens=raw.input_tokens,
@@ -729,19 +760,22 @@ def _agent_usage(model: str, raw: _AgentTurnRaw) -> CallUsage:
         cache_read_tokens=raw.cache_read_tokens,
         cache_write_tokens=raw.cache_write_tokens,
     )
+    return token_cost + raw.web_search_requests * DISCOVER_WEB_SEARCH_REQUEST_USD
+
+
+def _agent_usage(model: str, raw: _AgentTurnRaw) -> CallUsage:
+    list_price = _agent_list_price(model, raw)
     return CallUsage(
         model=model,
         input_tokens=raw.input_tokens,
         output_tokens=raw.output_tokens,
         cache_read_tokens=raw.cache_read_tokens,
         cache_write_tokens=raw.cache_write_tokens,
-        # OpenRouter's reported total includes native-search charges. Replay or
-        # providers omitting it use Anthropic's published $0.01/search price.
-        cost_usd=(
-            raw.reported_cost_usd
-            if raw.reported_cost_usd is not None
-            else token_cost + raw.web_search_requests * DISCOVER_WEB_SEARCH_REQUEST_USD
-        ),
+        # OpenRouter's reported total includes native-search charges. Recordings
+        # or responses without it use the list-price estimate.
+        cost_usd=_actual_cost_usd(list_price, raw.reported_cost_usd),
+        list_price_cost_usd=list_price,
+        billed=raw.reported_cost_usd is not None,
     )
 
 
@@ -941,8 +975,8 @@ async def _traced_agent_turn(
                 server_search_budget,
             ),
         )
-        if raw.reported_cost_usd is not None:
-            generation.update(metadata={**metadata, "openrouter_cost_usd": raw.reported_cost_usd})
+        list_price = _agent_list_price(model, raw)
+        generation.update(metadata=_cost_metadata(metadata, list_price, raw.reported_cost_usd))
         generation.update(
             output={
                 "text": raw.text,
@@ -958,7 +992,7 @@ async def _traced_agent_turn(
                 "cache_read_input_tokens": raw.cache_read_tokens,
                 "cache_creation_input_tokens": raw.cache_write_tokens,
             },
-            cost_details={"total": _agent_usage(model, raw).cost_usd},
+            cost_details={"total": _actual_cost_usd(list_price, raw.reported_cost_usd)},
         )
     lf.flush()
     return raw
@@ -1110,6 +1144,7 @@ async def call_vision[T: BaseModel](stage: str, schema: type[T], images: list[An
             output_tokens=recording.output_tokens,
             cache_read_tokens=recording.cache_read_tokens,
             cache_write_tokens=recording.cache_write_tokens,
+            reported_cost_usd=recording.reported_cost_usd,
         )
     else:
         response = await _traced_live_vision_call(plan, schema, typed_images)
@@ -1127,6 +1162,7 @@ async def call_vision[T: BaseModel](stage: str, schema: type[T], images: list[An
                     cache_read_tokens=response.cache_read_tokens,
                     cache_write_tokens=response.cache_write_tokens,
                     recorded_at=now_iso(),
+                    reported_cost_usd=response.reported_cost_usd,
                     image_hashes=[image.content_hash for image in typed_images],
                 ),
             )

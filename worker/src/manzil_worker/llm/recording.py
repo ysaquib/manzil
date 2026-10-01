@@ -47,8 +47,10 @@ class Recording:
     text: str | None = None  # the assistant's final (non-tool) message
     stop_reason: str | None = None  # "tool_use" | "stop"
     # Provider-hosted tool uses (P3-5 native web search) are already executed in
-    # the response; replay retains their observability and exact provider cost.
+    # the response; replay retains their observability.
     server_tool_events: list[dict] | None = None
+    # OpenRouter's billed `usage.cost`, on every recording kind since v3.111, so
+    # replay reproduces billed spend. None on older recordings: list price.
     reported_cost_usd: float | None = None
     # P4 recordings retain the exact input identity without committing image bytes.
     image_hashes: list[str] | None = None

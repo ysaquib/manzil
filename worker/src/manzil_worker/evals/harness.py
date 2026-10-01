@@ -5,9 +5,16 @@ extraction, not networking), run EXTRACT → VERIFY through the real stages,
 and grade against the hand label. Emits a JSON report plus a printable
 summary. Trace identity per IMPLEMENTATION §6: job_type "bench", session =
 job_id, `listing_slug` metadata on every span; the report carries each
-listing's job_id so spend/latency can be audited in Langfuse (replay runs are
-untraced by design and carry tally figures only — same price table either
-way, `llm/config.py`).
+listing's job_id so spend can be audited in Langfuse.
+
+Cost is **billed** spend from the in-process tally (DESIGN §20 v3.111): each
+call contributes OpenRouter's reported `usage.cost` — recorded with the call, so
+replay reproduces it — and the `MODEL_PRICES` estimate only when a response (or
+an older recording) lacks it; `list_price_fallback_calls` counts those. The
+list-price estimate of every call rides beside it as `list_price_cost_usd`.
+Live/record runs also check that every call reached Langfuse (`traced`, NFR6);
+replay runs are untraced by design and skip the check. Latency is the
+in-process wall clock of the whole listing.
 
 Phrase-only `available_now` normalizes against the corpus page's
 `meta.json.saved_at` (UTC date), not the wall-clock bench run day — DESIGN
@@ -24,9 +31,9 @@ import contextlib
 import dataclasses
 import json
 import time
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
 import structlog
@@ -48,6 +55,13 @@ from manzil_worker.stages.base import StageCtx
 from manzil_worker.stages.extract import AVAILABLE_NOW_SENTINEL, extract_stage
 from manzil_worker.stages.verify import verify_stage
 from manzil_worker.state import FloorPlanIn, RunState, SourceState
+
+if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
+    # (session_id, *, expected_generations, since) -> generations seen | None;
+    # `llm.traces.session_generations` in live/record runs, a fake in tests.
+    TraceChecker = Callable[..., Awaitable[int | None]]
 
 log = structlog.get_logger()
 
@@ -100,7 +114,11 @@ class ListingResult(BaseModel):
     calls: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
-    cost_usd: float = 0.0
+    cost_usd: float = 0.0  # billed (OpenRouter-reported) spend, list-price fallback
+    list_price_cost_usd: float = 0.0  # MODEL_PRICES estimate of the same calls
+    list_price_fallback_calls: int = 0  # calls with no reported spend
+    # Every call reached Langfuse (NFR6)? None when unchecked (replay / no checker).
+    traced: bool | None = None
     latency_s: float = 0.0
 
 
@@ -349,6 +367,8 @@ async def _run_listing(
     result.input_tokens = tally.input_tokens + tally.cache_read_tokens + tally.cache_write_tokens
     result.output_tokens = tally.output_tokens
     result.cost_usd = tally.cost_usd
+    result.list_price_cost_usd = tally.list_price_cost_usd
+    result.list_price_fallback_calls = tally.list_price_fallback_calls
     return result
 
 
@@ -368,6 +388,8 @@ def _summarize(listings: list[ListingResult], skipped: list[SkippedLabel]) -> di
     def rate(ok: int, total: int) -> float | None:
         return round(ok / total, 4) if total else None
 
+    checked = [r for r in graded if r.traced is not None]
+
     return {
         "listings": len(listings),
         "failed": len(listings) - len(graded),
@@ -381,6 +403,9 @@ def _summarize(listings: list[ListingResult], skipped: list[SkippedLabel]) -> di
         "exact_target_recall": rate(correct_exact, expected_exact),
         "wrong_exact_associations": wrong_exact,
         "total_cost_usd": round(sum(r.cost_usd for r in graded), 6),
+        "total_list_price_cost_usd": round(sum(r.list_price_cost_usd for r in graded), 6),
+        "list_price_fallback_calls": sum(r.list_price_fallback_calls for r in graded),
+        "untraced_listings": (sum(not r.traced for r in checked) if checked else None),
         "total_input_tokens": sum(r.input_tokens for r in graded),
         "total_output_tokens": sum(r.output_tokens for r in graded),
         "mean_latency_s": (
@@ -396,6 +421,7 @@ async def run_bench(
     ctx: StageCtx,
     gate_keys: list[str],
     skipped: list[SkippedLabel] | None = None,
+    trace_checker: TraceChecker | None = None,
 ) -> BenchReport:
     """One harness run. Per-listing failures (replay miss, missing corpus
     page, stage error) are recorded on the listing and never abort the run —
@@ -403,8 +429,15 @@ async def run_bench(
     checkpoint is NOT a failure: with no human to answer it the listing is
     graded accept-at-low-confidence (see `_run_listing`), so every model is
     graded over the same listings. `skipped` carries unfinished-skeleton
-    labels the loader partitioned out: reported and counted, never graded."""
+    labels the loader partitioned out: reported and counted, never graded.
+
+    `trace_checker` (the CLI passes `llm.traces.session_generations` for
+    live/record runs) confirms after every listing has run — giving Langfuse
+    ingestion the whole run to catch up — that each listing's calls all reached
+    Langfuse, recording the answer in `traced`."""
     skipped = skipped or []
+    # Bound the trace-check query; a minute of slack absorbs clock skew.
+    started_at = datetime.now(UTC) - timedelta(minutes=1)
     validate_labels(labels)
     for s in skipped:
         log.warning("bench_label_skipped", slug=s.slug, reason=s.reason)
@@ -444,6 +477,9 @@ async def run_bench(
             listings.append(ListingResult(slug=label.slug, job_id="", error=str(error)))
         log.info("bench_listing", slug=label.slug, error=listings[-1].error)
 
+    if trace_checker is not None:
+        await _check_traces(listings, trace_checker, since=started_at)
+
     return BenchReport(
         run_at=datetime.now(UTC).isoformat(),
         llm_mode=llm_mode(),
@@ -453,6 +489,24 @@ async def run_bench(
         skipped=skipped,
         summary=_summarize(listings, skipped),
     )
+
+
+async def _check_traces(
+    listings: list[ListingResult], trace_checker: TraceChecker, *, since: datetime
+) -> None:
+    """Mark each graded listing traced iff Langfuse holds all of its calls."""
+    for result in listings:
+        if result.error is not None:
+            continue
+        seen = await trace_checker(result.job_id, expected_generations=result.calls, since=since)
+        result.traced = seen is not None
+        if seen is None:
+            log.warning(
+                "bench_listing_untraced",
+                slug=result.slug,
+                job_id=result.job_id,
+                expected_generations=result.calls,
+            )
 
 
 def report_text(report: BenchReport) -> str:
